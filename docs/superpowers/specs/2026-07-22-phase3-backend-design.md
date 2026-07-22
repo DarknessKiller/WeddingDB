@@ -229,7 +229,7 @@ func DecodeID(encoded string) (uint, error) {
 ```
 POST /auth/login { email, password }
 → validate against AdminUser table (bcrypt)
-→ generate JWT: { sub: adminId, wid: weddingId, role: role, exp: 15min }
+→ generate JWT: { sub: adminId, wid: weddingId, role: role, jti: nonce, iat: now, exp: 15min }
 → generate refresh token (stored in DB, 7 day expiry)
 → return { accessToken, refreshToken }
 ```
@@ -239,8 +239,10 @@ POST /auth/login { email, password }
 ```
 POST /auth/refresh { refreshToken }
 → validate refresh token exists + not expired
-→ regenerate accessToken with same claims
-→ return { accessToken }
+→ delete old refresh token (rotation)
+→ generate new accessToken with new nonce
+→ generate new refreshToken
+→ return { accessToken, refreshToken }
 ```
 
 ### Logout
@@ -256,6 +258,68 @@ POST /auth/logout { refreshToken }
 - Access token expiry: 15 minutes
 - Refresh token expiry: 7 days
 - Password hashing: bcrypt via `golang.org/x/crypto/bcrypt`
+
+### Nonce & Replay Prevention
+
+Each access token contains a unique `jti` (JWT ID) — a random UUID:
+
+```go
+type AccessClaims struct {
+    AdminID   uint   `json:"sub"`
+    WeddingID *uint  `json:"wid,omitempty"`
+    Role      string `json:"role"`
+    JTI       string `json:"jti"` // unique nonce per token
+    IAT       int64  `json:"iat"`
+    EXP       int64  `json:"exp"`
+}
+```
+
+**Nonce store** — tracks used access token nonces with TTL:
+
+```go
+type NonceRecord struct {
+    ID        uint      `gorm:"primaryKey"`
+    JTI       string    `gorm:"size:36;uniqueIndex;not null"`
+    AdminID   uint      `gorm:"index;not null"`
+    ExpiresAt time.Time `gorm:"index"` // auto-cleanup target
+}
+```
+
+**Replay prevention middleware:**
+
+```go
+func NonceMiddleware(next fuego.Handler) fuego.Handler {
+    return func(c *fuego.ContextWithBody[any]) (any, error) {
+        jti := c.Get("jti").(string)
+        // Check if nonce already used
+        if nonceRepo.Exists(jti) {
+            return nil, fuego.UnauthorizedError{Title: "Token reused"}
+        }
+        
+        // Mark nonce as used (expires with token)
+        nonceRepo.MarkUsed(jti, adminID, expiresAt)
+        
+        return next(c)
+    }
+}
+```
+
+**Cleanup:** Background goroutine deletes expired nonces every hour:
+
+```go
+go func() {
+    ticker := time.NewTicker(1 * time.Hour)
+    for range ticker.C {
+        db.Where("expires_at < ?", time.Now()).Delete(&NonceRecord{})
+    }
+}()
+```
+
+**Protection summary:**
+- Short-lived access tokens (15min) limit exposure window
+- Nonce tracking prevents token reuse — if a stolen token is replayed, the second request fails
+- Refresh token rotation — old token deleted on use, no token reuse
+- All tokens bound to `admin_id` — can't cross-user reuse
 
 ## Multi-Tenant Middleware
 
