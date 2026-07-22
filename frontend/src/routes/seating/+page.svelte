@@ -1,6 +1,6 @@
 <script lang="ts">
   import HallMap from '$lib/components/seating/HallMap.svelte';
-  import { TABLE_DEFINITIONS } from '$lib/constants';
+  import { getTableDefinitions } from '$lib/constants';
   import { getGuestsByTable, getTableOccupancy } from '$lib/mock/data';
   import { selectedGuest, isDrawerOpen, addToast } from '$lib/stores';
   import Badge from '$lib/components/ui/Badge.svelte';
@@ -19,14 +19,14 @@
     const tableParam = page.url.searchParams.get('table');
     if (tableParam) {
       const tableId = parseInt(tableParam, 10);
-      if (!isNaN(tableId) && TABLE_DEFINITIONS.some(t => t.id === tableId)) {
+      if (!isNaN(tableId) && getTableDefinitions().some(t => t.id === tableId)) {
         selectedTableId = tableId;
         showMobilePanel = true;
       }
     }
   });
 
-  let selectedTable = $derived(selectedTableId ? TABLE_DEFINITIONS.find(t => t.id === selectedTableId) ?? null : null);
+  let selectedTable = $derived(selectedTableId ? getTableDefinitions().find(t => t.id === selectedTableId) ?? null : null);
   let selectedTableGuests = $derived(selectedTableId ? getGuestsByTable(selectedTableId) : []);
   let selectedOccupancy = $derived(selectedTableId ? getTableOccupancy(selectedTableId) : null);
 

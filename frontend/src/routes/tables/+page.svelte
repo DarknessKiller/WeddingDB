@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { TABLE_DEFINITIONS } from '$lib/constants';
+  import { getTableDefinitions } from '$lib/constants';
   import { getTableOccupancy } from '$lib/mock/data';
   import { goto } from '$app/navigation';
   import { cn } from '$lib/utils';
@@ -15,7 +15,7 @@
   <div class="flex items-center justify-between mb-6">
     <div>
       <h1 class="text-xl font-bold text-gray-900">Banquet Tables</h1>
-      <p class="text-sm text-gray-500 mt-0.5">Overview of all {TABLE_DEFINITIONS.length} tables</p>
+      <p class="text-sm text-gray-500 mt-0.5">Overview of all {getTableDefinitions().length} tables</p>
     </div>
     <button class="px-4 py-2.5 bg-red text-white rounded-xl text-sm font-semibold hover:bg-red-light transition-colors flex items-center gap-2">
       <Users class="w-4 h-4" /> Manage Seating
@@ -23,7 +23,7 @@
   </div>
 
   <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
-    {#each TABLE_DEFINITIONS as table (table.id)}
+    {#each getTableDefinitions() as table (table.id)}
       {@const occ = getTableOccupancy(table.id)}
       <button
         onclick={() => goto('/seating')}
