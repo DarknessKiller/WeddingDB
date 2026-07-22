@@ -1,7 +1,7 @@
 <script lang="ts">
   import HallMap from '$lib/components/seating/HallMap.svelte';
   import { searchGuests, getSeatGuest } from '$lib/mock/data';
-  import { TABLE_DEFINITIONS } from '$lib/constants';
+  import { getTableDefinitions } from '$lib/constants';
   import { cn } from '$lib/utils';
   import { Maximize, Minimize, Monitor, Search, ArrowLeft, MapPin, Users, Star, X } from 'lucide-svelte';
   import { onMount, onDestroy } from 'svelte';
@@ -15,7 +15,7 @@
   let timer: ReturnType<typeof setInterval>;
   let hoveredSeat = $state<{ seatNum: number; guest: Guest | null; x: number; y: number } | null>(null);
 
-  let selectedTable = $derived(selectedGuest?.tableId ? TABLE_DEFINITIONS.find(t => t.id === selectedGuest!.tableId) ?? null : null);
+  let selectedTable = $derived(selectedGuest?.tableId ? getTableDefinitions().find(t => t.id === selectedGuest!.tableId) ?? null : null);
   let seatOccupants = $derived(
     selectedGuest?.tableId
       ? Array.from({ length: selectedTable?.capacity ?? 10 }, (_, i) => {
@@ -97,6 +97,7 @@
       <!-- Hall Map (full screen) -->
       <HallMap
         kioskHighlightTableId={selectedGuest.tableId}
+        dark={true}
         hoveredSeat={hoveredSeat}
       />
 

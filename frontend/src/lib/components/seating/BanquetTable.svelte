@@ -8,6 +8,7 @@
     isSelected = false,
     isHighlighted = false,
     isKioskHighlight = false,
+    dark = false,
     hallScale = 1,
     onTableClick,
     onSeatClick,
@@ -17,6 +18,7 @@
     isSelected?: boolean;
     isHighlighted?: boolean;
     isKioskHighlight?: boolean;
+    dark?: boolean;
     hallScale?: number;
     onTableClick?: () => void;
     onSeatClick?: (seatNum: number, guest: Guest | null) => void;
@@ -71,10 +73,10 @@
     <!-- Occupancy ring -->
     <circle
       cx={CENTER} cy={CENTER} r={RING_R}
-      fill="none" stroke="#F3F4F6" stroke-width="3"
+      fill="none" stroke={dark ? '#374151' : '#F3F4F6'} stroke-width="3"
     />
     <circle
-      cx={CENTER} cy={CENTER} r={RING_R}
+      cx={ CENTER} cy={CENTER} r={RING_R}
       fill="none"
       stroke={occupancyPct >= 0.9 ? '#A11217' : occupancyPct >= 0.6 ? '#D4AF37' : '#059669'}
       stroke-width="3"
@@ -89,7 +91,7 @@
     <circle
       cx={CENTER} cy={CENTER} r={TABLE_RADIUS}
       fill="url(#tableGrad-{table.id})"
-      stroke={isSelected || isHighlighted ? '#D4AF37' : table.isVip ? '#D4AF37' : '#E5E7EB'}
+      stroke={isSelected || isHighlighted ? '#D4AF37' : table.isVip ? '#D4AF37' : dark ? '#4B5563' : '#E5E7EB'}
       stroke-width={isSelected || isHighlighted || table.isVip ? 2.5 : 2}
       class="transition-all duration-200"
     />
@@ -97,18 +99,18 @@
     <!-- Gradient def -->
     <defs>
       <radialGradient id="tableGrad-{table.id}" cx="40%" cy="35%">
-        <stop offset="0%" stop-color="#FFFFFF" />
-        <stop offset="100%" stop-color="#F9FAFB" />
+        <stop offset="0%" stop-color={dark ? '#374151' : '#FFFFFF'} />
+        <stop offset="100%" stop-color={dark ? '#1F2937' : '#F9FAFB'} />
       </radialGradient>
     </defs>
 
     <!-- Table number -->
-    <text x={CENTER} y={CENTER - 4} text-anchor="middle" class="fill-gray-800 font-extrabold text-base" font-size="16">{table.id}</text>
-    <text x={CENTER} y={CENTER + 10} text-anchor="middle" class="fill-gray-400" font-size="9">{occupied}/{table.capacity}</text>
+    <text x={CENTER} y={CENTER - 4} text-anchor="middle" class="{dark ? 'fill-gray-200' : 'fill-gray-800'} font-extrabold" font-size="16">{table.id}</text>
+    <text x={CENTER} y={CENTER + 10} text-anchor="middle" class="{dark ? 'fill-gray-500' : 'fill-gray-400'}" font-size="9">{occupied}/{table.capacity}</text>
 
     <!-- VIP badge -->
     {#if table.isVip}
-      <circle cx={SVG_SIZE - 6} cy={6} r={9} fill="#D4AF37" stroke="white" stroke-width="2" />
+      <circle cx={SVG_SIZE - 6} cy={6} r={9} fill="#D4AF37" stroke={dark ? '#1F2937' : 'white'} stroke-width="2" />
       <text x={SVG_SIZE - 6} y={10} text-anchor="middle" fill="white" font-size="8" font-weight="800">★</text>
     {/if}
 
@@ -132,18 +134,18 @@
         <circle cx={pos.x} cy={pos.y} r={SEAT_RADIUS + 4} fill="transparent" />
         <circle
           cx={pos.x} cy={pos.y} r={SEAT_RADIUS}
-          fill={guest ? (guest.checkedIn ? '#ECFDF5' : guest.isVip ? '#FDF8E8' : '#FDEAEA') : '#F3F4F6'}
-          stroke={guest ? (guest.checkedIn ? '#059669' : guest.isVip ? '#D4AF37' : '#A11217') : '#E5E7EB'}
+          fill={guest ? (guest.checkedIn ? (dark ? '#064E3B' : '#ECFDF5') : guest.isVip ? (dark ? '#78350F' : '#FDF8E8') : (dark ? '#7F1D1D' : '#FDEAEA')) : (dark ? '#374151' : '#F3F4F6')}
+          stroke={guest ? (guest.checkedIn ? '#059669' : guest.isVip ? '#D4AF37' : '#A11217') : dark ? '#4B5563' : '#E5E7EB'}
           stroke-width="2"
           class="transition-all duration-150 group-hover:stroke-[3]"
         />
         {#if guest}
           <text x={pos.x} y={pos.y + 3} text-anchor="middle"
-            fill={guest.checkedIn ? '#059669' : guest.isVip ? '#B8941F' : '#A11217'}
+            fill={guest.checkedIn ? (dark ? '#34D399' : '#059669') : guest.isVip ? (dark ? '#FCD34D' : '#B8941F') : (dark ? '#F87171' : '#A11217')}
             font-size="7" font-weight="700"
           >{getInitials(guest.name)}</text>
         {:else}
-          <text x={pos.x} y={pos.y + 3} text-anchor="middle" fill="#9CA3AF" font-size="7">{i + 1}</text>
+          <text x={pos.x} y={pos.y + 3} text-anchor="middle" fill={dark ? '#6B7280' : '#9CA3AF'} font-size="7">{i + 1}</text>
         {/if}
       </g>
     {/each}

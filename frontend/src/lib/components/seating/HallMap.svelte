@@ -1,6 +1,6 @@
 <script lang="ts">
   import BanquetTable from './BanquetTable.svelte';
-  import { TABLE_DEFINITIONS, HALL_LAYOUT } from '$lib/constants';
+  import { getTableDefinitions, HALL_LAYOUT } from '$lib/constants';
   import type { Guest } from '$lib/types';
   import { ZoomIn, ZoomOut, RotateCcw } from 'lucide-svelte';
   import { onMount } from 'svelte';
@@ -9,6 +9,7 @@
     selectedTableId = null,
     highlightedTableId = null,
     kioskHighlightTableId = null,
+    dark = false,
     onTableClick,
     onSeatClick,
     hoveredSeat = $bindable(null),
@@ -16,6 +17,7 @@
     selectedTableId?: number | null;
     highlightedTableId?: number | null;
     kioskHighlightTableId?: number | null;
+    dark?: boolean;
     onTableClick?: (id: number) => void;
     onSeatClick?: (tableId: number, seatNum: number, guest: Guest | null) => void;
     hoveredSeat?: { seatNum: number; guest: Guest | null; x: number; y: number } | null;
@@ -102,7 +104,7 @@
 
 <div
   bind:this={containerEl}
-  class="relative flex-1 bg-gray-50 overflow-hidden select-none min-h-[300px]"
+  class="relative flex-1 overflow-hidden select-none min-h-[300px] {dark ? 'bg-gray-950' : 'bg-gray-50'}"
   class:cursor-grab={!isDragging}
   class:cursor-grabbing={isDragging}
   onwheel={handleWheel}
@@ -115,24 +117,24 @@
 >
   <!-- Zoom controls -->
   <div class="absolute top-3 right-3 sm:top-4 sm:right-4 z-30 flex flex-col gap-1.5">
-    <button onclick={() => zoom = Math.min(3, zoom + 0.15)} class="w-8 h-8 sm:w-9 sm:h-9 bg-white border border-gray-200 rounded-lg shadow-sm flex items-center justify-center hover:bg-gray-50 transition-colors" aria-label="Zoom in">
-      <ZoomIn class="w-4 h-4 text-gray-600" />
+    <button onclick={() => zoom = Math.min(3, zoom + 0.15)} class="w-8 h-8 sm:w-9 sm:h-9 {dark ? 'bg-gray-800 border-gray-700 hover:bg-gray-700 text-gray-300' : 'bg-white border-gray-200 hover:bg-gray-50 text-gray-600'} border rounded-lg shadow-sm flex items-center justify-center transition-colors" aria-label="Zoom in">
+      <ZoomIn class="w-4 h-4" />
     </button>
-    <button onclick={() => zoom = Math.max(0.3, zoom - 0.15)} class="w-8 h-8 sm:w-9 sm:h-9 bg-white border border-gray-200 rounded-lg shadow-sm flex items-center justify-center hover:bg-gray-50 transition-colors" aria-label="Zoom out">
-      <ZoomOut class="w-4 h-4 text-gray-600" />
+    <button onclick={() => zoom = Math.max(0.3, zoom - 0.15)} class="w-8 h-8 sm:w-9 sm:h-9 {dark ? 'bg-gray-800 border-gray-700 hover:bg-gray-700 text-gray-300' : 'bg-white border-gray-200 hover:bg-gray-50 text-gray-600'} border rounded-lg shadow-sm flex items-center justify-center transition-colors" aria-label="Zoom out">
+      <ZoomOut class="w-4 h-4" />
     </button>
-    <button onclick={resetView} class="w-8 h-8 sm:w-9 sm:h-9 bg-white border border-gray-200 rounded-lg shadow-sm flex items-center justify-center hover:bg-gray-50 transition-colors" aria-label="Reset view">
-      <RotateCcw class="w-4 h-4 text-gray-600" />
+    <button onclick={resetView} class="w-8 h-8 sm:w-9 sm:h-9 {dark ? 'bg-gray-800 border-gray-700 hover:bg-gray-700 text-gray-300' : 'bg-white border-gray-200 hover:bg-gray-50 text-gray-600'} border rounded-lg shadow-sm flex items-center justify-center transition-colors" aria-label="Reset view">
+      <RotateCcw class="w-4 h-4" />
     </button>
-    <div class="text-center text-[10px] text-gray-400 font-medium mt-0.5">{Math.round(zoom * 100)}%</div>
+    <div class="text-center text-[10px] {dark ? 'text-gray-500' : 'text-gray-400'} font-medium mt-0.5">{Math.round(zoom * 100)}%</div>
   </div>
 
   <!-- Legend -->
-  <div class="absolute bottom-3 left-3 sm:bottom-4 sm:left-4 z-30 bg-white/90 backdrop-blur-sm border border-gray-200 rounded-xl px-3 sm:px-4 py-2 sm:py-3 text-[10px] sm:text-xs space-y-1 sm:space-y-1.5">
-    <div class="flex items-center gap-2"><span class="w-2.5 h-2.5 sm:w-3 sm:h-3 rounded-full border-2 border-gray-200 bg-gray-100"></span> Empty</div>
-    <div class="flex items-center gap-2"><span class="w-2.5 h-2.5 sm:w-3 sm:h-3 rounded-full border-2 border-red bg-red-50"></span> Occupied</div>
-    <div class="flex items-center gap-2"><span class="w-2.5 h-2.5 sm:w-3 sm:h-3 rounded-full border-2 border-emerald-500 bg-emerald-50"></span> Checked In</div>
-    <div class="flex items-center gap-2"><span class="w-2.5 h-2.5 sm:w-3 sm:h-3 rounded-full border-2 border-gold bg-gold-50"></span> VIP</div>
+  <div class="absolute bottom-3 left-3 sm:bottom-4 sm:left-4 z-30 {dark ? 'bg-gray-800/90 border-gray-700' : 'bg-white/90 border-gray-200'} backdrop-blur-sm border rounded-xl px-3 sm:px-4 py-2 sm:py-3 text-[10px] sm:text-xs space-y-1 sm:space-y-1.5">
+    <div class="flex items-center gap-2"><span class="w-2.5 h-2.5 sm:w-3 sm:h-3 rounded-full border-2 {dark ? 'border-gray-600 bg-gray-700' : 'border-gray-200 bg-gray-100'}"></span> Empty</div>
+    <div class="flex items-center gap-2"><span class="w-2.5 h-2.5 sm:w-3 sm:h-3 rounded-full border-2 border-red {dark ? 'bg-red-900/40' : 'bg-red-50'}"></span> Occupied</div>
+    <div class="flex items-center gap-2"><span class="w-2.5 h-2.5 sm:w-3 sm:h-3 rounded-full border-2 border-emerald-500 {dark ? 'bg-emerald-900/40' : 'bg-emerald-50'}"></span> Checked In</div>
+    <div class="flex items-center gap-2"><span class="w-2.5 h-2.5 sm:w-3 sm:h-3 rounded-full border-2 border-gold {dark ? 'bg-gold/20' : 'bg-gold-50'}"></span> VIP</div>
   </div>
 
   <!-- Hall -->
@@ -140,7 +142,7 @@
     class="absolute inset-0 flex items-center justify-center"
     style="transform: translate({panX}px, {panY}px) scale({zoom}); transform-origin: center center; transition: {isDragging ? 'none' : 'transform 0.2s cubic-bezier(0.4,0,0.2,1)'};"
   >
-    <div class="relative bg-white border-2 border-gray-200 rounded-3xl shadow-xl"
+    <div class="relative {dark ? 'bg-gray-900 border-gray-700' : 'bg-white border-gray-200'} border-2 rounded-3xl shadow-xl"
       style="width: {BASE_W * scale}px; height: {BASE_H * scale}px; min-width: {BASE_W * scale}px;">
 
       <!-- Stage -->
@@ -152,26 +154,28 @@
 
       <!-- Main aisle (vertical) -->
       <div class="absolute top-[8%] bottom-[8%] left-1/2 -translate-x-1/2 w-px z-[1]"
-        style="background: repeating-linear-gradient(180deg, transparent, transparent 8px, #E5E7EB 8px, #E5E7EB 10px);"></div>
+        style="background: repeating-linear-gradient(180deg, transparent, transparent 8px, {dark ? '#374151' : '#E5E7EB'} 8px, {dark ? '#374151' : '#E5E7EB'} 10px);"></div>
 
       <!-- Side aisles -->
       <div class="absolute top-[8%] bottom-[8%] left-[30%] w-px z-[1] opacity-50"
-        style="background: repeating-linear-gradient(180deg, transparent, transparent 8px, #F3F4F6 8px, #F3F4F6 10px);"></div>
+        style="background: repeating-linear-gradient(180deg, transparent, transparent 8px, {dark ? '#1F2937' : '#F3F4F6'} 8px, {dark ? '#1F2937' : '#F3F4F6'} 10px);"></div>
       <div class="absolute top-[8%] bottom-[8%] left-[70%] w-px z-[1] opacity-50"
-        style="background: repeating-linear-gradient(180deg, transparent, transparent 8px, #F3F4F6 8px, #F3F4F6 10px);"></div>
+        style="background: repeating-linear-gradient(180deg, transparent, transparent 8px, {dark ? '#1F2937' : '#F3F4F6'} 8px, {dark ? '#1F2937' : '#F3F4F6'} 10px);"></div>
 
       <!-- Entrance -->
-      <div class="absolute bottom-0 left-1/2 -translate-x-1/2 w-[14%] h-[4%] bg-gray-100 rounded-t-xl flex items-center justify-center z-10">
-        <span class="text-[8px] sm:text-[10px] font-semibold text-gray-500 tracking-wide">▼ Entrance ▼</span>
+      <div class="absolute bottom-0 left-1/2 -translate-x-1/2 w-[14%] h-[4%] {dark ? 'bg-gray-800' : 'bg-gray-100'} rounded-t-xl flex items-center justify-center z-10">
+        <span class="text-[8px] sm:text-[10px] font-semibold {dark ? 'text-gray-500' : 'text-gray-500'} tracking-wide">▼ Entrance ▼</span>
       </div>
 
       <!-- Tables -->
-      {#each TABLE_DEFINITIONS as tableDef (tableDef.id)}
+      {#each getTableDefinitions() as tableDef (tableDef.id)}
+        {@const isKioskTarget = kioskHighlightTableId === tableDef.id}
         <BanquetTable
           table={tableDef}
           isSelected={selectedTableId === tableDef.id}
-          isHighlighted={highlightedTableId === tableDef.id}
+          isHighlighted={highlightedTableId === tableDef.id || isKioskTarget}
           isKioskHighlight={kioskHighlightTableId !== null}
+          {dark}
           hallScale={scale}
           onTableClick={() => onTableClick?.(tableDef.id)}
           onSeatClick={(seatNum, guest) => onSeatClick?.(tableDef.id, seatNum, guest)}
