@@ -13,7 +13,7 @@ backend/
 │       └── main.go              # Entry, bootstrap, route registration
 ├── internal/
 │   ├── bootstrap/
-│   │   └── bootstrap.go         # DB init, service/handler wiring
+│   │   └── bootstrap.go         # DB init, Redis init, service/handler wiring
 │   ├── config/
 │   │   ├── config.go            # Env vars, DB config
 │   │   └── server.go            # Fuego server factory
@@ -26,6 +26,7 @@ backend/
 │   │   └── register.go          # Route registration helpers
 │   ├── middleware/
 │   │   ├── auth.go              # JWT validation, context injection
+│   │   ├── nonce.go             # Replay prevention via Redis
 │   │   ├── wedding_scope.go     # Tenant isolation check
 │   │   └── cors.go              # CORS for Bun dev server
 │   ├── models/
@@ -158,7 +159,7 @@ type RefreshToken struct {
 
 ```
 POST   /api/v1/auth/login              # → { accessToken, refreshToken }
-POST   /api/v1/auth/refresh             # → { accessToken }
+POST   /api/v1/auth/refresh             # → { accessToken, refreshToken }
 POST   /api/v1/auth/logout
 ```
 
@@ -274,50 +275,49 @@ type AccessClaims struct {
 }
 ```
 
-**Nonce store** — tracks used access token nonces with TTL:
+**Nonce store** — Redis with automatic TTL:
 
 ```go
-type NonceRecord struct {
-    ID        uint      `gorm:"primaryKey"`
-    JTI       string    `gorm:"size:36;uniqueIndex;not null"`
-    AdminID   uint      `gorm:"index;not null"`
-    ExpiresAt time.Time `gorm:"index"` // auto-cleanup target
+type NonceStore struct {
+    client *redis.Client
+}
+
+func (s *NonceStore) MarkUsed(ctx context.Context, jti string, ttl time.Duration) error {
+    return s.client.Set(ctx, "nonce:"+jti, "1", ttl).Err()
+}
+
+func (s *NonceStore) IsUsed(ctx context.Context, jti string) bool {
+    exists, _ := s.client.Exists(ctx, "nonce:"+jti).Result()
+    return exists > 0
 }
 ```
 
 **Replay prevention middleware:**
 
 ```go
-func NonceMiddleware(next fuego.Handler) fuego.Handler {
-    return func(c *fuego.ContextWithBody[any]) (any, error) {
-        jti := c.Get("jti").(string)
-        // Check if nonce already used
-        if nonceRepo.Exists(jti) {
-            return nil, fuego.UnauthorizedError{Title: "Token reused"}
+func NonceMiddleware(store *NonceStore) func(fuego.Handler) fuego.Handler {
+    return func(next fuego.Handler) fuego.Handler {
+        return func(c *fuego.ContextWithBody[any]) (any, error) {
+            jti := c.Get("jti").(string)
+            if store.IsUsed(c.Context(), jti) {
+                return nil, fuego.UnauthorizedError{Title: "Token reused"}
+            }
+            ttl := time.Until(claims.ExpiresAt)
+            store.MarkUsed(c.Context(), jti, ttl)
+            return next(c)
         }
-        
-        // Mark nonce as used (expires with token)
-        nonceRepo.MarkUsed(jti, adminID, expiresAt)
-        
-        return next(c)
     }
 }
 ```
 
-**Cleanup:** Background goroutine deletes expired nonces every hour:
-
-```go
-go func() {
-    ticker := time.NewTicker(1 * time.Hour)
-    for range ticker.C {
-        db.Where("expires_at < ?", time.Now()).Delete(&NonceRecord{})
-    }
-}()
-```
+- Redis auto-expires nonces — no cleanup goroutine needed
+- TTL matches token expiry — nonce lives exactly as long as the token
+- Key format: `nonce:{jti}` — simple, fast lookup
 
 **Protection summary:**
 - Short-lived access tokens (15min) limit exposure window
 - Nonce tracking prevents token reuse — if a stolen token is replayed, the second request fails
+- Redis auto-TTL — no manual cleanup, nonce expires with token
 - Refresh token rotation — old token deleted on use, no token reuse
 - All tokens bound to `admin_id` — can't cross-user reuse
 
@@ -337,6 +337,8 @@ func AuthMiddleware(secret string) func(fuego.Handler) fuego.Handler {
             c.Set("adminId", claims.AdminID)
             c.Set("weddingId", claims.WeddingID)
             c.Set("role", claims.Role)
+            c.Set("jti", claims.JTI)
+            c.Set("expiresAt", claims.ExpiresAt)
             return next(c)
         }
     }
@@ -409,7 +411,8 @@ async function apiFetch(path: string, opts: RequestInit = {}) {
 ## Database
 
 - PostgreSQL via GORM
-- NocoDB connects to same DB as admin UI
+- Redis for nonce/replay prevention (auto TTL)
+- NocoDB connects to same PostgreSQL DB as admin UI
 - GORM auto-migrates tables on startup
 - `wedding_id` index on all resource tables for tenant isolation
 
@@ -417,6 +420,7 @@ async function apiFetch(path: string, opts: RequestInit = {}) {
 
 ```
 DATABASE_URL=postgresql://user:pass@localhost:5432/weddingdb
+REDIS_URL=redis://localhost:6379
 JWT_SECRET=your-secret-key
 PORT=8080
 NOCODB_URL=http://localhost:8081
