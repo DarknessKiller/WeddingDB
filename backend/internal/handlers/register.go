@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"weddingdb/internal/middleware"
+	"weddingdb/internal/repository"
 	"weddingdb/internal/services"
 
 	"github.com/go-fuego/fuego"
@@ -14,10 +15,11 @@ func RegisterRoutes(
 	guestService *services.GuestService,
 	tableService *services.TableService,
 	weddingService *services.WeddingService,
-	adminRepo interface{ List() (any, error) },
+	adminRepo *repository.AdminRepo,
 	nonceStore *middleware.NonceStore,
 ) {
 	authHandler := NewAuthHandler(authService)
+	adminHandler := NewAdminHandler(adminRepo)
 	guestHandler := NewGuestHandler(guestService)
 	tableHandler := NewTableHandler(tableService)
 	weddingHandler := NewWeddingHandler(weddingService)
@@ -31,14 +33,11 @@ func RegisterRoutes(
 	fuego.Use(s, middleware.AuthMiddleware(authService, nonceStore))
 
 	// Service admin routes
-	fuego.Get(s, "/api/admins", func(c fuego.ContextWithBody[any]) (any, error) {
-		return nil, nil // placeholder
-	})
-	fuego.Post(s, "/api/admins", func(c fuego.ContextWithBody[any]) (any, error) {
-		return nil, nil // placeholder
-	})
+	fuego.Get(s, "/api/admins", adminHandler.List)
+	fuego.Post(s, "/api/admins", adminHandler.Create)
+	fuego.Delete(s, "/api/admins/{id}", adminHandler.Delete)
 
-	// Wedding routes (service_admin only)
+	// Wedding routes
 	fuego.Get(s, "/api/weddings", weddingHandler.List)
 	fuego.Post(s, "/api/weddings", weddingHandler.Create)
 	fuego.Get(s, "/api/weddings/{id}", weddingHandler.Get)
