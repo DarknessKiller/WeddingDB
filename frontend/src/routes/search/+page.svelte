@@ -1,6 +1,6 @@
 <script lang="ts">
   import { searchGuests, getGuestById, guests, getSeatGuest } from '$lib/mock/data';
-  import { getTableDefinitions } from '$lib/constants';
+  import { DEFAULT_TABLES } from '$lib/constants';
   import { addToast } from '$lib/stores';
   import Badge from '$lib/components/ui/Badge.svelte';
   import { getInitials, cn } from '$lib/utils';
@@ -171,7 +171,7 @@
 
         <div class="p-5 space-y-4">
           {#if checkinGuest.tableId}
-            {@const table = getTableDefinitions().find(t => t.id === checkinGuest!.tableId)}
+            {@const table = DEFAULT_TABLES.find(t => t.id === checkinGuest!.tableId)}
             <div class="text-center">
               <div class="text-sm text-gray-500 mb-1">Your Table</div>
               <div class="text-4xl font-extrabold text-red">{checkinGuest.tableId}</div>

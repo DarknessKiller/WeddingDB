@@ -1,5 +1,5 @@
 import type { Guest, BanquetTable, DashboardStats, ActivityItem, TableOccupancy } from '$lib/types';
-import { getTableDefinitions } from '$lib/constants';
+import { DEFAULT_TABLES } from '$lib/constants';
 
 // ─── Guest Names (Malaysian Chinese wedding) ───
 const FIRST_NAMES = [
@@ -77,7 +77,7 @@ function generateGuests(): Guest[] {
 
     if ((rsvp === 'confirmed' || rsvp === 'pending') && Math.random() < 0.45) {
       // Find a table with enough seats for this party (leave ~20% of tables partially empty)
-      const available = getTableDefinitions().filter(t => {
+      const available = DEFAULT_TABLES.filter(t => {
         const current = tableOccupancy.get(t.id) ?? 0;
         // Skip ~20% of tables randomly to leave them partially empty
         if (current === 0 && Math.random() < 0.2) return false;
@@ -137,7 +137,7 @@ function generateGuests(): Guest[] {
 export const guests: Guest[] = generateGuests();
 
 // ─── Tables ───
-export const tables: BanquetTable[] = getTableDefinitions();
+export const tables: BanquetTable[] = DEFAULT_TABLES;
 
 // ─── Stats ───
 export function getDashboardStats(): DashboardStats {
@@ -227,7 +227,7 @@ export function getGuestById(id: string): Guest | undefined {
 
 // ─── Get guests by table ───
 export function getGuestsByTable(tableId: number): Guest[] {
-  const table = getTableDefinitions().find(t => t.id === tableId);
+  const table = DEFAULT_TABLES.find(t => t.id === tableId);
   if (!table) return [];
   const tableGuests = guests.filter(g => g.tableId === tableId);
   // Cap by total pax not exceeding capacity

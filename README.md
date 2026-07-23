@@ -6,11 +6,13 @@ Chinese wedding seating & reservation management system.
 
 ```
 ├── frontend/       # SvelteKit SPA (Svelte 5 + Tailwind CSS v4)
+├── backend/        # Go REST API (Fuego + GORM + PostgreSQL)
 └── ui-prototype/   # HTML/CSS/JS design preview (gitignored)
 ```
 
 ## Tech Stack
 
+### Frontend
 - **Framework:** SvelteKit (SSR disabled, client-only SPA)
 - **UI:** Svelte 5 (runes), Tailwind CSS v4, TypeScript
 - **Validation:** Zod v4
@@ -18,7 +20,16 @@ Chinese wedding seating & reservation management system.
 - **Fonts:** Inter + Noto Serif SC (Google Fonts)
 - **Theme:** Deep Red (#A11217), Gold (#D4AF37), White, Light Beige
 
+### Backend
+- **Language:** Go 1.22+
+- **HTTP:** Fuego
+- **ORM:** GORM + PostgreSQL
+- **Cache:** Redis (nonce/replay prevention)
+- **Auth:** JWT HS256 + bcrypt + refresh token rotation
+
 ## Getting Started
+
+### Frontend
 
 ```sh
 cd frontend
@@ -27,6 +38,28 @@ npm run dev
 ```
 
 Server runs at `http://localhost:5173`.
+
+### Backend
+
+```sh
+cd backend
+# Copy and configure .env
+cp .env.example .env
+# Edit .env with your database credentials
+
+go run ./cmd/server/
+```
+
+Server runs at `http://localhost:8080`.
+
+### Environment Variables
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `DATABASE_URL` | PostgreSQL connection string | — |
+| `REDIS_URL` | Redis connection string | `redis://localhost:6379` |
+| `JWT_SECRET` | Secret for JWT signing | — |
+| `PORT` | Server port | `8080` |
 
 ## Pages
 
@@ -40,6 +73,33 @@ Server runs at `http://localhost:5173`.
 | `/tables` | Table overview with capacity bars |
 | `/kiosk` | Standalone guest self-service kiosk |
 | `/settings` | App settings (placeholder) |
+
+## API Endpoints
+
+| Method | Path | Description |
+|--------|------|-------------|
+| POST | `/api/auth/login` | Login, returns access + refresh tokens |
+| POST | `/api/auth/refresh` | Refresh access token |
+| POST | `/api/auth/logout` | Revoke refresh token |
+| GET | `/api/weddings` | List weddings |
+| POST | `/api/weddings` | Create wedding |
+| GET | `/api/weddings/{id}` | Get wedding |
+| PUT | `/api/weddings/{id}` | Update wedding |
+| DELETE | `/api/weddings/{id}` | Delete wedding |
+| GET | `/api/weddings/{wid}/tables` | List tables |
+| POST | `/api/weddings/{wid}/tables` | Create table |
+| PUT | `/api/weddings/{wid}/tables/{id}` | Update table |
+| DELETE | `/api/weddings/{wid}/tables/{id}` | Delete table |
+| GET | `/api/weddings/{wid}/guests` | List guests |
+| POST | `/api/weddings/{wid}/guests` | Create guest |
+| GET | `/api/weddings/{wid}/guests/{id}` | Get guest |
+| PUT | `/api/weddings/{wid}/guests/{id}` | Update guest |
+| DELETE | `/api/weddings/{wid}/guests/{id}` | Delete guest |
+| POST | `/api/weddings/{wid}/guests/{id}/checkin` | Check in guest |
+| POST | `/api/weddings/{wid}/guests/{id}/checkout` | Check out guest |
+| POST | `/api/weddings/{wid}/guests/{id}/seat` | Assign seat |
+| GET | `/api/weddings/{wid}/guests/search?q=` | Search guests |
+| GET | `/api/weddings/{wid}/occupancy` | Table occupancy |
 
 ## Background Dev Server
 

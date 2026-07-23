@@ -1,6 +1,6 @@
 <script lang="ts">
   import BanquetTable from './BanquetTable.svelte';
-  import { getTableDefinitions, HALL_LAYOUT } from '$lib/constants';
+  import { DEFAULT_TABLES, HALL_LAYOUT } from '$lib/constants';
   import type { Guest } from '$lib/types';
   import { ZoomIn, ZoomOut, RotateCcw } from 'lucide-svelte';
   import { onMount } from 'svelte';
@@ -168,7 +168,7 @@
       </div>
 
       <!-- Tables -->
-      {#each getTableDefinitions() as tableDef (tableDef.id)}
+      {#each DEFAULT_TABLES as tableDef (tableDef.id)}
         {@const isKioskTarget = kioskHighlightTableId === tableDef.id}
         <BanquetTable
           table={tableDef}
