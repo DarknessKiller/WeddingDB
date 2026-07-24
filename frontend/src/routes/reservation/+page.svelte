@@ -1,10 +1,60 @@
 <script lang="ts">
   import { addToast } from '$lib/stores';
-  import { cn } from '$lib/utils';
+  import { cn, getInitials } from '$lib/utils';
   import { z } from 'zod';
   import { CheckCircle2, AlertCircle } from 'lucide-svelte';
-  import { tables, getSeatGuest, getTableOccupancy, guests, addGuest } from '$lib/mock/data';
-  import { getInitials } from '$lib/utils';
+  import { listGuests, createGuest, type GuestResponse } from '$lib/api/guests';
+  import { listTables } from '$lib/api/tables';
+  import { weddingId } from '$lib/stores/weddingId';
+  import { get } from 'svelte/store';
+  import { onMount } from 'svelte';
+  import type { BanquetTable, Guest, RSVPStatus, TableOccupancy } from '$lib/types';
+
+  let apiTables = $state<BanquetTable[]>([]);
+  let apiGuests = $state<Guest[]>([]);
+  let dataLoaded = $state(false);
+
+  function mapGuest(r: GuestResponse): Guest {
+    return {
+      id: r.id,
+      name: r.name,
+      phone: r.phone,
+      email: r.email,
+      rsvp: (r.rsvp as RSVPStatus) ?? 'no_response',
+      pax: r.pax,
+      tableId: r.tableId ? Number(r.tableId) : null,
+      seatNumber: r.seatNum,
+      checkedIn: r.checkedInAt !== null,
+      checkedInAt: r.checkedInAt ? new Date(r.checkedInAt) : undefined,
+      notes: r.notes,
+      dietaryRequirements: r.dietary ?? [],
+      isVip: r.isVip,
+      angbaoAmount: r.angbaoAmt ?? undefined,
+      giftItem: r.giftItem ?? undefined,
+      createdAt: new Date(r.createdAt),
+    };
+  }
+
+  onMount(async () => {
+    const wid = get(weddingId);
+    try {
+      const [tablesRes, guestsRes] = await Promise.all([listTables(wid), listGuests(wid)]);
+      apiTables = tablesRes;
+      apiGuests = guestsRes.guests.map(mapGuest);
+      dataLoaded = true;
+    } catch (e) {
+      addToast('Failed to load data', 'error');
+    }
+  });
+
+  function getSeatGuestLocal(tableId: number, seatNum: number): Guest | undefined {
+    return apiGuests.find(g =>
+      g.tableId === tableId &&
+      g.seatNumber !== null &&
+      seatNum >= g.seatNumber &&
+      seatNum < g.seatNumber + g.pax
+    );
+  }
 
   const schema = z.object({
     name: z.string().min(1, 'Name is required'),
@@ -44,8 +94,13 @@
   const HOVERED_SVG = (HOVERED_ORBIT + HOVERED_SEAT_RADIUS + 4) * 2;
   const HOVERED_CENTER = HOVERED_SVG / 2;
 
-  const selectedTableDef = $derived(form.tableId ? tables.find(t => t.id === form.tableId) : null);
-  const selectedTableOccupancy = $derived(form.tableId ? getTableOccupancy(form.tableId) : null);
+  const selectedTableDef = $derived(form.tableId ? apiTables.find(t => t.id === form.tableId) : null);
+  const selectedTableOccupancy = $derived.by((): TableOccupancy | null => {
+    if (!form.tableId || !selectedTableDef) return null;
+    const tableGuests = apiGuests.filter(g => g.tableId === form.tableId);
+    const occupied = tableGuests.reduce((sum, g) => sum + g.pax, 0);
+    return { tableId: form.tableId, occupied, capacity: selectedTableDef.capacity, percentage: Math.round((occupied / selectedTableDef.capacity) * 100) };
+  });
   const pickerRingR = $derived(HOVERED_TABLE_RADIUS + 3);
   const pickerRingCircum = $derived(2 * Math.PI * pickerRingR);
   const pickerOccPct = $derived(selectedTableOccupancy ? selectedTableOccupancy.occupied / selectedTableOccupancy.capacity : 0);
@@ -60,7 +115,7 @@
 
   function isSeatAvailable(seatNum: number): boolean {
     if (!form.tableId) return false;
-    return getSeatGuest(form.tableId, seatNum) === undefined;
+    return getSeatGuestLocal(form.tableId, seatNum) === undefined;
   }
 
   function isSeatSelected(seatNum: number): boolean {
@@ -134,29 +189,31 @@
   async function handleSubmit() {
     if (!validate()) return;
     isSubmitting = true;
-    await new Promise(r => setTimeout(r, 800));
-
-    // Assign seats: first selected seat = seatNumber, pax = seatNumbers.length
-    const firstSeat = form.seatNumbers?.[0] ?? null;
-    const assignedPax = form.seatNumbers?.length ?? form.pax;
-
-    addGuest({
-      name: form.name,
-      phone: form.phone ?? '',
-      email: form.email || undefined,
-      pax: assignedPax,
-      rsvp: form.rsvp,
-      tableId: form.tableId,
-      seatNumber: firstSeat,
-      checkedIn: false,
-      notes: form.notes ?? '',
-      dietaryRequirements: form.dietary ?? [],
-      isVip: form.isVip ?? false,
-    });
-
-    addToast(`Reservation for ${form.name} saved successfully`, 'success');
-    form = { name: '', phone: '', email: '', pax: 1, rsvp: 'pending', tableId: null, seatNumbers: [], dietary: [], notes: '', isVip: false };
-    isSubmitting = false;
+    try {
+      const wid = get(weddingId);
+      const firstSeat = form.seatNumbers?.[0] ?? null;
+      const assignedPax = form.seatNumbers?.length ?? form.pax;
+      
+      await createGuest(wid, {
+        name: form.name,
+        phone: form.phone ?? '',
+        email: form.email || undefined,
+        pax: assignedPax,
+        rsvp: form.rsvp,
+        tableId: form.tableId,
+        seatNum: firstSeat,
+        notes: form.notes ?? '',
+        dietary: form.dietary ?? [],
+        isVip: form.isVip ?? false,
+      });
+      
+      addToast(`Reservation for ${form.name} saved successfully`, 'success');
+      form = { name: '', phone: '', email: '', pax: 1, rsvp: 'pending', tableId: null, seatNumbers: [], dietary: [], notes: '', isVip: false };
+    } catch (e) {
+      addToast('Failed to save reservation', 'error');
+    } finally {
+      isSubmitting = false;
+    }
   }
 </script>
 
@@ -243,10 +300,11 @@
         class="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm bg-white focus:border-gold focus:ring-2 focus:ring-gold/15 outline-none transition-all"
       >
         <option value="">No table (unassigned)</option>
-        {#each tables as t}
-          {@const occ = getTableOccupancy(t.id)}
+        {#each apiTables as t}
+          {@const tableGuests = apiGuests.filter(g => g.tableId === t.id)}
+          {@const occ = { occupied: tableGuests.reduce((sum, g) => sum + g.pax, 0), capacity: t.capacity }}
           <option value={t.id} selected={form.tableId === t.id}>
-            Table {t.id} {t.isVip ? '★' : ''} – {occ.occupied}/{occ.capacity} seats
+            {t.name || `Table ${t.id}`} {t.isVip ? '★' : ''} – {occ.occupied}/{occ.capacity} seats
           </option>
         {/each}
       </select>
@@ -280,7 +338,7 @@
 
             <!-- Table circle -->
             <circle cx={HOVERED_CENTER} cy={HOVERED_CENTER} r={HOVERED_TABLE_RADIUS} fill="white" stroke="#E5E7EB" stroke-width="2" />
-            <text x={HOVERED_CENTER} y={HOVERED_CENTER - 2} text-anchor="middle" class="fill-gray-800 font-extrabold" font-size="14">{selectedTableDef.id}</text>
+            <text x={HOVERED_CENTER} y={HOVERED_CENTER - 2} text-anchor="middle" class="fill-gray-800 font-extrabold" font-size="14">{selectedTableDef.name || selectedTableDef.id}</text>
             <text x={HOVERED_CENTER} y={HOVERED_CENTER + 10} text-anchor="middle" class="fill-gray-400" font-size="8">
               {selectedTableOccupancy.occupied}/{selectedTableOccupancy.capacity}
             </text>
@@ -289,7 +347,7 @@
             {#each Array(selectedTableDef.capacity) as _, i}
               {@const seatNum = i + 1}
               {@const pos = seatPosInPicker(i, selectedTableDef.capacity)}
-              {@const occupant = getSeatGuest(selectedTableDef.id, seatNum)}
+              {@const occupant = getSeatGuestLocal(selectedTableDef.id, seatNum)}
               {@const available = !occupant}
               {@const selected = isSeatSelected(seatNum)}
               <g
