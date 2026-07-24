@@ -93,28 +93,33 @@
 <div class="min-h-dvh bg-gray-950 text-white flex flex-col">
   <!-- Top Bar -->
   <div class="flex items-center justify-between px-4 sm:px-8 py-3 sm:py-4 bg-gray-900/80 border-b border-gray-800 z-20">
-    <div class="flex items-center gap-3">
+    <div class="flex-1 flex items-center gap-3">
       {#if selectedGuest}
         <button onclick={backToSearch} class="p-2 rounded-xl bg-gray-800 hover:bg-gray-700 transition-colors" aria-label="Back to search">
           <ArrowLeft class="w-5 h-5" />
         </button>
         <span class="font-semibold text-white">Table {selectedGuest.tableId}</span>
-      {:else}
-        <Monitor class="w-5 h-5 text-gold" />
-        <span class="font-semibold text-gray-300 hidden sm:inline">Find Your Seat</span>
       {/if}
     </div>
-    <div class="text-right">
+    <div class="flex-shrink-0 text-center">
+      {#if !selectedGuest}
+        <div class="flex items-center justify-center gap-2 mb-1">
+          <Monitor class="w-5 h-5 text-gold" />
+          <span class="font-semibold text-gray-300 text-sm sm:text-base">Find Your Seat</span>
+        </div>
+      {/if}
       <div class="text-lg sm:text-2xl font-bold text-gold font-mono">{formatTime(currentTime)}</div>
       <div class="text-[10px] sm:text-xs text-gray-400 hidden sm:block">{formatDate(currentTime)}</div>
     </div>
-    <button onclick={toggleFullscreen} class="p-2 sm:p-2.5 rounded-xl bg-gray-800 hover:bg-gray-700 transition-colors" aria-label="Toggle fullscreen">
-      {#if isFullscreen}
-        <Minimize class="w-4 h-4 sm:w-5 sm:h-5" />
-      {:else}
-        <Maximize class="w-4 h-4 sm:w-5 sm:h-5" />
-      {/if}
-    </button>
+    <div class="flex-1 flex justify-end">
+      <button onclick={toggleFullscreen} class="p-2 sm:p-2.5 rounded-xl bg-gray-800 hover:bg-gray-700 transition-colors" aria-label="Toggle fullscreen">
+        {#if isFullscreen}
+          <Minimize class="w-4 h-4 sm:w-5 sm:h-5" />
+        {:else}
+          <Maximize class="w-4 h-4 sm:w-5 sm:h-5" />
+        {/if}
+      </button>
+    </div>
   </div>
 
   <!-- Content -->
@@ -124,7 +129,7 @@
       <!-- Hall Map (full screen) -->
       <HallMap
         tables={tables}
-        kioskHighlightTableId={selectedGuest.tableId}
+        selectedTableId={selectedGuest.tableId}
         tableGuests={tableGuests}
         dark={true}
         hoveredSeat={hoveredSeat}

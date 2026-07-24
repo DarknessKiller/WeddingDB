@@ -7,7 +7,7 @@
     guests = [],
     isSelected = false,
     isHighlighted = false,
-    isKioskHighlight = false,
+    selectedTableId = null,
     dark = false,
     hallScale = 1,
     onTableClick,
@@ -18,7 +18,7 @@
     guests?: Guest[];
     isSelected?: boolean;
     isHighlighted?: boolean;
-    isKioskHighlight?: boolean;
+    selectedTableId?: number | null;
     dark?: boolean;
     hallScale?: number;
     onTableClick?: () => void;
@@ -59,9 +59,10 @@
 <div
   class={cn(
     'absolute cursor-pointer transition-all duration-300 ease-out',
-    isSelected ? 'z-20 scale-110' : isHighlighted ? 'z-20 scale-105' : 'z-10 hover:z-15 hover:scale-103',
-    (isKioskHighlight && !isHighlighted) && 'opacity-15 grayscale blur-[0.5px] scale-95',
-    isKioskHighlight && isHighlighted && 'z-30 scale-[1.35]'
+    isSelected ? 'z-20' : 'z-10',
+    // When a table is selected, dim/blur the others
+    selectedTableId !== null && !isSelected && !isHighlighted ? 'opacity-30 grayscale blur-[0.3px]' : '',
+    isHighlighted ? 'z-20' : ''
   )}
   style="left: {table.x}%; top: {table.y}%; transform: {tableTransform};"
   onclick={() => onTableClick?.()}

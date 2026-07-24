@@ -8,7 +8,6 @@
   let {
     selectedTableId = null,
     highlightedTableId = null,
-    kioskHighlightTableId = null,
     tableGuests = new Map(),
     tables = DEFAULT_TABLES,
     dark = false,
@@ -18,7 +17,6 @@
   }: {
     selectedTableId?: number | null;
     highlightedTableId?: number | null;
-    kioskHighlightTableId?: number | null;
     tableGuests?: Map<number, Guest[]>;
     tables?: BanquetTableType[];
     dark?: boolean;
@@ -173,13 +171,12 @@
 
       <!-- Tables -->
       {#each tables as tableDef (tableDef.id)}
-        {@const isKioskTarget = kioskHighlightTableId === tableDef.id}
         <BanquetTableComponent
           table={tableDef}
           guests={tableGuests.get(tableDef.id) ?? []}
           isSelected={selectedTableId === tableDef.id}
-          isHighlighted={highlightedTableId === tableDef.id || isKioskTarget}
-          isKioskHighlight={kioskHighlightTableId !== null}
+          isHighlighted={highlightedTableId === tableDef.id}
+          selectedTableId={selectedTableId}
           {dark}
           hallScale={scale}
           onTableClick={() => onTableClick?.(tableDef.id)}
