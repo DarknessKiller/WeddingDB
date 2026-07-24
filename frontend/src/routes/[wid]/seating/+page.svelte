@@ -15,7 +15,7 @@
 
   let allGuests = $state<Guest[]>([]);
   let allTables = $state<BanquetTable[]>([]);
-  let occupancyData = $state<Map<string, number>>(new Map());
+  let occupancyData = $state.raw<Map<string, number>>(new Map());
   let loading = $state(true);
 
   let selectedTableId = $state<string | null>(null);

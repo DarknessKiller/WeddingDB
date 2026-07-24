@@ -17,7 +17,7 @@
 
   let tables = $state<BanquetTable[]>([]);
   let tablesError = $state<string | null>(null);
-  let occupancy = $state<Map<string, TableOccupancy>>(new Map());
+  let occupancy = $state.raw<Map<string, TableOccupancy>>(new Map());
   let loading = $state(true);
 
   let gridCols = $derived.by(() => {
