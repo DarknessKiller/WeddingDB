@@ -210,7 +210,7 @@
 
 <div class="flex h-[calc(100dvh-56px)] sm:h-[calc(100dvh-64px)]">
   <!-- Left: Hall Map -->
-  <div class="flex-1 relative">
+  <div class="flex-1 flex flex-col relative">
     {#if apiTables.length > 0}
       <HallMap
         tables={apiTables}

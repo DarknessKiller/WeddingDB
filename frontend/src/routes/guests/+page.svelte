@@ -290,7 +290,7 @@
       <button class="p-2.5 border border-gray-200 rounded-xl bg-white hover:bg-gray-50 transition-colors" aria-label="Export">
         <Download class="w-4 h-4 text-gray-600" />
       </button>
-      <button class="flex items-center gap-2 px-4 py-2.5 bg-red text-white rounded-xl text-sm font-semibold hover:bg-red-light transition-colors">
+      <button onclick={() => goto('/reservation')} class="flex items-center gap-2 px-4 py-2.5 bg-red text-white rounded-xl text-sm font-semibold hover:bg-red-light transition-colors">
         <Plus class="w-4 h-4" /> Add Guest
       </button>
     </div>
