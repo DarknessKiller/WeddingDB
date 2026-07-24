@@ -259,7 +259,7 @@
           <div class="max-h-[200px] overflow-y-auto space-y-1">
             {#each filteredUnassignedGuests as guest}
               <button
-                onclick={() => assignGuestToSeat(guest, assigningSeat)}
+                onclick={() => { if (assigningSeat !== null) assignGuestToSeat(guest, assigningSeat); }}
                 class="w-full flex items-center gap-3 p-2 rounded-lg hover:bg-gray-50 text-left transition-colors"
               >
                 <div class="w-8 h-8 rounded-full bg-red-50 text-red flex items-center justify-center text-xs font-bold">
@@ -279,7 +279,7 @@
 
       <!-- Panel Footer -->
       <div class="px-5 py-4 border-t border-gray-100 bg-gray-50/50 flex gap-2">
-        <button onclick={() => goto('/tables')} class="flex-1 py-2.5 border border-gray-200 bg-white rounded-xl text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors">
+        <button onclick={() => goto(`/${$weddingId}/tables`)} class="flex-1 py-2.5 border border-gray-200 bg-white rounded-xl text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors">
           Edit Table
         </button>
       </div>

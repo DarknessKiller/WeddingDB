@@ -1,9 +1,18 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { goto } from '$app/navigation';
+  import { getAuth } from '$lib/stores';
+  import { weddingId } from '$lib/stores/weddingId';
+  import { get } from 'svelte/store';
 
   onMount(() => {
-    goto('/dashboard', { replaceState: true });
+    const { accessToken } = getAuth();
+    if (!accessToken) {
+      goto('/login', { replaceState: true });
+    } else {
+      const wid = get(weddingId);
+      goto(`/${wid}/dashboard`, { replaceState: true });
+    }
   });
 </script>
 

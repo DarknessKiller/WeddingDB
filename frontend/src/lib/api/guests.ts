@@ -12,7 +12,7 @@ export interface GuestResponse {
 	isVip: boolean;
 	notes: string;
 	dietary: string[];
-	tableId: string | null;
+	tableId: number | null;
 	seatNum: number | null;
 	checkedInAt: string | null;
 	angbaoAmt: number | null;
@@ -41,7 +41,6 @@ function mapGuest(raw: any): GuestResponse {
 	return {
 		...raw,
 		id: String(raw.id),
-		tableId: raw.tableId != null ? String(raw.tableId) : null,
 	};
 }
 

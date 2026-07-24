@@ -1,39 +1,31 @@
 <script lang="ts">
   import { goto } from '$app/navigation';
-  import { setAuth, addToast } from '$lib/stores';
-  import { weddingId, setWeddingId } from '$lib/stores/weddingId';
-  import { encodeId } from '$lib/utils/encode';
-  import { get } from 'svelte/store';
-  import { Eye, EyeOff, LogIn } from 'lucide-svelte';
+  import { addToast } from '$lib/stores';
+  import { Eye, EyeOff, UserPlus } from 'lucide-svelte';
 
+  let name = $state('');
   let email = $state('');
   let password = $state('');
   let showPassword = $state(false);
   let loading = $state(false);
 
-  async function handleLogin(e: Event) {
+  async function handleRegister(e: Event) {
     e.preventDefault();
     loading = true;
     try {
-      const res = await fetch('/api/auth/login', {
+      const res = await fetch('/api/auth/register', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, password })
+        body: JSON.stringify({ name, email, password })
       });
       if (!res.ok) {
-        const err = await res.json().catch(() => ({ title: 'Login failed' }));
-        addToast(err.title || 'Login failed', 'error');
+        const err = await res.json().catch(() => ({ title: 'Registration failed' }));
+        addToast(err.title || 'Registration failed', 'error');
         return;
       }
-      const data = await res.json();
-      setAuth(data.accessToken, data.refreshToken, data.role ?? '', data.name ?? '');
-      if (data.weddingId) {
-        setWeddingId(encodeId(data.weddingId));
-      }
-      addToast('Login successful', 'success');
-      const wid = get(weddingId);
-      goto(`/${wid}/dashboard`, { replaceState: true });
-    } catch (err) {
+      addToast('Account created! Please sign in.', 'success');
+      goto('/login', { replaceState: true });
+    } catch {
       addToast('Network error', 'error');
     } finally {
       loading = false;
@@ -41,19 +33,31 @@
   }
 </script>
 
+<svelte:head><title>Register – WeddingDB</title></svelte:head>
+
 <div class="min-h-screen flex items-center justify-center bg-warm-50 px-4">
   <div class="w-full max-w-sm">
-    <!-- Logo -->
     <div class="text-center mb-8">
       <div class="w-16 h-16 bg-deep-red rounded-2xl flex items-center justify-center mx-auto mb-4 shadow-lg">
         <span class="text-2xl font-bold text-white font-serif">W</span>
       </div>
       <h1 class="text-2xl font-bold text-gray-900 font-serif">WeddingDB</h1>
-      <p class="text-sm text-gray-500 mt-1">Sign in to manage your wedding</p>
+      <p class="text-sm text-gray-500 mt-1">Create your admin account</p>
     </div>
 
-    <!-- Form -->
-    <form onsubmit={handleLogin} class="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 space-y-4">
+    <form onsubmit={handleRegister} class="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 space-y-4">
+      <div>
+        <label for="name" class="block text-sm font-medium text-gray-700 mb-1">Full Name</label>
+        <input
+          id="name"
+          type="text"
+          bind:value={name}
+          required
+          class="w-full px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-deep-red/20 focus:border-deep-red transition-colors"
+          placeholder="Your name"
+        />
+      </div>
+
       <div>
         <label for="email" class="block text-sm font-medium text-gray-700 mb-1">Email</label>
         <input
@@ -62,7 +66,7 @@
           bind:value={email}
           required
           class="w-full px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-deep-red/20 focus:border-deep-red transition-colors"
-          placeholder="admin@weddingdb.local"
+          placeholder="you@example.com"
         />
       </div>
 
@@ -74,8 +78,9 @@
             type={showPassword ? 'text' : 'password'}
             bind:value={password}
             required
+            minlength="6"
             class="w-full px-3 py-2 pr-10 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-deep-red/20 focus:border-deep-red transition-colors"
-            placeholder="Enter password"
+            placeholder="Min 6 characters"
           />
           <button
             type="button"
@@ -99,14 +104,14 @@
         {#if loading}
           <div class="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
         {:else}
-          <LogIn size={18} />
+          <UserPlus size={18} />
         {/if}
-        {loading ? 'Signing in...' : 'Sign in'}
+        {loading ? 'Creating account...' : 'Create account'}
       </button>
-    </form>
 
-    <p class="text-center text-sm text-gray-500 mt-4">
-      Need an account? <a href="/register" class="text-deep-red font-medium hover:underline">Register</a>
-    </p>
+      <p class="text-center text-sm text-gray-500">
+        Already have an account? <a href="/login" class="text-deep-red font-medium hover:underline">Sign in</a>
+      </p>
+    </form>
   </div>
 </div>

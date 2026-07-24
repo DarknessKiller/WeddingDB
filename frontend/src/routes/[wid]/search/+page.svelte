@@ -1,6 +1,7 @@
 <script lang="ts">
   import { searchGuests, getGuest, listGuests, listTables, checkInGuest } from '$lib/api/search';
   import { addToast } from '$lib/stores';
+  import { weddingId } from '$lib/stores/weddingId';
   import Badge from '$lib/components/ui/Badge.svelte';
   import { getInitials, cn } from '$lib/utils';
   import { goto } from '$app/navigation';
@@ -114,7 +115,7 @@
     if (!checkinGuest?.tableId) return;
     const tableId = checkinGuest.tableId;
     closeModal();
-    goto(`/seating?table=${tableId}`);
+    goto(`/${$weddingId}/seating?table=${tableId}`);
   }
 
   // ponytail: build tableGuests map for HallMap
@@ -281,7 +282,7 @@
         <div class="grid grid-cols-3 gap-3 text-sm mb-4">
           <div class="bg-gray-50 rounded-xl p-3 text-center">
             <div class="text-gray-500 text-xs">Table</div>
-            <div class="font-bold text-gray-900 text-lg">{tables.find(t => t.id === selectedGuest.tableId)?.name || (selectedGuest.tableId ?? '—')}</div>
+            <div class="font-bold text-gray-900 text-lg">{tables.find(t => selectedGuest && t.id === selectedGuest.tableId)?.name || (selectedGuest?.tableId ?? '—')}</div>
           </div>
           <div class="bg-gray-50 rounded-xl p-3 text-center">
             <div class="text-gray-500 text-xs">Seat</div>

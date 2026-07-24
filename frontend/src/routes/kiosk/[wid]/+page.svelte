@@ -4,6 +4,8 @@
   import { cn } from '$lib/utils';
   import { Maximize, Minimize, Monitor, Search, ArrowLeft, MapPin, Users, Star, X } from 'lucide-svelte';
   import { onMount, onDestroy } from 'svelte';
+  import { page } from '$app/state';
+  import { setWeddingId } from '$lib/stores/weddingId';
   import type { Guest, BanquetTable } from '$lib/types';
 
   let query = $state('');
@@ -29,6 +31,7 @@
   });
 
   let selectedTable = $derived(selectedGuest?.tableId ? tables.find(t => t.id === selectedGuest!.tableId) ?? null : null);
+  let hasValidTable = $derived(selectedGuest?.tableId != null && selectedTable !== null);
   let seatOccupants = $derived(
     selectedGuest?.tableId
       ? Array.from({ length: selectedTable?.capacity ?? 10 }, (_, i) => {
@@ -54,6 +57,9 @@
   });
 
   onMount(() => {
+    // Set wedding ID from URL param
+    const wid = page.params.wid;
+    if (wid) setWeddingId(wid);
     timer = setInterval(() => currentTime = new Date(), 1000);
     listGuests().then(g => allGuests = g).catch(() => {});
     listTables().then(t => tables = t).catch(() => {});
@@ -138,7 +144,7 @@
       />
 
       <!-- Info Panel (floating overlay) -->
-      {#if selectedGuest.tableId}
+      {#if hasValidTable}
         <div class="absolute bottom-4 left-4 right-4 sm:left-auto sm:right-4 sm:bottom-4 sm:w-[360px] z-30">
           <div class="bg-gray-900/95 backdrop-blur-sm border border-gray-700 rounded-2xl shadow-2xl overflow-hidden">
             <!-- Guest Header -->

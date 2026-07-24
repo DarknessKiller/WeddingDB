@@ -1,6 +1,6 @@
 import type { Guest, BanquetTable } from '$lib/types';
-
-const DEFAULT_WEDDING_ID = 'MQ';
+import { weddingId } from '$lib/stores/weddingId';
+import { get } from 'svelte/store';
 
 interface PublicGuest {
 	id: number;
@@ -32,21 +32,24 @@ function mapGuest(raw: PublicGuest): Guest {
 }
 
 export async function publicSearchGuests(query: string): Promise<Guest[]> {
-	const res = await fetch(`/api/public/weddings/${DEFAULT_WEDDING_ID}/guests/search?q=${encodeURIComponent(query)}`);
+	const wid = get(weddingId);
+	const res = await fetch(`/api/public/weddings/${wid}/guests/search?q=${encodeURIComponent(query)}`);
 	if (!res.ok) throw new Error('Search failed');
 	const data: PublicGuest[] = await res.json();
 	return data.map(mapGuest);
 }
 
 export async function publicListGuests(): Promise<Guest[]> {
-	const res = await fetch(`/api/public/weddings/${DEFAULT_WEDDING_ID}/guests`);
+	const wid = get(weddingId);
+	const res = await fetch(`/api/public/weddings/${wid}/guests`);
 	if (!res.ok) throw new Error('Failed to list guests');
 	const data: PublicGuest[] = await res.json();
 	return data.map(mapGuest);
 }
 
 export async function publicListTables(): Promise<BanquetTable[]> {
-	const res = await fetch(`/api/public/weddings/${DEFAULT_WEDDING_ID}/tables`);
+	const wid = get(weddingId);
+	const res = await fetch(`/api/public/weddings/${wid}/tables`);
 	if (!res.ok) throw new Error('Failed to list tables');
 	return res.json();
 }

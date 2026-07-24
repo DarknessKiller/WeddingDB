@@ -42,8 +42,16 @@
 
   let tables = $state<BanquetTable[]>([]);
 
-  onMount(async () => {
-    await Promise.all([loadGuests(), loadTables()]);
+  onMount(() => {
+    Promise.all([loadGuests(), loadTables()]);
+    function onKey(e: KeyboardEvent) {
+      if (e.key === 'Escape') {
+        contextMenu = null;
+        showMoveModal = false;
+      }
+    }
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
   });
 
   async function loadTables() {
@@ -89,7 +97,7 @@
       email: r.email || undefined,
       rsvp: r.rsvp as RSVPStatus,
       pax: r.pax,
-      tableId: r.tableId ? parseInt(r.tableId, 10) : null,
+      tableId: r.tableId ?? null,
       seatNumber: r.seatNum,
       checkedIn: !!r.checkedInAt,
       checkedInAt: r.checkedInAt ? new Date(r.checkedInAt) : undefined,
@@ -202,38 +210,41 @@
       return;
     }
     // pre-select current table if guest has one
-    moveTableId = guest.tableId ?? (moveTables.length ? String(moveTables[0].id) : '');
+    moveTableId = guest.tableId != null ? String(guest.tableId) : (moveTables.length ? String(moveTables[0].id) : '');
     moveSeatNum = getNextSeatNum();
     showMoveModal = true;
   }
 
   function getNextSeatNum(): number {
     if (!moveTableId) return 1;
-    const occ = guests.filter(g => g.tableId === moveTableId && g.id !== moveGuest?.id);
+    const moveTableIdNum = Number(moveTableId);
+    const occ = guests.filter(g => g.tableId === moveTableIdNum && g.id !== moveGuest?.id);
     if (!occ.length) return 1;
     const maxSeat = Math.max(...occ.map(g => g.seatNum ?? 0));
     return maxSeat + 1;
   }
 
-  function getOccupiedSeats(): Set<number> {
+  let occupiedSeats = $derived.by((): Set<number> => {
     if (!moveTableId) return new Set();
+    const moveTableIdNum = Number(moveTableId);
     return new Set(
       guests
-        .filter(g => g.tableId === moveTableId && g.id !== moveGuest?.id && g.seatNum != null)
+        .filter(g => g.tableId === moveTableIdNum && g.id !== moveGuest?.id && g.seatNum != null)
         .flatMap(g => {
           const start = g.seatNum!;
           return Array.from({ length: g.pax }, (_, i) => start + i);
         })
     );
-  }
+  });
 
   function isSeatOccupied(seatNum: number): boolean {
-    return getOccupiedSeats().has(seatNum);
+    return occupiedSeats.has(seatNum);
   }
 
   function getTableCapacity(): number {
     if (!moveTableId) return 10;
-    const t = moveTables.find(t => String(t.id) === moveTableId);
+    const moveTableIdNum = Number(moveTableId);
+    const t = moveTables.find(t => t.id === moveTableIdNum);
     return t?.capacity ?? 10;
   }
 
@@ -251,7 +262,7 @@
     try {
       await assignSeat(wid, moveGuest.id, moveTableId, moveSeatNum);
       guests = guests.map(g => g.id === moveGuest!.id
-        ? { ...g, tableId: moveTableId, seatNum: moveSeatNum }
+        ? { ...g, tableId: Number(moveTableId), seatNum: moveSeatNum }
         : g
       );
       addToast(`${moveGuest.name} moved to table`, 'success');
@@ -291,7 +302,7 @@
       <button class="p-2.5 border border-gray-200 rounded-xl bg-white hover:bg-gray-50 transition-colors" aria-label="Export">
         <Download class="w-4 h-4 text-gray-600" />
       </button>
-      <button onclick={() => goto('/reservation')} class="flex items-center gap-2 px-4 py-2.5 bg-red text-white rounded-xl text-sm font-semibold hover:bg-red-light transition-colors">
+      <button onclick={() => goto(`/${$weddingId}/reservation`)} class="flex items-center gap-2 px-4 py-2.5 bg-red text-white rounded-xl text-sm font-semibold hover:bg-red-light transition-colors">
         <Plus class="w-4 h-4" /> Add Guest
       </button>
     </div>
@@ -442,7 +453,7 @@
         <div class="grid grid-cols-2 gap-3">
           <div>
             <label class="block text-xs font-medium text-gray-500 mb-1">Current Table</label>
-            <div class="px-3 py-2 bg-gray-50 rounded-lg text-sm text-gray-700">{tables.find(t => t.id === moveGuest.tableId)?.name || (moveGuest.tableId ?? '—')}</div>
+            <div class="px-3 py-2 bg-gray-50 rounded-lg text-sm text-gray-700">{tables.find(t => moveGuest && t.id === moveGuest.tableId)?.name || (moveGuest?.tableId ?? '—')}</div>
           </div>
           <div>
             <label class="block text-xs font-medium text-gray-500 mb-1">Current Seat</label>
@@ -467,7 +478,7 @@
             {/if}
           </div>
           <div class="text-xs text-gray-400">
-            Occupied: {getOccupiedSeats().size}/{getTableCapacity()} seats
+            Occupied: {occupiedSeats.size}/{getTableCapacity()} seats
           </div>
         {/if}
       </div>

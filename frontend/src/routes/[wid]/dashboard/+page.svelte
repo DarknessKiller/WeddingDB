@@ -23,6 +23,8 @@
   let totalGuests = $derived(stats.totalGuests || 1);
   let confirmedPct = $derived(stats.confirmedGuests / totalGuests);
   let pendingPct = $derived(stats.pendingRsvp / totalGuests);
+  const DONUT_R = 40;
+  const DONUT_CIRCUM = 2 * Math.PI * DONUT_R;
 
   onMount(async () => {
     try {
@@ -81,14 +83,18 @@
         <h3 class="text-base font-bold text-gray-800 mb-5">RSVP Status</h3>
       <div class="relative w-40 h-40 mx-auto mb-5">
         <svg viewBox="0 0 100 100" class="w-full h-full -rotate-90">
-          <circle cx="50" cy="50" r="40" fill="none" stroke="#E5E7EB" stroke-width="10" />
-          <circle cx="50" cy="50" r="40" fill="none" stroke="#059669" stroke-width="10"
-            stroke-dasharray="{2 * Math.PI * 40}" stroke-dashoffset="{2 * Math.PI * 40 * (1 - confirmedPct)}"
-            stroke-linecap="round" />
-          <circle cx="50" cy="50" r="40" fill="none" stroke="#D97706" stroke-width="10"
-            stroke-dasharray="{2 * Math.PI * 40}" stroke-dashoffset="{2 * Math.PI * 40 * (1 - pendingPct)}"
-            stroke-linecap="round"
-            style="transform: rotate({360 * confirmedPct}deg); transform-origin: center;" />
+          <circle cx="50" cy="50" r={DONUT_R} fill="none" stroke="#E5E7EB" stroke-width="10" />
+          {#if confirmedPct > 0}
+            <circle cx="50" cy="50" r={DONUT_R} fill="none" stroke="#059669" stroke-width="10"
+              stroke-dasharray="{DONUT_CIRCUM * confirmedPct} {DONUT_CIRCUM * (1 - confirmedPct)}"
+              stroke-linecap="round" />
+          {/if}
+          {#if pendingPct > 0}
+            <circle cx="50" cy="50" r={DONUT_R} fill="none" stroke="#D97706" stroke-width="10"
+              stroke-dasharray="{DONUT_CIRCUM * pendingPct} {DONUT_CIRCUM * (1 - pendingPct)}"
+              stroke-dashoffset={-DONUT_CIRCUM * confirmedPct}
+              stroke-linecap="round" />
+          {/if}
         </svg>
       </div>
         <div class="flex justify-center gap-5 flex-wrap text-sm">

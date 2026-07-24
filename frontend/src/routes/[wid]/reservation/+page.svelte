@@ -105,6 +105,15 @@
   let errors = $state<Record<string, string>>({});
   let isSubmitting = $state(false);
 
+  function getSeatGuestLocal(tableId: number, seatNum: number): Guest | undefined {
+    return apiGuests.find(g =>
+      g.tableId === tableId &&
+      g.seatNumber !== null &&
+      seatNum >= g.seatNumber &&
+      seatNum < g.seatNumber + g.pax
+    );
+  }
+
   function isSeatAvailable(seatNum: number): boolean {
     if (!form.tableId) return false;
     return getSeatGuestLocal(form.tableId, seatNum) === undefined;
@@ -412,7 +421,7 @@
               <CheckCircle2 class="w-4 h-4" /> Save Reservation
             {/if}
           </button>
-          <button type="button" onclick={() => goto('/guests')} class="px-6 py-3 border border-gray-200 bg-white rounded-xl text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors">
+          <button type="button" onclick={() => goto(`/${$weddingId}/guests`)} class="px-6 py-3 border border-gray-200 bg-white rounded-xl text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors">
             Cancel
           </button>
         </div>

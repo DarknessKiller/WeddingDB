@@ -1,45 +1,69 @@
 <script lang="ts">
   import { cn } from '$lib/utils';
-  import { sidebarCollapsed, getAuth } from '$lib/stores';
+  import { sidebarCollapsed, getAuth, clearAuth } from '$lib/stores';
+  import { goto } from '$app/navigation';
   import {
     LayoutDashboard, Users, MapPin, Search, Monitor, Calendar,
-    Settings, BarChart3, Utensils, Menu, X
+    Settings, BarChart3, Utensils, Menu, X, LogOut, Shield
   } from 'lucide-svelte';
 
-  let { currentPath, guestCount = 0 }: { currentPath: string; guestCount?: number } = $props();
+  let { currentPath, guestCount = 0, wid = 'MQ' }: { currentPath: string; guestCount?: number; wid?: string } = $props();
 
   const auth = $derived(getAuth());
   const displayName = $derived(auth.name || 'Admin');
+  const isServiceAdmin = $derived(auth.role === 'service_admin');
   const initials = $derived(
     displayName.split(' ').map((w: string) => w[0]).join('').toUpperCase().slice(0, 2)
   );
 
-  const navSections = [
+  const navSections = $derived([
     {
       label: 'Main',
       items: [
-        { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
-        { href: '/guests', label: 'Guests', icon: Users },
-        { href: '/tables', label: 'Tables', icon: Utensils },
+        { href: `/${wid}/dashboard`, label: 'Dashboard', icon: LayoutDashboard },
+        { href: `/${wid}/guests`, label: 'Guests', icon: Users },
+        { href: `/${wid}/tables`, label: 'Tables', icon: Utensils },
       ]
     },
     {
       label: 'Operations',
       items: [
-        { href: '/seating', label: 'Seating Map', icon: MapPin },
-        { href: '/search', label: 'Check In', icon: Search },
+        { href: `/${wid}/seating`, label: 'Seating Map', icon: MapPin },
+        { href: `/${wid}/search`, label: 'Check In', icon: Search },
+      ]
+    },
+    {
+      label: 'Management',
+      items: [
+        { href: `/${wid}/weddings`, label: 'Weddings', icon: Calendar },
+        ...(isServiceAdmin ? [{ href: `/${wid}/admins`, label: 'Admins', icon: Shield }] : []),
       ]
     },
     {
       label: 'Other',
       items: [
-        { href: '/settings', label: 'Settings', icon: Settings },
+        { href: `/${wid}/settings`, label: 'Settings', icon: Settings },
       ]
     }
-  ];
+  ]);
 
   function closeOnMobile() {
     if (window.innerWidth < 1024) $sidebarCollapsed = true;
+  }
+
+  async function handleLogout() {
+    const { refreshToken } = getAuth();
+    if (refreshToken) {
+      try {
+        await fetch('/api/auth/logout', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ refreshToken })
+        });
+      } catch { /* ignore */ }
+    }
+    clearAuth();
+    goto('/login', { replaceState: true });
   }
 </script>
 
@@ -108,10 +132,6 @@
               <span class="ml-auto bg-red text-white text-[11px] font-semibold px-2 py-0.5 rounded-full">
                 {guestCount}
               </span>
-            {:else if item.badge}
-              <span class="ml-auto bg-red text-white text-[11px] font-semibold px-2 py-0.5 rounded-full">
-                {item.badge}
-              </span>
             {/if}
           {/if}
         </a>
@@ -133,6 +153,13 @@
           <div class="text-[13px] font-semibold text-gray-800">{displayName}</div>
           <div class="text-[11px] text-gray-400">{auth.role || 'Administrator'}</div>
         </div>
+        <button onclick={handleLogout} class="p-1.5 rounded-lg hover:bg-gray-100 text-gray-400 hover:text-red transition-colors" aria-label="Logout" title="Logout">
+          <LogOut class="w-4 h-4" />
+        </button>
+      {:else}
+        <button onclick={handleLogout} class="p-1.5 rounded-lg hover:bg-gray-100 text-gray-400 hover:text-red transition-colors mt-1" aria-label="Logout" title="Logout">
+          <LogOut class="w-4 h-4" />
+        </button>
       {/if}
     </div>
   </div>

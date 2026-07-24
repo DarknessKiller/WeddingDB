@@ -8,17 +8,20 @@
   import { weddingId } from '$lib/stores/weddingId';
   import { get } from 'svelte/store';
   import type { BanquetTable, TableOccupancy } from '$lib/types';
+
+  type TableCreateData = Omit<BanquetTable, 'id' | 'x' | 'y'>;
   import HallMap from '$lib/components/seating/HallMap.svelte';
 
   const RING_R = 24;
   const RING_CIRCUM = 2 * Math.PI * RING_R;
 
   let tables = $state<BanquetTable[]>([]);
+  let tablesError = $state<string | null>(null);
   let occupancy = $state<Map<number, TableOccupancy>>(new Map());
   let loading = $state(true);
 
   let gridCols = $derived.by(() => {
-    const n = tables.length;
+    const n = (tables ?? []).length;
     if (n <= 2) return 'grid-cols-2';
     if (n <= 4) return 'grid-cols-2 md:grid-cols-3';
     if (n <= 6) return 'grid-cols-2 md:grid-cols-3 lg:grid-cols-4';
@@ -44,7 +47,7 @@
   const yPositions: Record<number, number> = { 1: 15, 2: 30, 3: 45, 4: 60, 5: 75, 6: 90 };
   function rowColToXY(row: number, col: number): { x: number; y: number } {
     const y = yPositions[row] ?? 50;
-    const tablesInRow = tables.filter(t => t.row === row).length;
+    const tablesInRow = (tables ?? []).filter(t => t.row === row).length;
     const n = editingTable ? tablesInRow : tablesInRow + 1;
     const x = (100 / (n + 1)) * col;
     return { x, y };
@@ -78,7 +81,7 @@
     formCapacity = 10;
     formVip = false;
     // Find next available row/col
-    const occupied = new Set(tables.map(t => `${t.row},${t.col}`));
+    const occupied = new Set((tables ?? []).map(t => `${t.row},${t.col}`));
     let r = 1, c = 1;
     while (occupied.has(`${r},${c}`)) {
       c++;
@@ -108,7 +111,7 @@
   async function handleSave() {
     saving = true;
     try {
-      const data = { name: formName || `Table ${tables.length + 1}`, capacity: formCapacity, row: formRow, col: formCol, isVip: formVip };
+      const data: TableCreateData = { name: formName || `Table ${(tables ?? []).length + 1}`, capacity: formCapacity, row: formRow, col: formCol, isVip: formVip };
       if (editingTable) {
         const updated = await updateTable(wid, editingTable.id, data);
         tables = tables.map(t => t.id === editingTable!.id ? updated : t);
@@ -181,13 +184,13 @@
   <div class="flex items-center justify-between mb-6">
     <div>
       <h1 class="text-xl font-bold text-gray-900">Banquet Tables</h1>
-      <p class="text-sm text-gray-500 mt-0.5">Overview of all {tables.length} tables</p>
+      <p class="text-sm text-gray-500 mt-0.5">Overview of all {(tables ?? []).length} tables</p>
     </div>
     <div class="flex items-center gap-2">
       <button onclick={openCreate} class="px-4 py-2.5 bg-red text-white rounded-xl text-sm font-semibold hover:bg-red-light transition-colors flex items-center gap-2">
         <Plus class="w-4 h-4" /> Add Table
       </button>
-      <button onclick={() => goto('/seating')} class="px-4 py-2.5 border border-gray-200 bg-white rounded-xl text-sm font-semibold hover:bg-gray-50 transition-colors flex items-center gap-2">
+      <button onclick={() => goto(`/${$weddingId}/seating`)} class="px-4 py-2.5 border border-gray-200 bg-white rounded-xl text-sm font-semibold hover:bg-gray-50 transition-colors flex items-center gap-2">
         <Users class="w-4 h-4" /> Manage Seating
       </button>
     </div>
@@ -205,7 +208,7 @@
         </div>
       {/each}
     </div>
-  {:else if tables.length === 0}
+  {:else if (tables ?? []).length === 0}
     <div class="flex flex-col items-center justify-center py-20 text-center">
       <div class="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mb-4">
         <Users class="w-8 h-8 text-gray-400" />
@@ -222,7 +225,7 @@
         {@const occ = getOcc(table.id)}
         <!-- svelte-ignore a11y_no_static_element_interactions -->
         <div
-          onclick={() => goto('/seating')}
+          onclick={() => goto(`/${$weddingId}/seating?table=${table.id}`)}
           oncontextmenu={(e) => handleCtx(e, table)}
           class={cn(
             "bg-white border rounded-2xl p-5 flex flex-col items-center gap-3 transition-all hover:shadow-lg hover:-translate-y-0.5 cursor-pointer group relative",
@@ -297,7 +300,7 @@
 {#if showModal}
   <div class="fixed inset-0 z-50 flex items-center justify-center p-4">
     <div class="absolute inset-0 bg-black/40 backdrop-blur-sm" onclick={closeModal} role="presentation"></div>
-    <div class="relative bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden">
+    <div class="relative bg-white rounded-2xl shadow-2xl w-full max-w-md max-h-[90vh] overflow-y-auto">
       <div class="flex items-center justify-between p-5 border-b border-gray-100">
         <h3 class="font-bold text-gray-900">{editingTable ? 'Edit Table' : 'Add Table'}</h3>
         <button onclick={closeModal} class="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-gray-100 transition-colors">
@@ -351,7 +354,7 @@
           <label class="text-sm font-semibold text-gray-700 mb-1.5 block">Position Preview</label>
           <div class="h-[200px] rounded-xl overflow-hidden border border-gray-200 bg-gray-50">
             <HallMap
-              tables={[previewTable, ...tables.filter(t => editingTable ? t.id !== editingTable.id : true)]}
+              tables={[previewTable, ...(tables ?? []).filter(t => editingTable ? t.id !== editingTable.id : true)]}
               tableGuests={new Map()}
               selectedTableId={0}
             />
@@ -375,7 +378,7 @@
         </label>
       </div>
 
-      <div class="flex gap-3 p-5 pt-0">
+      <div class="flex gap-3 p-5 pt-0 sticky bottom-0 bg-white">
         <button
           onclick={handleSave}
           disabled={saving}
