@@ -9,7 +9,7 @@
   let loading = $state(true);
 
   const auth = getAuth();
-  const isServiceAdmin = auth.role === 'service_admin';
+  const isAdmin = auth.role === 'admin';
 
   // Modal state
   let showModal = $state(false);
@@ -92,7 +92,7 @@
       <h1 class="text-xl font-bold text-gray-900">Weddings</h1>
       <p class="text-sm text-gray-500 mt-0.5">{weddings.length} wedding(s)</p>
     </div>
-    {#if isServiceAdmin}
+    {#if isAdmin}
       <button onclick={openCreate} class="px-4 py-2.5 bg-red text-white rounded-xl text-sm font-semibold hover:bg-red-light transition-colors flex items-center gap-2">
         <Plus class="w-4 h-4" /> New Wedding
       </button>
@@ -116,7 +116,7 @@
       </div>
       <p class="text-gray-500 font-medium">No weddings yet</p>
       <p class="text-sm text-gray-400 mt-1 mb-4">Create your first wedding to get started.</p>
-      {#if isServiceAdmin}
+      {#if isAdmin}
         <button onclick={openCreate} class="px-4 py-2.5 bg-red text-white rounded-xl text-sm font-semibold hover:bg-red-light transition-colors flex items-center gap-2">
           <Plus class="w-4 h-4" /> New Wedding
         </button>
@@ -126,7 +126,7 @@
     <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
       {#each weddings as w (w.id)}
         <div class="bg-white border border-gray-200 rounded-2xl p-6 hover:shadow-md transition-shadow duration-200 group relative">
-          {#if isServiceAdmin}
+          {#if isAdmin}
             <div class="absolute top-3 right-3 flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
               <button onclick={() => openEdit(w)} class="p-1.5 rounded-lg hover:bg-gray-100 text-gray-400 hover:text-gray-600 transition-colors" aria-label="Edit">
                 <Pencil class="w-4 h-4" />

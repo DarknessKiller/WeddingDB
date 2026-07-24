@@ -1,7 +1,6 @@
 import type { Guest, BanquetTable, DashboardStats, ActivityItem, TableOccupancy } from '$lib/types';
 import { DEFAULT_TABLES } from '$lib/constants';
 
-// ─── Guest Names (Malaysian Chinese wedding) ───
 const FIRST_NAMES = [
   'Ah Kow', 'Siew Ping', 'Mei Ling', 'Chong Huat', 'Wei Jie', 'Ah Mui', 'Beng Kiat',
   'Shu Fen', 'Boon Chen', 'Li Kuan', 'Ah Hoy', 'Bee Kiang', 'Beng San', 'Pheck Choy',
@@ -50,11 +49,10 @@ const NOTES_POOL = [
   '', '', '', '', ''
 ];
 
-// ─── Generate Guests ───
 function generateGuests(): Guest[] {
   const guests: Guest[] = [];
   const usedNames = new Set<string>();
-  const tableOccupancy = new Map<number, number>();
+  const tableOccupancy = new Map<string, number>();
 
   for (let i = 0; i < 150; i++) {
     let name: string;
@@ -72,14 +70,12 @@ function generateGuests(): Guest[] {
       rsvpRoll < 0.88 ? 'declined' : 'no_response';
 
     const pax = Math.floor(Math.random() * 4) + 1;
-    let tableId: number | null = null;
+    let tableId: string | null = null;
     let seatNumber: number | null = null;
 
     if ((rsvp === 'confirmed' || rsvp === 'pending') && Math.random() < 0.45) {
-      // Find a table with enough seats for this party (leave ~20% of tables partially empty)
       const available = DEFAULT_TABLES.filter(t => {
         const current = tableOccupancy.get(t.id) ?? 0;
-        // Skip ~20% of tables randomly to leave them partially empty
         if (current === 0 && Math.random() < 0.2) return false;
         return current + pax <= t.capacity;
       });
@@ -94,12 +90,10 @@ function generateGuests(): Guest[] {
 
     const checkedIn = rsvp === 'confirmed' && Math.random() < 0.45;
 
-    // Angbao and gift for checked-in guests
     let angbaoAmount: number | undefined;
     let giftItem: string | undefined;
     if (checkedIn) {
       if (Math.random() < 0.8) {
-        // Common amounts: 80, 100, 120, 168, 200, 288, 300, 388, 500, 800, 1000
         const amounts = [80, 100, 120, 168, 200, 288, 300, 388, 500, 800, 1000];
         angbaoAmount = amounts[Math.floor(Math.random() * amounts.length)];
       }
@@ -136,10 +130,8 @@ function generateGuests(): Guest[] {
 
 export const guests: Guest[] = generateGuests();
 
-// ─── Tables ───
 export const tables: BanquetTable[] = DEFAULT_TABLES;
 
-// ─── Stats ───
 export function getDashboardStats(): DashboardStats {
   const confirmed = guests.filter(g => g.rsvp === 'confirmed');
   const checkedIn = guests.filter(g => g.checkedIn);
@@ -160,8 +152,7 @@ export function getDashboardStats(): DashboardStats {
   };
 }
 
-// ─── Table Occupancy ───
-export function getTableOccupancy(tableId?: number): TableOccupancy | TableOccupancy[] {
+export function getTableOccupancy(tableId?: string): TableOccupancy | TableOccupancy[] {
   const result = tables.map(t => {
     const tableGuests = guests.filter(g => g.tableId === t.id);
     const occupied = tableGuests.reduce((sum, g) => sum + g.pax, 0);
@@ -178,8 +169,7 @@ export function getTableOccupancy(tableId?: number): TableOccupancy | TableOccup
   return result;
 }
 
-// ─── Seat helpers ───
-export function getSeatGuest(tableId: number, seatNum: number): Guest | undefined {
+export function getSeatGuest(tableId: string, seatNum: number): Guest | undefined {
   return guests.find(g =>
     g.tableId === tableId &&
     g.seatNumber !== null &&
@@ -188,11 +178,10 @@ export function getSeatGuest(tableId: number, seatNum: number): Guest | undefine
   );
 }
 
-export function isSeatOccupied(tableId: number, seatNum: number): boolean {
+export function isSeatOccupied(tableId: string, seatNum: number): boolean {
   return getSeatGuest(tableId, seatNum) !== undefined;
 }
 
-// ─── Activity Feed ───
 export function getRecentActivity(): ActivityItem[] {
   const activities: ActivityItem[] = [
     { id: 'a1', type: 'check_in', message: 'checked in', guestName: 'Tan Ah Kow', timestamp: new Date(Date.now() - 300000), icon: 'check-circle' },
@@ -207,7 +196,6 @@ export function getRecentActivity(): ActivityItem[] {
   return activities;
 }
 
-// ─── Guest Search ───
 export function searchGuests(query: string): Guest[] {
   if (!query.trim()) return [];
   const q = query.toLowerCase();
@@ -220,17 +208,14 @@ export function searchGuests(query: string): Guest[] {
     .slice(0, 20);
 }
 
-// ─── Get guest by ID ───
 export function getGuestById(id: string): Guest | undefined {
   return guests.find(g => g.id === id);
 }
 
-// ─── Get guests by table ───
-export function getGuestsByTable(tableId: number): Guest[] {
+export function getGuestsByTable(tableId: string): Guest[] {
   const table = DEFAULT_TABLES.find(t => t.id === tableId);
   if (!table) return [];
   const tableGuests = guests.filter(g => g.tableId === tableId);
-  // Cap by total pax not exceeding capacity
   let totalPax = 0;
   const result: Guest[] = [];
   for (const g of tableGuests) {
@@ -241,7 +226,6 @@ export function getGuestsByTable(tableId: number): Guest[] {
   return result;
 }
 
-// ─── Add guest ───
 export function addGuest(data: Omit<Guest, 'id' | 'createdAt'>): Guest {
   const guest: Guest = {
     ...data,

@@ -3,7 +3,7 @@
   import { goto } from '$app/navigation';
   import { addToast, getAuth } from '$lib/stores';
   import { weddingId } from '$lib/stores/weddingId';
-  import { listAdmins, createAdmin, deleteAdmin, assignWedding, type AdminUser } from '$lib/api/admins';
+  import { listAdmins, createAdmin, deleteAdmin, assignWeddings, type AdminUser } from '$lib/api/admins';
   import { listWeddings, type Wedding } from '$lib/api/weddings';
   import { Plus, Trash2, X, Users, Building2 } from 'lucide-svelte';
 
@@ -11,9 +11,9 @@
   let weddings = $state<Wedding[]>([]);
   let loading = $state(true);
 
-  // Guard: service_admin only
+  // Guard: admin only
   const auth = getAuth();
-  if (auth.role !== 'service_admin') {
+  if (auth.role !== 'admin') {
     goto(`/${$weddingId}/dashboard`, { replaceState: true });
   }
 
@@ -22,12 +22,12 @@
   let formName = $state('');
   let formEmail = $state('');
   let formPassword = $state('');
-  let formRole = $state('wedding_admin');
+  let formRole = $state('user');
   let saving = $state(false);
 
-  // Assign wedding modal
+  // Assign weddings modal
   let assignTarget = $state<AdminUser | null>(null);
-  let assignWeddingId = $state<string>('');
+  let assignWeddingIds = $state<string[]>([]);
 
   onMount(async () => {
     await loadData();
@@ -53,7 +53,7 @@
       await createAdmin({ name: formName, email: formEmail, password: formPassword, role: formRole });
       addToast('Admin created', 'success');
       showCreate = false;
-      formName = ''; formEmail = ''; formPassword = ''; formRole = 'wedding_admin';
+      formName = ''; formEmail = ''; formPassword = ''; formRole = 'user';
       await loadData();
     } catch (e: any) {
       addToast(e.message ?? 'Failed to create admin', 'error');
@@ -75,25 +75,19 @@
 
   function openAssign(admin: AdminUser) {
     assignTarget = admin;
-    assignWeddingId = admin.weddingId != null ? String(admin.weddingId) : '';
+    assignWeddingIds = [];
   }
 
   async function handleAssign() {
     if (!assignTarget) return;
     try {
-      const wid = assignWeddingId ? Number(assignWeddingId) : null;
-      const updated = await assignWedding(assignTarget.id, wid);
-      admins = admins.map(a => a.id === updated.id ? { ...a, weddingId: updated.weddingId } : a);
-      addToast(`Wedding ${wid ? 'assigned' : 'unassigned'}`, 'success');
+      const updated = await assignWeddings(assignTarget.id, assignWeddingIds);
+      admins = admins.map(a => a.id === updated.id ? updated : a);
+      addToast('Weddings updated', 'success');
       assignTarget = null;
     } catch (e: any) {
-      addToast(e.message ?? 'Failed to assign wedding', 'error');
+      addToast(e.message ?? 'Failed to assign weddings', 'error');
     }
-  }
-
-  function weddingName(id: number | null): string {
-    if (id == null) return '—';
-    return weddings.find(w => w.id === id)?.name ?? `Wedding #${id}`;
   }
 </script>
 
@@ -122,7 +116,6 @@
             <th class="px-5 py-3 text-left text-[12px] font-semibold uppercase tracking-wider text-gray-500">Name</th>
             <th class="px-5 py-3 text-left text-[12px] font-semibold uppercase tracking-wider text-gray-500">Email</th>
             <th class="px-5 py-3 text-left text-[12px] font-semibold uppercase tracking-wider text-gray-500">Role</th>
-            <th class="px-5 py-3 text-left text-[12px] font-semibold uppercase tracking-wider text-gray-500">Wedding</th>
             <th class="px-5 py-3 w-10"></th>
           </tr>
         </thead>
@@ -132,22 +125,12 @@
               <td class="px-5 py-3.5 font-semibold text-gray-900">{admin.name}</td>
               <td class="px-5 py-3.5 text-gray-600">{admin.email}</td>
               <td class="px-5 py-3.5">
-                <span class="inline-flex px-2 py-0.5 rounded-full text-xs font-semibold {admin.role === 'service_admin' ? 'bg-gold-50 text-gold border border-gold-200' : 'bg-gray-100 text-gray-600 border border-gray-200'}">
-                  {admin.role === 'service_admin' ? 'Service Admin' : 'Wedding Admin'}
+                <span class="inline-flex px-2 py-0.5 rounded-full text-xs font-semibold {admin.role === 'admin' ? 'bg-gold-50 text-gold border border-gold-200' : 'bg-gray-100 text-gray-600 border border-gray-200'}">
+                  {admin.role === 'admin' ? 'Admin' : 'User'}
                 </span>
               </td>
-              <td class="px-5 py-3.5 text-gray-600">
-                {#if admin.role !== 'service_admin'}
-                  <button onclick={() => openAssign(admin)} class="text-left hover:text-deep-red transition-colors flex items-center gap-1">
-                    <Building2 class="w-3.5 h-3.5" />
-                    {weddingName(admin.weddingId)}
-                  </button>
-                {:else}
-                  <span class="text-gray-400">All</span>
-                {/if}
-              </td>
               <td class="px-5 py-3.5">
-                {#if admin.role !== 'service_admin'}
+                {#if admin.role !== 'admin'}
                   <button onclick={() => handleDelete(admin)} class="p-1.5 rounded-lg hover:bg-red-50 text-gray-400 hover:text-red transition-colors" aria-label="Delete">
                     <Trash2 class="w-4 h-4" />
                   </button>
@@ -188,8 +171,8 @@
         <div>
           <label class="text-sm font-semibold text-gray-700 mb-1.5 block">Role</label>
           <select bind:value={formRole} class="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm bg-white focus:border-gold outline-none">
-            <option value="wedding_admin">Wedding Admin</option>
-            <option value="service_admin">Service Admin</option>
+            <option value="user">User</option>
+            <option value="admin">Admin</option>
           </select>
         </div>
       </div>
@@ -206,25 +189,27 @@
   </div>
 {/if}
 
-<!-- Assign Wedding Modal -->
+<!-- Assign Weddings Modal -->
 {#if assignTarget}
   <div class="fixed inset-0 z-50 flex items-center justify-center p-4">
     <div class="absolute inset-0 bg-black/40 backdrop-blur-sm" onclick={() => assignTarget = null} role="presentation"></div>
     <div class="relative bg-white rounded-2xl shadow-2xl w-full max-w-sm overflow-hidden">
       <div class="flex items-center justify-between p-5 border-b border-gray-100">
-        <h3 class="font-bold text-gray-900">Assign Wedding</h3>
+        <h3 class="font-bold text-gray-900">Assign Weddings</h3>
         <button onclick={() => assignTarget = null} class="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-gray-100 transition-colors">
           <X class="w-4 h-4 text-gray-400" />
         </button>
       </div>
       <div class="p-5 space-y-4">
-        <p class="text-sm text-gray-600">Assign a wedding to <strong>{assignTarget.name}</strong></p>
-        <select bind:value={assignWeddingId} class="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm bg-white focus:border-gold outline-none">
-          <option value="">No wedding (unassigned)</option>
+        <p class="text-sm text-gray-600">Assign weddings to <strong>{assignTarget.name}</strong></p>
+        <div class="space-y-2 max-h-60 overflow-y-auto">
           {#each weddings as w}
-            <option value={String(w.id)}>{w.name} ({w.date?.slice(0, 10) ?? 'No date'})</option>
+            <label class="flex items-center gap-2 p-2 rounded-lg hover:bg-gray-50 cursor-pointer">
+              <input type="checkbox" value={w.id} bind:group={assignWeddingIds} class="rounded border-gray-300 text-deep-red focus:ring-deep-red/20" />
+              <span class="text-sm text-gray-700">{w.name}</span>
+            </label>
           {/each}
-        </select>
+        </div>
       </div>
       <div class="flex gap-3 p-5 pt-0">
         <button onclick={handleAssign} class="flex-1 py-2.5 bg-red text-white rounded-xl text-sm font-semibold hover:bg-red-light transition-colors">

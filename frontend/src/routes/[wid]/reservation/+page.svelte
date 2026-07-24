@@ -24,7 +24,7 @@
       email: r.email,
       rsvp: (r.rsvp as RSVPStatus) ?? 'no_response',
       pax: r.pax,
-      tableId: r.tableId ? Number(r.tableId) : null,
+      tableId: r.tableId ?? null,
       seatNumber: r.seatNum,
       checkedIn: r.checkedInAt !== null,
       checkedInAt: r.checkedInAt ? new Date(r.checkedInAt) : undefined,
@@ -50,7 +50,7 @@
   });
 
   let tableGuests = $derived.by(() => {
-    const map = new Map<number, Guest[]>();
+    const map = new Map<string, Guest[]>();
     for (const g of apiGuests) {
       if (g.tableId === null) continue;
       const arr = map.get(g.tableId) ?? [];
@@ -60,7 +60,7 @@
     return map;
   });
 
-  function handleSeatClick(tableId: number, seatNum: number, guest: Guest | null) {
+  function handleSeatClick(tableId: string, seatNum: number, guest: Guest | null) {
     if (!guest && form.tableId === tableId) {
       toggleSeat(seatNum);
     } else if (!guest) {
@@ -69,7 +69,7 @@
     }
   }
 
-  function handleTableClick(id: number) {
+  function handleTableClick(id: string) {
     form.tableId = id;
     form.seatNumbers = [];
   }
@@ -80,7 +80,7 @@
     email: z.string().email('Invalid email').optional().or(z.literal('')),
     pax: z.number().min(1, 'At least 1 guest').max(10, 'Max 10 guests'),
     rsvp: z.enum(['confirmed', 'pending', 'declined']),
-    tableId: z.number().nullable().optional(),
+    tableId: z.string().nullable().optional(),
     seatNumbers: z.array(z.number()).optional(),
     dietary: z.array(z.string()).optional(),
     notes: z.string().optional(),
@@ -105,7 +105,7 @@
   let errors = $state<Record<string, string>>({});
   let isSubmitting = $state(false);
 
-  function getSeatGuestLocal(tableId: number, seatNum: number): Guest | undefined {
+  function getSeatGuestLocal(tableId: string, seatNum: number): Guest | undefined {
     return apiGuests.find(g =>
       g.tableId === tableId &&
       g.seatNumber !== null &&
@@ -135,7 +135,7 @@
   }
 
   // Reset seat selection when table or pax changes
-  function onTableChange(tableId: number | null) {
+  function onTableChange(tableId: string | null) {
     form.tableId = tableId;
     form.seatNumbers = [];
   }
@@ -311,7 +311,7 @@
           <label for="table" class="block text-sm font-semibold text-gray-700 mb-1.5">Assign Table</label>
           <select
             id="table"
-            onchange={(e) => onTableChange(e.currentTarget.value ? Number(e.currentTarget.value) : null)}
+            onchange={(e) => onTableChange(e.currentTarget.value || null)}
             class="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm bg-white focus:border-gold focus:ring-2 focus:ring-gold/15 outline-none transition-all"
           >
             <option value="">No table (unassigned)</option>

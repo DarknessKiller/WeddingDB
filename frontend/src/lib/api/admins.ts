@@ -1,12 +1,10 @@
 import { apiFetch } from './client';
-import { encodeId } from '$lib/utils/encode';
 
 export interface AdminUser {
-	id: number;
+	id: string;
 	email: string;
 	name: string;
 	role: string;
-	weddingId: number | null;
 	createdAt: string;
 	updatedAt: string;
 }
@@ -16,7 +14,7 @@ export interface AdminCreateData {
 	password: string;
 	name: string;
 	role: string;
-	weddingId?: number | null;
+	weddings?: string[];
 }
 
 export async function listAdmins(): Promise<AdminUser[]> {
@@ -37,18 +35,24 @@ export async function createAdmin(data: AdminCreateData): Promise<AdminUser> {
 	return res.json();
 }
 
-export async function deleteAdmin(id: number): Promise<void> {
-	const res = await apiFetch(`/api/admins/${encodeId(id)}`, {
+export async function deleteAdmin(id: string): Promise<void> {
+	const res = await apiFetch(`/api/admins/${id}`, {
 		method: 'DELETE',
 	});
 	if (!res.ok) throw new Error('Failed to delete admin');
 }
 
-export async function assignWedding(adminId: number, weddingId: number | null): Promise<AdminUser> {
-	const res = await apiFetch(`/api/admins/${encodeId(adminId)}/wedding`, {
+export async function assignWeddings(adminId: string, weddingIds: string[]): Promise<AdminUser> {
+	const res = await apiFetch(`/api/admins/${adminId}/weddings`, {
 		method: 'PUT',
-		body: JSON.stringify({ weddingId }),
+		body: JSON.stringify({ weddings: weddingIds }),
 	});
-	if (!res.ok) throw new Error('Failed to assign wedding');
+	if (!res.ok) throw new Error('Failed to assign weddings');
+	return res.json();
+}
+
+export async function getUserWeddings(userId: string): Promise<{ id: string; name: string; date: string }[]> {
+	const res = await apiFetch(`/api/admins/${userId}/weddings`);
+	if (!res.ok) throw new Error('Failed to get user weddings');
 	return res.json();
 }

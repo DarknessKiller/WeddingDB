@@ -15,13 +15,13 @@
     onSeatClick,
     hoveredSeat = $bindable(null),
   }: {
-    selectedTableId?: number | null;
-    highlightedTableId?: number | null;
-    tableGuests?: Map<number, Guest[]>;
+    selectedTableId?: string | null;
+    highlightedTableId?: string | null;
+    tableGuests?: Map<string, Guest[]>;
     tables?: BanquetTableType[];
     dark?: boolean;
-    onTableClick?: (id: number) => void;
-    onSeatClick?: (tableId: number, seatNum: number, guest: Guest | null) => void;
+    onTableClick?: (id: string) => void;
+    onSeatClick?: (tableId: string, seatNum: number, guest: Guest | null) => void;
     hoveredSeat?: { seatNum: number; guest: Guest | null; x: number; y: number } | null;
   } = $props();
 
@@ -31,16 +31,13 @@
   let isDragging = $state(false);
   let dragStart = { x: 0, y: 0 };
 
-  // Dynamic hall sizing
   let containerEl = $state<HTMLElement | null>(null);
   let containerW = $state(800);
   let containerH = $state(600);
 
-  // Base design dimensions
   const BASE_W = HALL_LAYOUT.width;
   const BASE_H = HALL_LAYOUT.height;
 
-  // Scale factor to fit container
   let scale = $derived(Math.min(containerW / BASE_W, containerH / BASE_H, 1));
 
   onMount(() => {
@@ -83,7 +80,6 @@
     panY = 0;
   }
 
-  // Touch support
   let touchStart = { x: 0, y: 0 };
   function handleTouchStart(e: TouchEvent) {
     if (e.touches.length === 1) {
@@ -154,7 +150,7 @@
         <span class="relative z-10 text-gold text-[10px] sm:text-sm font-bold tracking-[0.12em] uppercase font-serif">✦ Stage ✦</span>
       </div>
 
-      <!-- Main aisle (vertical) -->
+      <!-- Main aisle -->
       <div class="absolute top-[8%] bottom-[8%] left-1/2 -translate-x-1/2 w-px z-[1]"
         style="background: repeating-linear-gradient(180deg, transparent, transparent 8px, {dark ? '#374151' : '#E5E7EB'} 8px, {dark ? '#374151' : '#E5E7EB'} 10px);"></div>
 

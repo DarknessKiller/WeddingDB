@@ -3,10 +3,10 @@ import { weddingId } from '$lib/stores/weddingId';
 import { get } from 'svelte/store';
 
 interface PublicGuest {
-	id: number;
+	id: string;
 	name: string;
 	phone: string;
-	tableId: number | null;
+	tableId: string | null;
 	seatNum: number | null;
 	pax: number;
 	isVip: boolean;
@@ -15,7 +15,7 @@ interface PublicGuest {
 
 function mapGuest(raw: PublicGuest): Guest {
 	return {
-		id: String(raw.id),
+		id: raw.id,
 		name: raw.name ?? '',
 		phone: raw.phone ?? '',
 		rsvp: 'no_response',

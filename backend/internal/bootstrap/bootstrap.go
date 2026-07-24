@@ -14,9 +14,10 @@ import (
 	"weddingdb/internal/services"
 
 	"github.com/go-fuego/fuego"
+	"github.com/google/uuid"
 	"github.com/redis/go-redis/v9"
-	"gorm.io/driver/postgres"
 	"golang.org/x/crypto/bcrypt"
+	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 )
 
@@ -29,13 +30,11 @@ type App struct {
 }
 
 func Init(env config.Env) *App {
-	// Parse DATABASE_URL or use individual params
 	dbURL := env.DatabaseURL
 	if dbURL == "" {
 		dbURL = os.Getenv("DATABASE_URL")
 	}
 	if dbURL == "" {
-		// Build from individual env vars (for NocoDB compatibility)
 		host := getEnv("DB_HOST", "localhost")
 		port := getEnv("DB_PORT", "5432")
 		user := getEnv("DB_USER", "postgres")
@@ -55,30 +54,27 @@ func Init(env config.Env) *App {
 		&models.BanquetTable{},
 		&models.GuestRecord{},
 		&models.RefreshToken{},
+		&models.UserWedding{},
 	); err != nil {
 		log.Fatal("Failed to migrate database:", err)
 	}
 
-	// Redis
 	redisAddr := env.RedisURL
 	if redisAddr == "" {
 		redisAddr = "redis://localhost:6379"
 	}
-	// Strip redis:// scheme for go-redis
 	redisAddr = strings.TrimPrefix(redisAddr, "redis://")
 	rdb := redis.NewClient(&redis.Options{Addr: redisAddr})
 	if err := rdb.Ping(context.Background()).Err(); err != nil {
 		log.Fatal("Failed to connect to Redis:", err)
 	}
 
-	// Repos
 	adminRepo := repository.NewAdminRepo(db)
 	weddingRepo := repository.NewWeddingRepo(db)
 	tableRepo := repository.NewTableRepo(db)
 	guestRepo := repository.NewGuestRepo(db)
 	tokenRepo := repository.NewTokenRepo(db)
 
-	// Services
 	authService := services.NewAuthService(adminRepo, tokenRepo, env.JWTSecret)
 	nonceStore := middleware.NewNonceStore(rdb)
 	tableService := services.NewTableService(tableRepo)
@@ -87,10 +83,8 @@ func Init(env config.Env) *App {
 
 	server := config.NewFuegoServer(env)
 
-	// CORS — must be first
 	fuego.Use(server, middleware.CORSMiddleware)
 
-	// Register routes
 	handlers.RegisterRoutes(server, authService, guestService, tableService, weddingService, adminRepo, nonceStore)
 
 	// Seed default admin if none exists
@@ -102,10 +96,11 @@ func Init(env config.Env) *App {
 			log.Fatal("Failed to hash seed admin password:", err)
 		}
 		admin := &models.AdminUser{
+			ID:       uuid.New(),
 			Email:    "admin@weddingdb.local",
 			Password: string(hash),
 			Name:     "Admin",
-			Role:     "service_admin",
+			Role:     "admin",
 		}
 		if err := adminRepo.Create(admin); err != nil {
 			log.Println("Warning: failed to seed admin:", err)

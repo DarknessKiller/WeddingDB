@@ -43,11 +43,15 @@ func RegisterRoutes(
 	api := fuego.Group(s, "/api")
 	fuego.Use(api, middleware.AuthMiddleware(authService))
 
+	// Wedding selection
+	fuego.Post(api, "/auth/select-wedding", authHandler.SelectWedding)
+
 	// Admin CRUD
 	fuego.Get(api, "/admins", adminHandler.List)
 	fuego.Post(api, "/admins", adminHandler.Create)
 	fuego.Delete(api, "/admins/{id}", adminHandler.Delete)
-	fuego.Put(api, "/admins/{id}/wedding", adminHandler.AssignWedding)
+	fuego.Put(api, "/admins/{id}/weddings", adminHandler.AssignWeddings)
+	fuego.Get(api, "/admins/{id}/weddings", adminHandler.GetUserWeddings)
 
 	// Wedding CRUD
 	fuego.Get(api, "/weddings", weddingHandler.List)

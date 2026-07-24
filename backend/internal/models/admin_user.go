@@ -1,14 +1,18 @@
 package models
 
-import "time"
+import (
+	"time"
+
+	"github.com/google/uuid"
+)
 
 type AdminUser struct {
-	ID        uint      `gorm:"primaryKey" json:"id"`
-	WeddingID *uint     `gorm:"index" json:"weddingId"`
-	Email     string    `gorm:"size:255;not null" json:"email"`
-	Password  string    `gorm:"size:255;not null" json:"-"`
-	Name      string    `gorm:"size:255" json:"name"`
-	Role      string    `gorm:"size:20;not null" json:"role"`
-	CreatedAt time.Time `json:"createdAt"`
-	UpdatedAt time.Time `json:"updatedAt"`
+	ID        uuid.UUID      `gorm:"type:uuid;primaryKey" json:"id"`
+	Email     string         `gorm:"size:255;not null" json:"email"`
+	Password  string         `gorm:"size:255;not null" json:"-"`
+	Name      string         `gorm:"size:255" json:"name"`
+	Role      string         `gorm:"size:20;not null" json:"role"`
+	CreatedAt time.Time      `json:"createdAt"`
+	UpdatedAt time.Time      `json:"updatedAt"`
+	Weddings  []WeddingEvent `gorm:"many2many:user_weddings;" json:"weddings,omitempty"`
 }

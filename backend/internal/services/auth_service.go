@@ -15,12 +15,12 @@ import (
 )
 
 type AccessClaims struct {
-	AdminID   uint   `json:"sub"`
-	WeddingID *uint  `json:"wid,omitempty"`
-	Role      string `json:"role"`
-	JTI       string `json:"jti"`
-	IAT       int64  `json:"iat"`
-	EXP       int64  `json:"exp"`
+	AdminID   uuid.UUID  `json:"sub"`
+	WeddingID *uuid.UUID `json:"wid,omitempty"`
+	Role      string     `json:"role"`
+	JTI       string     `json:"jti"`
+	IAT       int64      `json:"iat"`
+	EXP       int64      `json:"exp"`
 	jwt.RegisteredClaims
 }
 
@@ -38,45 +38,91 @@ func NewAuthService(adminRepo *repository.AdminRepo, tokenRepo *repository.Token
 	}
 }
 
-func (s *AuthService) Login(ctx context.Context, email, password string) (string, string, string, string, *uint, error) {
+// LoginResult holds the data returned by Login.
+type LoginResult struct {
+	AccessToken  string
+	RefreshToken string
+	Role         string
+	Name         string
+	Weddings     []models.WeddingEvent
+}
+
+func (s *AuthService) Login(ctx context.Context, email, password string) (*LoginResult, error) {
 	admin, err := s.adminRepo.FindByEmail(email)
 	if err != nil {
-		return "", "", "", "", nil, errors.New("invalid credentials")
+		return nil, errors.New("invalid credentials")
 	}
 	if err := bcrypt.CompareHashAndPassword([]byte(admin.Password), []byte(password)); err != nil {
-		return "", "", "", "", nil, errors.New("invalid credentials")
+		return nil, errors.New("invalid credentials")
 	}
-	accessToken, err := s.generateAccessToken(admin)
+	accessToken, err := s.generateAccessToken(admin, nil)
 	if err != nil {
-		return "", "", "", "", nil, err
+		return nil, err
 	}
 	refreshToken, err := s.generateRefreshToken(admin.ID)
 	if err != nil {
-		return "", "", "", "", nil, err
+		return nil, err
 	}
-	return accessToken, refreshToken, admin.Role, admin.Name, admin.WeddingID, nil
+	weddings, err := s.adminRepo.GetUserWeddings(admin.ID)
+	if err != nil {
+		weddings = []models.WeddingEvent{}
+	}
+	return &LoginResult{
+		AccessToken:  accessToken,
+		RefreshToken: refreshToken,
+		Role:         admin.Role,
+		Name:         admin.Name,
+		Weddings:     weddings,
+	}, nil
 }
 
-func (s *AuthService) Refresh(ctx context.Context, refreshTokenStr string) (string, string, string, string, *uint, error) {
+// SelectWedding generates a new access token with the selected wedding embedded.
+func (s *AuthService) SelectWedding(ctx context.Context, adminID uuid.UUID, weddingID uuid.UUID) (string, error) {
+	admin, err := s.adminRepo.FindByID(adminID)
+	if err != nil {
+		return "", errors.New("admin not found")
+	}
+	// Verify access
+	if admin.Role != "admin" {
+		hasAccess, err := s.adminRepo.HasWeddingAccess(adminID, weddingID)
+		if err != nil || !hasAccess {
+			return "", errors.New("no access to this wedding")
+		}
+	}
+	return s.generateAccessToken(admin, &weddingID)
+}
+
+// Refresh returns a new LoginResult with fresh tokens.
+func (s *AuthService) Refresh(ctx context.Context, refreshTokenStr string) (*LoginResult, error) {
 	token, err := s.tokenRepo.FindByToken(refreshTokenStr)
 	if err != nil {
-		return "", "", "", "", nil, errors.New("invalid refresh token")
+		return nil, errors.New("invalid refresh token")
 	}
 	admin, err := s.adminRepo.FindByID(token.AdminID)
 	if err != nil {
-		return "", "", "", "", nil, errors.New("admin not found")
+		return nil, errors.New("admin not found")
 	}
-	accessToken, err := s.generateAccessToken(admin)
+	// For refresh, keep the existing wedding context from the old token
+	accessToken, err := s.generateAccessToken(admin, nil)
 	if err != nil {
-		return "", "", "", "", nil, err
+		return nil, err
 	}
 	newRefreshToken, err := s.generateRefreshToken(admin.ID)
 	if err != nil {
-		return "", "", "", "", nil, err
+		return nil, err
 	}
-	// Delete old token only after new ones are generated successfully
 	s.tokenRepo.DeleteByToken(refreshTokenStr)
-	return accessToken, newRefreshToken, admin.Role, admin.Name, admin.WeddingID, nil
+	weddings, err := s.adminRepo.GetUserWeddings(admin.ID)
+	if err != nil {
+		weddings = []models.WeddingEvent{}
+	}
+	return &LoginResult{
+		AccessToken:  accessToken,
+		RefreshToken: newRefreshToken,
+		Role:         admin.Role,
+		Name:         admin.Name,
+		Weddings:     weddings,
+	}, nil
 }
 
 func (s *AuthService) Logout(refreshToken string) error {
@@ -97,11 +143,11 @@ func (s *AuthService) ValidateToken(tokenStr string) (*AccessClaims, error) {
 	return claims, nil
 }
 
-func (s *AuthService) generateAccessToken(admin *models.AdminUser) (string, error) {
+func (s *AuthService) generateAccessToken(admin *models.AdminUser, weddingID *uuid.UUID) (string, error) {
 	now := time.Now()
 	claims := AccessClaims{
 		AdminID:   admin.ID,
-		WeddingID: admin.WeddingID,
+		WeddingID: weddingID,
 		Role:      admin.Role,
 		JTI:       uuid.New().String(),
 		IAT:       now.Unix(),
@@ -111,7 +157,7 @@ func (s *AuthService) generateAccessToken(admin *models.AdminUser) (string, erro
 	return token.SignedString(s.secret)
 }
 
-func (s *AuthService) generateRefreshToken(adminID uint) (string, error) {
+func (s *AuthService) generateRefreshToken(adminID uuid.UUID) (string, error) {
 	b := make([]byte, 32)
 	if _, err := rand.Read(b); err != nil {
 		return "", err

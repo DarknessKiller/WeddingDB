@@ -22,10 +22,10 @@ type WeddingRequest struct {
 func (h *WeddingHandler) List(c fuego.ContextWithBody[any]) (any, error) {
 	ctx := c.Context()
 	role := RoleFromContext(ctx)
-	if role == "service_admin" {
+	if role == "admin" {
 		return h.weddingService.List()
 	}
-	// wedding_admin: only return their own wedding
+	// user: only return their own wedding from JWT
 	wid := WeddingIDFromContext(ctx)
 	if wid == nil {
 		return []models.WeddingEvent{}, nil
@@ -46,9 +46,8 @@ func (h *WeddingHandler) Get(c fuego.ContextWithBody[any]) (any, error) {
 }
 
 func (h *WeddingHandler) Create(c fuego.ContextWithBody[WeddingRequest]) (any, error) {
-	role := RoleFromContext(c.Context())
-	if role != "service_admin" {
-		return nil, fuego.UnauthorizedError{Title: "service_admin role required"}
+	if err := requireAdmin(c.Context()); err != nil {
+		return nil, fuego.UnauthorizedError{Title: err.Error()}
 	}
 	body, err := c.Body()
 	if err != nil {
@@ -91,9 +90,8 @@ func (h *WeddingHandler) Update(c fuego.ContextWithBody[WeddingRequest]) (any, e
 }
 
 func (h *WeddingHandler) Delete(c fuego.ContextWithBody[any]) (any, error) {
-	role := RoleFromContext(c.Context())
-	if role != "service_admin" {
-		return nil, fuego.UnauthorizedError{Title: "service_admin role required"}
+	if err := requireAdmin(c.Context()); err != nil {
+		return nil, fuego.UnauthorizedError{Title: err.Error()}
 	}
 	id := DecodeID(c.PathParam("id"))
 	return nil, h.weddingService.Delete(id)

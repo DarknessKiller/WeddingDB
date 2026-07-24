@@ -1,6 +1,7 @@
 package services
 
 import (
+	"github.com/google/uuid"
 	"weddingdb/internal/models"
 	"weddingdb/internal/repository"
 )
@@ -17,7 +18,7 @@ func (s *WeddingService) List() ([]models.WeddingEvent, error) {
 	return s.weddingRepo.List()
 }
 
-func (s *WeddingService) Get(id uint) (*models.WeddingEvent, error) {
+func (s *WeddingService) Get(id uuid.UUID) (*models.WeddingEvent, error) {
 	return s.weddingRepo.FindByID(id)
 }
 
@@ -29,6 +30,6 @@ func (s *WeddingService) Update(w *models.WeddingEvent) error {
 	return s.weddingRepo.Update(w)
 }
 
-func (s *WeddingService) Delete(id uint) error {
+func (s *WeddingService) Delete(id uuid.UUID) error {
 	return s.weddingRepo.Delete(id)
 }

@@ -17,7 +17,7 @@
 
   let tables = $state<BanquetTable[]>([]);
   let tablesError = $state<string | null>(null);
-  let occupancy = $state<Map<number, TableOccupancy>>(new Map());
+  let occupancy = $state<Map<string, TableOccupancy>>(new Map());
   let loading = $state(true);
 
   let gridCols = $derived.by(() => {
@@ -56,7 +56,7 @@
   let previewTable = $derived.by(() => {
     const pos = rowColToXY(formRow, formCol);
     return {
-      id: 0,
+      id: '',
       name: formName || 'New',
       capacity: formCapacity,
       row: formRow,
@@ -69,7 +69,7 @@
 
   const wid = get(weddingId);
 
-  function getOcc(tableId: number): { occupied: number; percentage: number } {
+  function getOcc(tableId: string): { occupied: number; percentage: number } {
     const occ = occupancy.get(tableId);
     if (occ) return occ;
     return { occupied: 0, percentage: 0 };
@@ -158,7 +158,7 @@
       const [apiTables, rawOcc] = await Promise.all([listTables(wid), getOccupancy(wid)]);
       tables = apiTables;
 
-      const occMap = new Map<number, TableOccupancy>();
+      const occMap = new Map<string, TableOccupancy>();
       for (const o of rawOcc) {
         const table = tables.find(t => t.id === o.TableID);
         const capacity = table?.capacity ?? 0;
@@ -356,7 +356,7 @@
             <HallMap
               tables={[previewTable, ...(tables ?? []).filter(t => editingTable ? t.id !== editingTable.id : true)]}
               tableGuests={new Map()}
-              selectedTableId={0}
+              selectedTableId={null}
             />
           </div>
         </div>

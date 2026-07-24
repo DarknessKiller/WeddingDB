@@ -1,10 +1,14 @@
 package models
 
-import "time"
+import (
+	"time"
+
+	"github.com/google/uuid"
+)
 
 type RefreshToken struct {
-	ID        uint      `gorm:"primaryKey"`
-	AdminID   uint      `gorm:"index;not null"`
+	ID        uuid.UUID `gorm:"type:uuid;primaryKey"`
+	AdminID   uuid.UUID `gorm:"type:uuid;index;not null"`
 	Token     string    `gorm:"size:255;uniqueIndex;not null"`
 	ExpiresAt time.Time
 	CreatedAt time.Time

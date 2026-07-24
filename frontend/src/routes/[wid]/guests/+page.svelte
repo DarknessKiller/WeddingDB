@@ -217,8 +217,7 @@
 
   function getNextSeatNum(): number {
     if (!moveTableId) return 1;
-    const moveTableIdNum = Number(moveTableId);
-    const occ = guests.filter(g => g.tableId === moveTableIdNum && g.id !== moveGuest?.id);
+    const occ = guests.filter(g => g.tableId === moveTableId && g.id !== moveGuest?.id);
     if (!occ.length) return 1;
     const maxSeat = Math.max(...occ.map(g => g.seatNum ?? 0));
     return maxSeat + 1;
@@ -226,10 +225,9 @@
 
   let occupiedSeats = $derived.by((): Set<number> => {
     if (!moveTableId) return new Set();
-    const moveTableIdNum = Number(moveTableId);
     return new Set(
       guests
-        .filter(g => g.tableId === moveTableIdNum && g.id !== moveGuest?.id && g.seatNum != null)
+        .filter(g => g.tableId === moveTableId && g.id !== moveGuest?.id && g.seatNum != null)
         .flatMap(g => {
           const start = g.seatNum!;
           return Array.from({ length: g.pax }, (_, i) => start + i);
@@ -243,8 +241,7 @@
 
   function getTableCapacity(): number {
     if (!moveTableId) return 10;
-    const moveTableIdNum = Number(moveTableId);
-    const t = moveTables.find(t => t.id === moveTableIdNum);
+    const t = moveTables.find(t => t.id === moveTableId);
     return t?.capacity ?? 10;
   }
 
@@ -262,7 +259,7 @@
     try {
       await assignSeat(wid, moveGuest.id, moveTableId, moveSeatNum);
       guests = guests.map(g => g.id === moveGuest!.id
-        ? { ...g, tableId: Number(moveTableId), seatNum: moveSeatNum }
+        ? { ...g, tableId: moveTableId, seatNum: moveSeatNum }
         : g
       );
       addToast(`${moveGuest.name} moved to table`, 'success');

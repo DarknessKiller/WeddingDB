@@ -3,18 +3,19 @@ package handlers
 import (
 	"context"
 	"weddingdb/internal/middleware"
-	"weddingdb/internal/utils"
+
+	"github.com/google/uuid"
 )
 
 // AdminIDFromContext extracts admin ID from the request context.
-func AdminIDFromContext(ctx context.Context) uint {
-	v, _ := ctx.Value(middleware.AdminIDKey).(uint)
+func AdminIDFromContext(ctx context.Context) uuid.UUID {
+	v, _ := ctx.Value(middleware.AdminIDKey).(uuid.UUID)
 	return v
 }
 
 // WeddingIDFromContext extracts wedding ID from the request context.
-func WeddingIDFromContext(ctx context.Context) *uint {
-	v, _ := ctx.Value(middleware.WeddingIDKey).(*uint)
+func WeddingIDFromContext(ctx context.Context) *uuid.UUID {
+	v, _ := ctx.Value(middleware.WeddingIDKey).(*uuid.UUID)
 	return v
 }
 
@@ -24,31 +25,29 @@ func RoleFromContext(ctx context.Context) string {
 	return v
 }
 
-// DecodeWID decodes wedding ID from path param "wid".
-func DecodeWID(c interface{ PathParam(string) string }) uint {
-	wid, _ := utils.DecodeID(c.PathParam("wid"))
-	return wid
+// DecodeWID parses a UUID from the path param "wid".
+func DecodeWID(c interface{ PathParam(string) string }) uuid.UUID {
+	return middleware.ParseUUID(c.PathParam("wid"))
 }
 
-// DecodeID decodes a base64 ID string.
-func DecodeID(encoded string) uint {
-	id, _ := utils.DecodeID(encoded)
-	return id
+// DecodeID parses a UUID from a string.
+func DecodeID(s string) uuid.UUID {
+	return middleware.ParseUUID(s)
 }
 
-// requireServiceAdmin returns an error if the caller is not service_admin.
-func requireServiceAdmin(ctx context.Context) error {
-	if RoleFromContext(ctx) != "service_admin" {
-		return errUnauthorized("service_admin role required")
+// requireAdmin returns an error if the caller is not admin.
+func requireAdmin(ctx context.Context) error {
+	if RoleFromContext(ctx) != "admin" {
+		return errUnauthorized("admin role required")
 	}
 	return nil
 }
 
 // requireWeddingAccess returns nil if the caller has access to the given wedding.
-// service_admin has access to all weddings; wedding_admin only to their own.
-func requireWeddingAccess(ctx context.Context, weddingID uint) error {
+// admin has access to all weddings; user only to the one in their JWT.
+func requireWeddingAccess(ctx context.Context, weddingID uuid.UUID) error {
 	role := RoleFromContext(ctx)
-	if role == "service_admin" {
+	if role == "admin" {
 		return nil
 	}
 	jwtWid := WeddingIDFromContext(ctx)

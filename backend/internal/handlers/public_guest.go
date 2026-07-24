@@ -8,10 +8,10 @@ import (
 )
 
 type publicGuest struct {
-	ID          uint       `json:"id"`
+	ID          string     `json:"id"`
 	Name        string     `json:"name"`
 	Phone       string     `json:"phone"`
-	TableID     *uint      `json:"tableId"`
+	TableID     *string    `json:"tableId"`
 	SeatNum     *int       `json:"seatNum"`
 	Pax         int        `json:"pax"`
 	IsVip       bool       `json:"isVip"`
@@ -34,11 +34,16 @@ func (h *PublicGuestHandler) List(c fuego.ContextWithBody[any]) (any, error) {
 	}
 	out := make([]publicGuest, 0, len(guests))
 	for _, g := range guests {
+		var tid *string
+		if g.TableID != nil {
+			s := g.TableID.String()
+			tid = &s
+		}
 		out = append(out, publicGuest{
-			ID:          g.ID,
+			ID:          g.ID.String(),
 			Name:        g.Name,
 			Phone:       g.Phone,
-			TableID:     g.TableID,
+			TableID:     tid,
 			SeatNum:     g.SeatNum,
 			Pax:         g.Pax,
 			IsVip:       g.IsVip,
@@ -57,11 +62,16 @@ func (h *PublicGuestHandler) Search(c fuego.ContextWithBody[any]) (any, error) {
 	}
 	out := make([]publicGuest, 0, len(guests))
 	for _, g := range guests {
+		var tid *string
+		if g.TableID != nil {
+			s := g.TableID.String()
+			tid = &s
+		}
 		out = append(out, publicGuest{
-			ID:          g.ID,
+			ID:          g.ID.String(),
 			Name:        g.Name,
 			Phone:       g.Phone,
-			TableID:     g.TableID,
+			TableID:     tid,
 			SeatNum:     g.SeatNum,
 			Pax:         g.Pax,
 			IsVip:       g.IsVip,

@@ -2,7 +2,7 @@ import { apiFetch } from './client';
 import type { DashboardStats, TableOccupancy, ActivityItem } from '$lib/types';
 
 interface RawGuest {
-  id: number;
+  id: string;
   name: string;
   phone: string;
   email?: string;
@@ -19,7 +19,7 @@ interface RawGuest {
 }
 
 interface RawOccupancy {
-  TableID: number;
+  TableID: string;
   Pax: number;
 }
 
@@ -58,7 +58,7 @@ export async function getDashboardStats(weddingId: string): Promise<DashboardSta
 export async function getOccupancy(weddingId: string): Promise<TableOccupancy[]> {
   const [occData, tableData] = await Promise.all([
     fetchJSON<RawOccupancy[]>(`/api/weddings/${weddingId}/occupancy`),
-    fetchJSON<{ id: number; capacity: number }[]>(`/api/weddings/${weddingId}/tables`)
+    fetchJSON<{ id: string; capacity: number }[]>(`/api/weddings/${weddingId}/tables`)
   ]);
 
   const capMap = new Map(tableData.map(t => [t.id, t.capacity]));

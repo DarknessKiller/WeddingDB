@@ -1,17 +1,18 @@
 <script lang="ts">
   import { cn } from '$lib/utils';
   import { sidebarCollapsed, getAuth, clearAuth } from '$lib/stores';
+  import { setWeddingId } from '$lib/stores/weddingId';
   import { goto } from '$app/navigation';
   import {
     LayoutDashboard, Users, MapPin, Search, Monitor, Calendar,
     Settings, BarChart3, Utensils, Menu, X, LogOut, Shield
   } from 'lucide-svelte';
 
-  let { currentPath, guestCount = 0, wid = 'MQ' }: { currentPath: string; guestCount?: number; wid?: string } = $props();
+  let { currentPath, guestCount = 0, wid = '' }: { currentPath: string; guestCount?: number; wid?: string } = $props();
 
   const auth = $derived(getAuth());
   const displayName = $derived(auth.name || 'Admin');
-  const isServiceAdmin = $derived(auth.role === 'service_admin');
+  const isAdmin = $derived(auth.role === 'admin');
   const initials = $derived(
     displayName.split(' ').map((w: string) => w[0]).join('').toUpperCase().slice(0, 2)
   );
@@ -36,7 +37,7 @@
       label: 'Management',
       items: [
         { href: `/${wid}/weddings`, label: 'Weddings', icon: Calendar },
-        ...(isServiceAdmin ? [{ href: `/${wid}/admins`, label: 'Admins', icon: Shield }] : []),
+        ...(isAdmin ? [{ href: `/${wid}/admins`, label: 'Admins', icon: Shield }] : []),
       ]
     },
     {
@@ -63,6 +64,7 @@
       } catch { /* ignore */ }
     }
     clearAuth();
+    setWeddingId('');
     goto('/login', { replaceState: true });
   }
 </script>
@@ -82,7 +84,6 @@
 
 <aside class={cn(
   "h-screen bg-white border-r border-gray-200 flex flex-col flex-shrink-0 z-40 transition-all duration-300 ease-in-out",
-  // Mobile: fixed overlay, slides in from left
   "fixed lg:relative",
   $sidebarCollapsed ? "-translate-x-full lg:translate-x-0 lg:w-[72px]" : "translate-x-0 w-[260px]"
 )}>

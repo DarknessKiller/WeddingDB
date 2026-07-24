@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"time"
+
+	"github.com/google/uuid"
 )
 
 // StringSlice stores a []string as JSON text in a text column.
@@ -33,21 +35,21 @@ func (s *StringSlice) Scan(src interface{}) error {
 }
 
 type GuestRecord struct {
-	ID          uint       `gorm:"primaryKey" json:"id"`
-	WeddingID   uint       `gorm:"index;not null" json:"weddingId"`
-	Name        string     `gorm:"size:255;not null" json:"name"`
-	Phone       string     `gorm:"size:50" json:"phone"`
-	Email       string     `gorm:"size:255" json:"email"`
-	Pax         int        `gorm:"not null;default:1" json:"pax"`
-	TableID     *uint      `gorm:"index" json:"tableId"`
-	SeatNum     *int       `json:"seatNum"`
-	RSVP        string     `gorm:"size:20;default:no_response" json:"rsvp"`
-	CheckedInAt *time.Time `json:"checkedInAt"`
-	Notes       string     `gorm:"type:text" json:"notes"`
-	Dietary     StringSlice `gorm:"type:text" json:"dietary"`
-	IsVip       bool       `json:"isVip"`
-	AngbaoAmt   *int       `json:"angbaoAmt"`
-	GiftItem    *string    `gorm:"size:255" json:"giftItem"`
-	CreatedAt   time.Time  `json:"createdAt"`
-	UpdatedAt   time.Time  `json:"updatedAt"`
+	ID          uuid.UUID    `gorm:"type:uuid;primaryKey" json:"id"`
+	WeddingID   uuid.UUID    `gorm:"type:uuid;index;not null" json:"weddingId"`
+	Name        string       `gorm:"size:255;not null" json:"name"`
+	Phone       string       `gorm:"size:50" json:"phone"`
+	Email       string       `gorm:"size:255" json:"email"`
+	Pax         int          `gorm:"not null;default:1" json:"pax"`
+	TableID     *uuid.UUID   `gorm:"type:uuid;index" json:"tableId"`
+	SeatNum     *int         `json:"seatNum"`
+	RSVP        string       `gorm:"size:20;default:no_response" json:"rsvp"`
+	CheckedInAt *time.Time   `json:"checkedInAt"`
+	Notes       string       `gorm:"type:text" json:"notes"`
+	Dietary     StringSlice  `gorm:"type:text" json:"dietary"`
+	IsVip       bool         `json:"isVip"`
+	AngbaoAmt   *int         `json:"angbaoAmt"`
+	GiftItem    *string      `gorm:"size:255" json:"giftItem"`
+	CreatedAt   time.Time    `json:"createdAt"`
+	UpdatedAt   time.Time    `json:"updatedAt"`
 }

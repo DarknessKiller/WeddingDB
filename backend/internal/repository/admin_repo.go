@@ -1,6 +1,7 @@
 package repository
 
 import (
+	"github.com/google/uuid"
 	"gorm.io/gorm"
 	"weddingdb/internal/models"
 )
@@ -17,7 +18,7 @@ func (r *AdminRepo) FindByEmail(email string) (*models.AdminUser, error) {
 	return &admin, err
 }
 
-func (r *AdminRepo) FindByID(id uint) (*models.AdminUser, error) {
+func (r *AdminRepo) FindByID(id uuid.UUID) (*models.AdminUser, error) {
 	var admin models.AdminUser
 	err := r.db.First(&admin, id).Error
 	return &admin, err
@@ -37,6 +38,42 @@ func (r *AdminRepo) Update(admin *models.AdminUser) error {
 	return r.db.Save(admin).Error
 }
 
-func (r *AdminRepo) Delete(id uint) error {
+func (r *AdminRepo) Delete(id uuid.UUID) error {
 	return r.db.Delete(&models.AdminUser{}, id).Error
+}
+
+// GetUserWeddings returns all weddings a user has access to.
+func (r *AdminRepo) GetUserWeddings(userID uuid.UUID) ([]models.WeddingEvent, error) {
+	var weddings []models.WeddingEvent
+	err := r.db.Joins("JOIN user_weddings ON user_weddings.wedding_id = wedding_events.id").
+		Where("user_weddings.user_id = ?", userID).
+		Find(&weddings).Error
+	return weddings, err
+}
+
+// SetUserWeddings replaces a user's wedding associations.
+func (r *AdminRepo) SetUserWeddings(userID uuid.UUID, weddingIDs []uuid.UUID) error {
+	// Delete existing
+	r.db.Where("user_id = ?", userID).Delete(&models.UserWedding{})
+	// Insert new
+	for _, wid := range weddingIDs {
+		uw := models.UserWedding{
+			ID:        uuid.New(),
+			UserID:    userID,
+			WeddingID: wid,
+		}
+		if err := r.db.Create(&uw).Error; err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// HasWeddingAccess checks if a user has access to a specific wedding.
+func (r *AdminRepo) HasWeddingAccess(userID, weddingID uuid.UUID) (bool, error) {
+	var count int64
+	err := r.db.Model(&models.UserWedding{}).
+		Where("user_id = ? AND wedding_id = ?", userID, weddingID).
+		Count(&count).Error
+	return count > 0, err
 }

@@ -15,10 +15,10 @@
 
   let allGuests = $state<Guest[]>([]);
   let allTables = $state<BanquetTable[]>([]);
-  let occupancyData = $state<Map<number, number>>(new Map());
+  let occupancyData = $state<Map<string, number>>(new Map());
   let loading = $state(true);
 
-  let selectedTableId = $state<number | null>(null);
+  let selectedTableId = $state<string | null>(null);
   let hoveredSeat = $state<{ seatNum: number; guest: Guest | null; x: number; y: number } | null>(null);
   let showMobilePanel = $state(false);
   let guestSearch = $state('');
@@ -33,7 +33,7 @@
       email: r.email,
       rsvp: (r.rsvp as RSVPStatus) ?? 'no_response',
       pax: r.pax,
-      tableId: r.tableId ? Number(r.tableId) : null,
+      tableId: r.tableId ?? null,
       seatNumber: r.seatNum,
       checkedIn: r.checkedInAt !== null,
       checkedInAt: r.checkedInAt ? new Date(r.checkedInAt) : undefined,
@@ -53,7 +53,7 @@
       allGuests = guestRes.guests.map(mapGuest);
       unassignedGuests = allGuests.filter(g => g.tableId === null);
       allTables = tablesRes;
-      const occMap = new Map<number, number>();
+      const occMap = new Map<string, number>();
       for (const o of rawOcc) occMap.set(o.TableID, o.Pax);
       occupancyData = occMap;
     } catch (e) {
@@ -62,9 +62,8 @@
       loading = false;
       const tableParam = page.url.searchParams.get('table');
       if (tableParam) {
-        const tableId = parseInt(tableParam, 10);
-        if (!isNaN(tableId) && allTables.some(t => t.id === tableId)) {
-          selectedTableId = tableId;
+        if (allTables.some(t => t.id === tableParam)) {
+          selectedTableId = tableParam;
           showMobilePanel = true;
         }
       }
@@ -74,7 +73,7 @@
   let selectedTable = $derived(selectedTableId ? allTables.find(t => t.id === selectedTableId) ?? null : null);
   let selectedTableGuests = $derived(selectedTableId ? allGuests.filter(g => g.tableId === selectedTableId) : []);
   let tableGuests = $derived.by(() => {
-    const map = new Map<number, Guest[]>();
+    const map = new Map<string, Guest[]>();
     for (const g of allGuests) {
       if (g.tableId === null) continue;
       const arr = map.get(g.tableId) ?? [];
@@ -99,12 +98,12 @@
       : unassignedGuests
   );
 
-  function handleTableClick(id: number) {
+  function handleTableClick(id: string) {
     selectedTableId = selectedTableId === id ? null : id;
     showMobilePanel = selectedTableId !== null;
   }
 
-  function handleSeatClick(tableId: number, seatNum: number, guest: Guest | null) {
+  function handleSeatClick(tableId: string, seatNum: number, guest: Guest | null) {
     if (guest) {
       $selectedGuest = guest;
       $isDrawerOpen = true;

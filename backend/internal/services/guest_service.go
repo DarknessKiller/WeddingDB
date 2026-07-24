@@ -3,6 +3,8 @@ package services
 import (
 	"errors"
 	"time"
+
+	"github.com/google/uuid"
 	"weddingdb/internal/models"
 	"weddingdb/internal/repository"
 )
@@ -16,11 +18,11 @@ func NewGuestService(guestRepo *repository.GuestRepo, tableRepo *repository.Tabl
 	return &GuestService{guestRepo: guestRepo, tableRepo: tableRepo}
 }
 
-func (s *GuestService) List(weddingID uint, offset, limit int) ([]models.GuestRecord, int64, error) {
+func (s *GuestService) List(weddingID uuid.UUID, offset, limit int) ([]models.GuestRecord, int64, error) {
 	return s.guestRepo.ListByWedding(weddingID, offset, limit)
 }
 
-func (s *GuestService) Get(id, weddingID uint) (*models.GuestRecord, error) {
+func (s *GuestService) Get(id, weddingID uuid.UUID) (*models.GuestRecord, error) {
 	return s.guestRepo.FindByID(id, weddingID)
 }
 
@@ -32,15 +34,15 @@ func (s *GuestService) Update(g *models.GuestRecord) error {
 	return s.guestRepo.Update(g)
 }
 
-func (s *GuestService) Delete(id, weddingID uint) error {
+func (s *GuestService) Delete(id, weddingID uuid.UUID) error {
 	return s.guestRepo.Delete(id, weddingID)
 }
 
-func (s *GuestService) Search(weddingID uint, query string) ([]models.GuestRecord, error) {
+func (s *GuestService) Search(weddingID uuid.UUID, query string) ([]models.GuestRecord, error) {
 	return s.guestRepo.SearchByWedding(weddingID, query)
 }
 
-func (s *GuestService) AssignSeat(guestID, weddingID, tableID uint, seatNum int) error {
+func (s *GuestService) AssignSeat(guestID, weddingID, tableID uuid.UUID, seatNum int) error {
 	guest, err := s.guestRepo.FindByID(guestID, weddingID)
 	if err != nil {
 		return err
@@ -57,7 +59,7 @@ func (s *GuestService) AssignSeat(guestID, weddingID, tableID uint, seatNum int)
 	return s.guestRepo.Update(guest)
 }
 
-func (s *GuestService) CheckIn(id, weddingID uint) error {
+func (s *GuestService) CheckIn(id, weddingID uuid.UUID) error {
 	guest, err := s.guestRepo.FindByID(id, weddingID)
 	if err != nil {
 		return err
@@ -67,7 +69,7 @@ func (s *GuestService) CheckIn(id, weddingID uint) error {
 	return s.guestRepo.Update(guest)
 }
 
-func (s *GuestService) CheckOut(id, weddingID uint) error {
+func (s *GuestService) CheckOut(id, weddingID uuid.UUID) error {
 	guest, err := s.guestRepo.FindByID(id, weddingID)
 	if err != nil {
 		return err
@@ -76,6 +78,6 @@ func (s *GuestService) CheckOut(id, weddingID uint) error {
 	return s.guestRepo.Update(guest)
 }
 
-func (s *GuestService) Occupancy(weddingID uint) ([]repository.TableOccupancy, error) {
+func (s *GuestService) Occupancy(weddingID uuid.UUID) ([]repository.TableOccupancy, error) {
 	return s.guestRepo.TableOccupancy(weddingID)
 }

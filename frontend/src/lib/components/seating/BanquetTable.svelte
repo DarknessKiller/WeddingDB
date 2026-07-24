@@ -18,7 +18,7 @@
     guests?: Guest[];
     isSelected?: boolean;
     isHighlighted?: boolean;
-    selectedTableId?: number | null;
+    selectedTableId?: string | null;
     dark?: boolean;
     hallScale?: number;
     onTableClick?: () => void;
@@ -29,23 +29,19 @@
   const occupied = $derived(guests.reduce((sum, g) => sum + g.pax, 0));
   const occupancyPct = $derived(occupied / table.capacity);
 
-  // Table sizing
   const TABLE_RADIUS = 36;
   const SEAT_RADIUS = 12;
   const ORBIT_RADIUS = TABLE_RADIUS + SEAT_RADIUS + 10;
   const SVG_SIZE = (ORBIT_RADIUS + SEAT_RADIUS + 4) * 2;
   const CENTER = SVG_SIZE / 2;
 
-  // Occupancy ring
   const RING_R = TABLE_RADIUS + 4;
   const RING_CIRCUM = 2 * Math.PI * RING_R;
   const RING_OFFSET = $derived(RING_CIRCUM * (1 - occupancyPct));
 
-  // Combined transform: center + hall scale
   const tableTransform = $derived(`translate(-50%, -50%) scale(${hallScale})`);
   const scaledSvgSize = $derived(SVG_SIZE * hallScale);
 
-  // Seat positions (polar)
   function seatPos(i: number) {
     const angle = (2 * Math.PI * i) / table.capacity - Math.PI / 2;
     return {
@@ -60,7 +56,6 @@
   class={cn(
     'absolute cursor-pointer transition-all duration-300 ease-out',
     isSelected ? 'z-20' : 'z-10',
-    // When a table is selected, dim/blur the others
     selectedTableId !== null && !isSelected && !isHighlighted ? 'opacity-30 grayscale blur-[0.3px]' : '',
     isHighlighted ? 'z-20' : ''
   )}
@@ -71,7 +66,6 @@
   aria-label="Table {table.id}, {occupied} of {table.capacity} occupied"
 >
   <svg width={SVG_SIZE} height={SVG_SIZE} viewBox="0 0 {SVG_SIZE} {SVG_SIZE}">
-    <!-- Occupancy ring -->
     <circle
       cx={CENTER} cy={CENTER} r={RING_R}
       fill="none" stroke={dark ? '#374151' : '#F3F4F6'} stroke-width="3"
@@ -88,7 +82,6 @@
       style="transform: rotate(-90deg); transform-origin: center;"
     />
 
-    <!-- Table surface -->
     <circle
       cx={CENTER} cy={CENTER} r={TABLE_RADIUS}
       fill="url(#tableGrad-{table.id})"
@@ -97,7 +90,6 @@
       class="transition-all duration-200"
     />
 
-    <!-- Gradient def -->
     <defs>
       <radialGradient id="tableGrad-{table.id}" cx="40%" cy="35%">
         <stop offset="0%" stop-color={dark ? '#374151' : '#FFFFFF'} />
@@ -105,17 +97,14 @@
       </radialGradient>
     </defs>
 
-    <!-- Table number -->
     <text x={CENTER} y={CENTER - 4} text-anchor="middle" class="{dark ? 'fill-gray-200' : 'fill-gray-800'} font-extrabold" font-size="16">{table.name || table.id}</text>
     <text x={CENTER} y={CENTER + 10} text-anchor="middle" class="{dark ? 'fill-gray-500' : 'fill-gray-400'}" font-size="9">{occupied}/{table.capacity}</text>
 
-    <!-- VIP badge -->
     {#if table.isVip}
       <circle cx={SVG_SIZE - 6} cy={6} r={9} fill="#D4AF37" stroke={dark ? '#1F2937' : 'white'} stroke-width="2" />
       <text x={SVG_SIZE - 6} y={10} text-anchor="middle" fill="white" font-size="8" font-weight="800">★</text>
     {/if}
 
-    <!-- Seats -->
     {#each Array(table.capacity) as _, i}
       {@const pos = seatPos(i)}
       {@const guest = guests.find(g => g.seatNumber !== null && (i + 1) >= g.seatNumber && (i + 1) < g.seatNumber + g.pax) ?? null}
@@ -131,7 +120,6 @@
         onclick={(e) => { e.stopPropagation(); onSeatClick?.(i + 1, guest ?? null); }}
         class="cursor-pointer"
       >
-        <!-- Invisible larger hit area -->
         <circle cx={pos.x} cy={pos.y} r={SEAT_RADIUS + 4} fill="transparent" />
         <circle
           cx={pos.x} cy={pos.y} r={SEAT_RADIUS}

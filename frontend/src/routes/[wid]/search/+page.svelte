@@ -120,7 +120,7 @@
 
   // ponytail: build tableGuests map for HallMap
   let tableGuests = $derived.by(() => {
-    const map = new Map<number, Guest[]>();
+    const map = new Map<string, Guest[]>();
     for (const g of allGuests) {
       if (g.tableId === null) continue;
       const arr = map.get(g.tableId) ?? [];
@@ -130,7 +130,7 @@
     return map;
   });
 
-  let highlightTableId = $state<number | null>(null);
+  let highlightTableId = $state<string | null>(null);
 
   let showResults = $state(false);
 
@@ -144,11 +144,11 @@
     highlightTableId = null;
   }
 
-  function handleTableClick(id: number) {
+  function handleTableClick(id: string) {
     highlightTableId = highlightTableId === id ? null : id;
   }
 
-  function getSeatOccupants(tableId: number, capacity: number) {
+  function getSeatOccupants(tableId: string, capacity: number) {
     return Array.from({ length: capacity }, (_, i) => {
       const seatNum = i + 1;
       const guest = allGuests.find(g =>

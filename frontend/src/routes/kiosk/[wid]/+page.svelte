@@ -20,7 +20,7 @@
   let searching = $state(false);
 
   let tableGuests = $derived.by(() => {
-    const map = new Map<number, Guest[]>();
+    const map = new Map<string, Guest[]>();
     for (const g of allGuests) {
       if (g.tableId === null) continue;
       const arr = map.get(g.tableId) ?? [];

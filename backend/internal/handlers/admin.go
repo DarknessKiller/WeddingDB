@@ -5,6 +5,7 @@ import (
 	"weddingdb/internal/repository"
 
 	"github.com/go-fuego/fuego"
+	"github.com/google/uuid"
 	"golang.org/x/crypto/bcrypt"
 )
 
@@ -15,25 +16,23 @@ func NewAdminHandler(adminRepo *repository.AdminRepo) *AdminHandler {
 }
 
 type AdminRequest struct {
-	Email     string `json:"email"`
-	Password  string `json:"password,omitempty"`
-	Name      string `json:"name"`
-	Role      string `json:"role"`
-	WeddingID *uint  `json:"weddingId,omitempty"`
+	Email    string   `json:"email"`
+	Password string   `json:"password,omitempty"`
+	Name     string   `json:"name"`
+	Role     string   `json:"role"`
+	Weddings []string `json:"weddings,omitempty"`
 }
 
 func (h *AdminHandler) List(c fuego.ContextWithBody[any]) (any, error) {
-	role := RoleFromContext(c.Context())
-	if role != "service_admin" {
-		return nil, fuego.UnauthorizedError{Title: "service_admin role required"}
+	if err := requireAdmin(c.Context()); err != nil {
+		return nil, fuego.UnauthorizedError{Title: err.Error()}
 	}
 	return h.adminRepo.List()
 }
 
 func (h *AdminHandler) Create(c fuego.ContextWithBody[AdminRequest]) (any, error) {
-	role := RoleFromContext(c.Context())
-	if role != "service_admin" {
-		return nil, fuego.UnauthorizedError{Title: "service_admin role required"}
+	if err := requireAdmin(c.Context()); err != nil {
+		return nil, fuego.UnauthorizedError{Title: err.Error()}
 	}
 	body, err := c.Body()
 	if err != nil {
@@ -47,26 +46,35 @@ func (h *AdminHandler) Create(c fuego.ContextWithBody[AdminRequest]) (any, error
 		return nil, fuego.InternalServerError{Title: "Failed to hash password"}
 	}
 	admin := &models.AdminUser{
-		Email:     body.Email,
-		Password:  string(hash),
-		Name:      body.Name,
-		Role:      body.Role,
-		WeddingID: body.WeddingID,
+		Email:    body.Email,
+		Password: string(hash),
+		Name:     body.Name,
+		Role:     body.Role,
 	}
 	if err := h.adminRepo.Create(admin); err != nil {
 		return nil, err
+	}
+	// Assign weddings if provided
+	if len(body.Weddings) > 0 {
+		var ids []uuid.UUID
+		for _, ws := range body.Weddings {
+			if id, err := uuid.Parse(ws); err == nil {
+				ids = append(ids, id)
+			}
+		}
+		if len(ids) > 0 {
+			h.adminRepo.SetUserWeddings(admin.ID, ids)
+		}
 	}
 	return admin, nil
 }
 
 func (h *AdminHandler) Delete(c fuego.ContextWithBody[any]) (any, error) {
-	role := RoleFromContext(c.Context())
-	if role != "service_admin" {
-		return nil, fuego.UnauthorizedError{Title: "service_admin role required"}
+	if err := requireAdmin(c.Context()); err != nil {
+		return nil, fuego.UnauthorizedError{Title: err.Error()}
 	}
 	adminID := AdminIDFromContext(c.Context())
 	id := DecodeID(c.PathParam("id"))
-	// Prevent self-deletion
 	if id == adminID {
 		return nil, fuego.BadRequestError{Title: "Cannot delete your own account"}
 	}
@@ -76,14 +84,13 @@ func (h *AdminHandler) Delete(c fuego.ContextWithBody[any]) (any, error) {
 	return nil, nil
 }
 
-type AssignWeddingRequest struct {
-	WeddingID *uint `json:"weddingId"`
+type AssignWeddingsRequest struct {
+	Weddings []string `json:"weddings"`
 }
 
-func (h *AdminHandler) AssignWedding(c fuego.ContextWithBody[AssignWeddingRequest]) (any, error) {
-	role := RoleFromContext(c.Context())
-	if role != "service_admin" {
-		return nil, fuego.UnauthorizedError{Title: "service_admin role required"}
+func (h *AdminHandler) AssignWeddings(c fuego.ContextWithBody[AssignWeddingsRequest]) (any, error) {
+	if err := requireAdmin(c.Context()); err != nil {
+		return nil, fuego.UnauthorizedError{Title: err.Error()}
 	}
 	body, err := c.Body()
 	if err != nil {
@@ -94,9 +101,23 @@ func (h *AdminHandler) AssignWedding(c fuego.ContextWithBody[AssignWeddingReques
 	if err != nil {
 		return nil, fuego.NotFoundError{Title: "Admin not found"}
 	}
-	admin.WeddingID = body.WeddingID
-	if err := h.adminRepo.Update(admin); err != nil {
-		return nil, err
+	var ids []uuid.UUID
+	for _, ws := range body.Weddings {
+		if wid, err := uuid.Parse(ws); err == nil {
+			ids = append(ids, wid)
+		}
+	}
+	if err := h.adminRepo.SetUserWeddings(admin.ID, ids); err != nil {
+		return nil, fuego.InternalServerError{Title: "Failed to assign weddings"}
 	}
 	return admin, nil
+}
+
+func (h *AdminHandler) GetUserWeddings(c fuego.ContextWithBody[any]) (any, error) {
+	id := DecodeID(c.PathParam("id"))
+	weddings, err := h.adminRepo.GetUserWeddings(id)
+	if err != nil {
+		return nil, err
+	}
+	return weddings, nil
 }

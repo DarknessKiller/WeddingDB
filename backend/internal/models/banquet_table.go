@@ -1,10 +1,14 @@
 package models
 
-import "time"
+import (
+	"time"
+
+	"github.com/google/uuid"
+)
 
 type BanquetTable struct {
-	ID        uint      `gorm:"primaryKey" json:"id"`
-	WeddingID uint      `gorm:"index;not null" json:"weddingId"`
+	ID        uuid.UUID `gorm:"type:uuid;primaryKey" json:"id"`
+	WeddingID uuid.UUID `gorm:"type:uuid;index;not null" json:"weddingId"`
 	Name      string    `gorm:"size:100;not null" json:"name"`
 	Capacity  int       `gorm:"not null" json:"capacity"`
 	Row       int       `gorm:"not null;default:1" json:"row"`

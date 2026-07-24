@@ -5,6 +5,8 @@ import (
 	"net/http"
 	"strings"
 	"weddingdb/internal/services"
+
+	"github.com/google/uuid"
 )
 
 type contextKey string
@@ -35,6 +37,12 @@ func AuthMiddleware(authService *services.AuthService) func(http.Handler) http.H
 			next.ServeHTTP(w, r.WithContext(ctx))
 		})
 	}
+}
+
+// ParseUUID is a convenience wrapper around uuid.Parse that returns uuid.Nil on error.
+func ParseUUID(s string) uuid.UUID {
+	id, _ := uuid.Parse(s)
+	return id
 }
 
 func extractBearer(r *http.Request) string {

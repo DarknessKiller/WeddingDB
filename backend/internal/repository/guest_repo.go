@@ -3,6 +3,8 @@ package repository
 import (
 	"fmt"
 	"strings"
+
+	"github.com/google/uuid"
 	"gorm.io/gorm"
 	"weddingdb/internal/models"
 )
@@ -13,7 +15,7 @@ func NewGuestRepo(db *gorm.DB) *GuestRepo {
 	return &GuestRepo{db: db}
 }
 
-func (r *GuestRepo) ListByWedding(weddingID uint, offset, limit int) ([]models.GuestRecord, int64, error) {
+func (r *GuestRepo) ListByWedding(weddingID uuid.UUID, offset, limit int) ([]models.GuestRecord, int64, error) {
 	var guests []models.GuestRecord
 	var total int64
 	r.db.Model(&models.GuestRecord{}).Where("wedding_id = ?", weddingID).Count(&total)
@@ -21,15 +23,14 @@ func (r *GuestRepo) ListByWedding(weddingID uint, offset, limit int) ([]models.G
 	return guests, total, err
 }
 
-func (r *GuestRepo) FindByID(id, weddingID uint) (*models.GuestRecord, error) {
+func (r *GuestRepo) FindByID(id, weddingID uuid.UUID) (*models.GuestRecord, error) {
 	var g models.GuestRecord
 	err := r.db.Where("id = ? AND wedding_id = ?", id, weddingID).First(&g).Error
 	return &g, err
 }
 
-func (r *GuestRepo) SearchByWedding(weddingID uint, query string) ([]models.GuestRecord, error) {
+func (r *GuestRepo) SearchByWedding(weddingID uuid.UUID, query string) ([]models.GuestRecord, error) {
 	var guests []models.GuestRecord
-	// Escape SQL LIKE wildcards in user input
 	escaped := strings.ReplaceAll(query, "%", "\\%")
 	escaped = strings.ReplaceAll(escaped, "_", "\\_")
 	q := fmt.Sprintf("%%%s%%", escaped)
@@ -46,13 +47,13 @@ func (r *GuestRepo) Update(g *models.GuestRecord) error {
 	return r.db.Save(g).Error
 }
 
-func (r *GuestRepo) Delete(id, weddingID uint) error {
+func (r *GuestRepo) Delete(id, weddingID uuid.UUID) error {
 	return r.db.Where("id = ? AND wedding_id = ?", id, weddingID).Delete(&models.GuestRecord{}).Error
 }
 
-func (r *GuestRepo) TableOccupancy(weddingID uint) ([]TableOccupancy, error) {
+func (r *GuestRepo) TableOccupancy(weddingID uuid.UUID) ([]TableOccupancy, error) {
 	type row struct {
-		TableID uint
+		TableID uuid.UUID
 		Pax     int
 	}
 	var rows []row
@@ -64,13 +65,13 @@ func (r *GuestRepo) TableOccupancy(weddingID uint) ([]TableOccupancy, error) {
 		return nil, err
 	}
 	var result []TableOccupancy
-	for _, r := range rows {
-		result = append(result, TableOccupancy{TableID: r.TableID, Pax: r.Pax})
+	for _, row := range rows {
+		result = append(result, TableOccupancy{TableID: row.TableID, Pax: row.Pax})
 	}
 	return result, nil
 }
 
 type TableOccupancy struct {
-	TableID uint
+	TableID uuid.UUID
 	Pax     int
 }

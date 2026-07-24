@@ -11,7 +11,12 @@
       goto('/login', { replaceState: true });
     } else {
       const wid = get(weddingId);
-      goto(`/${wid}/dashboard`, { replaceState: true });
+      if (!wid) {
+        // No wedding selected — go to login to pick one
+        goto('/login', { replaceState: true });
+      } else {
+        goto(`/${wid}/dashboard`, { replaceState: true });
+      }
     }
   });
 </script>

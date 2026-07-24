@@ -20,19 +20,19 @@ type TableRequest struct {
 	Capacity int    `json:"capacity"`
 	Row      int    `json:"row"`
 	Col      int    `json:"col"`
-	IsVip    bool `json:"isVip"`
+	IsVip    bool   `json:"isVip"`
 }
 
 type TableResponse struct {
-	ID        uint    `json:"id"`
-	WeddingID uint    `json:"weddingId"`
+	ID        string  `json:"id"`
+	WeddingID string  `json:"weddingId"`
 	Name      string  `json:"name"`
 	Capacity  int     `json:"capacity"`
 	Row       int     `json:"row"`
 	Col       int     `json:"col"`
 	X         float64 `json:"x"`
 	Y         float64 `json:"y"`
-	IsVip     bool `json:"isVip"`
+	IsVip     bool    `json:"isVip"`
 }
 
 var yPositions = map[int]float64{1: 15, 2: 30, 3: 45, 4: 60, 5: 75, 6: 90}
@@ -47,7 +47,6 @@ func computeLayout(tables []models.BanquetTable) []TableResponse {
 		rowMap[tables[i].Row] = append(rowMap[tables[i].Row], &twp{BanquetTable: tables[i]})
 	}
 
-	// Find max row number
 	maxRow := 0
 	for row := range rowMap {
 		if row > maxRow {
@@ -55,14 +54,12 @@ func computeLayout(tables []models.BanquetTable) []TableResponse {
 		}
 	}
 
-	// If more rows than predefined, compute positions dynamically
 	yPos := make(map[int]float64)
 	if maxRow <= len(yPositions) {
 		for k, v := range yPositions {
 			yPos[k] = v
 		}
 	} else {
-		// Evenly space rows with good gaps
 		start, end := 12.0, 88.0
 		for i := 1; i <= maxRow; i++ {
 			if maxRow == 1 {
@@ -86,7 +83,7 @@ func computeLayout(tables []models.BanquetTable) []TableResponse {
 			t.x = float64(100) / float64(n+1) * float64(i+1)
 			t.y = y
 			result = append(result, TableResponse{
-				ID: t.ID, WeddingID: t.WeddingID, Name: t.Name, Capacity: t.Capacity,
+				ID: t.ID.String(), WeddingID: t.WeddingID.String(), Name: t.Name, Capacity: t.Capacity,
 				Row: t.Row, Col: t.Col, X: t.x, Y: t.y, IsVip: t.IsVip,
 			})
 		}

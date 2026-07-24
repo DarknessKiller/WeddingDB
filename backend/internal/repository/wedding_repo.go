@@ -1,6 +1,7 @@
 package repository
 
 import (
+	"github.com/google/uuid"
 	"gorm.io/gorm"
 	"weddingdb/internal/models"
 )
@@ -11,7 +12,7 @@ func NewWeddingRepo(db *gorm.DB) *WeddingRepo {
 	return &WeddingRepo{db: db}
 }
 
-func (r *WeddingRepo) FindByID(id uint) (*models.WeddingEvent, error) {
+func (r *WeddingRepo) FindByID(id uuid.UUID) (*models.WeddingEvent, error) {
 	var w models.WeddingEvent
 	err := r.db.First(&w, id).Error
 	return &w, err
@@ -31,6 +32,6 @@ func (r *WeddingRepo) Update(w *models.WeddingEvent) error {
 	return r.db.Save(w).Error
 }
 
-func (r *WeddingRepo) Delete(id uint) error {
+func (r *WeddingRepo) Delete(id uuid.UUID) error {
 	return r.db.Delete(&models.WeddingEvent{}, id).Error
 }

@@ -6,6 +6,7 @@ import (
 	"weddingdb/internal/services"
 
 	"github.com/go-fuego/fuego"
+	"github.com/google/uuid"
 )
 
 type GuestHandler struct{ guestService *services.GuestService }
@@ -23,7 +24,7 @@ type GuestCreateRequest struct {
 	IsVip     bool     `json:"isVip"`
 	Notes     string   `json:"notes"`
 	Dietary   []string `json:"dietary"`
-	TableID   *uint    `json:"tableId"`
+	TableID   *string  `json:"tableId"`
 	SeatNum   *int     `json:"seatNum"`
 	AngbaoAmt *int     `json:"angbaoAmt"`
 	GiftItem  *string  `json:"giftItem"`
@@ -81,7 +82,9 @@ func (h *GuestHandler) Create(c fuego.ContextWithBody[GuestCreateRequest]) (any,
 		return nil, err
 	}
 	if body.TableID != nil && body.SeatNum != nil {
-		h.guestService.AssignSeat(guest.ID, wid, *body.TableID, *body.SeatNum)
+		if tid, err := uuid.Parse(*body.TableID); err == nil {
+			h.guestService.AssignSeat(guest.ID, wid, tid, *body.SeatNum)
+		}
 	}
 	return guest, nil
 }
@@ -184,7 +187,6 @@ func (h *GuestHandler) Occupancy(c fuego.ContextWithBody[any]) (any, error) {
 	return occ, nil
 }
 
-// AssignSeatRequest is the request body for seat assignment.
 type AssignSeatRequest struct {
 	TableID string `json:"tableId"`
 	SeatNum int    `json:"seatNum"`

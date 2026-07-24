@@ -1,8 +1,7 @@
 import { apiFetch } from './client';
-import { encodeId } from '$lib/utils/encode';
 
 export interface Wedding {
-	id: number;
+	id: string;
 	name: string;
 	date: string;
 	createdAt: string;
@@ -20,8 +19,8 @@ export async function listWeddings(): Promise<Wedding[]> {
 	return res.json();
 }
 
-export async function getWedding(id: number): Promise<Wedding> {
-	const res = await apiFetch(`/api/weddings/${encodeId(id)}`);
+export async function getWedding(id: string): Promise<Wedding> {
+	const res = await apiFetch(`/api/weddings/${id}`);
 	if (!res.ok) throw new Error('Failed to get wedding');
 	return res.json();
 }
@@ -38,8 +37,8 @@ export async function createWedding(data: WeddingCreateData): Promise<Wedding> {
 	return res.json();
 }
 
-export async function updateWedding(id: number, data: WeddingCreateData): Promise<Wedding> {
-	const res = await apiFetch(`/api/weddings/${encodeId(id)}`, {
+export async function updateWedding(id: string, data: WeddingCreateData): Promise<Wedding> {
+	const res = await apiFetch(`/api/weddings/${id}`, {
 		method: 'PUT',
 		body: JSON.stringify(data),
 	});
@@ -47,8 +46,8 @@ export async function updateWedding(id: number, data: WeddingCreateData): Promis
 	return res.json();
 }
 
-export async function deleteWedding(id: number): Promise<void> {
-	const res = await apiFetch(`/api/weddings/${encodeId(id)}`, {
+export async function deleteWedding(id: string): Promise<void> {
+	const res = await apiFetch(`/api/weddings/${id}`, {
 		method: 'DELETE',
 	});
 	if (!res.ok) throw new Error('Failed to delete wedding');

@@ -7,7 +7,7 @@ export interface Guest {
   email?: string;
   rsvp: RSVPStatus;
   pax: number;
-  tableId: number | null;
+  tableId: string | null;
   seatNumber: number | null;
   checkedIn: boolean;
   checkedInAt?: Date;
@@ -20,7 +20,7 @@ export interface Guest {
 }
 
 export interface BanquetTable {
-  id: number;
+  id: string;
   name: string;
   capacity: number;
   x: number;
@@ -31,7 +31,7 @@ export interface BanquetTable {
 }
 
 export interface Seat {
-  tableId: number;
+  tableId: string;
   seatNumber: number;
   guest: Guest | null;
   isSelected: boolean;
@@ -39,7 +39,7 @@ export interface Seat {
 }
 
 export interface TableOccupancy {
-  tableId: number;
+  tableId: string;
   occupied: number;
   capacity: number;
   percentage: number;

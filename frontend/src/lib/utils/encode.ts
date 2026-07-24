@@ -1,6 +1,7 @@
 /**
- * Encode a numeric ID to base64url (raw, no padding) — matches Go's base64.RawURLEncoding.
+ * UUIDs are URL-safe strings — no encoding needed.
+ * Kept as passthrough for backward compat with existing imports.
  */
 export function encodeId(id: number | string): string {
-	return btoa(String(id)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+	return String(id);
 }

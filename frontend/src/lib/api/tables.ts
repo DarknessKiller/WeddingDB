@@ -1,6 +1,5 @@
 import { apiFetch } from './client';
-import { encodeId } from '$lib/utils/encode';
-import type { BanquetTable, TableOccupancy } from '$lib/types';
+import type { BanquetTable } from '$lib/types';
 
 function wid(weddingId: string, path: string) {
 	return `/api/weddings/${weddingId}${path}`;
@@ -21,8 +20,8 @@ export async function createTable(weddingId: string, data: Omit<BanquetTable, 'i
 	return res.json();
 }
 
-export async function updateTable(weddingId: string, id: number, data: Omit<BanquetTable, 'id' | 'x' | 'y'>): Promise<BanquetTable> {
-	const res = await apiFetch(wid(weddingId, `/tables/${encodeId(id)}`), {
+export async function updateTable(weddingId: string, id: string, data: Omit<BanquetTable, 'id' | 'x' | 'y'>): Promise<BanquetTable> {
+	const res = await apiFetch(wid(weddingId, `/tables/${id}`), {
 		method: 'PUT',
 		body: JSON.stringify(data)
 	});
@@ -30,16 +29,15 @@ export async function updateTable(weddingId: string, id: number, data: Omit<Banq
 	return res.json();
 }
 
-export async function deleteTable(weddingId: string, id: number): Promise<void> {
-	const res = await apiFetch(wid(weddingId, `/tables/${encodeId(id)}`), {
+export async function deleteTable(weddingId: string, id: string): Promise<void> {
+	const res = await apiFetch(wid(weddingId, `/tables/${id}`), {
 		method: 'DELETE'
 	});
 	if (!res.ok) throw new Error('Failed to delete table');
 }
 
-// ponytail: backend returns {TableID, PascalCase}, frontend expects {tableId, ...}
 export interface RawOccupancy {
-	TableID: number;
+	TableID: string;
 	Pax: number;
 }
 
