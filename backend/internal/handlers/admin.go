@@ -15,11 +15,11 @@ func NewAdminHandler(adminRepo *repository.AdminRepo) *AdminHandler {
 }
 
 type AdminRequest struct {
-	Email    string  `json:"e"`
-	Password string  `json:"pw,omitempty"`
-	Name     string  `json:"n"`
-	Role     string  `json:"rl"`
-	WeddingID *uint  `json:"wid,omitempty"`
+	Email     string `json:"email"`
+	Password  string `json:"password,omitempty"`
+	Name      string `json:"name"`
+	Role      string `json:"role"`
+	WeddingID *uint  `json:"weddingId,omitempty"`
 }
 
 func (h *AdminHandler) List(c fuego.ContextWithBody[any]) (any, error) {

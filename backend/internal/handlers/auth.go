@@ -20,6 +20,8 @@ type LoginRequest struct {
 type TokenResponse struct {
 	AccessToken  string `json:"accessToken"`
 	RefreshToken string `json:"refreshToken"`
+	Role         string `json:"role"`
+	Name         string `json:"name"`
 }
 
 type RefreshRequest struct {
@@ -31,11 +33,11 @@ func (h *AuthHandler) Login(c fuego.ContextWithBody[LoginRequest]) (TokenRespons
 	if err != nil {
 		return TokenResponse{}, fuego.BadRequestError{Title: "Invalid request"}
 	}
-	access, refresh, err := h.authService.Login(c.Context(), body.Email, body.Password)
+	access, refresh, role, name, err := h.authService.Login(c.Context(), body.Email, body.Password)
 	if err != nil {
 		return TokenResponse{}, fuego.UnauthorizedError{Title: err.Error()}
 	}
-	return TokenResponse{AccessToken: access, RefreshToken: refresh}, nil
+	return TokenResponse{AccessToken: access, RefreshToken: refresh, Role: role, Name: name}, nil
 }
 
 func (h *AuthHandler) Refresh(c fuego.ContextWithBody[RefreshRequest]) (TokenResponse, error) {
@@ -43,11 +45,11 @@ func (h *AuthHandler) Refresh(c fuego.ContextWithBody[RefreshRequest]) (TokenRes
 	if err != nil {
 		return TokenResponse{}, fuego.BadRequestError{Title: "Invalid request"}
 	}
-	access, refresh, err := h.authService.Refresh(c.Context(), body.RefreshToken)
+	access, refresh, role, name, err := h.authService.Refresh(c.Context(), body.RefreshToken)
 	if err != nil {
 		return TokenResponse{}, fuego.UnauthorizedError{Title: err.Error()}
 	}
-	return TokenResponse{AccessToken: access, RefreshToken: refresh}, nil
+	return TokenResponse{AccessToken: access, RefreshToken: refresh, Role: role, Name: name}, nil
 }
 
 func (h *AuthHandler) Logout(c fuego.ContextWithBody[RefreshRequest]) (any, error) {

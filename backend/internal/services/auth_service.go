@@ -38,44 +38,44 @@ func NewAuthService(adminRepo *repository.AdminRepo, tokenRepo *repository.Token
 	}
 }
 
-func (s *AuthService) Login(ctx context.Context, email, password string) (string, string, error) {
+func (s *AuthService) Login(ctx context.Context, email, password string) (string, string, string, string, error) {
 	admin, err := s.adminRepo.FindByEmail(email)
 	if err != nil {
-		return "", "", errors.New("invalid credentials")
+		return "", "", "", "", errors.New("invalid credentials")
 	}
 	if err := bcrypt.CompareHashAndPassword([]byte(admin.Password), []byte(password)); err != nil {
-		return "", "", errors.New("invalid credentials")
+		return "", "", "", "", errors.New("invalid credentials")
 	}
 	accessToken, err := s.generateAccessToken(admin)
 	if err != nil {
-		return "", "", err
+		return "", "", "", "", err
 	}
 	refreshToken, err := s.generateRefreshToken(admin.ID)
 	if err != nil {
-		return "", "", err
+		return "", "", "", "", err
 	}
-	return accessToken, refreshToken, nil
+	return accessToken, refreshToken, admin.Role, admin.Name, nil
 }
 
-func (s *AuthService) Refresh(ctx context.Context, refreshTokenStr string) (string, string, error) {
+func (s *AuthService) Refresh(ctx context.Context, refreshTokenStr string) (string, string, string, string, error) {
 	token, err := s.tokenRepo.FindByToken(refreshTokenStr)
 	if err != nil {
-		return "", "", errors.New("invalid refresh token")
+		return "", "", "", "", errors.New("invalid refresh token")
 	}
 	s.tokenRepo.DeleteByToken(refreshTokenStr)
 	admin, err := s.adminRepo.FindByID(token.AdminID)
 	if err != nil {
-		return "", "", errors.New("admin not found")
+		return "", "", "", "", errors.New("admin not found")
 	}
 	accessToken, err := s.generateAccessToken(admin)
 	if err != nil {
-		return "", "", err
+		return "", "", "", "", err
 	}
 	newRefreshToken, err := s.generateRefreshToken(admin.ID)
 	if err != nil {
-		return "", "", err
+		return "", "", "", "", err
 	}
-	return accessToken, newRefreshToken, nil
+	return accessToken, newRefreshToken, admin.Role, admin.Name, nil
 }
 
 func (s *AuthService) Logout(refreshToken string) error {

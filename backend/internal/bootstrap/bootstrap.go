@@ -16,6 +16,7 @@ import (
 	"github.com/go-fuego/fuego"
 	"github.com/redis/go-redis/v9"
 	"gorm.io/driver/postgres"
+	"golang.org/x/crypto/bcrypt"
 	"gorm.io/gorm"
 )
 
@@ -86,11 +87,29 @@ func Init(env config.Env) *App {
 
 	server := config.NewFuegoServer(env)
 
+	// CORS — must be first
+	fuego.Use(server, middleware.CORSMiddleware)
+
 	// Register routes
 	handlers.RegisterRoutes(server, authService, guestService, tableService, weddingService, adminRepo, nonceStore)
 
-	// CORS
-	fuego.Use(server, middleware.CORSMiddleware)
+	// Seed default admin if none exists
+	var count int64
+	db.Model(&models.AdminUser{}).Count(&count)
+	if count == 0 {
+		hash, _ := bcrypt.GenerateFromPassword([]byte("admin123"), bcrypt.DefaultCost)
+		admin := &models.AdminUser{
+			Email:    "admin@weddingdb.local",
+			Password: string(hash),
+			Name:     "Admin",
+			Role:     "service_admin",
+		}
+		if err := adminRepo.Create(admin); err != nil {
+			log.Println("Warning: failed to seed admin:", err)
+		} else {
+			log.Println("Seeded default admin: admin@weddingdb.local / admin123")
+		}
+	}
 
 	return &App{
 		Server:      server,

@@ -15,8 +15,8 @@ func NewWeddingHandler(weddingService *services.WeddingService) *WeddingHandler 
 }
 
 type WeddingRequest struct {
-	Name string    `json:"n"`
-	Date time.Time `json:"d"`
+	Name string `json:"name"`
+	Date string `json:"date"`
 }
 
 func (h *WeddingHandler) List(c fuego.ContextWithBody[any]) (any, error) {
@@ -33,7 +33,11 @@ func (h *WeddingHandler) Create(c fuego.ContextWithBody[WeddingRequest]) (any, e
 	if err != nil {
 		return nil, fuego.BadRequestError{Title: "Invalid request"}
 	}
-	w := &models.WeddingEvent{Name: body.Name, Date: body.Date}
+	d, err := time.Parse("2006-01-02", body.Date)
+	if err != nil {
+		return nil, fuego.BadRequestError{Title: "Invalid date format, use YYYY-MM-DD"}
+	}
+	w := &models.WeddingEvent{Name: body.Name, Date: d}
 	if err := h.weddingService.Create(w); err != nil {
 		return nil, err
 	}
@@ -45,13 +49,17 @@ func (h *WeddingHandler) Update(c fuego.ContextWithBody[WeddingRequest]) (any, e
 	if err != nil {
 		return nil, fuego.BadRequestError{Title: "Invalid request"}
 	}
+	d, err := time.Parse("2006-01-02", body.Date)
+	if err != nil {
+		return nil, fuego.BadRequestError{Title: "Invalid date format, use YYYY-MM-DD"}
+	}
 	id := DecodeID(c.PathParam("id"))
 	w, err := h.weddingService.Get(id)
 	if err != nil {
 		return nil, fuego.NotFoundError{Title: "Wedding not found"}
 	}
 	w.Name = body.Name
-	w.Date = body.Date
+	w.Date = d
 	if err := h.weddingService.Update(w); err != nil {
 		return nil, err
 	}
