@@ -355,7 +355,7 @@
           <div class="h-[200px] rounded-xl overflow-hidden border border-gray-200 bg-gray-50">
             <HallMap
               tables={[previewTable, ...(tables ?? []).filter(t => editingTable ? t.id !== editingTable.id : true)]}
-              tableGuests={new Map()}
+              tableGuests={{}}
               selectedTableId={null}
             />
           </div>

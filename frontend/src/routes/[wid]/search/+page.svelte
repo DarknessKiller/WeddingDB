@@ -118,16 +118,16 @@
     goto(`/${$weddingId}/seating?table=${tableId}`);
   }
 
-  // ponytail: build tableGuests map for HallMap
+  // ponytail: build tableGuests object for HallMap
   let tableGuests = $derived.by(() => {
-    const map = new Map<string, Guest[]>();
+    const obj: Record<string, Guest[]> = {};
     for (const g of allGuests) {
       if (g.tableId === null) continue;
-      const arr = map.get(g.tableId) ?? [];
-      arr.push(g);
-      map.set(g.tableId, arr);
+      const key = String(g.tableId);
+      if (!obj[key]) obj[key] = [];
+      obj[key].push(g);
     }
-    return map;
+    return obj;
   });
 
   let highlightTableId = $state<string | null>(null);

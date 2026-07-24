@@ -8,7 +8,7 @@
   let {
     selectedTableId = null,
     highlightedTableId = null,
-    tableGuests = new Map(),
+    tableGuests: tableGuestsRaw = {},
     tables = DEFAULT_TABLES,
     dark = false,
     onTableClick,
@@ -17,7 +17,7 @@
   }: {
     selectedTableId?: string | null;
     highlightedTableId?: string | null;
-    tableGuests?: Map<string, Guest[]>;
+    tableGuests?: Record<string, Guest[]>;
     tables?: BanquetTableType[];
     dark?: boolean;
     onTableClick?: (id: string) => void;
@@ -169,7 +169,7 @@
       {#each tables as tableDef (tableDef.id)}
         <BanquetTableComponent
           table={tableDef}
-          guests={tableGuests.get(tableDef.id) ?? []}
+          guests={tableGuestsRaw[tableDef.id] ?? []}
           isSelected={selectedTableId === tableDef.id}
           isHighlighted={highlightedTableId === tableDef.id}
           selectedTableId={selectedTableId}

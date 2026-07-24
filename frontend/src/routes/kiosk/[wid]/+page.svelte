@@ -20,14 +20,14 @@
   let searching = $state(false);
 
   let tableGuests = $derived.by(() => {
-    const map = new Map<string, Guest[]>();
+    const obj: Record<string, Guest[]> = {};
     for (const g of allGuests) {
       if (g.tableId === null) continue;
-      const arr = map.get(g.tableId) ?? [];
-      arr.push(g);
-      map.set(g.tableId, arr);
+      const key = String(g.tableId);
+      if (!obj[key]) obj[key] = [];
+      obj[key].push(g);
     }
-    return map;
+    return obj;
   });
 
   let selectedTable = $derived(selectedGuest?.tableId ? tables.find(t => t.id === selectedGuest!.tableId) ?? null : null);

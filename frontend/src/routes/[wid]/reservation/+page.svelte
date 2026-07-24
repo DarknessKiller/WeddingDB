@@ -50,14 +50,14 @@
   });
 
   let tableGuests = $derived.by(() => {
-    const map = new Map<string, Guest[]>();
+    const obj: Record<string, Guest[]> = {};
     for (const g of apiGuests) {
       if (g.tableId === null) continue;
-      const arr = map.get(g.tableId) ?? [];
-      arr.push(g);
-      map.set(g.tableId, arr);
+      const key = String(g.tableId);
+      if (!obj[key]) obj[key] = [];
+      obj[key].push(g);
     }
-    return map;
+    return obj;
   });
 
   function handleSeatClick(tableId: string, seatNum: number, guest: Guest | null) {
@@ -316,7 +316,7 @@
           >
             <option value="">No table (unassigned)</option>
             {#each apiTables as t}
-              {@const tg = tableGuests.get(t.id) ?? []}
+              {@const tg = tableGuests[String(t.id)] ?? []}
               {@const occ = { occupied: tg.reduce((sum, g) => sum + g.pax, 0), capacity: t.capacity }}
               <option value={t.id} selected={form.tableId === t.id}>
                 {t.name || `Table ${t.id}`} {t.isVip ? '★' : ''} – {occ.occupied}/{occ.capacity} seats

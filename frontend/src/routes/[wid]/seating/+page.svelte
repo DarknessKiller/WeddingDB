@@ -73,14 +73,14 @@
   let selectedTable = $derived(selectedTableId ? allTables.find(t => t.id === selectedTableId) ?? null : null);
   let selectedTableGuests = $derived(selectedTableId ? allGuests.filter(g => g.tableId === selectedTableId) : []);
   let tableGuests = $derived.by(() => {
-    const map = new Map<string, Guest[]>();
+    const obj: Record<string, Guest[]> = {};
     for (const g of allGuests) {
       if (g.tableId === null) continue;
-      const arr = map.get(g.tableId) ?? [];
-      arr.push(g);
-      map.set(g.tableId, arr);
+      const key = String(g.tableId);
+      if (!obj[key]) obj[key] = [];
+      obj[key].push(g);
     }
-    return map;
+    return obj;
   });
   let selectedOccupancy = $derived.by((): TableOccupancy | null => {
     if (!selectedTableId || !selectedTable) return null;
