@@ -442,7 +442,7 @@
         <div class="grid grid-cols-2 gap-3">
           <div>
             <label class="block text-xs font-medium text-gray-500 mb-1">Current Table</label>
-            <div class="px-3 py-2 bg-gray-50 rounded-lg text-sm text-gray-700">{moveGuest.tableId ?? '—'}</div>
+            <div class="px-3 py-2 bg-gray-50 rounded-lg text-sm text-gray-700">{tables.find(t => t.id === moveGuest.tableId)?.name || (moveGuest.tableId ?? '—')}</div>
           </div>
           <div>
             <label class="block text-xs font-medium text-gray-500 mb-1">Current Seat</label>

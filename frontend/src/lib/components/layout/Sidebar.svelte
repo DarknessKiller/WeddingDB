@@ -33,7 +33,6 @@
     {
       label: 'Other',
       items: [
-        { href: '/reservation', label: 'Reservations', icon: Calendar },
         { href: '/settings', label: 'Settings', icon: Settings },
       ]
     }
