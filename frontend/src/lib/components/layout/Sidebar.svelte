@@ -37,7 +37,7 @@
       label: 'Management',
       items: [
         { href: '/weddings', label: 'Weddings', icon: Calendar },
-        ...(isAdmin ? [{ href: `/${wid}/admins`, label: 'Admins', icon: Shield }] : []),
+        ...(isAdmin ? [{ href: `/${wid}/admins`, label: 'Users', icon: Shield }] : []),
       ]
     },
     {

@@ -121,3 +121,34 @@ func (h *AdminHandler) GetUserWeddings(c fuego.ContextWithBody[any]) (any, error
 	}
 	return weddings, nil
 }
+
+type ResetPasswordRequest struct {
+	Password string `json:"password"`
+}
+
+func (h *AdminHandler) ResetPassword(c fuego.ContextWithBody[ResetPasswordRequest]) (any, error) {
+	if err := requireAdmin(c.Context()); err != nil {
+		return nil, fuego.UnauthorizedError{Title: err.Error()}
+	}
+	body, err := c.Body()
+	if err != nil {
+		return nil, fuego.BadRequestError{Title: "Invalid request"}
+	}
+	if body.Password == "" {
+		return nil, fuego.BadRequestError{Title: "Password is required"}
+	}
+	id := DecodeID(c.PathParam("id"))
+	admin, err := h.adminRepo.FindByID(id)
+	if err != nil {
+		return nil, fuego.NotFoundError{Title: "User not found"}
+	}
+	hash, err := bcrypt.GenerateFromPassword([]byte(body.Password), bcrypt.DefaultCost)
+	if err != nil {
+		return nil, fuego.InternalServerError{Title: "Failed to hash password"}
+	}
+	admin.Password = string(hash)
+	if err := h.adminRepo.Update(admin); err != nil {
+		return nil, fuego.InternalServerError{Title: "Failed to update password"}
+	}
+	return map[string]any{"message": "Password updated"}, nil
+}

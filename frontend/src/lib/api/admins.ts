@@ -56,3 +56,11 @@ export async function getUserWeddings(userId: string): Promise<{ id: string; nam
 	if (!res.ok) throw new Error('Failed to get user weddings');
 	return res.json();
 }
+
+export async function resetPassword(userId: string, password: string): Promise<void> {
+	const res = await apiFetch(`/api/admins/${userId}/reset-password`, {
+		method: 'POST',
+		body: JSON.stringify({ password }),
+	});
+	if (!res.ok) throw new Error('Failed to reset password');
+}

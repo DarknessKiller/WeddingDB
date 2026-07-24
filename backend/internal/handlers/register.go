@@ -52,6 +52,7 @@ func RegisterRoutes(
 	fuego.Delete(api, "/admins/{id}", adminHandler.Delete)
 	fuego.Put(api, "/admins/{id}/weddings", adminHandler.AssignWeddings)
 	fuego.Get(api, "/admins/{id}/weddings", adminHandler.GetUserWeddings)
+	fuego.Post(api, "/admins/{id}/reset-password", adminHandler.ResetPassword)
 
 	// Wedding CRUD
 	fuego.Get(api, "/weddings", weddingHandler.List)
