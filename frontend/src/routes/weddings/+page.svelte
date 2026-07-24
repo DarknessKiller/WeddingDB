@@ -1,15 +1,21 @@
 <script lang="ts">
   import { onMount } from 'svelte';
+  import { goto } from '$app/navigation';
   import { addToast, getAuth } from '$lib/stores';
+  import { weddingId, setWeddingId } from '$lib/stores/weddingId';
   import { listWeddings, createWedding, updateWedding, deleteWedding, type Wedding } from '$lib/api/weddings';
-  import { Plus, Pencil, Trash2, X, Calendar, Users } from 'lucide-svelte';
+  import { Plus, Pencil, Trash2, X, Calendar, Check } from 'lucide-svelte';
   import dayjs from 'dayjs';
 
   let weddings = $state<Wedding[]>([]);
   let loading = $state(true);
+  let selecting = $state<string | null>(null);
 
   const auth = getAuth();
   const isAdmin = auth.role === 'admin';
+  let currentWeddingId = $state('');
+
+  weddingId.subscribe(v => { currentWeddingId = v; });
 
   // Modal state
   let showModal = $state(false);
@@ -30,6 +36,36 @@
       addToast(e.message ?? 'Failed to load weddings', 'error');
     } finally {
       loading = false;
+    }
+  }
+
+  async function selectWedding(w: Wedding) {
+    if (w.id === currentWeddingId) return;
+    selecting = w.id;
+    try {
+      const res = await fetch('/api/auth/select-wedding', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${auth.accessToken}`
+        },
+        body: JSON.stringify({ weddingId: w.id })
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ title: 'Failed to select wedding' }));
+        addToast(err.title || 'Failed to select wedding', 'error');
+        return;
+      }
+      const data = await res.json();
+      // Update stored tokens
+      localStorage.setItem('weddingdb_access_token', data.accessToken);
+      setWeddingId(w.id);
+      addToast(`Switched to ${w.name}`, 'success');
+      goto(`/${w.id}/dashboard`, { replaceState: true });
+    } catch {
+      addToast('Network error', 'error');
+    } finally {
+      selecting = null;
     }
   }
 
@@ -125,7 +161,9 @@
   {:else}
     <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
       {#each weddings as w (w.id)}
-        <div class="bg-white border border-gray-200 rounded-2xl p-6 hover:shadow-md transition-shadow duration-200 group relative">
+        {@const isSelected = w.id === currentWeddingId}
+        <div class="bg-white border rounded-2xl p-6 transition-all duration-200 group relative {isSelected ? 'border-gold shadow-md ring-1 ring-gold/20' : 'border-gray-200 hover:shadow-md'}">
+          <!-- Admin actions -->
           {#if isAdmin}
             <div class="absolute top-3 right-3 flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
               <button onclick={() => openEdit(w)} class="p-1.5 rounded-lg hover:bg-gray-100 text-gray-400 hover:text-gray-600 transition-colors" aria-label="Edit">
@@ -135,20 +173,39 @@
                 <Trash2 class="w-4 h-4" />
               </button>
             </div>
-          {:else}
-            <button onclick={() => openEdit(w)} class="absolute top-3 right-3 p-1.5 rounded-lg hover:bg-gray-100 text-gray-400 hover:text-gray-600 transition-colors opacity-0 group-hover:opacity-100 transition-opacity" aria-label="Edit">
-              <Pencil class="w-4 h-4" />
-            </button>
           {/if}
 
-          <div class="w-12 h-12 rounded-xl bg-red-50 border border-red-100 flex items-center justify-center text-red font-bold text-lg mb-4">
-            <Calendar class="w-6 h-6" />
+          <div class="w-12 h-12 rounded-xl {isSelected ? 'bg-gold-50 border border-gold-200' : 'bg-red-50 border border-red-100'} flex items-center justify-center {isSelected ? 'text-gold' : 'text-red'} font-bold text-lg mb-4">
+            {#if isSelected}
+              <Check class="w-6 h-6" />
+            {:else}
+              <Calendar class="w-6 h-6" />
+            {/if}
           </div>
           <h3 class="font-bold text-gray-900 text-lg mb-1">{w.name}</h3>
-          <p class="text-sm text-gray-500 flex items-center gap-1.5">
+          <p class="text-sm text-gray-500 flex items-center gap-1.5 mb-4">
             <Calendar class="w-3.5 h-3.5" />
             {w.date ? dayjs(w.date).format('MMMM D, YYYY') : 'No date set'}
           </p>
+
+          {#if isSelected}
+            <span class="inline-flex items-center gap-1 px-3 py-1.5 bg-gold-50 text-gold border border-gold-200 rounded-xl text-xs font-semibold">
+              <Check class="w-3 h-3" /> Currently Active
+            </span>
+          {:else}
+            <button
+              onclick={() => selectWedding(w)}
+              disabled={selecting === w.id}
+              class="px-4 py-2 bg-deep-red text-white rounded-xl text-sm font-semibold hover:bg-deep-red/90 transition-colors disabled:opacity-50 flex items-center gap-2"
+            >
+              {#if selecting === w.id}
+                <div class="w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
+                Switching...
+              {:else}
+                Select
+              {/if}
+            </button>
+          {/if}
         </div>
       {/each}
     </div>

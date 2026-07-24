@@ -75,7 +75,7 @@ func Init(env config.Env) *App {
 	guestRepo := repository.NewGuestRepo(db)
 	tokenRepo := repository.NewTokenRepo(db)
 
-	authService := services.NewAuthService(adminRepo, tokenRepo, env.JWTSecret)
+	authService := services.NewAuthService(adminRepo, weddingRepo, tokenRepo, env.JWTSecret)
 	nonceStore := middleware.NewNonceStore(rdb)
 	tableService := services.NewTableService(tableRepo)
 	guestService := services.NewGuestService(guestRepo, tableRepo)

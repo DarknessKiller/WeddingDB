@@ -25,16 +25,18 @@ type AccessClaims struct {
 }
 
 type AuthService struct {
-	adminRepo *repository.AdminRepo
-	tokenRepo *repository.TokenRepo
-	secret    []byte
+	adminRepo   *repository.AdminRepo
+	weddingRepo *repository.WeddingRepo
+	tokenRepo   *repository.TokenRepo
+	secret      []byte
 }
 
-func NewAuthService(adminRepo *repository.AdminRepo, tokenRepo *repository.TokenRepo, secret string) *AuthService {
+func NewAuthService(adminRepo *repository.AdminRepo, weddingRepo *repository.WeddingRepo, tokenRepo *repository.TokenRepo, secret string) *AuthService {
 	return &AuthService{
-		adminRepo: adminRepo,
-		tokenRepo: tokenRepo,
-		secret:    []byte(secret),
+		adminRepo:   adminRepo,
+		weddingRepo: weddingRepo,
+		tokenRepo:   tokenRepo,
+		secret:      []byte(secret),
 	}
 }
 
@@ -63,8 +65,13 @@ func (s *AuthService) Login(ctx context.Context, email, password string) (*Login
 	if err != nil {
 		return nil, err
 	}
-	weddings, err := s.adminRepo.GetUserWeddings(admin.ID)
-	if err != nil {
+	var weddings []models.WeddingEvent
+	if admin.Role == "admin" {
+		weddings, _ = s.weddingRepo.List()
+	} else {
+		weddings, _ = s.adminRepo.GetUserWeddings(admin.ID)
+	}
+	if weddings == nil {
 		weddings = []models.WeddingEvent{}
 	}
 	return &LoginResult{
@@ -112,8 +119,13 @@ func (s *AuthService) Refresh(ctx context.Context, refreshTokenStr string) (*Log
 		return nil, err
 	}
 	s.tokenRepo.DeleteByToken(refreshTokenStr)
-	weddings, err := s.adminRepo.GetUserWeddings(admin.ID)
-	if err != nil {
+	var weddings []models.WeddingEvent
+	if admin.Role == "admin" {
+		weddings, _ = s.weddingRepo.List()
+	} else {
+		weddings, _ = s.adminRepo.GetUserWeddings(admin.ID)
+	}
+	if weddings == nil {
 		weddings = []models.WeddingEvent{}
 	}
 	return &LoginResult{
