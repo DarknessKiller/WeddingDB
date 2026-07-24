@@ -14,14 +14,18 @@ func NewGuestHandler(guestService *services.GuestService) *GuestHandler {
 }
 
 type GuestCreateRequest struct {
-	Name    string   `json:"n"`
-	Phone   string   `json:"p"`
-	Email   string   `json:"e"`
-	Pax     int      `json:"x"`
-	RSVP    string   `json:"r"`
-	IsVip   bool     `json:"v"`
-	Notes   string   `json:"nt"`
-	Dietary []string `json:"d"`
+	Name      string   `json:"name"`
+	Phone     string   `json:"phone"`
+	Email     string   `json:"email"`
+	Pax       int      `json:"pax"`
+	RSVP      string   `json:"rsvp"`
+	IsVip     bool     `json:"isVip"`
+	Notes     string   `json:"notes"`
+	Dietary   []string `json:"dietary"`
+	TableID   *uint    `json:"tableId"`
+	SeatNum   *int     `json:"seatNum"`
+	AngbaoAmt *int     `json:"angbaoAmt"`
+	GiftItem  *string  `json:"giftItem"`
 }
 
 func (h *GuestHandler) List(c fuego.ContextWithBody[any]) (any, error) {
@@ -63,6 +67,9 @@ func (h *GuestHandler) Create(c fuego.ContextWithBody[GuestCreateRequest]) (any,
 	if err := h.guestService.Create(guest); err != nil {
 		return nil, err
 	}
+	if body.TableID != nil && body.SeatNum != nil {
+		h.guestService.AssignSeat(guest.ID, wid, *body.TableID, *body.SeatNum)
+	}
 	return guest, nil
 }
 
@@ -85,6 +92,8 @@ func (h *GuestHandler) Update(c fuego.ContextWithBody[GuestCreateRequest]) (any,
 	guest.IsVip = body.IsVip
 	guest.Notes = body.Notes
 	guest.Dietary = body.Dietary
+	guest.AngbaoAmt = body.AngbaoAmt
+	guest.GiftItem = body.GiftItem
 	if err := h.guestService.Update(guest); err != nil {
 		return nil, err
 	}
@@ -100,13 +109,38 @@ func (h *GuestHandler) Delete(c fuego.ContextWithBody[any]) (any, error) {
 	return nil, nil
 }
 
-func (h *GuestHandler) CheckIn(c fuego.ContextWithBody[any]) (any, error) {
+type CheckInRequest struct {
+	AngbaoAmt *int    `json:"angbaoAmt"`
+	GiftItem  *string `json:"giftItem"`
+}
+
+func (h *GuestHandler) CheckIn(c fuego.ContextWithBody[CheckInRequest]) (any, error) {
+	body, _ := c.Body()
 	wid := DecodeWID(c)
 	id := DecodeID(c.PathParam("id"))
+	if body.AngbaoAmt != nil || body.GiftItem != nil {
+		guest, err := h.guestService.Get(id, wid)
+		if err != nil {
+			return nil, fuego.NotFoundError{Title: "Guest not found"}
+		}
+		if body.AngbaoAmt != nil {
+			guest.AngbaoAmt = body.AngbaoAmt
+		}
+		if body.GiftItem != nil {
+			guest.GiftItem = body.GiftItem
+		}
+		if err := h.guestService.Update(guest); err != nil {
+			return nil, err
+		}
+	}
 	if err := h.guestService.CheckIn(id, wid); err != nil {
 		return nil, err
 	}
-	return nil, nil
+	guest, err := h.guestService.Get(id, wid)
+	if err != nil {
+		return nil, err
+	}
+	return guest, nil
 }
 
 func (h *GuestHandler) CheckOut(c fuego.ContextWithBody[any]) (any, error) {

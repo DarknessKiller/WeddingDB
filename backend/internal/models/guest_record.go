@@ -1,23 +1,53 @@
 package models
 
-import "time"
+import (
+	"database/sql/driver"
+	"encoding/json"
+	"fmt"
+	"time"
+)
+
+// StringSlice stores a []string as JSON text in a text column.
+type StringSlice []string
+
+func (s StringSlice) Value() (driver.Value, error) {
+	if s == nil {
+		return "[]", nil
+	}
+	return json.Marshal(s)
+}
+
+func (s *StringSlice) Scan(src interface{}) error {
+	if src == nil {
+		*s = nil
+		return nil
+	}
+	switch v := src.(type) {
+	case []byte:
+		return json.Unmarshal(v, s)
+	case string:
+		return json.Unmarshal([]byte(v), s)
+	default:
+		return fmt.Errorf("cannot scan %T into StringSlice", src)
+	}
+}
 
 type GuestRecord struct {
-	ID          uint       `gorm:"primaryKey" json:"-"`
-	WeddingID   uint       `gorm:"index;not null" json:"-"`
-	Name        string     `gorm:"size:255;not null" json:"n"`
-	Phone       string     `gorm:"size:50" json:"p"`
-	Email       string     `gorm:"size:255" json:"e"`
-	Pax         int        `gorm:"not null;default:1" json:"x"`
-	TableID     *uint      `gorm:"index" json:"-"`
-	SeatNum     *int       `json:"-"`
-	RSVP        string     `gorm:"size:20;default:no_response" json:"r"`
-	CheckedInAt *time.Time `json:"cia"`
-	Notes       string     `gorm:"type:text" json:"nt"`
-	Dietary     []string   `gorm:"type:text[]" json:"d"`
-	IsVip       bool       `json:"v"`
-	AngbaoAmt   *int       `json:"a"`
-	GiftItem    *string    `gorm:"size:255" json:"g"`
-	CreatedAt   time.Time  `json:"c"`
-	UpdatedAt   time.Time  `json:"u"`
+	ID          uint       `gorm:"primaryKey" json:"id"`
+	WeddingID   uint       `gorm:"index;not null" json:"weddingId"`
+	Name        string     `gorm:"size:255;not null" json:"name"`
+	Phone       string     `gorm:"size:50" json:"phone"`
+	Email       string     `gorm:"size:255" json:"email"`
+	Pax         int        `gorm:"not null;default:1" json:"pax"`
+	TableID     *uint      `gorm:"index" json:"tableId"`
+	SeatNum     *int       `json:"seatNum"`
+	RSVP        string     `gorm:"size:20;default:no_response" json:"rsvp"`
+	CheckedInAt *time.Time `json:"checkedInAt"`
+	Notes       string     `gorm:"type:text" json:"notes"`
+	Dietary     StringSlice `gorm:"type:text" json:"dietary"`
+	IsVip       bool       `json:"isVip"`
+	AngbaoAmt   *int       `json:"angbaoAmt"`
+	GiftItem    *string    `gorm:"size:255" json:"giftItem"`
+	CreatedAt   time.Time  `json:"createdAt"`
+	UpdatedAt   time.Time  `json:"updatedAt"`
 }
