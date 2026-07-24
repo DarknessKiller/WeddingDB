@@ -1,33 +1,60 @@
 <script lang="ts">
   import HallMap from '$lib/components/seating/HallMap.svelte';
-  import { searchGuests, getSeatGuest } from '$lib/mock/data';
-  import { DEFAULT_TABLES } from '$lib/constants';
+  import { publicSearchGuests as searchGuests, publicListGuests as listGuests, publicListTables as listTables } from '$lib/api/public';
   import { cn } from '$lib/utils';
   import { Maximize, Minimize, Monitor, Search, ArrowLeft, MapPin, Users, Star, X } from 'lucide-svelte';
   import { onMount, onDestroy } from 'svelte';
-  import type { Guest } from '$lib/types';
+  import type { Guest, BanquetTable } from '$lib/types';
 
   let query = $state('');
-  let results = $derived(query.trim().length > 0 ? searchGuests(query) : []);
+  let results = $state<Guest[]>([]);
+  let allGuests = $state<Guest[]>([]);
+  let tables = $state<BanquetTable[]>([]);
   let selectedGuest = $state<Guest | null>(null);
   let isFullscreen = $state(false);
   let currentTime = $state(new Date());
   let timer: ReturnType<typeof setInterval>;
   let hoveredSeat = $state<{ seatNum: number; guest: Guest | null; x: number; y: number } | null>(null);
 
-  let selectedTable = $derived(selectedGuest?.tableId ? DEFAULT_TABLES.find(t => t.id === selectedGuest!.tableId) ?? null : null);
+  let tableGuests = $derived.by(() => {
+    const map = new Map<number, Guest[]>();
+    for (const g of allGuests) {
+      if (g.tableId === null) continue;
+      const arr = map.get(g.tableId) ?? [];
+      arr.push(g);
+      map.set(g.tableId, arr);
+    }
+    return map;
+  });
+
+  let selectedTable = $derived(selectedGuest?.tableId ? tables.find(t => t.id === selectedGuest!.tableId) ?? null : null);
   let seatOccupants = $derived(
     selectedGuest?.tableId
       ? Array.from({ length: selectedTable?.capacity ?? 10 }, (_, i) => {
           const seatNum = i + 1;
-          const guest = getSeatGuest(selectedGuest!.tableId!, seatNum);
+          const guest = allGuests.find(g => g.tableId === selectedGuest!.tableId && g.seatNumber === seatNum) ?? null;
           return { seatNum, guest };
         })
       : []
   );
 
+  $effect(() => {
+    const q = query.trim();
+    if (!q) { results = []; return; }
+    let cancelled = false;
+    const timer = setTimeout(async () => {
+      try {
+        const r = await searchGuests(q);
+        if (!cancelled) results = r;
+      } catch { if (!cancelled) results = []; }
+    }, 300);
+    return () => { cancelled = true; clearTimeout(timer); };
+  });
+
   onMount(() => {
     timer = setInterval(() => currentTime = new Date(), 1000);
+    listGuests().then(g => allGuests = g).catch(() => {});
+    listTables().then(t => tables = t).catch(() => {});
   });
 
   onDestroy(() => clearInterval(timer));
@@ -96,7 +123,9 @@
     <div class="flex-1 flex relative overflow-hidden">
       <!-- Hall Map (full screen) -->
       <HallMap
+        tables={tables}
         kioskHighlightTableId={selectedGuest.tableId}
+        tableGuests={tableGuests}
         dark={true}
         hoveredSeat={hoveredSeat}
       />
