@@ -2,6 +2,7 @@
   import type { Guest, RSVPStatus } from '$lib/types';
   import { selectedGuest, isDrawerOpen, drawerStartEditing, addToast } from '$lib/stores';
   import { weddingId } from '$lib/stores/weddingId';
+  import { goto } from '$app/navigation';
   import { listGuests, deleteGuest as apiDeleteGuest, searchGuests, checkInGuest, checkOutGuest, assignSeat } from '$lib/api/guests';
   import type { GuestResponse } from '$lib/api/guests';
   import { listTables } from '$lib/api/tables';
