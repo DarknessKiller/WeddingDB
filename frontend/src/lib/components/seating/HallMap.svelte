@@ -1,7 +1,7 @@
 <script lang="ts">
-  import BanquetTable from './BanquetTable.svelte';
+  import BanquetTableComponent from './BanquetTable.svelte';
   import { DEFAULT_TABLES, HALL_LAYOUT } from '$lib/constants';
-  import type { Guest } from '$lib/types';
+  import type { BanquetTable as BanquetTableType, Guest } from '$lib/types';
   import { ZoomIn, ZoomOut, RotateCcw } from 'lucide-svelte';
   import { onMount } from 'svelte';
 
@@ -9,6 +9,8 @@
     selectedTableId = null,
     highlightedTableId = null,
     kioskHighlightTableId = null,
+    tableGuests = new Map(),
+    tables = DEFAULT_TABLES,
     dark = false,
     onTableClick,
     onSeatClick,
@@ -17,6 +19,8 @@
     selectedTableId?: number | null;
     highlightedTableId?: number | null;
     kioskHighlightTableId?: number | null;
+    tableGuests?: Map<number, Guest[]>;
+    tables?: BanquetTableType[];
     dark?: boolean;
     onTableClick?: (id: number) => void;
     onSeatClick?: (tableId: number, seatNum: number, guest: Guest | null) => void;
@@ -168,10 +172,11 @@
       </div>
 
       <!-- Tables -->
-      {#each DEFAULT_TABLES as tableDef (tableDef.id)}
+      {#each tables as tableDef (tableDef.id)}
         {@const isKioskTarget = kioskHighlightTableId === tableDef.id}
-        <BanquetTable
+        <BanquetTableComponent
           table={tableDef}
+          guests={tableGuests.get(tableDef.id) ?? []}
           isSelected={selectedTableId === tableDef.id}
           isHighlighted={highlightedTableId === tableDef.id || isKioskTarget}
           isKioskHighlight={kioskHighlightTableId !== null}

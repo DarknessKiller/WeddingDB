@@ -1,34 +1,89 @@
 <script lang="ts">
   import HallMap from '$lib/components/seating/HallMap.svelte';
-  import { DEFAULT_TABLES } from '$lib/constants';
-  import { getGuestsByTable, getTableOccupancy } from '$lib/mock/data';
   import { selectedGuest, isDrawerOpen, addToast } from '$lib/stores';
+  import { weddingId } from '$lib/stores/weddingId';
+  import { listGuests, type GuestResponse } from '$lib/api/guests';
+  import { getOccupancy, listTables } from '$lib/api/tables';
   import Badge from '$lib/components/ui/Badge.svelte';
-  import { getInitials, cn } from '$lib/utils';
+  import { cn } from '$lib/utils';
   import { page } from '$app/state';
   import { onMount } from 'svelte';
-  import { Users, Star, X, ChevronUp } from 'lucide-svelte';
-  import type { Guest } from '$lib/types';
+  import { Users, Star, X } from 'lucide-svelte';
+  import { get } from 'svelte/store';
+  import type { BanquetTable, Guest, RSVPStatus, TableOccupancy } from '$lib/types';
+
+  let allGuests = $state<Guest[]>([]);
+  let allTables = $state<BanquetTable[]>([]);
+  let occupancyData = $state<Map<number, number>>(new Map());
+  let loading = $state(true);
 
   let selectedTableId = $state<number | null>(null);
   let hoveredSeat = $state<{ seatNum: number; guest: Guest | null; x: number; y: number } | null>(null);
   let showMobilePanel = $state(false);
 
-  // Auto-select table from query param (e.g. /seating?table=5)
-  onMount(() => {
-    const tableParam = page.url.searchParams.get('table');
-    if (tableParam) {
-      const tableId = parseInt(tableParam, 10);
-      if (!isNaN(tableId) && DEFAULT_TABLES.some(t => t.id === tableId)) {
-        selectedTableId = tableId;
-        showMobilePanel = true;
+  function mapGuest(r: GuestResponse): Guest {
+    return {
+      id: r.id,
+      name: r.name,
+      phone: r.phone,
+      email: r.email,
+      rsvp: (r.rsvp as RSVPStatus) ?? 'no_response',
+      pax: r.pax,
+      tableId: r.tableId ? Number(r.tableId) : null,
+      seatNumber: r.seatNum,
+      checkedIn: r.checkedInAt !== null,
+      checkedInAt: r.checkedInAt ? new Date(r.checkedInAt) : undefined,
+      notes: r.notes,
+      dietaryRequirements: r.dietary ?? [],
+      isVip: r.isVip,
+      angbaoAmount: r.angbaoAmt ?? undefined,
+      giftItem: r.giftItem ?? undefined,
+      createdAt: new Date(r.createdAt),
+    };
+  }
+
+  onMount(async () => {
+    try {
+      const wid = get(weddingId);
+      const [guestRes, rawOcc, tablesRes] = await Promise.all([listGuests(wid), getOccupancy(wid), listTables(wid)]);
+      allGuests = guestRes.guests.map(mapGuest);
+      allTables = tablesRes;
+      const occMap = new Map<number, number>();
+      for (const o of rawOcc) occMap.set(o.TableID, o.Pax);
+      occupancyData = occMap;
+    } catch (e) {
+      addToast('Failed to load seating data', 'error');
+    } finally {
+      loading = false;
+      const tableParam = page.url.searchParams.get('table');
+      if (tableParam) {
+        const tableId = parseInt(tableParam, 10);
+        if (!isNaN(tableId) && allTables.some(t => t.id === tableId)) {
+          selectedTableId = tableId;
+          showMobilePanel = true;
+        }
       }
     }
   });
 
-  let selectedTable = $derived(selectedTableId ? DEFAULT_TABLES.find(t => t.id === selectedTableId) ?? null : null);
-  let selectedTableGuests = $derived(selectedTableId ? getGuestsByTable(selectedTableId) : []);
-  let selectedOccupancy = $derived(selectedTableId ? getTableOccupancy(selectedTableId) : null);
+  let selectedTable = $derived(selectedTableId ? allTables.find(t => t.id === selectedTableId) ?? null : null);
+  let selectedTableGuests = $derived(selectedTableId ? allGuests.filter(g => g.tableId === selectedTableId) : []);
+  let tableGuests = $derived.by(() => {
+    const map = new Map<number, Guest[]>();
+    for (const g of allGuests) {
+      if (g.tableId === null) continue;
+      const arr = map.get(g.tableId) ?? [];
+      arr.push(g);
+      map.set(g.tableId, arr);
+    }
+    return map;
+  });
+  let selectedOccupancy = $derived.by((): TableOccupancy | null => {
+    if (!selectedTableId || !selectedTable) return null;
+    const occupied = occupancyData.get(selectedTableId) ?? 0;
+    const capacity = selectedTable.capacity;
+    return { tableId: selectedTableId, occupied, capacity, percentage: capacity > 0 ? Math.round((occupied / capacity) * 100) : 0 };
+  });
 
   function handleTableClick(id: number) {
     selectedTableId = selectedTableId === id ? null : id;
@@ -54,6 +109,8 @@
   <!-- Map -->
   <HallMap
     selectedTableId={selectedTableId}
+    tableGuests={tableGuests}
+    tables={allTables}
     onTableClick={handleTableClick}
     onSeatClick={handleSeatClick}
     bind:hoveredSeat
@@ -66,10 +123,10 @@
       <div class="flex items-center justify-between px-5 py-4 border-b border-gray-100">
         <div class="flex items-center gap-3">
           <div class="w-10 h-10 rounded-xl bg-red-50 border border-red-100 flex items-center justify-center text-red font-bold text-lg">
-            {selectedTable.id}
+            {selectedTable.name || selectedTable.id}
           </div>
           <div>
-            <div class="font-semibold text-gray-900">Table {selectedTable.id}</div>
+            <div class="font-semibold text-gray-900">{selectedTable.name || `Table ${selectedTable.id}`}</div>
             <div class="text-xs text-gray-500">
               {selectedOccupancy?.occupied ?? 0} of {selectedTable.capacity} seats
               {#if selectedTable.isVip}
@@ -102,7 +159,7 @@
         <div class="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">Seat Assignments</div>
         {#each Array(selectedTable.capacity) as _, seatIdx}
           {@const seatNum = seatIdx + 1}
-          {@const guest = selectedTableGuests.find(g => g.seatNumber === seatNum)}
+          {@const guest = selectedTableGuests.find(g => g.seatNumber !== null && seatNum >= g.seatNumber && seatNum < g.seatNumber + g.pax)}
           <button
             class="w-full flex items-center gap-3 p-2.5 rounded-xl transition-all duration-150 text-left {guest ? 'hover:bg-gray-50' : 'hover:bg-gray-50/50'} {hoveredSeat?.seatNum === seatNum ? 'bg-gold-50 ring-1 ring-gold-200' : ''}"
             onclick={() => { if (guest) { $selectedGuest = guest; $isDrawerOpen = true; } }}
@@ -162,10 +219,10 @@
       <div class="flex items-center justify-between px-4 py-3 border-b border-gray-100">
         <div class="flex items-center gap-3">
           <div class="w-9 h-9 rounded-xl bg-red-50 border border-red-100 flex items-center justify-center text-red font-bold text-sm">
-            {selectedTable.id}
+            {selectedTable.name || selectedTable.id}
           </div>
           <div>
-            <div class="font-semibold text-gray-900 text-sm">Table {selectedTable.id}</div>
+            <div class="font-semibold text-gray-900 text-sm">{selectedTable.name || `Table ${selectedTable.id}`}</div>
             <div class="text-xs text-gray-500">
               {selectedOccupancy?.occupied ?? 0}/{selectedTable.capacity}
               {#if selectedTable.isVip}• VIP{/if}
@@ -189,7 +246,7 @@
         <div class="grid grid-cols-2 gap-2">
           {#each Array(selectedTable.capacity) as _, seatIdx}
             {@const seatNum = seatIdx + 1}
-            {@const guest = selectedTableGuests.find(g => g.seatNumber === seatNum)}
+            {@const guest = selectedTableGuests.find(g => g.seatNumber !== null && seatNum >= g.seatNumber && seatNum < g.seatNumber + g.pax)}
             <button
               class="flex items-center gap-2 p-2 rounded-lg text-left {hoveredSeat?.seatNum === seatNum ? 'bg-gold-50' : guest ? 'bg-gray-50' : 'bg-white border border-gray-100'}"
               onclick={() => { if (guest) { $selectedGuest = guest; $isDrawerOpen = true; } }}

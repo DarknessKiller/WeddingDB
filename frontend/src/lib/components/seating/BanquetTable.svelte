@@ -1,10 +1,10 @@
 <script lang="ts">
   import type { BanquetTable, Guest, Seat } from '$lib/types';
-  import { getGuestsByTable, getSeatGuest } from '$lib/mock/data';
   import { getInitials, cn } from '$lib/utils';
 
   let {
     table,
+    guests = [],
     isSelected = false,
     isHighlighted = false,
     isKioskHighlight = false,
@@ -15,6 +15,7 @@
     hoveredSeat = $bindable(null),
   }: {
     table: BanquetTable;
+    guests?: Guest[];
     isSelected?: boolean;
     isHighlighted?: boolean;
     isKioskHighlight?: boolean;
@@ -25,8 +26,7 @@
     hoveredSeat?: { seatNum: number; guest: Guest | null; x: number; y: number } | null;
   } = $props();
 
-  const tableGuests = $derived(getGuestsByTable(table.id));
-  const occupied = $derived(tableGuests.reduce((sum, g) => sum + g.pax, 0));
+  const occupied = $derived(guests.reduce((sum, g) => sum + g.pax, 0));
   const occupancyPct = $derived(occupied / table.capacity);
 
   // Table sizing
@@ -105,7 +105,7 @@
     </defs>
 
     <!-- Table number -->
-    <text x={CENTER} y={CENTER - 4} text-anchor="middle" class="{dark ? 'fill-gray-200' : 'fill-gray-800'} font-extrabold" font-size="16">{table.id}</text>
+    <text x={CENTER} y={CENTER - 4} text-anchor="middle" class="{dark ? 'fill-gray-200' : 'fill-gray-800'} font-extrabold" font-size="16">{table.name || table.id}</text>
     <text x={CENTER} y={CENTER + 10} text-anchor="middle" class="{dark ? 'fill-gray-500' : 'fill-gray-400'}" font-size="9">{occupied}/{table.capacity}</text>
 
     <!-- VIP badge -->
@@ -117,7 +117,7 @@
     <!-- Seats -->
     {#each Array(table.capacity) as _, i}
       {@const pos = seatPos(i)}
-      {@const guest = getSeatGuest(table.id, i + 1)}
+      {@const guest = guests.find(g => g.seatNumber !== null && (i + 1) >= g.seatNumber && (i + 1) < g.seatNumber + g.pax) ?? null}
       <g
         role="button"
         tabindex="-1"
