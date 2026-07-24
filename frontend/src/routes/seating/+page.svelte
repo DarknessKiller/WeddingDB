@@ -2,6 +2,7 @@
   import HallMap from '$lib/components/seating/HallMap.svelte';
   import { selectedGuest, isDrawerOpen, addToast } from '$lib/stores';
   import { weddingId } from '$lib/stores/weddingId';
+  import { goto } from '$app/navigation';
   import { listGuests, type GuestResponse } from '$lib/api/guests';
   import { getOccupancy, listTables } from '$lib/api/tables';
   import Badge from '$lib/components/ui/Badge.svelte';
@@ -196,10 +197,10 @@
 
       <!-- Panel Footer -->
       <div class="px-5 py-4 border-t border-gray-100 bg-gray-50/50 flex gap-2">
-        <button class="flex-1 py-2.5 bg-red text-white rounded-xl text-sm font-semibold hover:bg-red-light transition-colors flex items-center justify-center gap-2">
+        <button onclick={() => goto('/guests')} class="flex-1 py-2.5 bg-red text-white rounded-xl text-sm font-semibold hover:bg-red-light transition-colors flex items-center justify-center gap-2">
           <Users class="w-4 h-4" /> Assign Guest
         </button>
-        <button class="px-4 py-2.5 border border-gray-200 bg-white rounded-xl text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors">
+        <button onclick={() => goto('/tables')} class="px-4 py-2.5 border border-gray-200 bg-white rounded-xl text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors">
           Edit Table
         </button>
       </div>
