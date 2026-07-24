@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"strconv"
 	"weddingdb/internal/models"
 	"weddingdb/internal/services"
 
@@ -30,7 +31,19 @@ type GuestCreateRequest struct {
 
 func (h *GuestHandler) List(c fuego.ContextWithBody[any]) (any, error) {
 	wid := DecodeWID(c)
-	guests, total, err := h.guestService.List(wid, 0, 100)
+	limit := 100
+	offset := 0
+	if v := c.QueryParam("limit"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 {
+			limit = n
+		}
+	}
+	if v := c.QueryParam("offset"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n >= 0 {
+			offset = n
+		}
+	}
+	guests, total, err := h.guestService.List(wid, offset, limit)
 	if err != nil {
 		return nil, err
 	}

@@ -97,7 +97,10 @@ func Init(env config.Env) *App {
 	var count int64
 	db.Model(&models.AdminUser{}).Count(&count)
 	if count == 0 {
-		hash, _ := bcrypt.GenerateFromPassword([]byte("admin123"), bcrypt.DefaultCost)
+		hash, err := bcrypt.GenerateFromPassword([]byte("admin123"), bcrypt.DefaultCost)
+		if err != nil {
+			log.Fatal("Failed to hash seed admin password:", err)
+		}
 		admin := &models.AdminUser{
 			Email:    "admin@weddingdb.local",
 			Password: string(hash),
@@ -107,7 +110,7 @@ func Init(env config.Env) *App {
 		if err := adminRepo.Create(admin); err != nil {
 			log.Println("Warning: failed to seed admin:", err)
 		} else {
-			log.Println("Seeded default admin: admin@weddingdb.local / admin123")
+			log.Println("Seeded default admin: admin@weddingdb.local")
 		}
 	}
 

@@ -2,6 +2,7 @@ package repository
 
 import (
 	"fmt"
+	"strings"
 	"gorm.io/gorm"
 	"weddingdb/internal/models"
 )
@@ -28,7 +29,10 @@ func (r *GuestRepo) FindByID(id, weddingID uint) (*models.GuestRecord, error) {
 
 func (r *GuestRepo) SearchByWedding(weddingID uint, query string) ([]models.GuestRecord, error) {
 	var guests []models.GuestRecord
-	q := fmt.Sprintf("%%%s%%", query)
+	// Escape SQL LIKE wildcards in user input
+	escaped := strings.ReplaceAll(query, "%", "\\%")
+	escaped = strings.ReplaceAll(escaped, "_", "\\_")
+	q := fmt.Sprintf("%%%s%%", escaped)
 	err := r.db.Where("wedding_id = ? AND (name ILIKE ? OR phone ILIKE ? OR email ILIKE ?)",
 		weddingID, q, q, q).Limit(20).Find(&guests).Error
 	return guests, err

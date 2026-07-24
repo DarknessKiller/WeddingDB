@@ -38,44 +38,45 @@ func NewAuthService(adminRepo *repository.AdminRepo, tokenRepo *repository.Token
 	}
 }
 
-func (s *AuthService) Login(ctx context.Context, email, password string) (string, string, string, string, error) {
+func (s *AuthService) Login(ctx context.Context, email, password string) (string, string, string, string, *uint, error) {
 	admin, err := s.adminRepo.FindByEmail(email)
 	if err != nil {
-		return "", "", "", "", errors.New("invalid credentials")
+		return "", "", "", "", nil, errors.New("invalid credentials")
 	}
 	if err := bcrypt.CompareHashAndPassword([]byte(admin.Password), []byte(password)); err != nil {
-		return "", "", "", "", errors.New("invalid credentials")
+		return "", "", "", "", nil, errors.New("invalid credentials")
 	}
 	accessToken, err := s.generateAccessToken(admin)
 	if err != nil {
-		return "", "", "", "", err
+		return "", "", "", "", nil, err
 	}
 	refreshToken, err := s.generateRefreshToken(admin.ID)
 	if err != nil {
-		return "", "", "", "", err
+		return "", "", "", "", nil, err
 	}
-	return accessToken, refreshToken, admin.Role, admin.Name, nil
+	return accessToken, refreshToken, admin.Role, admin.Name, admin.WeddingID, nil
 }
 
-func (s *AuthService) Refresh(ctx context.Context, refreshTokenStr string) (string, string, string, string, error) {
+func (s *AuthService) Refresh(ctx context.Context, refreshTokenStr string) (string, string, string, string, *uint, error) {
 	token, err := s.tokenRepo.FindByToken(refreshTokenStr)
 	if err != nil {
-		return "", "", "", "", errors.New("invalid refresh token")
+		return "", "", "", "", nil, errors.New("invalid refresh token")
 	}
-	s.tokenRepo.DeleteByToken(refreshTokenStr)
 	admin, err := s.adminRepo.FindByID(token.AdminID)
 	if err != nil {
-		return "", "", "", "", errors.New("admin not found")
+		return "", "", "", "", nil, errors.New("admin not found")
 	}
 	accessToken, err := s.generateAccessToken(admin)
 	if err != nil {
-		return "", "", "", "", err
+		return "", "", "", "", nil, err
 	}
 	newRefreshToken, err := s.generateRefreshToken(admin.ID)
 	if err != nil {
-		return "", "", "", "", err
+		return "", "", "", "", nil, err
 	}
-	return accessToken, newRefreshToken, admin.Role, admin.Name, nil
+	// Delete old token only after new ones are generated successfully
+	s.tokenRepo.DeleteByToken(refreshTokenStr)
+	return accessToken, newRefreshToken, admin.Role, admin.Name, admin.WeddingID, nil
 }
 
 func (s *AuthService) Logout(refreshToken string) error {
@@ -112,7 +113,9 @@ func (s *AuthService) generateAccessToken(admin *models.AdminUser) (string, erro
 
 func (s *AuthService) generateRefreshToken(adminID uint) (string, error) {
 	b := make([]byte, 32)
-	rand.Read(b)
+	if _, err := rand.Read(b); err != nil {
+		return "", err
+	}
 	tokenStr := hex.EncodeToString(b)
 	token := &models.RefreshToken{
 		AdminID:   adminID,

@@ -20,15 +20,36 @@ type WeddingRequest struct {
 }
 
 func (h *WeddingHandler) List(c fuego.ContextWithBody[any]) (any, error) {
-	return h.weddingService.List()
+	ctx := c.Context()
+	role := RoleFromContext(ctx)
+	if role == "service_admin" {
+		return h.weddingService.List()
+	}
+	// wedding_admin: only return their own wedding
+	wid := WeddingIDFromContext(ctx)
+	if wid == nil {
+		return []models.WeddingEvent{}, nil
+	}
+	w, err := h.weddingService.Get(*wid)
+	if err != nil {
+		return nil, fuego.NotFoundError{Title: "Wedding not found"}
+	}
+	return []models.WeddingEvent{*w}, nil
 }
 
 func (h *WeddingHandler) Get(c fuego.ContextWithBody[any]) (any, error) {
 	id := DecodeID(c.PathParam("id"))
+	if err := requireWeddingAccess(c.Context(), id); err != nil {
+		return nil, fuego.UnauthorizedError{Title: err.Error()}
+	}
 	return h.weddingService.Get(id)
 }
 
 func (h *WeddingHandler) Create(c fuego.ContextWithBody[WeddingRequest]) (any, error) {
+	role := RoleFromContext(c.Context())
+	if role != "service_admin" {
+		return nil, fuego.UnauthorizedError{Title: "service_admin role required"}
+	}
 	body, err := c.Body()
 	if err != nil {
 		return nil, fuego.BadRequestError{Title: "Invalid request"}
@@ -45,6 +66,10 @@ func (h *WeddingHandler) Create(c fuego.ContextWithBody[WeddingRequest]) (any, e
 }
 
 func (h *WeddingHandler) Update(c fuego.ContextWithBody[WeddingRequest]) (any, error) {
+	id := DecodeID(c.PathParam("id"))
+	if err := requireWeddingAccess(c.Context(), id); err != nil {
+		return nil, fuego.UnauthorizedError{Title: err.Error()}
+	}
 	body, err := c.Body()
 	if err != nil {
 		return nil, fuego.BadRequestError{Title: "Invalid request"}
@@ -53,7 +78,6 @@ func (h *WeddingHandler) Update(c fuego.ContextWithBody[WeddingRequest]) (any, e
 	if err != nil {
 		return nil, fuego.BadRequestError{Title: "Invalid date format, use YYYY-MM-DD"}
 	}
-	id := DecodeID(c.PathParam("id"))
 	w, err := h.weddingService.Get(id)
 	if err != nil {
 		return nil, fuego.NotFoundError{Title: "Wedding not found"}
@@ -67,6 +91,10 @@ func (h *WeddingHandler) Update(c fuego.ContextWithBody[WeddingRequest]) (any, e
 }
 
 func (h *WeddingHandler) Delete(c fuego.ContextWithBody[any]) (any, error) {
+	role := RoleFromContext(c.Context())
+	if role != "service_admin" {
+		return nil, fuego.UnauthorizedError{Title: "service_admin role required"}
+	}
 	id := DecodeID(c.PathParam("id"))
 	return nil, h.weddingService.Delete(id)
 }

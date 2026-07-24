@@ -120,7 +120,7 @@ func (h *TableHandler) Create(c fuego.ContextWithBody[TableRequest]) (any, error
 	if err := h.tableService.Create(table); err != nil {
 		return nil, err
 	}
-	return table, nil
+	return computeLayout([]models.BanquetTable{*table})[0], nil
 }
 
 func (h *TableHandler) Update(c fuego.ContextWithBody[TableRequest]) (any, error) {
@@ -142,7 +142,7 @@ func (h *TableHandler) Update(c fuego.ContextWithBody[TableRequest]) (any, error
 	if err := h.tableService.Update(table); err != nil {
 		return nil, err
 	}
-	return table, nil
+	return computeLayout([]models.BanquetTable{*table})[0], nil
 }
 
 func (h *TableHandler) Delete(c fuego.ContextWithBody[any]) (any, error) {

@@ -18,7 +18,7 @@ func RegisterRoutes(
 	adminRepo *repository.AdminRepo,
 	nonceStore *middleware.NonceStore,
 ) {
-	authHandler := NewAuthHandler(authService)
+	authHandler := NewAuthHandler(authService, adminRepo)
 	adminHandler := NewAdminHandler(adminRepo)
 	guestHandler := NewGuestHandler(guestService)
 	tableHandler := NewTableHandler(tableService)
@@ -29,6 +29,7 @@ func RegisterRoutes(
 	fuego.Post(pub, "/login", authHandler.Login)
 	fuego.Post(pub, "/refresh", authHandler.Refresh)
 	fuego.Post(pub, "/logout", authHandler.Logout)
+	fuego.Post(pub, "/register", authHandler.Register)
 
 	// ── Public guest endpoints (kiosk, no auth) ──
 	pubApi := fuego.Group(s, "/api/public")
@@ -46,6 +47,7 @@ func RegisterRoutes(
 	fuego.Get(api, "/admins", adminHandler.List)
 	fuego.Post(api, "/admins", adminHandler.Create)
 	fuego.Delete(api, "/admins/{id}", adminHandler.Delete)
+	fuego.Put(api, "/admins/{id}/wedding", adminHandler.AssignWedding)
 
 	// Wedding CRUD
 	fuego.Get(api, "/weddings", weddingHandler.List)
