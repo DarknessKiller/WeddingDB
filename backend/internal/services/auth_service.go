@@ -164,6 +164,7 @@ func (s *AuthService) generateRefreshToken(adminID uuid.UUID) (string, error) {
 	}
 	tokenStr := hex.EncodeToString(b)
 	token := &models.RefreshToken{
+		ID:        uuid.New(),
 		AdminID:   adminID,
 		Token:     tokenStr,
 		ExpiresAt: time.Now().Add(7 * 24 * time.Hour),

@@ -35,7 +35,7 @@ func (s *StringSlice) Scan(src interface{}) error {
 }
 
 type GuestRecord struct {
-	ID          uuid.UUID    `gorm:"type:uuid;primaryKey" json:"id"`
+	ID          uuid.UUID    `gorm:"type:uuid;primaryKey;default:gen_random_uuid()" json:"id"`
 	WeddingID   uuid.UUID    `gorm:"type:uuid;index;not null" json:"weddingId"`
 	Name        string       `gorm:"size:255;not null" json:"name"`
 	Phone       string       `gorm:"size:50" json:"phone"`
