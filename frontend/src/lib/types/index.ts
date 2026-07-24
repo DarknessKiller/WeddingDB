@@ -23,10 +23,11 @@ export interface BanquetTable {
   id: number;
   name: string;
   capacity: number;
-  x: number; // percentage position in hall
-  y: number; // percentage position in hall
+  x: number;
+  y: number;
+  row: number;
+  col: number;
   isVip: boolean;
-  zone: 'front' | 'middle' | 'back' | 'center';
 }
 
 export interface Seat {

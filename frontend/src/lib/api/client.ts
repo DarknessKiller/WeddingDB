@@ -1,6 +1,6 @@
 import { getAuth, setAuth } from '$lib/stores';
 
-const BASE = 'http://localhost:8080';
+const BASE = '';
 
 export async function apiFetch(path: string, opts: RequestInit = {}): Promise<Response> {
 	const { accessToken } = getAuth();
@@ -24,7 +24,7 @@ export async function apiFetch(path: string, opts: RequestInit = {}): Promise<Re
 			});
 			if (refreshRes.ok) {
 				const data = await refreshRes.json();
-				setAuth(data.accessToken, data.refreshToken, getAuth().role ?? '');
+				setAuth(data.accessToken, data.refreshToken, data.role ?? getAuth().role ?? '', data.name ?? getAuth().name ?? '');
 				res = await fetch(`${BASE}${path}`, {
 					...opts,
 					headers: {
