@@ -18,6 +18,40 @@
   let loginAccessToken = $state('');
   let loginRefreshToken = $state('');
 
+  // Create wedding state (admin only, when no weddings exist)
+  let showCreate = $state(false);
+  let newName = $state('');
+  let newDate = $state('');
+  let creating = $state(false);
+
+  async function handleCreateWedding() {
+    if (!newName || !newDate) return;
+    creating = true;
+    try {
+      const res = await fetch('/api/weddings', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${loginAccessToken}`
+        },
+        body: JSON.stringify({ name: newName, date: newDate })
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ title: 'Failed to create wedding' }));
+        addToast(err.title || 'Failed to create wedding', 'error');
+        return;
+      }
+      const wedding = await res.json();
+      addToast('Wedding created', 'success');
+      // Auto-select the new wedding
+      await selectWedding(wedding.id);
+    } catch {
+      addToast('Network error', 'error');
+    } finally {
+      creating = false;
+    }
+  }
+
   async function handleLogin(e: Event) {
     e.preventDefault();
     loading = true;
@@ -42,6 +76,11 @@
       availableWeddings = weddings;
 
       if (weddings.length === 0) {
+        if (loginRole === 'admin') {
+          // Admin with no weddings — show selector with create option
+          step = 'select';
+          return;
+        }
         addToast('No weddings assigned to your account', 'error');
         return;
       }
@@ -163,25 +202,62 @@
     {:else}
       <!-- Wedding Selector -->
       <div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
-        <h2 class="text-sm font-semibold text-gray-900 mb-4">Select a wedding</h2>
-        <div class="space-y-2">
-          {#each availableWeddings as w}
-            <button
-              onclick={() => selectWedding(w.id)}
-              disabled={loading}
-              class="w-full flex items-center gap-3 p-3 rounded-xl border border-gray-200 hover:border-deep-red hover:bg-red-50 transition-all text-left group"
-            >
-              <div class="w-10 h-10 rounded-lg bg-red-50 border border-red-100 flex items-center justify-center text-red flex-shrink-0">
-                <Calendar class="w-5 h-5" />
+        {#if availableWeddings.length === 0 && loginRole === 'admin'}
+          {#if !showCreate}
+            <div class="text-center py-4">
+              <Calendar class="w-10 h-10 text-gray-300 mx-auto mb-3" />
+              <p class="text-sm text-gray-500 mb-4">No weddings yet. Create your first wedding to get started.</p>
+              <button onclick={() => showCreate = true}
+                class="w-full px-4 py-2.5 bg-deep-red text-white rounded-xl text-sm font-semibold hover:bg-deep-red/90 transition-colors">
+                Create Wedding
+              </button>
+            </div>
+          {:else}
+            <h2 class="text-sm font-semibold text-gray-900 mb-4">New Wedding</h2>
+            <div class="space-y-3">
+              <div>
+                <label for="wedding-name" class="block text-xs font-medium text-gray-600 mb-1">Wedding Name</label>
+                <input id="wedding-name" type="text" bind:value={newName} placeholder="e.g. John & Jane's Wedding"
+                  class="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-deep-red/20 focus:border-deep-red" />
               </div>
-              <div class="flex-1 min-w-0">
-                <div class="font-semibold text-gray-900 text-sm">{w.name}</div>
-                <div class="text-xs text-gray-500">{w.date ? new Date(w.date).toLocaleDateString() : 'No date'}</div>
+              <div>
+                <label for="wedding-date" class="block text-xs font-medium text-gray-600 mb-1">Date</label>
+                <input id="wedding-date" type="date" bind:value={newDate}
+                  class="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-deep-red/20 focus:border-deep-red" />
               </div>
-              <ChevronRight class="w-4 h-4 text-gray-400 group-hover:text-deep-red transition-colors" />
-            </button>
-          {/each}
-        </div>
+              <div class="flex gap-2">
+                <button onclick={handleCreateWedding} disabled={creating || !newName || !newDate}
+                  class="flex-1 py-2.5 bg-deep-red text-white rounded-xl text-sm font-semibold hover:bg-deep-red/90 disabled:opacity-50 transition-colors">
+                  {creating ? 'Creating...' : 'Create & Continue'}
+                </button>
+                <button onclick={() => showCreate = false}
+                  class="px-4 py-2.5 border border-gray-200 rounded-xl text-sm font-medium text-gray-600 hover:bg-gray-50 transition-colors">
+                  Cancel
+                </button>
+              </div>
+            </div>
+          {/if}
+        {:else}
+          <h2 class="text-sm font-semibold text-gray-900 mb-4">Select a wedding</h2>
+          <div class="space-y-2">
+            {#each availableWeddings as w}
+              <button
+                onclick={() => selectWedding(w.id)}
+                disabled={loading}
+                class="w-full flex items-center gap-3 p-3 rounded-xl border border-gray-200 hover:border-deep-red hover:bg-red-50 transition-all text-left group"
+              >
+                <div class="w-10 h-10 rounded-lg bg-red-50 border border-red-100 flex items-center justify-center text-red flex-shrink-0">
+                  <Calendar class="w-5 h-5" />
+                </div>
+                <div class="flex-1 min-w-0">
+                  <div class="font-semibold text-gray-900 text-sm">{w.name}</div>
+                  <div class="text-xs text-gray-500">{w.date ? new Date(w.date).toLocaleDateString() : 'No date'}</div>
+                </div>
+                <ChevronRight class="w-4 h-4 text-gray-400 group-hover:text-deep-red transition-colors" />
+              </button>
+            {/each}
+          </div>
+        {/if}
       </div>
     {/if}
   </div>
