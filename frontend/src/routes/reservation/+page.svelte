@@ -1,5 +1,6 @@
 <script lang="ts">
   import { addToast } from '$lib/stores';
+  import { goto } from '$app/navigation';
   import { cn } from '$lib/utils';
   import { z } from 'zod';
   import { CheckCircle2, AlertCircle } from 'lucide-svelte';
@@ -411,7 +412,7 @@
               <CheckCircle2 class="w-4 h-4" /> Save Reservation
             {/if}
           </button>
-          <button type="button" class="px-6 py-3 border border-gray-200 bg-white rounded-xl text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors">
+          <button type="button" onclick={() => goto('/guests')} class="px-6 py-3 border border-gray-200 bg-white rounded-xl text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors">
             Cancel
           </button>
         </div>
