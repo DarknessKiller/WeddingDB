@@ -3,13 +3,13 @@
   import { selectedGuest, isDrawerOpen, addToast } from '$lib/stores';
   import { weddingId } from '$lib/stores/weddingId';
   import { goto } from '$app/navigation';
-  import { listGuests, type GuestResponse } from '$lib/api/guests';
+  import { listGuests, assignSeat, type GuestResponse } from '$lib/api/guests';
   import { getOccupancy, listTables } from '$lib/api/tables';
   import Badge from '$lib/components/ui/Badge.svelte';
   import { cn } from '$lib/utils';
   import { page } from '$app/state';
   import { onMount } from 'svelte';
-  import { Users, Star, X } from 'lucide-svelte';
+  import { Users, Star, X, Search } from 'lucide-svelte';
   import { get } from 'svelte/store';
   import type { BanquetTable, Guest, RSVPStatus, TableOccupancy } from '$lib/types';
 
@@ -21,6 +21,9 @@
   let selectedTableId = $state<number | null>(null);
   let hoveredSeat = $state<{ seatNum: number; guest: Guest | null; x: number; y: number } | null>(null);
   let showMobilePanel = $state(false);
+  let guestSearch = $state('');
+  let unassignedGuests = $state<Guest[]>([]);
+  let assigningSeat = $state<number | null>(null);
 
   function mapGuest(r: GuestResponse): Guest {
     return {
@@ -48,6 +51,7 @@
       const wid = get(weddingId);
       const [guestRes, rawOcc, tablesRes] = await Promise.all([listGuests(wid), getOccupancy(wid), listTables(wid)]);
       allGuests = guestRes.guests.map(mapGuest);
+      unassignedGuests = allGuests.filter(g => g.tableId === null);
       allTables = tablesRes;
       const occMap = new Map<number, number>();
       for (const o of rawOcc) occMap.set(o.TableID, o.Pax);
@@ -86,6 +90,15 @@
     return { tableId: selectedTableId, occupied, capacity, percentage: capacity > 0 ? Math.round((occupied / capacity) * 100) : 0 };
   });
 
+  let filteredUnassignedGuests = $derived(
+    guestSearch.trim()
+      ? unassignedGuests.filter(g =>
+          g.name.toLowerCase().includes(guestSearch.toLowerCase()) ||
+          g.phone.includes(guestSearch)
+        )
+      : unassignedGuests
+  );
+
   function handleTableClick(id: number) {
     selectedTableId = selectedTableId === id ? null : id;
     showMobilePanel = selectedTableId !== null;
@@ -101,6 +114,30 @@
   function closePanel() {
     selectedTableId = null;
     showMobilePanel = false;
+    assigningSeat = null;
+    guestSearch = '';
+  }
+
+  function getInitials(name: string): string {
+    return name.split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase();
+  }
+
+  async function assignGuestToSeat(guest: Guest, seatNum: number) {
+    if (!selectedTable) return;
+    const wid = get(weddingId);
+    try {
+      await assignSeat(wid, guest.id, String(selectedTable.id), seatNum);
+      allGuests = allGuests.map(g => g.id === guest.id
+        ? { ...g, tableId: selectedTable.id, seatNumber: seatNum }
+        : g
+      );
+      unassignedGuests = unassignedGuests.filter(g => g.id !== guest.id);
+      assigningSeat = null;
+      guestSearch = '';
+      addToast(`${guest.name} assigned to seat ${seatNum}`, 'success');
+    } catch (e: any) {
+      addToast(e.message ?? 'Assignment failed', 'error');
+    }
   }
 </script>
 
@@ -163,12 +200,20 @@
           {@const guest = selectedTableGuests.find(g => g.seatNumber !== null && seatNum >= g.seatNumber && seatNum < g.seatNumber + g.pax)}
           <button
             class="w-full flex items-center gap-3 p-2.5 rounded-xl transition-all duration-150 text-left {guest ? 'hover:bg-gray-50' : 'hover:bg-gray-50/50'} {hoveredSeat?.seatNum === seatNum ? 'bg-gold-50 ring-1 ring-gold-200' : ''}"
-            onclick={() => { if (guest) { $selectedGuest = guest; $isDrawerOpen = true; } }}
+            onclick={() => {
+              if (guest) {
+                $selectedGuest = guest;
+                $isDrawerOpen = true;
+              } else {
+                assigningSeat = seatNum;
+              }
+            }}
           >
             <div class={cn(
               "w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0 border-2 transition-colors",
               guest?.checkedIn ? "bg-emerald-50 border-emerald-400 text-emerald-700" :
               guest ? "bg-red-50 border-red text-red" :
+              assigningSeat === seatNum ? "border-dashed border-gold text-gold" :
               "bg-gray-50 border-gray-200 text-gray-400"
             )}>
               {seatNum}
@@ -189,18 +234,52 @@
               </div>
               <Badge status={guest.rsvp} />
             {:else}
-              <span class="text-xs text-gray-400 italic">Empty seat</span>
+              <span class="text-xs text-gray-400 italic">{assigningSeat === seatNum ? 'Select a guest below...' : 'Click to assign'}</span>
             {/if}
           </button>
         {/each}
       </div>
 
+      <!-- Guest Search (when assigning) -->
+      {#if assigningSeat !== null}
+        <div class="px-5 py-3 border-t border-gray-100 space-y-2">
+          <div class="flex items-center justify-between">
+            <span class="text-xs font-semibold text-gray-500">Assign Seat {assigningSeat}</span>
+            <button onclick={() => assigningSeat = null} class="text-xs text-gray-400 hover:text-gray-600">Cancel</button>
+          </div>
+          <div class="relative">
+            <Search class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+            <input
+              type="text"
+              placeholder="Search unassigned guests..."
+              bind:value={guestSearch}
+              class="w-full pl-9 pr-3 py-2 border border-gray-200 rounded-lg text-sm focus:border-gold outline-none"
+            />
+          </div>
+          <div class="max-h-[200px] overflow-y-auto space-y-1">
+            {#each filteredUnassignedGuests as guest}
+              <button
+                onclick={() => assignGuestToSeat(guest, assigningSeat)}
+                class="w-full flex items-center gap-3 p-2 rounded-lg hover:bg-gray-50 text-left transition-colors"
+              >
+                <div class="w-8 h-8 rounded-full bg-red-50 text-red flex items-center justify-center text-xs font-bold">
+                  {getInitials(guest.name)}
+                </div>
+                <div class="flex-1 min-w-0">
+                  <div class="text-sm font-medium text-gray-900 truncate">{guest.name}</div>
+                  <div class="text-xs text-gray-500">{guest.phone} • {guest.pax} pax</div>
+                </div>
+              </button>
+            {:else}
+              <p class="text-xs text-gray-400 text-center py-2">No unassigned guests</p>
+            {/each}
+          </div>
+        </div>
+      {/if}
+
       <!-- Panel Footer -->
       <div class="px-5 py-4 border-t border-gray-100 bg-gray-50/50 flex gap-2">
-        <button onclick={() => goto('/guests')} class="flex-1 py-2.5 bg-red text-white rounded-xl text-sm font-semibold hover:bg-red-light transition-colors flex items-center justify-center gap-2">
-          <Users class="w-4 h-4" /> Assign Guest
-        </button>
-        <button onclick={() => goto('/tables')} class="px-4 py-2.5 border border-gray-200 bg-white rounded-xl text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors">
+        <button onclick={() => goto('/tables')} class="flex-1 py-2.5 border border-gray-200 bg-white rounded-xl text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors">
           Edit Table
         </button>
       </div>

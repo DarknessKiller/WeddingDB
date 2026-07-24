@@ -8,6 +8,7 @@
   import { weddingId } from '$lib/stores/weddingId';
   import { get } from 'svelte/store';
   import type { BanquetTable, TableOccupancy } from '$lib/types';
+  import HallMap from '$lib/components/seating/HallMap.svelte';
 
   const RING_R = 24;
   const RING_CIRCUM = 2 * Math.PI * RING_R;
@@ -38,6 +39,30 @@
   let formCol = $state(1);
   let formVip = $state(false);
   let saving = $state(false);
+
+  // ponytail: mirrors backend yPositions + dynamic x from table.go computeLayout
+  const yPositions: Record<number, number> = { 1: 15, 2: 30, 3: 45, 4: 60, 5: 75, 6: 90 };
+  function rowColToXY(row: number, col: number): { x: number; y: number } {
+    const y = yPositions[row] ?? 50;
+    const tablesInRow = tables.filter(t => t.row === row).length;
+    const n = editingTable ? tablesInRow : tablesInRow + 1;
+    const x = (100 / (n + 1)) * col;
+    return { x, y };
+  }
+
+  let previewTable = $derived.by(() => {
+    const pos = rowColToXY(formRow, formCol);
+    return {
+      id: 0,
+      name: formName || 'New',
+      capacity: formCapacity,
+      row: formRow,
+      col: formCol,
+      x: pos.x,
+      y: pos.y,
+      isVip: formVip,
+    };
+  });
 
   const wid = get(weddingId);
 
@@ -303,7 +328,7 @@
               id="table-row"
               type="number"
               min="1"
-              max="5"
+              max="6"
               bind:value={formRow}
               class="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm bg-white focus:border-gold focus:ring-2 focus:ring-gold/15 outline-none transition-all"
             />
@@ -317,6 +342,18 @@
               max="5"
               bind:value={formCol}
               class="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm bg-white focus:border-gold focus:ring-2 focus:ring-gold/15 outline-none transition-all"
+            />
+          </div>
+        </div>
+
+        <!-- Mini Map Preview -->
+        <div>
+          <label class="text-sm font-semibold text-gray-700 mb-1.5 block">Position Preview</label>
+          <div class="h-[200px] rounded-xl overflow-hidden border border-gray-200 bg-gray-50">
+            <HallMap
+              tables={[previewTable, ...tables.filter(t => editingTable ? t.id !== editingTable.id : true)]}
+              tableGuests={new Map()}
+              selectedTableId={0}
             />
           </div>
         </div>
