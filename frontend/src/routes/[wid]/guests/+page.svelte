@@ -36,7 +36,7 @@
   let moveTables = $state<BanquetTable[]>([]);
   let moveSaving = $state(false);
 
-  let wid = $state('MQ');
+  let wid = $state('');
 
   weddingId.subscribe(v => { wid = v; });
 

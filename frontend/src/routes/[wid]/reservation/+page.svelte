@@ -207,7 +207,7 @@
       });
       
       addToast(`Reservation for ${form.name} saved successfully`, 'success');
-      form = { name: '', phone: '', email: '', pax: 1, rsvp: 'pending', tableId: null, seatNumbers: [], dietary: [], notes: '', isVip: false };
+      goto(`/${wid}/guests`);
     } catch (e) {
       addToast('Failed to save reservation', 'error');
     } finally {

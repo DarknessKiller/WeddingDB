@@ -3,15 +3,20 @@ package handlers
 import (
 	"time"
 	"weddingdb/internal/models"
+	"weddingdb/internal/repository"
 	"weddingdb/internal/services"
 
 	"github.com/go-fuego/fuego"
+	"github.com/google/uuid"
 )
 
-type WeddingHandler struct{ weddingService *services.WeddingService }
+type WeddingHandler struct {
+	weddingService *services.WeddingService
+	adminRepo      *repository.AdminRepo
+}
 
-func NewWeddingHandler(weddingService *services.WeddingService) *WeddingHandler {
-	return &WeddingHandler{weddingService: weddingService}
+func NewWeddingHandler(weddingService *services.WeddingService, adminRepo *repository.AdminRepo) *WeddingHandler {
+	return &WeddingHandler{weddingService: weddingService, adminRepo: adminRepo}
 }
 
 type WeddingRequest struct {
@@ -60,6 +65,11 @@ func (h *WeddingHandler) Create(c fuego.ContextWithBody[WeddingRequest]) (any, e
 	w := &models.WeddingEvent{Name: body.Name, Date: d}
 	if err := h.weddingService.Create(w); err != nil {
 		return nil, err
+	}
+	// Link the creating admin to this wedding
+	adminID := AdminIDFromContext(c.Context())
+	if adminID != uuid.Nil {
+		h.adminRepo.AddUserWedding(adminID, w.ID)
 	}
 	return w, nil
 }

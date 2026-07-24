@@ -81,9 +81,16 @@ func (h *GuestHandler) Create(c fuego.ContextWithBody[GuestCreateRequest]) (any,
 	if err := h.guestService.Create(guest); err != nil {
 		return nil, err
 	}
-	if body.TableID != nil && body.SeatNum != nil {
+	if body.TableID != nil && *body.TableID != "" {
 		if tid, err := uuid.Parse(*body.TableID); err == nil {
-			h.guestService.AssignSeat(guest.ID, wid, tid, *body.SeatNum)
+			seatNum := 1
+			if body.SeatNum != nil {
+				seatNum = *body.SeatNum
+			}
+			if err := h.guestService.AssignSeat(guest.ID, wid, tid, seatNum); err == nil {
+				guest.TableID = &tid
+				guest.SeatNum = &seatNum
+			}
 		}
 	}
 	return guest, nil
@@ -110,6 +117,21 @@ func (h *GuestHandler) Update(c fuego.ContextWithBody[GuestCreateRequest]) (any,
 	guest.Dietary = body.Dietary
 	guest.AngbaoAmt = body.AngbaoAmt
 	guest.GiftItem = body.GiftItem
+	if body.TableID != nil && *body.TableID != "" {
+		if tid, err := uuid.Parse(*body.TableID); err == nil {
+			seatNum := 1
+			if body.SeatNum != nil {
+				seatNum = *body.SeatNum
+			}
+			if err := h.guestService.AssignSeat(guest.ID, wid, tid, seatNum); err == nil {
+				guest.TableID = &tid
+				guest.SeatNum = &seatNum
+			}
+		}
+	} else {
+		guest.TableID = nil
+		guest.SeatNum = nil
+	}
 	if err := h.guestService.Update(guest); err != nil {
 		return nil, err
 	}

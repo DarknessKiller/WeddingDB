@@ -22,7 +22,7 @@ func RegisterRoutes(
 	adminHandler := NewAdminHandler(adminRepo)
 	guestHandler := NewGuestHandler(guestService)
 	tableHandler := NewTableHandler(tableService)
-	weddingHandler := NewWeddingHandler(weddingService)
+	weddingHandler := NewWeddingHandler(weddingService, adminRepo)
 
 	// ── Public (no middleware) ──
 	pub := fuego.Group(s, "/api/auth")

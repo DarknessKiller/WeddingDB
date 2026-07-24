@@ -77,3 +77,17 @@ func (r *AdminRepo) HasWeddingAccess(userID, weddingID uuid.UUID) (bool, error) 
 		Count(&count).Error
 	return count > 0, err
 }
+
+// AddUserWedding adds a wedding association if it doesn't already exist.
+func (r *AdminRepo) AddUserWedding(userID, weddingID uuid.UUID) error {
+	exists, _ := r.HasWeddingAccess(userID, weddingID)
+	if exists {
+		return nil
+	}
+	uw := models.UserWedding{
+		ID:        uuid.New(),
+		UserID:    userID,
+		WeddingID: weddingID,
+	}
+	return r.db.Create(&uw).Error
+}
