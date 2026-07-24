@@ -24,44 +24,55 @@ func RegisterRoutes(
 	tableHandler := NewTableHandler(tableService)
 	weddingHandler := NewWeddingHandler(weddingService)
 
-	// Auth routes (public)
-	fuego.Post(s, "/api/auth/login", authHandler.Login)
-	fuego.Post(s, "/api/auth/refresh", authHandler.Refresh)
-	fuego.Post(s, "/api/auth/logout", authHandler.Logout)
+	// ── Public (no middleware) ──
+	pub := fuego.Group(s, "/api/auth")
+	fuego.Post(pub, "/login", authHandler.Login)
+	fuego.Post(pub, "/refresh", authHandler.Refresh)
+	fuego.Post(pub, "/logout", authHandler.Logout)
 
-	// Protected routes
-	fuego.Use(s, middleware.AuthMiddleware(authService, nonceStore))
+	// ── Public guest endpoints (kiosk, no auth) ──
+	pubApi := fuego.Group(s, "/api/public")
+	pubGuestHandler := NewPublicGuestHandler(guestService)
+	pubScoped := fuego.Group(pubApi, "/weddings/{wid}")
+	fuego.Get(pubScoped, "/guests", pubGuestHandler.List)
+	fuego.Get(pubScoped, "/guests/search", pubGuestHandler.Search)
+	fuego.Get(pubScoped, "/tables", tableHandler.List)
 
-	// Service admin routes
-	fuego.Get(s, "/api/admins", adminHandler.List)
-	fuego.Post(s, "/api/admins", adminHandler.Create)
-	fuego.Delete(s, "/api/admins/{id}", adminHandler.Delete)
+	// ── Auth-protected ──
+	api := fuego.Group(s, "/api")
+	fuego.Use(api, middleware.AuthMiddleware(authService))
 
-	// Wedding routes
-	fuego.Get(s, "/api/weddings", weddingHandler.List)
-	fuego.Post(s, "/api/weddings", weddingHandler.Create)
-	fuego.Get(s, "/api/weddings/{id}", weddingHandler.Get)
-	fuego.Put(s, "/api/weddings/{id}", weddingHandler.Update)
-	fuego.Delete(s, "/api/weddings/{id}", weddingHandler.Delete)
+	// Admin CRUD
+	fuego.Get(api, "/admins", adminHandler.List)
+	fuego.Post(api, "/admins", adminHandler.Create)
+	fuego.Delete(api, "/admins/{id}", adminHandler.Delete)
 
-	// Wedding-scoped routes
-	fuego.Use(s, middleware.WeddingScopeMiddleware)
+	// Wedding CRUD
+	fuego.Get(api, "/weddings", weddingHandler.List)
+	fuego.Post(api, "/weddings", weddingHandler.Create)
+	fuego.Get(api, "/weddings/{id}", weddingHandler.Get)
+	fuego.Put(api, "/weddings/{id}", weddingHandler.Update)
+	fuego.Delete(api, "/weddings/{id}", weddingHandler.Delete)
+
+	// ── Auth + Wedding scope ──
+	scoped := fuego.Group(api, "/weddings/{wid}")
+	fuego.Use(scoped, middleware.WeddingScopeMiddleware)
 
 	// Tables
-	fuego.Get(s, "/api/weddings/{wid}/tables", tableHandler.List)
-	fuego.Post(s, "/api/weddings/{wid}/tables", tableHandler.Create)
-	fuego.Put(s, "/api/weddings/{wid}/tables/{id}", tableHandler.Update)
-	fuego.Delete(s, "/api/weddings/{wid}/tables/{id}", tableHandler.Delete)
+	fuego.Get(scoped, "/tables", tableHandler.List)
+	fuego.Post(scoped, "/tables", tableHandler.Create)
+	fuego.Put(scoped, "/tables/{id}", tableHandler.Update)
+	fuego.Delete(scoped, "/tables/{id}", tableHandler.Delete)
 
 	// Guests
-	fuego.Get(s, "/api/weddings/{wid}/guests", guestHandler.List)
-	fuego.Post(s, "/api/weddings/{wid}/guests", guestHandler.Create)
-	fuego.Get(s, "/api/weddings/{wid}/guests/{id}", guestHandler.Get)
-	fuego.Put(s, "/api/weddings/{wid}/guests/{id}", guestHandler.Update)
-	fuego.Delete(s, "/api/weddings/{wid}/guests/{id}", guestHandler.Delete)
-	fuego.Post(s, "/api/weddings/{wid}/guests/{id}/checkin", guestHandler.CheckIn)
-	fuego.Post(s, "/api/weddings/{wid}/guests/{id}/checkout", guestHandler.CheckOut)
-	fuego.Post(s, "/api/weddings/{wid}/guests/{id}/seat", guestHandler.AssignSeat)
-	fuego.Get(s, "/api/weddings/{wid}/guests/search", guestHandler.Search)
-	fuego.Get(s, "/api/weddings/{wid}/occupancy", guestHandler.Occupancy)
+	fuego.Get(scoped, "/guests", guestHandler.List)
+	fuego.Post(scoped, "/guests", guestHandler.Create)
+	fuego.Get(scoped, "/guests/{id}", guestHandler.Get)
+	fuego.Put(scoped, "/guests/{id}", guestHandler.Update)
+	fuego.Delete(scoped, "/guests/{id}", guestHandler.Delete)
+	fuego.Post(scoped, "/guests/{id}/checkin", guestHandler.CheckIn)
+	fuego.Post(scoped, "/guests/{id}/checkout", guestHandler.CheckOut)
+	fuego.Post(scoped, "/guests/{id}/seat", guestHandler.AssignSeat)
+	fuego.Get(scoped, "/guests/search", guestHandler.Search)
+	fuego.Get(scoped, "/occupancy", guestHandler.Occupancy)
 }
