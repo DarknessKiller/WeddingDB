@@ -31,6 +31,7 @@
   let showMoveModal = $state(false);
   let moveGuest = $state<GuestResponse | null>(null);
   let moveTableId = $state('');
+  let moveSeatNum = $state(1);
   let moveTables = $state<BanquetTable[]>([]);
   let moveSaving = $state(false);
 
@@ -193,6 +194,7 @@
     }
     // pre-select current table if guest has one
     moveTableId = guest.tableId ?? (moveTables.length ? String(moveTables[0].id) : '');
+    moveSeatNum = getNextSeatNum();
     showMoveModal = true;
   }
 
@@ -204,14 +206,43 @@
     return maxSeat + 1;
   }
 
+  function getOccupiedSeats(): Set<number> {
+    if (!moveTableId) return new Set();
+    return new Set(
+      guests
+        .filter(g => g.tableId === moveTableId && g.id !== moveGuest?.id && g.seatNum != null)
+        .flatMap(g => {
+          const start = g.seatNum!;
+          return Array.from({ length: g.pax }, (_, i) => start + i);
+        })
+    );
+  }
+
+  function isSeatOccupied(seatNum: number): boolean {
+    return getOccupiedSeats().has(seatNum);
+  }
+
+  function getTableCapacity(): number {
+    if (!moveTableId) return 10;
+    const t = moveTables.find(t => String(t.id) === moveTableId);
+    return t?.capacity ?? 10;
+  }
+
   async function confirmMoveTable() {
     if (!moveGuest || !moveTableId) return;
+    if (isSeatOccupied(moveSeatNum)) {
+      addToast(`Seat ${moveSeatNum} is already occupied`, 'error');
+      return;
+    }
+    if (moveSeatNum < 1 || moveSeatNum > getTableCapacity()) {
+      addToast(`Seat must be between 1 and ${getTableCapacity()}`, 'error');
+      return;
+    }
     moveSaving = true;
     try {
-      const seatNum = getNextSeatNum();
-      await assignSeat(wid, moveGuest.id, moveTableId, seatNum);
+      await assignSeat(wid, moveGuest.id, moveTableId, moveSeatNum);
       guests = guests.map(g => g.id === moveGuest!.id
-        ? { ...g, tableId: moveTableId, seatNum }
+        ? { ...g, tableId: moveTableId, seatNum: moveSeatNum }
         : g
       );
       addToast(`${moveGuest.name} moved to table`, 'success');
@@ -411,7 +442,7 @@
         </div>
         <div>
           <label class="block text-xs font-medium text-gray-500 mb-1">New Table</label>
-          <select bind:value={moveTableId} class="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm bg-white focus:border-gold outline-none">
+          <select bind:value={moveTableId} onchange={() => { moveSeatNum = getNextSeatNum(); }} class="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm bg-white focus:border-gold outline-none">
             {#each moveTables as t}
               <option value={String(t.id)}>{t.name}</option>
             {/each}
@@ -419,14 +450,21 @@
         </div>
         {#if moveTableId}
           <div>
-            <label class="block text-xs font-medium text-gray-500 mb-1">Next Seat #</label>
-            <div class="px-3 py-2 bg-gray-50 rounded-lg text-sm text-gray-700">{getNextSeatNum()}</div>
+            <label class="block text-xs font-medium text-gray-500 mb-1">Seat Number (1–{getTableCapacity()})</label>
+            <input type="number" min="1" max={getTableCapacity()} bind:value={moveSeatNum}
+              class="w-full px-3 py-2 border rounded-lg text-sm bg-white outline-none transition-all {isSeatOccupied(moveSeatNum) ? 'border-red focus:ring-2 focus:ring-red/15' : 'border-gray-200 focus:border-gold focus:ring-2 focus:ring-gold/15'}" />
+            {#if isSeatOccupied(moveSeatNum)}
+              <p class="mt-1 text-xs text-red flex items-center gap-1">⚠ Seat {moveSeatNum} is occupied</p>
+            {/if}
+          </div>
+          <div class="text-xs text-gray-400">
+            Occupied: {getOccupiedSeats().size}/{getTableCapacity()} seats
           </div>
         {/if}
       </div>
       <div class="flex justify-end gap-2">
         <button onclick={() => showMoveModal = false} class="px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 rounded-lg">Cancel</button>
-        <button onclick={confirmMoveTable} disabled={!moveTableId || moveSaving}
+        <button onclick={confirmMoveTable} disabled={!moveTableId || moveSaving || isSeatOccupied(moveSeatNum) || moveSeatNum < 1 || moveSeatNum > getTableCapacity()}
           class="px-4 py-2 text-sm font-medium text-white bg-red rounded-lg hover:bg-red-light disabled:opacity-50 transition-colors">
           {moveSaving ? 'Moving...' : 'Move Guest'}
         </button>
