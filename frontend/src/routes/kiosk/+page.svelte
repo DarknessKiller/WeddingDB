@@ -15,6 +15,7 @@
   let currentTime = $state(new Date());
   let timer: ReturnType<typeof setInterval>;
   let hoveredSeat = $state<{ seatNum: number; guest: Guest | null; x: number; y: number } | null>(null);
+  let searching = $state(false);
 
   let tableGuests = $derived.by(() => {
     const map = new Map<number, Guest[]>();
@@ -40,13 +41,14 @@
 
   $effect(() => {
     const q = query.trim();
-    if (!q) { results = []; return; }
+    if (!q) { results = []; searching = false; return; }
+    searching = true;
     let cancelled = false;
     const timer = setTimeout(async () => {
       try {
         const r = await searchGuests(q);
-        if (!cancelled) results = r;
-      } catch { if (!cancelled) results = []; }
+        if (!cancelled) { results = r; searching = false; }
+      } catch { if (!cancelled) { results = []; searching = false; } }
     }, 300);
     return () => { cancelled = true; clearTimeout(timer); };
   });
@@ -277,11 +279,16 @@
               </button>
             {/each}
           </div>
-        {:else if query.trim().length > 0}
+        {:else if query.trim().length > 0 && !searching}
           <div class="text-center py-12 text-gray-500">
             <Search class="w-12 h-12 mx-auto mb-3 opacity-40" />
             <p class="font-medium">No guests found</p>
             <p class="text-sm mt-1">Try a different spelling</p>
+          </div>
+        {:else if searching}
+          <div class="text-center py-12 text-gray-500">
+            <div class="w-8 h-8 border-2 border-gray-600 border-t-gold rounded-full animate-spin mx-auto mb-3"></div>
+            <p class="font-medium">Searching...</p>
           </div>
         {:else}
           <div class="text-center py-8 text-gray-600">

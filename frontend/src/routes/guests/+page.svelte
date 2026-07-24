@@ -39,9 +39,17 @@
 
   weddingId.subscribe(v => { wid = v; });
 
+  let tables = $state<BanquetTable[]>([]);
+
   onMount(async () => {
-    await loadGuests();
+    await Promise.all([loadGuests(), loadTables()]);
   });
+
+  async function loadTables() {
+    try {
+      tables = await listTables(wid);
+    } catch {}
+  }
 
   async function loadGuests() {
     loading = true;
@@ -342,7 +350,7 @@
                 <td class="px-4 py-3.5 text-gray-600">{guest.phone}</td>
                 <td class="px-4 py-3.5"><Badge status={guest.rsvp as RSVPStatus} /></td>
                 <td class="px-4 py-3.5 text-gray-700 font-medium">{guest.pax}</td>
-                <td class="px-4 py-3.5 text-gray-700 font-medium">{guest.tableId ?? '—'}</td>
+                <td class="px-4 py-3.5 text-gray-700 font-medium">{tables.find(t => t.id === guest.tableId)?.name || (guest.tableId ?? '—')}</td>
                 <td class="px-4 py-3.5 text-gray-700 font-medium">{guest.seatNum ?? '—'}</td>
                 <td class="px-4 py-3.5">
                   {#if guest.checkedInAt}

@@ -84,17 +84,8 @@
   }
 
   function cancel() {
-    form.name = guest.name;
-    form.phone = guest.phone;
-    form.email = guest.email ?? '';
-    form.pax = guest.pax;
-    form.rsvp = guest.rsvp;
-    form.isVip = guest.isVip;
-    form.notes = guest.notes;
-    form.dietary = guest.dietaryRequirements;
-    form.angbaoAmt = guest.angbaoAmount != null ? String(guest.angbaoAmount) : '';
-    form.giftItem = guest.giftItem ?? '';
     editing = false;
+    onClose();
   }
 </script>
 

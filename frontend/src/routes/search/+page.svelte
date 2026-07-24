@@ -60,10 +60,12 @@
     let timer: ReturnType<typeof setTimeout> | undefined;
     if (query.trim().length > 0) {
       showResults = true;
+      loading = true;
       timer = setTimeout(doSearch, 300);
     } else {
       results = [];
       showResults = false;
+      loading = false;
     }
     return () => clearTimeout(timer);
   });
