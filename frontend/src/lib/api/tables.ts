@@ -1,0 +1,50 @@
+import { apiFetch } from './client';
+import { encodeId } from '$lib/utils/encode';
+import type { BanquetTable, TableOccupancy } from '$lib/types';
+
+function wid(weddingId: string, path: string) {
+	return `/api/weddings/${weddingId}${path}`;
+}
+
+export async function listTables(weddingId: string): Promise<BanquetTable[]> {
+	const res = await apiFetch(wid(weddingId, '/tables'));
+	if (!res.ok) throw new Error('Failed to load tables');
+	return res.json();
+}
+
+export async function createTable(weddingId: string, data: Omit<BanquetTable, 'id'>): Promise<BanquetTable> {
+	const res = await apiFetch(wid(weddingId, '/tables'), {
+		method: 'POST',
+		body: JSON.stringify(data)
+	});
+	if (!res.ok) throw new Error('Failed to create table');
+	return res.json();
+}
+
+export async function updateTable(weddingId: string, id: number, data: Omit<BanquetTable, 'id'>): Promise<BanquetTable> {
+	const res = await apiFetch(wid(weddingId, `/tables/${encodeId(id)}`), {
+		method: 'PUT',
+		body: JSON.stringify(data)
+	});
+	if (!res.ok) throw new Error('Failed to update table');
+	return res.json();
+}
+
+export async function deleteTable(weddingId: string, id: number): Promise<void> {
+	const res = await apiFetch(wid(weddingId, `/tables/${encodeId(id)}`), {
+		method: 'DELETE'
+	});
+	if (!res.ok) throw new Error('Failed to delete table');
+}
+
+// ponytail: backend returns {TableID, PascalCase}, frontend expects {tableId, ...}
+export interface RawOccupancy {
+	TableID: number;
+	Pax: number;
+}
+
+export async function getOccupancy(weddingId: string): Promise<RawOccupancy[]> {
+	const res = await apiFetch(wid(weddingId, '/occupancy'));
+	if (!res.ok) throw new Error('Failed to load occupancy');
+	return res.json();
+}
