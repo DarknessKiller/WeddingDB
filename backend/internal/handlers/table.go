@@ -35,7 +35,7 @@ type TableResponse struct {
 	IsVip     bool `json:"isVip"`
 }
 
-var yPositions = map[int]float64{1: 18, 2: 34, 3: 52, 4: 70, 5: 86}
+var yPositions = map[int]float64{1: 15, 2: 30, 3: 45, 4: 60, 5: 75, 6: 90}
 
 func computeLayout(tables []models.BanquetTable) []TableResponse {
 	type twp struct {
@@ -46,13 +46,39 @@ func computeLayout(tables []models.BanquetTable) []TableResponse {
 	for i := range tables {
 		rowMap[tables[i].Row] = append(rowMap[tables[i].Row], &twp{BanquetTable: tables[i]})
 	}
+
+	// Find max row number
+	maxRow := 0
+	for row := range rowMap {
+		if row > maxRow {
+			maxRow = row
+		}
+	}
+
+	// If more rows than predefined, compute positions dynamically
+	yPos := make(map[int]float64)
+	if maxRow <= len(yPositions) {
+		for k, v := range yPositions {
+			yPos[k] = v
+		}
+	} else {
+		// Evenly space rows with good gaps
+		start, end := 12.0, 88.0
+		for i := 1; i <= maxRow; i++ {
+			if maxRow == 1 {
+				yPos[i] = (start + end) / 2
+			} else {
+				yPos[i] = start + (end-start)*float64(i-1)/float64(maxRow-1)
+			}
+		}
+	}
 	var result []TableResponse
 	for row, rowTables := range rowMap {
 		sort.Slice(rowTables, func(i, j int) bool {
 			return rowTables[i].Col < rowTables[j].Col
 		})
 		n := len(rowTables)
-		y := yPositions[row]
+		y := yPos[row]
 		if y == 0 {
 			y = 50
 		}
