@@ -1,19 +1,25 @@
 <script lang="ts">
   import { cn } from '$lib/utils';
-  import { sidebarCollapsed } from '$lib/stores';
+  import { sidebarCollapsed, getAuth } from '$lib/stores';
   import {
     LayoutDashboard, Users, MapPin, Search, Monitor, Calendar,
     Settings, BarChart3, Utensils, Menu, X
   } from 'lucide-svelte';
 
-  let { currentPath }: { currentPath: string } = $props();
+  let { currentPath, guestCount = 0 }: { currentPath: string; guestCount?: number } = $props();
+
+  const auth = $derived(getAuth());
+  const displayName = $derived(auth.name || 'Admin');
+  const initials = $derived(
+    displayName.split(' ').map((w: string) => w[0]).join('').toUpperCase().slice(0, 2)
+  );
 
   const navSections = [
     {
       label: 'Main',
       items: [
         { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
-        { href: '/guests', label: 'Guests', icon: Users, badge: 150 },
+        { href: '/guests', label: 'Guests', icon: Users },
         { href: '/tables', label: 'Tables', icon: Utensils },
       ]
     },
@@ -99,7 +105,11 @@
           <item.icon class="w-5 h-5 flex-shrink-0" />
           {#if !$sidebarCollapsed}
             {item.label}
-            {#if item.badge}
+            {#if item.href === '/guests' && guestCount > 0}
+              <span class="ml-auto bg-red text-white text-[11px] font-semibold px-2 py-0.5 rounded-full">
+                {guestCount}
+              </span>
+            {:else if item.badge}
               <span class="ml-auto bg-red text-white text-[11px] font-semibold px-2 py-0.5 rounded-full">
                 {item.badge}
               </span>
@@ -117,12 +127,12 @@
       $sidebarCollapsed ? "justify-center py-2" : "px-2 py-2"
     )}>
       <div class="w-9 h-9 rounded-full bg-gold flex items-center justify-center text-white text-sm font-bold flex-shrink-0">
-        LW
+        {initials}
       </div>
       {#if !$sidebarCollapsed}
         <div class="flex-1 min-w-0">
-          <div class="text-[13px] font-semibold text-gray-800">Li Wei</div>
-          <div class="text-[11px] text-gray-400">Administrator</div>
+          <div class="text-[13px] font-semibold text-gray-800">{displayName}</div>
+          <div class="text-[11px] text-gray-400">{auth.role || 'Administrator'}</div>
         </div>
       {/if}
     </div>
