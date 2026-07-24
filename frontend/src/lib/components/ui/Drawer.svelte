@@ -1,5 +1,5 @@
 <script lang="ts">
-  import type { Guest, RSVPStatus } from '$lib/types';
+  import type { Guest, BanquetTable, RSVPStatus } from '$lib/types';
   import { X, Phone, Mail, Utensils, StickyNote, Banknote, Gift, Pencil, Check } from 'lucide-svelte';
   import Badge from './Badge.svelte';
   import { getInitials, cn } from '$lib/utils';
@@ -7,7 +7,9 @@
   import { weddingId } from '$lib/stores/weddingId';
   import { updateGuest } from '$lib/api/guests';
   import { get } from 'svelte/store';
-  let { guest, onClose, startEditing = false }: { guest: Guest; onClose: () => void; startEditing?: boolean } = $props();
+  let { guest, tables = [], onClose, startEditing = false }: { guest: Guest; tables?: BanquetTable[]; onClose: () => void; startEditing?: boolean } = $props();
+
+  let tableName = $derived(tables.find(t => t.id === guest.tableId)?.name ?? guest.tableId ?? '—');
 
   let editing = $state(false);
   let saving = $state(false);
@@ -213,7 +215,7 @@
         <div class="grid grid-cols-2 gap-4">
           <div class="bg-gray-50 rounded-xl p-4">
             <div class="text-xs text-gray-500 font-medium mb-1">Table</div>
-            <div class="text-2xl font-bold text-gray-900">{guest.tableId ?? '—'}</div>
+            <div class="text-2xl font-bold text-gray-900">{tableName}</div>
           </div>
           <div class="bg-gray-50 rounded-xl p-4">
             <div class="text-xs text-gray-500 font-medium mb-1">Seat{guest.pax > 1 ? 's' : ''}</div>

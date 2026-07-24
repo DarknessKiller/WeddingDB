@@ -8,6 +8,8 @@
   import { selectedGuest, isDrawerOpen, drawerStartEditing, sidebarCollapsed, getAuth } from '$lib/stores';
   import { weddingId, setWeddingId } from '$lib/stores/weddingId';
   import { listGuests } from '$lib/api/guests';
+  import { listTables } from '$lib/api/tables';
+  import type { BanquetTable } from '$lib/types';
 
   let { children } = $props();
 
@@ -15,6 +17,7 @@
   let wid = $derived(page.params.wid);
   let authChecked = $state(false);
   let guestCount = $state(0);
+  let tables = $state<BanquetTable[]>([]);
 
   onMount(() => {
     const { accessToken } = getAuth();
@@ -30,6 +33,9 @@
     authChecked = true;
     listGuests($weddingId).then((res) => {
       guestCount = res.total;
+    }).catch(() => {});
+    listTables($weddingId).then((t) => {
+      tables = t;
     }).catch(() => {});
   });
 
@@ -69,6 +75,6 @@
 
 {#if $isDrawerOpen && $selectedGuest}
   {#key $drawerStartEditing}
-    <Drawer guest={$selectedGuest} startEditing={$drawerStartEditing} onClose={() => { $isDrawerOpen = false; $selectedGuest = null; $drawerStartEditing = false; }} />
+    <Drawer guest={$selectedGuest} tables={tables} startEditing={$drawerStartEditing} onClose={() => { $isDrawerOpen = false; $selectedGuest = null; $drawerStartEditing = false; }} />
   {/key}
 {/if}

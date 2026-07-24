@@ -31,6 +31,7 @@
   });
 
   let selectedTable = $derived(selectedGuest?.tableId ? tables.find(t => t.id === selectedGuest!.tableId) ?? null : null);
+  let selectedTableName = $derived(selectedTable?.name ?? selectedGuest?.tableId ?? '—');
   let hasValidTable = $derived(selectedGuest?.tableId != null && selectedTable !== null);
   let seatOccupants = $derived(
     selectedGuest?.tableId
@@ -106,7 +107,7 @@
         <button onclick={backToSearch} class="p-2 rounded-xl bg-gray-800 hover:bg-gray-700 transition-colors" aria-label="Back to search">
           <ArrowLeft class="w-5 h-5" />
         </button>
-        <span class="font-semibold text-white">Table {selectedGuest.tableId}</span>
+        <span class="font-semibold text-white">Table {selectedTableName}</span>
       {/if}
     </div>
     <div class="flex-shrink-0 text-center">
@@ -175,7 +176,7 @@
               <div class="flex items-center justify-center gap-8 mb-4">
                 <div class="text-center">
                   <div class="text-[10px] text-gray-500 uppercase tracking-wider mb-1">Table</div>
-                  <div class="text-4xl font-extrabold text-gold">{selectedGuest.tableId}</div>
+                  <div class="text-4xl font-extrabold text-gold">{selectedTableName}</div>
                   {#if selectedTable?.isVip}
                     <span class="text-gold text-[10px] font-semibold">★ VIP</span>
                   {/if}
@@ -271,7 +272,7 @@
                   </div>
                   <div class="flex items-center gap-3 text-sm text-gray-400 mt-0.5">
                     {#if guest.tableId}
-                      <span class="flex items-center gap-1"><MapPin class="w-3.5 h-3.5" />Table {guest.tableId}</span>
+                      <span class="flex items-center gap-1"><MapPin class="w-3.5 h-3.5" />Table {tables.find(t => t.id === guest.tableId)?.name ?? guest.tableId}</span>
                       <span>Seat {guest.seatNumber}–{(guest.seatNumber ?? 0) + guest.pax - 1}</span>
                     {:else}
                       <span class="text-gray-500">No seat assigned</span>
