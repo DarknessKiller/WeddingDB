@@ -60,6 +60,21 @@
     return obj;
   });
 
+  function findClosestEmptySeats(tableId: string, count: number): number[] {
+    const table = apiTables.find(t => t.id === tableId);
+    if (!table) return [];
+    const occupied = new Set(
+      apiGuests
+        .filter(g => g.tableId === tableId && g.seatNumber !== null)
+        .flatMap(g => Array.from({ length: g.pax }, (_, i) => g.seatNumber! + i))
+    );
+    const seats: number[] = [];
+    for (let i = 1; i <= table.capacity && seats.length < count; i++) {
+      if (!occupied.has(i)) seats.push(i);
+    }
+    return seats;
+  }
+
   function handleSeatClick(tableId: string, seatNum: number, guest: Guest | null) {
     if (!guest && form.tableId === tableId) {
       toggleSeat(seatNum);
@@ -71,7 +86,7 @@
 
   function handleTableClick(id: string) {
     form.tableId = id;
-    form.seatNumbers = [];
+    form.seatNumbers = findClosestEmptySeats(id, form.pax);
   }
 
   const schema = z.object({
@@ -137,13 +152,15 @@
   // Reset seat selection when table or pax changes
   function onTableChange(tableId: string | null) {
     form.tableId = tableId;
-    form.seatNumbers = [];
+    form.seatNumbers = tableId ? findClosestEmptySeats(tableId, form.pax) : [];
   }
 
   function onPaxChange(pax: number) {
     form.pax = pax;
-    // Trim selected seats if pax decreased
-    if (form.seatNumbers && form.seatNumbers.length > pax) {
+    if (form.tableId) {
+      // Re-select closest empty seats for new pax
+      form.seatNumbers = findClosestEmptySeats(form.tableId, pax);
+    } else if (form.seatNumbers && form.seatNumbers.length > pax) {
       form.seatNumbers = form.seatNumbers.slice(0, pax);
     }
   }
