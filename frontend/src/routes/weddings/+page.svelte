@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { addToast, getAuth } from '$lib/stores';
+  import { goto } from '$app/navigation';
+  import { addToast, getAuth, setAuth } from '$lib/stores';
   import { weddingId, setWeddingId } from '$lib/stores/weddingId';
   import { listWeddings, createWedding, updateWedding, deleteWedding, type Wedding } from '$lib/api/weddings';
   import { Plus, Pencil, Trash2, X, Calendar, Check, ChevronRight } from 'lucide-svelte';
@@ -39,6 +40,7 @@
   async function selectWedding(w: Wedding) {
     if (selecting !== null) return;
     selecting = w.id;
+    let targetUrl = '';
     try {
       const res = await apiFetch('/api/auth/select-wedding', {
         method: 'POST',
@@ -50,12 +52,16 @@
         return;
       }
       const data = await res.json();
-      localStorage.setItem('weddingdb_access_token', data.accessToken);
+      const current = getAuth();
+      setAuth(data.accessToken, current.refreshToken ?? '', current.role ?? '', current.name ?? '');
       setWeddingId(w.id);
       addToast(`Switched to ${w.name}`, 'success');
-      goto(`/${encodeId(w.id)}/dashboard`, { replaceState: true });
+      targetUrl = `/${encodeId(w.id)}/dashboard`;
     } catch { addToast('Network error', 'error'); }
-    finally { selecting = null; }
+    finally {
+      selecting = null;
+      if (targetUrl) goto(targetUrl, { replaceState: true });
+    }
   }
 
   function openCreate() {
