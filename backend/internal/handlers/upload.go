@@ -44,8 +44,13 @@ func (h *UploadHandler) Upload(c fuego.ContextWithBody[any]) (any, error) {
 
 	// Validate magic bytes
 	headerBuf := make([]byte, 16)
-	n, _ := file.Read(headerBuf)
-	file.Seek(0, 0)
+	n, err := file.Read(headerBuf)
+	if err != nil {
+		return nil, fuego.BadRequestError{Title: "Failed to read file"}
+	}
+	if _, err := file.Seek(0, 0); err != nil {
+		return nil, fuego.InternalServerError{Title: "Failed to read file"}
+	}
 	if n < len(magicBytes[ext]) {
 		return nil, fuego.BadRequestError{Title: "File content does not match extension"}
 	}
@@ -73,24 +78,18 @@ func (h *UploadHandler) Upload(c fuego.ContextWithBody[any]) (any, error) {
 	}
 	hash := hex.EncodeToString(hasher.Sum(nil))
 
-	// Check if file with same hash already exists
-	files, _ := os.ReadDir(uploadDir)
-	for _, f := range files {
-		existingPath := filepath.Join(uploadDir, f.Name())
-		existingFile, err := os.Open(existingPath)
-		if err != nil {
-			continue
-		}
-		existingHasher := sha256.New()
-		io.Copy(existingHasher, existingFile)
-		existingFile.Close()
-		existingHash := hex.EncodeToString(existingHasher.Sum(nil))
-		if existingHash == hash {
-			return map[string]any{
-				"url":      "/uploads/" + f.Name(),
-				"filename": f.Name(),
-				"hash":     hash,
-			}, nil
+	// Check if file with same hash already exists via index file
+	indexPath := filepath.Join(uploadDir, ".hash-index")
+	if idx, err := os.ReadFile(indexPath); err == nil {
+		for _, line := range strings.Split(string(idx), "\n") {
+			parts := strings.SplitN(line, " ", 2)
+			if len(parts) == 2 && parts[0] == hash {
+				return map[string]any{
+					"url":      "/uploads/" + parts[1],
+					"filename": parts[1],
+					"hash":     hash,
+				}, nil
+			}
 		}
 	}
 
@@ -105,9 +104,18 @@ func (h *UploadHandler) Upload(c fuego.ContextWithBody[any]) (any, error) {
 	defer dst.Close()
 
 	// Reset file pointer to beginning for writing
-	file.Seek(0, 0)
+	if _, err := file.Seek(0, 0); err != nil {
+		return nil, fuego.InternalServerError{Title: "Failed to save file"}
+	}
 	if _, err := dst.ReadFrom(file); err != nil {
 		return nil, fuego.InternalServerError{Title: "Failed to save file"}
+	}
+
+	// Append hash to index file
+	f, err := os.OpenFile(indexPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	if err == nil {
+		fmt.Fprintf(f, "%s %s\n", hash, filename)
+		f.Close()
 	}
 
 	return map[string]any{

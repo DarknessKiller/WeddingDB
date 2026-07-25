@@ -73,6 +73,12 @@
       loginRole = data.role ?? '';
       loginName = data.name ?? '';
 
+      if (data.forcePasswordChange) {
+        setAuth(loginAccessToken, loginRefreshToken, loginRole, loginName);
+        goto('/change-password', { replaceState: true });
+        return;
+      }
+
       const weddings = data.weddings ?? [];
       availableWeddings = weddings;
 

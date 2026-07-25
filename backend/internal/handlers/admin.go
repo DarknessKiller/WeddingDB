@@ -38,8 +38,8 @@ func (h *AdminHandler) Create(c fuego.ContextWithBody[AdminRequest]) (any, error
 	if err != nil {
 		return nil, fuego.BadRequestError{Title: "Invalid request"}
 	}
-	if body.Password == "" {
-		return nil, fuego.BadRequestError{Title: "Password is required"}
+	if err := validatePassword(body.Password); err != nil {
+		return nil, err
 	}
 	hash, err := bcrypt.GenerateFromPassword([]byte(body.Password), bcrypt.DefaultCost)
 	if err != nil {
@@ -114,6 +114,9 @@ func (h *AdminHandler) AssignWeddings(c fuego.ContextWithBody[AssignWeddingsRequ
 }
 
 func (h *AdminHandler) GetUserWeddings(c fuego.ContextWithBody[any]) (any, error) {
+	if err := requireAdmin(c.Context()); err != nil {
+		return nil, fuego.UnauthorizedError{Title: err.Error()}
+	}
 	id := DecodeID(c.PathParam("id"))
 	weddings, err := h.adminRepo.GetUserWeddings(id)
 	if err != nil {
@@ -134,8 +137,8 @@ func (h *AdminHandler) ResetPassword(c fuego.ContextWithBody[ResetPasswordReques
 	if err != nil {
 		return nil, fuego.BadRequestError{Title: "Invalid request"}
 	}
-	if body.Password == "" {
-		return nil, fuego.BadRequestError{Title: "Password is required"}
+	if err := validatePassword(body.Password); err != nil {
+		return nil, err
 	}
 	id := DecodeID(c.PathParam("id"))
 	admin, err := h.adminRepo.FindByID(id)

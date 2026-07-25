@@ -48,6 +48,7 @@ func RegisterRoutes(
 
 	// Wedding selection
 	fuego.Post(api, "/auth/select-wedding", authHandler.SelectWedding)
+	fuego.Post(api, "/auth/change-password", authHandler.ChangePassword)
 
 	// User CRUD
 	fuego.Get(api, "/users", adminHandler.List)

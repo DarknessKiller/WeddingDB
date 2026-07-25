@@ -222,6 +222,9 @@ func (h *GuestHandler) BulkImport(c fuego.ContextWithBody[BulkImportRequest]) (a
 	if err != nil {
 		return nil, fuego.BadRequestError{Title: "Invalid request"}
 	}
+	if len(body.Guests) > 1000 {
+		return nil, fuego.BadRequestError{Title: "Maximum 1000 guests per import"}
+	}
 	wid := DecodeWID(c)
 	var guests []models.GuestRecord
 	for _, g := range body.Guests {

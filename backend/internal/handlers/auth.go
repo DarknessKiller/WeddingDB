@@ -151,6 +151,35 @@ func (h *AuthHandler) Logout(c fuego.ContextWithBody[RefreshRequest]) (any, erro
 	return nil, nil
 }
 
+type ChangePasswordRequest struct {
+	Password string `json:"password"`
+}
+
+func (h *AuthHandler) ChangePassword(c fuego.ContextWithBody[ChangePasswordRequest]) (any, error) {
+	body, err := c.Body()
+	if err != nil {
+		return nil, fuego.BadRequestError{Title: "Invalid request"}
+	}
+	if err := validatePassword(body.Password); err != nil {
+		return nil, err
+	}
+	adminID := AdminIDFromContext(c.Context())
+	admin, err := h.adminRepo.FindByID(adminID)
+	if err != nil {
+		return nil, fuego.NotFoundError{Title: "User not found"}
+	}
+	hash, err := bcrypt.GenerateFromPassword([]byte(body.Password), bcrypt.DefaultCost)
+	if err != nil {
+		return nil, fuego.InternalServerError{Title: "Failed to hash password"}
+	}
+	admin.Password = string(hash)
+	admin.ForcePasswordChange = false
+	if err := h.adminRepo.Update(admin); err != nil {
+		return nil, fuego.InternalServerError{Title: "Failed to update password"}
+	}
+	return map[string]any{"message": "Password updated"}, nil
+}
+
 func (h *AuthHandler) Register(c fuego.ContextWithBody[RegisterRequest]) (any, error) {
 	body, err := c.Body()
 	if err != nil {
