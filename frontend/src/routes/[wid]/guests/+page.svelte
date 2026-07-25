@@ -108,6 +108,17 @@
     }
   }
 
+  $effect(() => {
+    const q = searchQuery.trim();
+    let timer: ReturnType<typeof setTimeout>;
+    if (q) {
+      timer = setTimeout(() => handleSearch(), 300);
+    } else {
+      loadGuests();
+    }
+    return () => clearTimeout(timer);
+  });
+
   function toGuest(r: GuestResponse): Guest {
     return {
       id: r.id,
@@ -141,10 +152,6 @@
 
   let filtered = $derived.by(() => {
     let r = [...guests];
-    if (searchQuery.trim()) {
-      const q = searchQuery.toLowerCase();
-      r = r.filter(g => g.name.toLowerCase().includes(q) || g.phone.includes(q));
-    }
     if (rsvpFilter !== 'all') r = r.filter(g => g.rsvp === rsvpFilter);
     r.sort((a, b) => {
       const av = a[sortCol as keyof GuestResponse] ?? '';
@@ -501,7 +508,6 @@
       <Search class="absolute left-3.5 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400 pointer-events-none" />
       <input
         type="text" placeholder="Search guests..." bind:value={searchQuery}
-        onkeydown={(e) => e.key === 'Enter' && handleSearch()}
         class="w-full pl-11 pr-4 py-2.5 border border-gray-200 rounded-xl text-sm bg-white focus:border-gold focus:ring-2 focus:ring-gold/15 outline-none transition-all"
       />
     </div>

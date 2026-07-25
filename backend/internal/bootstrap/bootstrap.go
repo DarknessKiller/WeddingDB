@@ -70,6 +70,16 @@ func Init(env config.Env) *App {
 		}
 	}
 
+	// ponytail: GIN indexes for trigram search (ILIKE '%..%')
+	db.Exec("CREATE EXTENSION IF NOT EXISTS pg_trgm")
+	db.Exec("CREATE INDEX IF NOT EXISTS idx_guest_records_name_trgm ON guest_records USING gin (name gin_trgm_ops)")
+	db.Exec("CREATE INDEX IF NOT EXISTS idx_guest_records_name_pinyin_trgm ON guest_records USING gin (name_pinyin gin_trgm_ops)")
+	db.Exec("CREATE INDEX IF NOT EXISTS idx_guest_records_phone_trgm ON guest_records USING gin (phone gin_trgm_ops)")
+
+	// ponytail: FK lookup indexes
+	db.Exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_admin_users_email ON admin_users (email)")
+	db.Exec("CREATE INDEX IF NOT EXISTS idx_banquet_tables_wedding_name ON banquet_tables (wedding_id, name)")
+
 	redisAddr := env.RedisURL
 	if redisAddr == "" {
 		redisAddr = "redis://localhost:6379"
