@@ -28,7 +28,6 @@ type App struct {
 	DB          *gorm.DB
 	Redis       *redis.Client
 	AuthService *services.AuthService
-	NonceStore  *middleware.NonceStore
 }
 
 func Init(env config.Env) *App {
@@ -78,7 +77,6 @@ func Init(env config.Env) *App {
 	tokenRepo := repository.NewTokenRepo(db)
 
 	authService := services.NewAuthService(adminRepo, weddingRepo, tokenRepo, env.JWTSecret)
-	nonceStore := middleware.NewNonceStore(rdb)
 	tableService := services.NewTableService(tableRepo)
 	guestService := services.NewGuestService(guestRepo, tableRepo)
 	weddingService := services.NewWeddingService(weddingRepo)
@@ -98,7 +96,7 @@ func Init(env config.Env) *App {
 		http.ServeFile(w, r, filePath)
 	})
 
-	handlers.RegisterRoutes(server, authService, guestService, tableService, weddingService, adminRepo, nonceStore)
+	handlers.RegisterRoutes(server, authService, guestService, tableService, weddingService, adminRepo)
 
 	// Seed default admin if none exists
 	var count int64
@@ -128,7 +126,6 @@ func Init(env config.Env) *App {
 		DB:          db,
 		Redis:       rdb,
 		AuthService: authService,
-		NonceStore:  nonceStore,
 	}
 }
 

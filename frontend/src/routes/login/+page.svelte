@@ -64,9 +64,6 @@ const wedding = await res.json();
   async function selectWedding(weddingIdValue: string) {
     loading = true;
     try {
-      // Save auth tokens first
-      setAuth(loginAccessToken, loginRefreshToken, loginRole, loginName);
-
       const res = await fetch('/api/auth/select-wedding', {
         method: 'POST',
         headers: {
@@ -81,7 +78,6 @@ const wedding = await res.json();
         return;
       }
       const data = await res.json();
-      // Update access token with wedding-scoped one
       setAuth(data.accessToken, loginRefreshToken, loginRole, loginName);
       setWeddingId(weddingIdValue);
       addToast('Login successful', 'success');

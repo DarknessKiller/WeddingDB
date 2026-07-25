@@ -1,25 +1,36 @@
-import { getAuth, setAuth, clearAuth } from '$lib/stores';
-import { setWeddingId } from '$lib/stores/weddingId';
-
-const BASE = '';
-
-export function getAccessToken(): string {
-	const { accessToken } = getAuth();
-	return accessToken ?? '';
+}
+					});
+				} else {
+					clearAuth();
+					setWeddingId('');
+					if (typeof window !== 'undefined') {
+						window.location.href = '/login';
+					}
+				}
+			} catch {
+				clearAuth();
+				setWeddingId('');
+				if (typeof window !== 'undefined') {
+					window.location.href = '/login';
+				}
+			}
+		}
+	}
+	return res;
 }
 
-export async function apiFetch(path: string, opts: RequestInit = {}): Promise<Response> {
+export async function uploadFile(file: File): Promise<{ url: string; filename: string }> {
 	const { accessToken } = getAuth();
-	let res = await fetch(`${BASE}${path}`, {
-		...opts,
+	const formData = new FormData();
+	formData.append('file', file);
+	let res = await fetch('/api/upload', {
+		method: 'POST',
 		headers: {
-			'Content-Type': 'application/json',
-			...opts.headers,
-			...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {})
-		}
+			Authorization: `Bearer ${accessToken}`
+		},
+		body: formData
 	});
 
-	// Auto-refresh on 401
 	if (res.status === 401) {
 		const { refreshToken } = getAuth();
 		if (refreshToken) {
@@ -31,18 +42,30 @@ export async function apiFetch(path: string, opts: RequestInit = {}): Promise<Re
 				});
 				if (refreshRes.ok) {
 					const data = await refreshRes.json();
-					if (data.forcePasswordChange) {
-						setAuth(data.accessToken, data.refreshToken, data.role ?? getAuth().role ?? '', data.name ?? getAuth().name ?? '');
-						if (typeof window !== 'undefined') {
-							window.location.href = '/change-password';
-						}
-						return res;
-					}
 					setAuth(data.accessToken, data.refreshToken, data.role ?? getAuth().role ?? '', data.name ?? getAuth().name ?? '');
-					// On refresh, if we have a stored wedding ID keep it
-					res = await fetch(`${BASE}${path}`, {
-						...opts,
+					res = await fetch('/api/upload', {
+						method: 'POST',
 						headers: {
-							'Content-Type': 'application/json',
-							...opts.headers,
 							Authorization: `Bearer ${data.accessToken}`
+						},
+						body: formData
+					});
+				} else {
+					clearAuth();
+					setWeddingId('');
+					if (typeof window !== 'undefined') window.location.href = '/login';
+				}
+			} catch {
+				clearAuth();
+				setWeddingId('');
+				if (typeof window !== 'undefined') window.location.href = '/login';
+			}
+		}
+	}
+
+	if (!res.ok) {
+		const err = await res.json().catch(() => ({ title: 'Upload failed' }));
+		throw new Error(err.title || 'Upload failed');
+	}
+	return res.json();
+}

@@ -16,7 +16,6 @@ func RegisterRoutes(
 	tableService *services.TableService,
 	weddingService *services.WeddingService,
 	adminRepo *repository.AdminRepo,
-	nonceStore *middleware.NonceStore,
 ) {
 	authHandler := NewAuthHandler(authService, adminRepo)
 	adminHandler := NewAdminHandler(adminRepo)

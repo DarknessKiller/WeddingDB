@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"syscall"
 
 	"github.com/go-fuego/fuego"
 	"github.com/google/uuid"
@@ -111,7 +112,14 @@ func (h *UploadHandler) Upload(c fuego.ContextWithBody[any]) (any, error) {
 		return nil, fuego.InternalServerError{Title: "Failed to save file"}
 	}
 
-	// Append hash to index file
+	// Append hash to index file with file lock
+	lockPath := indexPath + ".lock"
+	lockFile, err := os.OpenFile(lockPath, os.O_CREATE|os.O_RDWR, 0644)
+	if err == nil {
+		defer lockFile.Close()
+		syscall.Flock(int(lockFile.Fd()), syscall.LOCK_EX)
+		defer syscall.Flock(int(lockFile.Fd()), syscall.LOCK_UN)
+	}
 	f, err := os.OpenFile(indexPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 	if err == nil {
 		fmt.Fprintf(f, "%s %s\n", hash, filename)
