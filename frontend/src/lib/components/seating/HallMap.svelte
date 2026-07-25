@@ -173,6 +173,7 @@
           isSelected={selectedTableId === tableDef.id}
           isHighlighted={highlightedTableId === tableDef.id}
           selectedTableId={selectedTableId}
+          highlightedTableId={highlightedTableId}
           {dark}
           hallScale={scale}
           onTableClick={() => onTableClick?.(tableDef.id)}

@@ -17,3 +17,4 @@ services:
 
 volumes:
   pgdata:
+    name: weddingdb_pgdata

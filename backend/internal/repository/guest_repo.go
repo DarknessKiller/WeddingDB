@@ -34,16 +34,19 @@ func (r *GuestRepo) SearchByWedding(weddingID uuid.UUID, query string) ([]models
 	escaped := strings.ReplaceAll(query, "%", "\\%")
 	escaped = strings.ReplaceAll(escaped, "_", "\\_")
 	q := fmt.Sprintf("%%%s%%", escaped)
-	err := r.db.Where("wedding_id = ? AND (name ILIKE ? OR phone ILIKE ? OR email ILIKE ?)",
-		weddingID, q, q, q).Limit(20).Find(&guests).Error
+	pinyinQ := fmt.Sprintf("%%%s%%", strings.ToLower(models.GenerateNamePinyin(query)))
+	err := r.db.Where("wedding_id = ? AND (name ILIKE ? OR name_pinyin ILIKE ? OR phone ILIKE ? OR email ILIKE ?)",
+		weddingID, q, pinyinQ, q, q).Limit(20).Find(&guests).Error
 	return guests, err
 }
 
 func (r *GuestRepo) Create(g *models.GuestRecord) error {
+	g.NamePinyin = models.GenerateNamePinyin(g.Name)
 	return r.db.Create(g).Error
 }
 
 func (r *GuestRepo) Update(g *models.GuestRecord) error {
+	g.NamePinyin = models.GenerateNamePinyin(g.Name)
 	return r.db.Save(g).Error
 }
 

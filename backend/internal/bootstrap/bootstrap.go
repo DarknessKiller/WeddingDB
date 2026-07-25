@@ -60,6 +60,16 @@ func Init(env config.Env) *App {
 		log.Fatal("Failed to migrate database:", err)
 	}
 
+	// ponytail: backfill name_pinyin for all guests (safe to re-run, idempotent)
+	var guests []models.GuestRecord
+	db.Find(&guests)
+	for _, g := range guests {
+		py := models.GenerateNamePinyin(g.Name)
+		if py != g.NamePinyin {
+			db.Model(&models.GuestRecord{}).Where("id = ?", g.ID).Update("name_pinyin", py)
+		}
+	}
+
 	redisAddr := env.RedisURL
 	if redisAddr == "" {
 		redisAddr = "redis://localhost:6379"
