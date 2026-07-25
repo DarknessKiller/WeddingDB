@@ -31,6 +31,13 @@ export async function apiFetch(path: string, opts: RequestInit = {}): Promise<Re
 				});
 				if (refreshRes.ok) {
 					const data = await refreshRes.json();
+					if (data.forcePasswordChange) {
+						setAuth(data.accessToken, data.refreshToken, data.role ?? getAuth().role ?? '', data.name ?? getAuth().name ?? '');
+						if (typeof window !== 'undefined') {
+							window.location.href = '/change-password';
+						}
+						return res;
+					}
 					setAuth(data.accessToken, data.refreshToken, data.role ?? getAuth().role ?? '', data.name ?? getAuth().name ?? '');
 					// On refresh, if we have a stored wedding ID keep it
 					res = await fetch(`${BASE}${path}`, {
