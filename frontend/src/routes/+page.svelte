@@ -1,23 +1,18 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { goto } from '$app/navigation';
-  import { getAuth } from '$lib/stores';
   import { weddingId } from '$lib/stores/weddingId';
   import { get } from 'svelte/store';
   import { encodeId } from '$lib/utils/encode';
+  import { validateToken } from '$lib/utils/auth';
 
-  onMount(() => {
-    const { accessToken } = getAuth();
-    if (!accessToken) {
+  onMount(async () => {
+    if (!await validateToken()) return;
+    const wid = get(weddingId);
+    if (!wid) {
       goto('/login', { replaceState: true });
     } else {
-      const wid = get(weddingId);
-      if (!wid) {
-        // No wedding selected — go to login to pick one
-        goto('/login', { replaceState: true });
-      } else {
-        goto(`/${encodeId(wid)}/dashboard`, { replaceState: true });
-      }
+      goto(`/${encodeId(wid)}/dashboard`, { replaceState: true });
     }
   });
 </script>
