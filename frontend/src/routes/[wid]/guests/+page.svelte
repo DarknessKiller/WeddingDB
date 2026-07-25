@@ -20,6 +20,9 @@
   let rsvpFilter = $state<RSVPStatus | 'all'>('all');
   let currentPage = $state(0);
   let pageSize = $state(20);
+  let totalGuests = $state(0);
+  let nextCursor = $state<string | null>(null);
+  let cursors = $state<string[]>([]);
   let sortCol = $state('name');
   let sortDir = $state<'asc' | 'desc'>('asc');
   let selectedIds = $state<Set<string>>(new Set());
@@ -77,13 +80,15 @@
     } catch {}
   }
 
-  async function loadGuests() {
+  async function loadGuests(cursor?: string) {
     loading = true;
     errored = false;
     error = null;
     try {
-      const data = await listGuests(wid);
+      const data = await listGuests(wid, { limit: pageSize, cursor });
       guests = data.guests;
+      totalGuests = data.total;
+      nextCursor = data.nextCursor;
     } catch (e: any) {
       errored = true;
       error = e.message ?? 'Failed to load guests';
@@ -91,6 +96,20 @@
     } finally {
       loading = false;
     }
+  }
+
+  function nextPage() {
+    if (!nextCursor) return;
+    cursors[currentPage] = nextCursor;
+    currentPage++;
+    loadGuests(nextCursor);
+  }
+
+  function prevPage() {
+    if (currentPage === 0) return;
+    currentPage--;
+    const prevCursor = currentPage === 0 ? undefined : cursors[currentPage - 1];
+    loadGuests(prevCursor);
   }
 
   async function handleSearch() {
@@ -153,17 +172,10 @@
   let filtered = $derived.by(() => {
     let r = [...guests];
     if (rsvpFilter !== 'all') r = r.filter(g => g.rsvp === rsvpFilter);
-    r.sort((a, b) => {
-      const av = a[sortCol as keyof GuestResponse] ?? '';
-      const bv = b[sortCol as keyof GuestResponse] ?? '';
-      const c = String(av).localeCompare(String(bv));
-      return sortDir === 'asc' ? c : -c;
-    });
     return r;
   });
 
-  let totalPages = $derived(Math.ceil(filtered.length / pageSize));
-  let page = $derived(filtered.slice(currentPage * pageSize, (currentPage + 1) * pageSize));
+  let totalPages = $derived(Math.ceil(totalGuests / pageSize));
 
   function exportCSV() {
     const headers = ['Name', 'Phone', 'Email', 'Table', 'Seat', 'Pax', 'RSVP', 'VIP', 'Checked In', 'Angbao', 'Gift', 'Notes'];
@@ -200,7 +212,7 @@
   }
 
   function toggleSelectAll() {
-    selectedIds = selectedIds.size === page.length ? new Set() : new Set(page.map(g => g.id));
+    selectedIds = selectedIds.size === filtered.length ? new Set() : new Set(filtered.map(g => g.id));
   }
 
   function toggleSelect(id: string) {
@@ -572,7 +584,7 @@
           <thead>
             <tr class="bg-gray-50 border-b border-gray-200">
               <th class="pl-5 pr-3 py-3 text-left">
-                <input type="checkbox" checked={selectedIds.size === page.length && page.length > 0} onchange={toggleSelectAll} class="rounded" />
+                <input type="checkbox" checked={selectedIds.size === filtered.length && filtered.length > 0} onchange={toggleSelectAll} class="rounded" />
               </th>
               {#each columns as col}
                 <th
@@ -587,7 +599,7 @@
             </tr>
           </thead>
           <tbody>
-            {#each page as guest (guest.id)}
+            {#each filtered as guest (guest.id)}
               <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
               <tr
                 class="border-b border-gray-100 hover:bg-gray-50 cursor-pointer transition-colors {selectedIds.has(guest.id) ? 'bg-red-50' : ''}"
@@ -633,23 +645,14 @@
       <!-- Pagination -->
       <div class="px-5 py-4 border-t border-gray-100 flex items-center justify-between text-sm">
         <span class="text-gray-500">
-          Showing {currentPage * pageSize + 1}–{Math.min((currentPage + 1) * pageSize, filtered.length)} of {filtered.length}
+          Page {currentPage + 1}{totalPages > 0 ? ` of ${totalPages}` : ''} · {totalGuests} guests
         </span>
         <div class="flex items-center gap-2">
-          <button onclick={() => currentPage = Math.max(0, currentPage - 1)} disabled={currentPage === 0}
+          <button onclick={prevPage} disabled={currentPage === 0}
             class="p-2 rounded-lg border border-gray-200 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed" aria-label="Previous page">
             <ChevronLeft class="w-4 h-4" />
           </button>
-          {#each Array.from({ length: Math.min(totalPages, 5) }, (_, i) => i) as pi}
-            {@const pg = currentPage < 3 ? pi : currentPage - 2 + pi}
-            {#if pg < totalPages}
-              <button onclick={() => currentPage = pg}
-                class="w-9 h-9 rounded-lg text-sm font-medium transition-colors {pg === currentPage ? 'bg-red text-white' : 'hover:bg-gray-50 text-gray-700'}">
-                {pg + 1}
-              </button>
-            {/if}
-          {/each}
-          <button onclick={() => currentPage = Math.min(totalPages - 1, currentPage + 1)} disabled={currentPage >= totalPages - 1}
+          <button onclick={nextPage} disabled={!nextCursor}
             class="p-2 rounded-lg border border-gray-200 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed" aria-label="Next page">
             <ChevronRight class="w-4 h-4" />
           </button>

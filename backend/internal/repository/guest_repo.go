@@ -15,11 +15,17 @@ func NewGuestRepo(db *gorm.DB) *GuestRepo {
 	return &GuestRepo{db: db}
 }
 
-func (r *GuestRepo) ListByWedding(weddingID uuid.UUID, offset, limit int) ([]models.GuestRecord, int64, error) {
+func (r *GuestRepo) ListByWedding(weddingID uuid.UUID, cursor string, limit int) ([]models.GuestRecord, int64, error) {
 	guests := make([]models.GuestRecord, 0)
 	var total int64
 	r.db.Model(&models.GuestRecord{}).Where("wedding_id = ?", weddingID).Count(&total)
-	err := r.db.Where("wedding_id = ?", weddingID).Offset(offset).Limit(limit).Find(&guests).Error
+	q := r.db.Where("wedding_id = ?", weddingID).Order("id ASC").Limit(limit + 1)
+	if cursor != "" {
+		if cid, err := uuid.Parse(cursor); err == nil {
+			q = q.Where("id >= ?", cid)
+		}
+	}
+	err := q.Find(&guests).Error
 	return guests, total, err
 }
 

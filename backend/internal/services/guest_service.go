@@ -18,8 +18,8 @@ func NewGuestService(guestRepo *repository.GuestRepo, tableRepo *repository.Tabl
 	return &GuestService{guestRepo: guestRepo, tableRepo: tableRepo}
 }
 
-func (s *GuestService) List(weddingID uuid.UUID, offset, limit int) ([]models.GuestRecord, int64, error) {
-	return s.guestRepo.ListByWedding(weddingID, offset, limit)
+func (s *GuestService) List(weddingID uuid.UUID, cursor string, limit int) ([]models.GuestRecord, int64, error) {
+	return s.guestRepo.ListByWedding(weddingID, cursor, limit)
 }
 
 func (s *GuestService) Get(id, weddingID uuid.UUID) (*models.GuestRecord, error) {
