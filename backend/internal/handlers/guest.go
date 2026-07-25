@@ -98,10 +98,12 @@ func (h *GuestHandler) Update(c fuego.ContextWithBody[GuestCreateRequest]) (any,
 				guest.SeatNum = &seatNum
 			}
 		}
-	} else {
+	} else if body.TableID != nil && *body.TableID == "" {
+		// Explicitly clearing seat assignment
 		guest.TableID = nil
 		guest.SeatNum = nil
 	}
+	// If body.TableID is nil (omitted), preserve existing seat
 	if err := h.guestService.Update(guest); err != nil {
 		return nil, err
 	}
