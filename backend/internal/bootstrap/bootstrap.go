@@ -109,11 +109,12 @@ func Init(env config.Env) *App {
 			log.Fatal("Failed to hash seed admin password:", err)
 		}
 		admin := &models.AdminUser{
-			ID:       uuid.New(),
-			Email:    "admin@weddingdb.local",
-			Password: string(hash),
-			Name:     "Admin",
-			Role:     "admin",
+			ID:                  uuid.New(),
+			Email:               "admin@weddingdb.local",
+			Password:            string(hash),
+			Name:                "Admin",
+			Role:                "admin",
+			ForcePasswordChange: true,
 		}
 		if err := adminRepo.Create(admin); err != nil {
 			log.Println("Warning: failed to seed admin:", err)

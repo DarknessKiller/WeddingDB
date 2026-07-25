@@ -13,6 +13,15 @@ import (
 	"github.com/google/uuid"
 )
 
+var magicBytes = map[string][]byte{
+	".jpg":  {0xff, 0xd8, 0xff},
+	".jpeg": {0xff, 0xd8, 0xff},
+	".png":  {0x89, 0x50, 0x4e, 0x47},
+	".gif":  {0x47, 0x49, 0x46, 0x38},
+	".webp": {0x52, 0x49, 0x46, 0x46}, // RIFF header
+	".svg":  {0x3c, 0x3f, 0x78, 0x6d, 0x6c}, // <?xml
+}
+
 type UploadHandler struct{}
 
 func NewUploadHandler() *UploadHandler {
@@ -31,6 +40,21 @@ func (h *UploadHandler) Upload(c fuego.ContextWithBody[any]) (any, error) {
 	allowed := map[string]bool{".jpg": true, ".jpeg": true, ".png": true, ".gif": true, ".webp": true, ".svg": true}
 	if !allowed[ext] {
 		return nil, fuego.BadRequestError{Title: "File type not allowed. Use JPG, PNG, GIF, WebP, or SVG"}
+	}
+
+	// Validate magic bytes
+	headerBuf := make([]byte, 16)
+	n, _ := file.Read(headerBuf)
+	file.Seek(0, 0)
+	if n < len(magicBytes[ext]) {
+		return nil, fuego.BadRequestError{Title: "File content does not match extension"}
+	}
+	expected := magicBytes[ext]
+	actual := headerBuf[:len(expected)]
+	for i := range expected {
+		if actual[i] != expected[i] {
+			return nil, fuego.BadRequestError{Title: "File content does not match extension"}
+		}
 	}
 
 	// Validate size (max 5MB)

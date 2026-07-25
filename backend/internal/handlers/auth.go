@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"unicode"
 	"weddingdb/internal/models"
 	"weddingdb/internal/repository"
 	"weddingdb/internal/services"
@@ -9,6 +10,27 @@ import (
 	"github.com/google/uuid"
 	"golang.org/x/crypto/bcrypt"
 )
+
+func validatePassword(password string) error {
+	if len(password) < 8 {
+		return fuego.BadRequestError{Title: "Password must be at least 8 characters"}
+	}
+	var hasLetter, hasDigit, hasSymbol bool
+	for _, c := range password {
+		switch {
+		case unicode.IsLetter(c):
+			hasLetter = true
+		case unicode.IsDigit(c):
+			hasDigit = true
+		case unicode.IsPunct(c) || unicode.IsSymbol(c):
+			hasSymbol = true
+		}
+	}
+	if !hasLetter || !hasDigit || !hasSymbol {
+		return fuego.BadRequestError{Title: "Password must contain at least one letter, one number, and one symbol"}
+	}
+	return nil
+}
 
 type AuthHandler struct {
 	authService *services.AuthService
@@ -31,11 +53,12 @@ type WeddingInfo struct {
 }
 
 type TokenResponse struct {
-	AccessToken  string        `json:"accessToken"`
-	RefreshToken string        `json:"refreshToken"`
-	Role         string        `json:"role"`
-	Name         string        `json:"name"`
-	Weddings     []WeddingInfo `json:"weddings"`
+	AccessToken         string        `json:"accessToken"`
+	RefreshToken        string        `json:"refreshToken"`
+	Role                string        `json:"role"`
+	Name                string        `json:"name"`
+	Weddings            []WeddingInfo `json:"weddings"`
+	ForcePasswordChange bool          `json:"forcePasswordChange"`
 }
 
 type SelectWeddingRequest struct {
@@ -74,11 +97,12 @@ func (h *AuthHandler) Login(c fuego.ContextWithBody[LoginRequest]) (TokenRespons
 		return TokenResponse{}, fuego.UnauthorizedError{Title: err.Error()}
 	}
 	return TokenResponse{
-		AccessToken:  result.AccessToken,
-		RefreshToken: result.RefreshToken,
-		Role:         result.Role,
-		Name:         result.Name,
-		Weddings:     weddingInfos(result.Weddings),
+		AccessToken:         result.AccessToken,
+		RefreshToken:        result.RefreshToken,
+		Role:                result.Role,
+		Name:                result.Name,
+		Weddings:            weddingInfos(result.Weddings),
+		ForcePasswordChange: result.ForcePasswordChange,
 	}, nil
 }
 
@@ -109,11 +133,12 @@ func (h *AuthHandler) Refresh(c fuego.ContextWithBody[RefreshRequest]) (TokenRes
 		return TokenResponse{}, fuego.UnauthorizedError{Title: err.Error()}
 	}
 	return TokenResponse{
-		AccessToken:  result.AccessToken,
-		RefreshToken: result.RefreshToken,
-		Role:         result.Role,
-		Name:         result.Name,
-		Weddings:     weddingInfos(result.Weddings),
+		AccessToken:         result.AccessToken,
+		RefreshToken:        result.RefreshToken,
+		Role:                result.Role,
+		Name:                result.Name,
+		Weddings:            weddingInfos(result.Weddings),
+		ForcePasswordChange: result.ForcePasswordChange,
 	}, nil
 }
 
@@ -133,6 +158,9 @@ func (h *AuthHandler) Register(c fuego.ContextWithBody[RegisterRequest]) (any, e
 	}
 	if body.Email == "" || body.Password == "" || body.Name == "" {
 		return nil, fuego.BadRequestError{Title: "Name, email, and password are required"}
+	}
+	if err := validatePassword(body.Password); err != nil {
+		return nil, err
 	}
 	existing, _ := h.adminRepo.FindByEmail(body.Email)
 	if existing != nil && existing.ID != uuid.Nil {

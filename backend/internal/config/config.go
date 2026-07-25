@@ -1,6 +1,7 @@
 package config
 
 import (
+	"log"
 	"os"
 
 	"github.com/joho/godotenv"
@@ -15,10 +16,14 @@ type Env struct {
 
 func LoadEnv() Env {
 	godotenv.Load()
+	secret := os.Getenv("JWT_SECRET")
+	if secret == "" {
+		log.Fatal("JWT_SECRET environment variable is required and must not be empty")
+	}
 	return Env{
 		DatabaseURL: os.Getenv("DATABASE_URL"),
 		RedisURL:    getEnv("REDIS_URL", "redis://localhost:6379"),
-		JWTSecret:   os.Getenv("JWT_SECRET"),
+		JWTSecret:   secret,
 		Port:        getEnv("PORT", "8080"),
 	}
 }

@@ -42,11 +42,12 @@ func NewAuthService(adminRepo *repository.AdminRepo, weddingRepo *repository.Wed
 
 // LoginResult holds the data returned by Login.
 type LoginResult struct {
-	AccessToken  string
-	RefreshToken string
-	Role         string
-	Name         string
-	Weddings     []models.WeddingEvent
+	AccessToken         string
+	RefreshToken        string
+	Role                string
+	Name                string
+	Weddings            []models.WeddingEvent
+	ForcePasswordChange bool
 }
 
 func (s *AuthService) Login(ctx context.Context, email, password string) (*LoginResult, error) {
@@ -61,7 +62,7 @@ func (s *AuthService) Login(ctx context.Context, email, password string) (*Login
 	if err != nil {
 		return nil, err
 	}
-	refreshToken, err := s.generateRefreshToken(admin.ID)
+	refreshToken, err := s.generateRefreshToken(admin.ID, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -75,11 +76,12 @@ func (s *AuthService) Login(ctx context.Context, email, password string) (*Login
 		weddings = []models.WeddingEvent{}
 	}
 	return &LoginResult{
-		AccessToken:  accessToken,
-		RefreshToken: refreshToken,
-		Role:         admin.Role,
-		Name:         admin.Name,
-		Weddings:     weddings,
+		AccessToken:         accessToken,
+		RefreshToken:        refreshToken,
+		Role:                admin.Role,
+		Name:                admin.Name,
+		Weddings:            weddings,
+		ForcePasswordChange: admin.ForcePasswordChange,
 	}, nil
 }
 
@@ -109,12 +111,11 @@ func (s *AuthService) Refresh(ctx context.Context, refreshTokenStr string) (*Log
 	if err != nil {
 		return nil, errors.New("admin not found")
 	}
-	// For refresh, keep the existing wedding context from the old token
-	accessToken, err := s.generateAccessToken(admin, nil)
+	accessToken, err := s.generateAccessToken(admin, token.WeddingID)
 	if err != nil {
 		return nil, err
 	}
-	newRefreshToken, err := s.generateRefreshToken(admin.ID)
+	newRefreshToken, err := s.generateRefreshToken(admin.ID, token.WeddingID)
 	if err != nil {
 		return nil, err
 	}
@@ -129,11 +130,12 @@ func (s *AuthService) Refresh(ctx context.Context, refreshTokenStr string) (*Log
 		weddings = []models.WeddingEvent{}
 	}
 	return &LoginResult{
-		AccessToken:  accessToken,
-		RefreshToken: newRefreshToken,
-		Role:         admin.Role,
-		Name:         admin.Name,
-		Weddings:     weddings,
+		AccessToken:         accessToken,
+		RefreshToken:        newRefreshToken,
+		Role:                admin.Role,
+		Name:                admin.Name,
+		Weddings:            weddings,
+		ForcePasswordChange: admin.ForcePasswordChange,
 	}, nil
 }
 
@@ -169,7 +171,7 @@ func (s *AuthService) generateAccessToken(admin *models.AdminUser, weddingID *uu
 	return token.SignedString(s.secret)
 }
 
-func (s *AuthService) generateRefreshToken(adminID uuid.UUID) (string, error) {
+func (s *AuthService) generateRefreshToken(adminID uuid.UUID, weddingID *uuid.UUID) (string, error) {
 	b := make([]byte, 32)
 	if _, err := rand.Read(b); err != nil {
 		return "", err
@@ -178,6 +180,7 @@ func (s *AuthService) generateRefreshToken(adminID uuid.UUID) (string, error) {
 	token := &models.RefreshToken{
 		ID:        uuid.New(),
 		AdminID:   adminID,
+		WeddingID: weddingID,
 		Token:     tokenStr,
 		ExpiresAt: time.Now().Add(7 * 24 * time.Hour),
 	}
