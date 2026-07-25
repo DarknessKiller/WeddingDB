@@ -1,6 +1,6 @@
 <script lang="ts">
   import BanquetTableComponent from './BanquetTable.svelte';
-  import { DEFAULT_TABLES, HALL_LAYOUT } from '$lib/constants';
+  import { HALL_LAYOUT } from '$lib/constants';
   import type { BanquetTable as BanquetTableType, Guest } from '$lib/types';
   import { ZoomIn, ZoomOut, RotateCcw } from 'lucide-svelte';
   import { onMount } from 'svelte';
@@ -9,7 +9,7 @@
     selectedTableId = null,
     highlightedTableId = null,
     tableGuests: tableGuestsRaw = {},
-    tables = DEFAULT_TABLES,
+    tables,
     dark = false,
     onTableClick,
     onSeatClick,

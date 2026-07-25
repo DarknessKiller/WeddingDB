@@ -43,13 +43,17 @@
   let formVip = $state(false);
   let saving = $state(false);
 
-  // ponytail: mirrors backend yPositions + dynamic x from table.go computeLayout
+  // ponytail: mirrors backend yPositions + fixed column layout from table.go computeLayout
   const yPositions: Record<number, number> = { 1: 15, 2: 30, 3: 45, 4: 60, 5: 75, 6: 90 };
   function rowColToXY(row: number, col: number): { x: number; y: number } {
     const y = yPositions[row] ?? 50;
-    const tablesInRow = (tables ?? []).filter(t => t.row === row).length;
-    const n = editingTable ? tablesInRow : tablesInRow + 1;
-    const x = (100 / (n + 1)) * col;
+    // Use max columns across all rows to align columns consistently
+    let maxCol = 0;
+    for (const t of (tables ?? [])) {
+      if (t.col > maxCol) maxCol = t.col;
+    }
+    if (maxCol === 0) maxCol = 3; // default
+    const x = (100 / (maxCol + 1)) * col;
     return { x, y };
   }
 
