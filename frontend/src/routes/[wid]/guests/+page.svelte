@@ -48,6 +48,15 @@
 
   weddingId.subscribe(v => { wid = v; });
 
+  let prevDrawerOpen = $state(false);
+  $effect(() => {
+    const isOpen = $isDrawerOpen;
+    if (prevDrawerOpen && !isOpen) {
+      loadGuests();
+    }
+    prevDrawerOpen = isOpen;
+  });
+
   let tables = $state<BanquetTable[]>([]);
 
   onMount(() => {
