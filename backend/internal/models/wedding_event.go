@@ -1,13 +1,4 @@
-package models
-
-import (
-	"time"
-
-	"github.com/google/uuid"
-)
-
-type WeddingEvent struct {
-	ID                  uuid.UUID `gorm:"type:uuid;primaryKey;default:gen_random_uuid()" json:"id"`
+ID                  uuid.UUID `gorm:"type:uuid;primaryKey;default:gen_random_uuid()" json:"id"`
 	Name                string    `gorm:"size:255;not null" json:"name"`
 	Date                time.Time `json:"date"`
 	KioskTitle          string    `gorm:"size:255" json:"kioskTitle"`
@@ -23,4 +14,3 @@ type WeddingEvent struct {
 	KioskLogoPosY       string    `gorm:"size:10" json:"kioskLogoPosY"`
 	CreatedAt           time.Time `json:"createdAt"`
 	UpdatedAt           time.Time `json:"updatedAt"`
-}
