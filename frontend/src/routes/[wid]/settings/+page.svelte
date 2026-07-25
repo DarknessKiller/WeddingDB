@@ -75,18 +75,15 @@
     }
   }
 
-  function copyKioskLink() {
+  async function copyKioskLink() {
     if (!wedding) return;
     const url = `${window.location.origin}/kiosk/${encodeId(wedding.id)}`;
-    const ta = document.createElement('textarea');
-    ta.value = url;
-    ta.style.position = 'fixed';
-    ta.style.opacity = '0';
-    document.body.appendChild(ta);
-    ta.select();
-    document.execCommand('copy');
-    document.body.removeChild(ta);
-    addToast('Kiosk link copied!', 'success');
+    try {
+      await navigator.clipboard.writeText(url);
+      addToast('Kiosk link copied!', 'success');
+    } catch {
+      addToast('Failed to copy', 'error');
+    }
   }
 </script>
 

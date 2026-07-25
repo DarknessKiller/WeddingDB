@@ -58,6 +58,13 @@ export interface KioskSettings {
 	kioskDescription: string;
 	kioskLogoUrl: string;
 	kioskBackgroundUrl: string;
+	kioskBackgroundBlur: number;
+	kioskBackgroundSize: string;
+	kioskBackgroundPosX: string;
+	kioskBackgroundPosY: string;
+	kioskLogoSize: string;
+	kioskLogoPosX: string;
+	kioskLogoPosY: string;
 }
 
 export async function updateKioskSettings(id: string, settings: KioskSettings): Promise<Wedding> {
