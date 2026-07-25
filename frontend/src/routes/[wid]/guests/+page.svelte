@@ -55,6 +55,8 @@
   $effect(() => {
     const isOpen = $isDrawerOpen;
     if (prevDrawerOpen && !isOpen) {
+      currentPage = 0;
+      cursors = [];
       loadGuests();
     }
     prevDrawerOpen = isOpen;

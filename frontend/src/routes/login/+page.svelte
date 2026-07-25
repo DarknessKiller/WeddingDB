@@ -1,4 +1,46 @@
-const wedding = await res.json();
+<script lang="ts">
+  import { goto } from '$app/navigation';
+  import { setAuth, addToast } from '$lib/stores';
+  import { weddingId, setWeddingId } from '$lib/stores/weddingId';
+  import { get } from 'svelte/store';
+  import { Eye, EyeOff, LogIn, Calendar, ChevronRight } from 'lucide-svelte';
+  import { encodeId } from '$lib/utils/encode';
+
+  let email = $state('');
+  let password = $state('');
+  let showPassword = $state(false);
+  let loading = $state(false);
+
+  let step = $state<'login' | 'select'>('login');
+  let availableWeddings = $state<{ id: string; name: string; date: string }[]>([]);
+  let loginRole = $state('');
+  let loginName = $state('');
+  let loginAccessToken = $state('');
+  let loginRefreshToken = $state('');
+
+  let showCreate = $state(false);
+  let newName = $state('');
+  let newDate = $state('');
+  let creating = $state(false);
+
+  async function handleCreateWedding() {
+    if (!newName || !newDate) return;
+    creating = true;
+    try {
+      const res = await fetch('/api/weddings', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${loginAccessToken}`
+        },
+        body: JSON.stringify({ name: newName, date: newDate })
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ title: 'Failed to create wedding' }));
+        addToast(err.title || 'Failed to create wedding', 'error');
+        return;
+      }
+      const wedding = await res.json();
       addToast('Wedding created', 'success');
       // Auto-select the new wedding
       await selectWedding(wedding.id);

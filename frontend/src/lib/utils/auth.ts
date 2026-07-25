@@ -1,5 +1,5 @@
 import { goto } from '$app/navigation';
-import { getAuth, clearAuth } from '$lib/stores';
+import { getAuth, setAuth, clearAuth } from '$lib/stores';
 import { setWeddingId } from '$lib/stores/weddingId';
 
 /**
@@ -27,7 +27,11 @@ export async function validateToken(): Promise<boolean> {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ refreshToken })
       });
-      if (refreshRes.ok) return true; // refreshed successfully
+      if (refreshRes.ok) {
+        const data = await refreshRes.json();
+        setAuth(data.accessToken, data.refreshToken, data.role ?? getAuth().role ?? '', data.name ?? getAuth().name ?? '');
+        return true;
+      }
     }
 
     // Can't recover — clear and redirect
