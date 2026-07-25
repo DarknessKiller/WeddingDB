@@ -40,6 +40,7 @@ export interface Seat {
 
 export interface TableOccupancy {
   tableId: string;
+  tableName: string;
   occupied: number;
   capacity: number;
   percentage: number;

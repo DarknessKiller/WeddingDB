@@ -110,7 +110,7 @@
         <div class="space-y-3">
           {#each occupancy.slice(0, 10) as t}
             <div class="flex items-center gap-3">
-              <span class="w-10 text-right text-xs font-semibold text-gray-700">T{t.tableId}</span>
+              <span class="w-20 text-right text-xs font-semibold text-gray-700 truncate">{t.tableName}</span>
               <div class="flex-1 h-2.5 bg-gray-100 rounded-full overflow-hidden">
                 <div
                   class="h-full rounded-full transition-all duration-500"

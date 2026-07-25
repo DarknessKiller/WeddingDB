@@ -58,14 +58,16 @@ export async function getDashboardStats(weddingId: string): Promise<DashboardSta
 export async function getOccupancy(weddingId: string): Promise<TableOccupancy[]> {
   const [occData, tableData] = await Promise.all([
     fetchJSON<RawOccupancy[]>(`/api/weddings/${weddingId}/occupancy`),
-    fetchJSON<{ id: string; capacity: number }[]>(`/api/weddings/${weddingId}/tables`)
+    fetchJSON<{ id: string; name: string; capacity: number }[]>(`/api/weddings/${weddingId}/tables`)
   ]);
 
-  const capMap = new Map(tableData.map(t => [t.id, t.capacity]));
+  const tableMap = new Map(tableData.map(t => [t.id, { name: t.name, capacity: t.capacity }]));
   return occData.map(o => {
-    const capacity = capMap.get(o.TableID) ?? 0;
+    const t = tableMap.get(o.TableID);
+    const capacity = t?.capacity ?? 0;
     return {
       tableId: o.TableID,
+      tableName: t?.name || `Table`,
       occupied: o.Pax,
       capacity,
       percentage: capacity > 0 ? Math.round((o.Pax / capacity) * 100) : 0

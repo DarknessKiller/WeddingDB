@@ -86,7 +86,7 @@
     if (!selectedTableId || !selectedTable) return null;
     const occupied = occupancyData.get(selectedTableId) ?? 0;
     const capacity = selectedTable.capacity;
-    return { tableId: selectedTableId, occupied, capacity, percentage: capacity > 0 ? Math.round((occupied / capacity) * 100) : 0 };
+    return { tableId: selectedTableId, tableName: selectedTable.name || `Table`, occupied, capacity, percentage: capacity > 0 ? Math.round((occupied / capacity) * 100) : 0 };
   });
 
   let filteredUnassignedGuests = $derived(
