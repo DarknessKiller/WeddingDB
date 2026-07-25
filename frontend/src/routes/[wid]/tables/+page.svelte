@@ -165,6 +165,7 @@
         const capacity = table?.capacity ?? 0;
         occMap.set(o.TableID, {
           tableId: o.TableID,
+          tableName: table?.name ?? '',
           occupied: o.Pax,
           capacity,
           percentage: capacity > 0 ? Math.round((o.Pax / capacity) * 100) : 0
@@ -173,7 +174,7 @@
       occupancy = occMap;
     } catch (e: any) {
       tablesError = e.message ?? 'Failed to load tables';
-      addToast(tablesError, 'error');
+      addToast(tablesError ?? 'Failed to load tables', 'error');
     } finally {
       loading = false;
     }

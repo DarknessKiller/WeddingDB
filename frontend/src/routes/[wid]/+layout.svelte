@@ -15,7 +15,7 @@
   let { children } = $props();
 
   let currentPath = $derived(page.url.pathname);
-  let wid = $derived(decodeId(page.params.wid));
+  let wid = $derived(page.params.wid ? decodeId(page.params.wid) : '');
   let authChecked = $state(false);
   let guestCount = $state(0);
   let tables = $state<BanquetTable[]>([]);

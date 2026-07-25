@@ -70,7 +70,7 @@
 
   onMount(() => {
     // Set wedding ID from URL param
-    const wid = decodeId(page.params.wid);
+    const wid = page.params.wid ? decodeId(page.params.wid) : '';
     if (wid) setWeddingId(wid);
     timer = setInterval(() => currentTime = new Date(), 1000);
     listGuests().then(g => allGuests = g).catch(() => {});

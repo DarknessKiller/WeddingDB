@@ -158,13 +158,14 @@ export function getTableOccupancy(tableId?: string): TableOccupancy | TableOccup
     const occupied = tableGuests.reduce((sum, g) => sum + g.pax, 0);
     return {
       tableId: t.id,
+      tableName: t.name,
       occupied,
       capacity: t.capacity,
       percentage: Math.round((occupied / t.capacity) * 100)
     };
   });
   if (tableId !== undefined) {
-    return result.find(r => r.tableId === tableId) ?? { tableId, occupied: 0, capacity: 0, percentage: 0 };
+    return result.find(r => r.tableId === tableId) ?? { tableId, tableName: '', occupied: 0, capacity: 0, percentage: 0 };
   }
   return result;
 }

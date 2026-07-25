@@ -24,6 +24,7 @@
   let kioskLogoSize = $state('contain');
   let kioskLogoPosX = $state('50%');
   let kioskLogoPosY = $state('50%');
+  let kioskLogoBlur = $state(0);
 
   onMount(async () => {
     try {
@@ -162,6 +163,7 @@
               bind:size={kioskLogoSize}
               bind:posX={kioskLogoPosX}
               bind:posY={kioskLogoPosY}
+              bind:blur={kioskLogoBlur}
               label="Logo"
               aspect="square"
             />

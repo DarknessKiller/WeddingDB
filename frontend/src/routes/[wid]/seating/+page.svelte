@@ -67,7 +67,7 @@
     } catch (e: any) {
       errored = true;
       error = e.message ?? 'Failed to load seating data';
-      addToast(error, 'error');
+      addToast(error ?? 'Failed to load seating data', 'error');
     } finally {
       loading = false;
       const tableParam = page.url.searchParams.get('table');
