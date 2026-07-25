@@ -7,6 +7,7 @@
   import dayjs from 'dayjs';
   import { encodeId } from '$lib/utils/encode';
   import { validateToken } from '$lib/utils/auth';
+  import { apiFetch } from '$lib/api/client';
 
   let weddings = $state<Wedding[]>([]);
   let loading = $state(true);
@@ -39,9 +40,8 @@
     if (selecting !== null) return;
     selecting = w.id;
     try {
-      const res = await fetch('/api/auth/select-wedding', {
+      const res = await apiFetch('/api/auth/select-wedding', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${auth?.accessToken}` },
         body: JSON.stringify({ weddingId: w.id })
       });
       if (!res.ok) {
