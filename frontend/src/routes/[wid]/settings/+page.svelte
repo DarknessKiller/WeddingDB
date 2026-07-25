@@ -1,0 +1,202 @@
+<script lang="ts">
+  import { onMount } from 'svelte';
+  import { addToast } from '$lib/stores';
+  import { weddingId } from '$lib/stores/weddingId';
+  import { get } from 'svelte/store';
+  import { listWeddings, updateKioskSettings, type Wedding, type KioskSettings } from '$lib/api/weddings';
+  import { Monitor, Save, Loader2, ExternalLink, Copy, Image, Type, FileText, Upload } from 'lucide-svelte';
+  import ImageEditor from '$lib/components/ui/ImageEditor.svelte';
+  import { encodeId } from '$lib/utils/encode';
+  import { uploadFile } from '$lib/api/client';
+
+  let wedding = $state<Wedding | null>(null);
+  let loading = $state(true);
+  let saving = $state(false);
+
+  let kioskTitle = $state('');
+  let kioskDescription = $state('');
+  let kioskLogoUrl = $state('');
+  let kioskBackgroundUrl = $state('');
+  let kioskBackgroundBlur = $state(0);
+  let kioskBackgroundSize = $state('cover');
+  let kioskBackgroundPosX = $state('50%');
+  let kioskBackgroundPosY = $state('50%');
+  let kioskLogoSize = $state('contain');
+  let kioskLogoPosX = $state('50%');
+  let kioskLogoPosY = $state('50%');
+  let kioskLogoBlur = $state(0);
+
+  onMount(async () => {
+    try {
+      const wid = get(weddingId);
+      const weddings = await listWeddings();
+      wedding = weddings.find(w => w.id === wid) ?? null;
+      if (wedding) {
+        kioskTitle = (wedding as any).kioskTitle ?? '';
+        kioskDescription = (wedding as any).kioskDescription ?? '';
+        kioskLogoUrl = (wedding as any).kioskLogoUrl ?? '';
+        kioskBackgroundUrl = (wedding as any).kioskBackgroundUrl ?? '';
+        kioskBackgroundBlur = (wedding as any).kioskBackgroundBlur ?? 0;
+        if ((wedding as any).kioskBackgroundSize) kioskBackgroundSize = (wedding as any).kioskBackgroundSize;
+        if ((wedding as any).kioskBackgroundPosX) kioskBackgroundPosX = (wedding as any).kioskBackgroundPosX;
+        if ((wedding as any).kioskBackgroundPosY) kioskBackgroundPosY = (wedding as any).kioskBackgroundPosY;
+        if ((wedding as any).kioskLogoSize) kioskLogoSize = (wedding as any).kioskLogoSize;
+        if ((wedding as any).kioskLogoPosX) kioskLogoPosX = (wedding as any).kioskLogoPosX;
+        if ((wedding as any).kioskLogoPosY) kioskLogoPosY = (wedding as any).kioskLogoPosY;
+      }
+    } catch {
+      addToast('Failed to load settings', 'error');
+    } finally {
+      loading = false;
+    }
+  });
+
+  async function handleSave() {
+    if (!wedding) return;
+    saving = true;
+    try {
+      await updateKioskSettings(wedding.id, {
+        kioskTitle,
+        kioskDescription,
+        kioskLogoUrl,
+        kioskBackgroundUrl,
+        kioskBackgroundBlur,
+        kioskBackgroundSize,
+        kioskBackgroundPosX,
+        kioskBackgroundPosY,
+        kioskLogoSize,
+        kioskLogoPosX,
+        kioskLogoPosY,
+      });
+      addToast('Kiosk settings saved', 'success');
+    } catch (e: any) {
+      addToast(e.message ?? 'Failed to save', 'error');
+    } finally {
+      saving = false;
+    }
+  }
+
+  async function copyKioskLink() {
+    if (!wedding) return;
+    const url = `${window.location.origin}/kiosk/${encodeId(wedding.id)}`;
+    try {
+      await navigator.clipboard.writeText(url);
+      addToast('Kiosk link copied!', 'success');
+    } catch {
+      addToast('Failed to copy', 'error');
+    }
+  }
+</script>
+
+<svelte:head><title>Settings – WeddingDB</title></svelte:head>
+
+<div class="p-4 sm:p-7 max-w-2xl mx-auto">
+  <h1 class="text-xl font-bold text-gray-900 mb-6">Settings</h1>
+
+  {#if loading}
+    <div class="space-y-4">
+      {#each Array(2) as _}
+        <div class="bg-white border border-gray-200 rounded-2xl p-6 animate-pulse">
+          <div class="h-5 bg-gray-100 rounded w-40 mb-4"></div>
+          <div class="space-y-3">
+            <div class="h-10 bg-gray-100 rounded-xl"></div>
+            <div class="h-20 bg-gray-100 rounded-xl"></div>
+          </div>
+        </div>
+      {/each}
+    </div>
+  {:else}
+    <div class="space-y-6">
+      <!-- Kiosk Quick Access -->
+      <div class="bg-white border border-gray-200 rounded-2xl p-5">
+        <div class="flex items-center justify-between">
+          <div class="flex items-center gap-3">
+            <div class="w-10 h-10 rounded-xl bg-red flex items-center justify-center text-white"><Monitor class="w-5 h-5" /></div>
+            <div>
+              <h3 class="font-semibold text-gray-900 text-sm">Kiosk Mode</h3>
+              <p class="text-xs text-gray-500">Guest seat-finding kiosk screen</p>
+            </div>
+          </div>
+          <div class="flex gap-2">
+            <button onclick={copyKioskLink} class="px-3 py-2 text-xs font-semibold bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-xl transition-colors flex items-center gap-1.5">
+              <Copy class="w-3.5 h-3.5" /> Copy Link
+            </button>
+            <a href="/kiosk/{wedding ? encodeId(wedding.id) : ''}" target="_blank"
+              class="px-3 py-2 text-xs font-semibold bg-red text-white rounded-xl hover:bg-red-light transition-colors flex items-center gap-1.5">
+              <ExternalLink class="w-3.5 h-3.5" /> Preview
+            </a>
+          </div>
+        </div>
+      </div>
+
+      <!-- Kiosk Customization -->
+      <div class="bg-white border border-gray-200 rounded-2xl p-5 sm:p-6">
+        <h3 class="font-bold text-gray-900 mb-5">Kiosk Display Settings</h3>
+
+        <div class="space-y-5">
+          <!-- Title -->
+          <div>
+            <label for="kiosk-title" class="flex items-center gap-1.5 text-sm font-semibold text-gray-700 mb-1.5">
+              <Type class="w-4 h-4 text-gray-400" /> Title
+            </label>
+            <input id="kiosk-title" type="text" bind:value={kioskTitle}
+              placeholder="e.g. Find Your Seat"
+              class="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm bg-white focus:border-red focus:ring-2 focus:ring-red/15 outline-none transition-all" />
+            <p class="text-xs text-gray-400 mt-1">Shown as the main heading on the kiosk screen</p>
+          </div>
+
+          <!-- Description -->
+          <div>
+            <label for="kiosk-desc" class="flex items-center gap-1.5 text-sm font-semibold text-gray-700 mb-1.5">
+              <FileText class="w-4 h-4 text-gray-400" /> Description
+            </label>
+            <textarea id="kiosk-desc" bind:value={kioskDescription} rows="2"
+              placeholder="e.g. Enter your name to find your table and seat"
+              class="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm bg-white focus:border-red focus:ring-2 focus:ring-red/15 outline-none transition-all resize-none"></textarea>
+          </div>
+
+          <!-- Logo -->
+          <div>
+            <label class="text-sm font-semibold text-gray-700 mb-1.5 block">Logo</label>
+            <ImageEditor
+              bind:value={kioskLogoUrl}
+              bind:size={kioskLogoSize}
+              bind:posX={kioskLogoPosX}
+              bind:posY={kioskLogoPosY}
+              bind:blur={kioskLogoBlur}
+              label="Logo"
+              aspect="square"
+            />
+          </div>
+
+          <!-- Background -->
+          <div>
+            <label class="text-sm font-semibold text-gray-700 mb-1.5 block">Background Image</label>
+            <ImageEditor
+              bind:value={kioskBackgroundUrl}
+              bind:size={kioskBackgroundSize}
+              bind:posX={kioskBackgroundPosX}
+              bind:posY={kioskBackgroundPosY}
+              bind:blur={kioskBackgroundBlur}
+              label="Background"
+              showBlur={true}
+            />
+          </div>
+
+        </div>
+
+        <!-- Save -->
+        <div class="mt-6 flex justify-end">
+          <button onclick={handleSave} disabled={saving}
+            class="px-5 py-2.5 bg-red text-white rounded-xl text-sm font-semibold hover:bg-red-light transition-colors disabled:opacity-50 flex items-center gap-2">
+            {#if saving}
+              <Loader2 class="w-4 h-4 text-white animate-spin" /> Saving...
+            {:else}
+              <Save class="w-4 h-4" /> Save Settings
+            {/if}
+          </button>
+        </div>
+      </div>
+    </div>
+  {/if}
+</div>
