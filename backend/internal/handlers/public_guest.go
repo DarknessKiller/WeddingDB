@@ -68,18 +68,18 @@ func (h *PublicKioskHandler) GetKioskSettings(c fuego.ContextWithBody[any]) (any
 		return nil, fuego.NotFoundError{Title: "Wedding not found"}
 	}
 	return map[string]any{
-		"kioskTitle":         w.KioskTitle,
-		"kioskDescription":   w.KioskDescription,
-		"kioskLogoUrl":       w.KioskLogoUrl,
+		"kioskTitle":          w.KioskTitle,
+		"kioskDescription":    w.KioskDescription,
+		"kioskLogoUrl":        w.KioskLogoUrl,
 		"kioskBackgroundUrl":  w.KioskBackgroundUrl,
 		"kioskBackgroundBlur": w.KioskBackgroundBlur,
 		"kioskBackgroundSize": w.KioskBackgroundSize,
 		"kioskBackgroundPosX": w.KioskBackgroundPosX,
 		"kioskBackgroundPosY": w.KioskBackgroundPosY,
-		"kioskLogoSize":      w.KioskLogoSize,
-		"kioskLogoPosX":      w.KioskLogoPosX,
-		"kioskLogoPosY":      w.KioskLogoPosY,
-		"name":               w.Name,
+		"kioskLogoSize":       w.KioskLogoSize,
+		"kioskLogoPosX":       w.KioskLogoPosX,
+		"kioskLogoPosY":       w.KioskLogoPosY,
+		"name":                w.Name,
 	}, nil
 }
 

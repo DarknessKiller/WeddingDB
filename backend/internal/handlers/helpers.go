@@ -61,9 +61,11 @@ func requireWeddingAccess(ctx context.Context, weddingID uuid.UUID) error {
 }
 
 type unauthorizedError struct{ msg string }
+
 func (e unauthorizedError) Error() string { return e.msg }
 
 type forbiddenError struct{ msg string }
+
 func (e forbiddenError) Error() string { return e.msg }
 
 func errUnauthorized(msg string) error { return unauthorizedError{msg} }

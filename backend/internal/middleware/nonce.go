@@ -2,8 +2,8 @@ package middleware
 
 import (
 	"context"
-	"time"
 	"github.com/redis/go-redis/v9"
+	"time"
 )
 
 type NonceStore struct {

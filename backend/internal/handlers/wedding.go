@@ -100,17 +100,17 @@ func (h *WeddingHandler) Update(c fuego.ContextWithBody[WeddingRequest]) (any, e
 }
 
 type KioskSettingsRequest struct {
-	KioskTitle         string `json:"kioskTitle"`
-	KioskDescription   string `json:"kioskDescription"`
-	KioskLogoUrl       string `json:"kioskLogoUrl"`
+	KioskTitle          string `json:"kioskTitle"`
+	KioskDescription    string `json:"kioskDescription"`
+	KioskLogoUrl        string `json:"kioskLogoUrl"`
 	KioskBackgroundUrl  string `json:"kioskBackgroundUrl"`
-	KioskBackgroundBlur  int    `json:"kioskBackgroundBlur"`
-	KioskBackgroundSize  string `json:"kioskBackgroundSize"`
-	KioskBackgroundPosX  string `json:"kioskBackgroundPosX"`
-	KioskBackgroundPosY  string `json:"kioskBackgroundPosY"`
-	KioskLogoSize   string `json:"kioskLogoSize"`
-	KioskLogoPosX   string `json:"kioskLogoPosX"`
-	KioskLogoPosY   string `json:"kioskLogoPosY"`
+	KioskBackgroundBlur int    `json:"kioskBackgroundBlur"`
+	KioskBackgroundSize string `json:"kioskBackgroundSize"`
+	KioskBackgroundPosX string `json:"kioskBackgroundPosX"`
+	KioskBackgroundPosY string `json:"kioskBackgroundPosY"`
+	KioskLogoSize       string `json:"kioskLogoSize"`
+	KioskLogoPosX       string `json:"kioskLogoPosX"`
+	KioskLogoPosY       string `json:"kioskLogoPosY"`
 }
 
 func (h *WeddingHandler) UpdateKioskSettings(c fuego.ContextWithBody[KioskSettingsRequest]) (any, error) {

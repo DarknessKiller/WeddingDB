@@ -1,8 +1,8 @@
 package repository
 
 import (
-	"time"
 	"gorm.io/gorm"
+	"time"
 	"weddingdb/internal/models"
 )
 
