@@ -323,6 +323,8 @@
     const vipIdx = headers.findIndex(h => h === 'vip' || h === 'isvip');
     const notesIdx = headers.findIndex(h => h === 'notes');
     const dietaryIdx = headers.findIndex(h => h === 'dietary');
+    const tableIdx = headers.findIndex(h => h === 'table' || h === 'tablename');
+    const seatIdx = headers.findIndex(h => h === 'seat' || h === 'seatnum' || h === 'seat_number');
 
     return lines.slice(1).filter(l => l.trim()).map(line => {
       const cols = line.split(',').map(c => c.trim().replace(/^"|"$/g, ''));
@@ -335,6 +337,8 @@
         isVip: vipIdx >= 0 ? cols[vipIdx]?.toLowerCase() === 'yes' || cols[vipIdx] === '1' || cols[vipIdx]?.toLowerCase() === 'true' : false,
         notes: notesIdx >= 0 ? cols[notesIdx] : undefined,
         dietary: dietaryIdx >= 0 ? cols[dietaryIdx]?.split(';').map(d => d.trim()).filter(Boolean) : [],
+        table: tableIdx >= 0 ? cols[tableIdx] : undefined,
+        seat: seatIdx >= 0 ? parseInt(cols[seatIdx]) || undefined : undefined,
       };
     }).filter(g => g.name);
   }
@@ -365,7 +369,24 @@
     if (importPreview.length === 0) return;
     importing = true;
     try {
-      const result = await bulkImportGuests(importPreview);
+      // Resolve table names to IDs
+      const resolved = importPreview.map(g => {
+        if (!g.table) return g;
+        const match = tables.find(t => t.name.toLowerCase() === g.table!.toLowerCase());
+        return { ...g, tableId: match?.id };
+      });
+      const result = await bulkImportGuests(resolved.map(g => ({
+        name: g.name,
+        phone: g.phone,
+        email: g.email,
+        pax: g.pax,
+        rsvp: g.rsvp,
+        isVip: g.isVip,
+        notes: g.notes,
+        dietary: g.dietary,
+        tableId: g.tableId,
+        seatNum: g.seat,
+      })));
       addToast(`Imported ${result.imported} guests`, 'success');
       showImportModal = false;
       importPreview = [];
@@ -375,6 +396,89 @@
       addToast(e.message || 'Import failed', 'error');
     } finally {
       importing = false;
+    }
+  }
+
+  let showBulkMoveModal = $state(false);
+  let bulkMoveTableId = $state('');
+  let bulkMoveSeatStart = $state(1);
+  let bulkMoveSaving = $state(false);
+
+  async function bulkDelete() {
+    if (selectedIds.size === 0) return;
+    const ids = [...selectedIds];
+    try {
+      await Promise.all(ids.map(id => apiDeleteGuest(wid, id)));
+      guests = guests.filter(g => !selectedIds.has(g.id));
+      addToast(`Deleted ${ids.length} guests`, 'info');
+      selectedIds = new Set();
+    } catch (e: any) {
+      addToast(e.message ?? 'Bulk delete failed', 'error');
+    }
+  }
+
+  function openBulkMove() {
+    if (selectedIds.size === 0) return;
+    bulkMoveTableId = tables.length ? String(tables[0].id) : '';
+    bulkMoveSeatStart = getNextBulkSeatNum();
+    showBulkMoveModal = true;
+  }
+
+  function getNextBulkSeatNum(): number {
+    if (!bulkMoveTableId) return 1;
+    const occ = guests.filter(g => g.tableId === bulkMoveTableId && !selectedIds.has(g.id));
+    if (!occ.length) return 1;
+    const maxSeat = Math.max(...occ.map(g => g.seatNum ?? 0));
+    return maxSeat + 1;
+  }
+
+  let bulkOccupiedSeats = $derived.by((): Set<number> => {
+    if (!bulkMoveTableId) return new Set();
+    return new Set(
+      guests
+        .filter(g => g.tableId === bulkMoveTableId && !selectedIds.has(g.id) && g.seatNum != null)
+        .flatMap(g => {
+          const start = g.seatNum!;
+          return Array.from({ length: g.pax }, (_, i) => start + i);
+        })
+    );
+  });
+
+  function getBulkTableCapacity(): number {
+    if (!bulkMoveTableId) return 10;
+    const t = tables.find(t => t.id === bulkMoveTableId);
+    return t?.capacity ?? 10;
+  }
+
+  async function confirmBulkMove() {
+    if (!bulkMoveTableId || selectedIds.size === 0) return;
+    const capacity = getBulkTableCapacity();
+    const ids = [...selectedIds];
+    const seatsNeeded = ids.reduce((sum, id) => {
+      const g = guests.find(g => g.id === id);
+      return sum + (g?.pax ?? 1);
+    }, 0);
+    if (bulkMoveSeatStart + seatsNeeded - 1 > capacity) {
+      addToast(`Not enough seats. Need ${seatsNeeded}, available from seat ${bulkMoveSeatStart}: ${capacity - bulkMoveSeatStart + 1}`, 'error');
+      return;
+    }
+    bulkMoveSaving = true;
+    try {
+      let seat = bulkMoveSeatStart;
+      for (const id of ids) {
+        const g = guests.find(g => g.id === id);
+        if (!g) continue;
+        await assignSeat(wid, id, bulkMoveTableId, seat);
+        guests = guests.map(gg => gg.id === id ? { ...gg, tableId: bulkMoveTableId, seatNum: seat } : gg);
+        seat += g.pax;
+      }
+      addToast(`Moved ${ids.length} guests to table`, 'success');
+      selectedIds = new Set();
+      showBulkMoveModal = false;
+    } catch (e: any) {
+      addToast(e.message ?? 'Bulk move failed', 'error');
+    } finally {
+      bulkMoveSaving = false;
     }
   }
 </script>
@@ -416,8 +520,8 @@
   {#if selectedIds.size > 0}
     <div class="mb-4 px-4 py-3 bg-red-50 border border-red-100 rounded-xl flex items-center gap-3 text-sm">
       <span class="font-semibold text-red">{selectedIds.size} selected</span>
-      <button class="px-3 py-1.5 bg-white border border-gray-200 rounded-lg text-xs font-medium hover:bg-gray-50">Move Table</button>
-      <button class="px-3 py-1.5 bg-white border border-red-200 rounded-lg text-xs font-medium text-red hover:bg-red-50">Delete</button>
+      <button onclick={openBulkMove} class="px-3 py-1.5 bg-white border border-gray-200 rounded-lg text-xs font-medium hover:bg-gray-50">Move Table</button>
+      <button onclick={bulkDelete} class="px-3 py-1.5 bg-white border border-red-200 rounded-lg text-xs font-medium text-red hover:bg-red-50">Delete</button>
     </div>
   {/if}
 
@@ -534,10 +638,46 @@
             class="p-2 rounded-lg border border-gray-200 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed" aria-label="Next page">
             <ChevronRight class="w-4 h-4" />
           </button>
-        </div>
       </div>
     </div>
-  {/if}
+  </div>
+{/if}
+
+<!-- Bulk Move Table Modal -->
+{#if showBulkMoveModal}
+  <div class="fixed inset-0 z-[700] flex items-center justify-center bg-black/40" onclick={() => showBulkMoveModal = false}>
+    <div class="bg-white rounded-2xl shadow-2xl w-full max-w-md p-6" onclick={(e) => e.stopPropagation()}>
+      <h3 class="text-lg font-semibold text-gray-900 mb-4">Move {selectedIds.size} Guests</h3>
+      <div class="space-y-3 mb-6">
+        <div>
+          <label class="block text-xs font-medium text-gray-500 mb-1">New Table</label>
+          <select bind:value={bulkMoveTableId} onchange={() => { bulkMoveSeatStart = getNextBulkSeatNum(); }} class="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm bg-white focus:border-gold outline-none">
+            {#each tables as t}
+              <option value={String(t.id)}>{t.name}</option>
+            {/each}
+          </select>
+        </div>
+        {#if bulkMoveTableId}
+          <div>
+            <label class="block text-xs font-medium text-gray-500 mb-1">Starting Seat Number (1–{getBulkTableCapacity()})</label>
+            <input type="number" min="1" max={getBulkTableCapacity()} bind:value={bulkMoveSeatStart}
+              class="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm bg-white focus:border-gold focus:ring-2 focus:ring-gold/15 outline-none transition-all" />
+          </div>
+          <div class="text-xs text-gray-400">
+            Occupied: {bulkOccupiedSeats.size}/{getBulkTableCapacity()} seats
+          </div>
+        {/if}
+      </div>
+      <div class="flex justify-end gap-2">
+        <button onclick={() => showBulkMoveModal = false} class="px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 rounded-lg">Cancel</button>
+        <button onclick={confirmBulkMove} disabled={!bulkMoveTableId || bulkMoveSaving}
+          class="px-4 py-2 text-sm font-medium text-white bg-red rounded-lg hover:bg-red-light disabled:opacity-50 transition-colors">
+          {bulkMoveSaving ? 'Moving...' : `Move ${selectedIds.size} Guests`}
+        </button>
+      </div>
+    </div>
+  </div>
+{/if}
 </div>
 
 <!-- Context Menu -->
@@ -629,7 +769,7 @@
         </button>
       </div>
       <div class="p-5 space-y-4">
-        <p class="text-sm text-gray-600">Upload a CSV file with columns: <strong>name</strong> (required), phone, email, pax, rsvp, vip, notes, dietary</p>
+        <p class="text-sm text-gray-600">Upload a CSV file with columns: <strong>name</strong> (required), phone, email, pax, rsvp, vip, notes, dietary, table, seat</p>
 
         <div class="border-2 border-dashed border-gray-200 rounded-xl p-6 text-center hover:border-red/50 transition-colors">
           <input type="file" accept=".csv" onchange={handleImportFile} class="hidden" id="csv-input" />
@@ -658,6 +798,12 @@
                 <th class="px-3 py-2 text-left font-semibold text-gray-600">Phone</th>
                 <th class="px-3 py-2 text-left font-semibold text-gray-600">Pax</th>
                 <th class="px-3 py-2 text-left font-semibold text-gray-600">VIP</th>
+                {#if importPreview.some(g => g.table)}
+                  <th class="px-3 py-2 text-left font-semibold text-gray-600">Table</th>
+                {/if}
+                {#if importPreview.some(g => g.seat)}
+                  <th class="px-3 py-2 text-left font-semibold text-gray-600">Seat</th>
+                {/if}
               </tr></thead>
               <tbody>
                 {#each importPreview.slice(0, 20) as g}
@@ -666,6 +812,12 @@
                     <td class="px-3 py-2 text-gray-500">{g.phone || '—'}</td>
                     <td class="px-3 py-2 text-gray-500">{g.pax}</td>
                     <td class="px-3 py-2 text-gray-500">{g.isVip ? '★' : ''}</td>
+                    {#if importPreview.some(g => g.table)}
+                      <td class="px-3 py-2 text-gray-500">{g.table || '—'}</td>
+                    {/if}
+                    {#if importPreview.some(g => g.seat)}
+                      <td class="px-3 py-2 text-gray-500">{g.seat ?? '—'}</td>
+                    {/if}
                   </tr>
                 {/each}
               </tbody>

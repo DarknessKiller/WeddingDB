@@ -248,7 +248,7 @@ func (h *GuestHandler) BulkImport(c fuego.ContextWithBody[BulkImportRequest]) (a
 	wid := DecodeWID(c)
 	var guests []models.GuestRecord
 	for _, g := range body.Guests {
-		guests = append(guests, models.GuestRecord{
+		gr := models.GuestRecord{
 			WeddingID: wid,
 			Name:      g.Name,
 			Phone:     g.Phone,
@@ -258,7 +258,15 @@ func (h *GuestHandler) BulkImport(c fuego.ContextWithBody[BulkImportRequest]) (a
 			IsVip:     g.IsVip,
 			Notes:     g.Notes,
 			Dietary:   g.Dietary,
-		})
+		}
+		if g.TableID != nil {
+			tid := DecodeID(*g.TableID)
+			gr.TableID = &tid
+		}
+		if g.SeatNum != nil {
+			gr.SeatNum = g.SeatNum
+		}
+		guests = append(guests, gr)
 	}
 	count, err := h.guestService.BulkCreate(guests)
 	if err != nil {

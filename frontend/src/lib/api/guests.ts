@@ -11,6 +11,10 @@ export interface GuestImportData {
   isVip?: boolean;
   notes?: string;
   dietary?: string[];
+  table?: string;
+  seat?: number;
+  tableId?: string;
+  seatNum?: number;
 }
 
 export interface GuestResponse {
