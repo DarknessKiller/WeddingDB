@@ -89,7 +89,9 @@ func Init(env config.Env) *App {
 			Col int
 		}
 		var weddingIDs []uuid.UUID
-		db.Model(&models.BanquetTable{}).Distinct().Pluck("wedding_id", &weddingIDs)
+		if err := db.Model(&models.BanquetTable{}).Distinct().Pluck("wedding_id", &weddingIDs).Error; err != nil {
+			log.Println("Warning: pluck wedding_ids for row/col migration:", err)
+		}
 		for _, wid := range weddingIDs {
 			var rows []legacyTable
 			db.Table("banquet_tables").Select("id, row, col").Where("wedding_id = ?", wid).Scan(&rows)
@@ -117,7 +119,9 @@ func Init(env config.Env) *App {
 		var n int64
 		db.Model(&models.HallElement{}).Where("wedding_id = ?", wid).Count(&n)
 		if n == 0 {
-			db.Create(models.DefaultElements(wid))
+			if err := db.Create(models.DefaultElements(wid)).Error; err != nil {
+				log.Println("Warning: seed default elements for wedding", wid, ":", err)
+			}
 		}
 	}
 
