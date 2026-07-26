@@ -104,7 +104,7 @@ Server runs at `http://localhost:8080`.
 | POST | `/api/weddings/{wid}/tables` | Create table |
 | PUT | `/api/weddings/{wid}/tables/{id}` | Update table |
 | DELETE | `/api/weddings/{wid}/tables/{id}` | Delete table |
-| GET | `/api/weddings/{wid}/guests` | List guests |
+| GET | `/api/weddings/{wid}/guests` | List guests (cursor pagination: `?cursor=&limit=`, returns `nextCursor`) |
 | POST | `/api/weddings/{wid}/guests` | Create guest |
 | GET | `/api/weddings/{wid}/guests/{id}` | Get guest |
 | PUT | `/api/weddings/{wid}/guests/{id}` | Update guest |
