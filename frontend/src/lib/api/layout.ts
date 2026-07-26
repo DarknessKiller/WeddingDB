@@ -1,0 +1,29 @@
+import { apiFetch } from './client';
+import type { HallLayoutData, HallElement } from '$lib/types';
+
+export async function getLayout(wid: string): Promise<HallLayoutData> {
+	const res = await apiFetch(`/api/weddings/${wid}/layout`);
+	if (!res.ok) throw new Error('Failed to load layout');
+	return res.json();
+}
+
+export async function getPublicLayout(wid: string): Promise<HallLayoutData> {
+	const res = await fetch(`/api/public/weddings/${wid}/layout`);
+	if (!res.ok) throw new Error('Failed to load layout');
+	return res.json();
+}
+
+export interface SaveLayoutPayload {
+	hallWidth: number;
+	hallHeight: number;
+	tables: { id: string; x: number; y: number; degree: number }[];
+	elements: Omit<HallElement, 'weddingId'>[];
+}
+
+export async function saveLayout(wid: string, data: SaveLayoutPayload): Promise<void> {
+	const res = await apiFetch(`/api/weddings/${wid}/layout`, {
+		method: 'PATCH',
+		body: JSON.stringify(data)
+	});
+	if (!res.ok) throw new Error('Failed to save layout');
+}
