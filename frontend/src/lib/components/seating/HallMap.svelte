@@ -1,28 +1,34 @@
 <script lang="ts">
-  import BanquetTableComponent from './BanquetTable.svelte';
-  import { HALL_LAYOUT } from '$lib/constants';
-  import type { BanquetTable as BanquetTableType, Guest } from '$lib/types';
-  import { ZoomIn, ZoomOut, RotateCcw } from 'lucide-svelte';
   import { onMount } from 'svelte';
+  import BanquetTableComponent from './BanquetTable.svelte';
+  import HallElementNode from './HallElementNode.svelte';
+  import type { BanquetTable as BanquetTableType, HallElement, Guest } from '$lib/types';
+  import { ZoomIn, ZoomOut, RotateCcw } from 'lucide-svelte';
 
   let {
+    mode = 'view',
+    tables = [],
+    elements = [],
+    hallWidth = 860,
+    hallHeight = 1000,
+    tableGuests: tableGuestsRaw = {},
     selectedTableId = null,
     highlightedTableId = null,
-    tableGuests: tableGuestsRaw = {},
-    tables,
     dark = false,
     onTableClick,
     onSeatClick,
-    hoveredSeat = $bindable(null),
   }: {
+    mode?: 'view' | 'edit';
+    tables?: BanquetTableType[];
+    elements?: HallElement[];
+    hallWidth?: number;
+    hallHeight?: number;
+    tableGuests?: Record<string, Guest[]>;
     selectedTableId?: string | null;
     highlightedTableId?: string | null;
-    tableGuests?: Record<string, Guest[]>;
-    tables?: BanquetTableType[];
     dark?: boolean;
     onTableClick?: (id: string) => void;
     onSeatClick?: (tableId: string, seatNum: number, guest: Guest | null) => void;
-    hoveredSeat?: { seatNum: number; guest: Guest | null; x: number; y: number } | null;
   } = $props();
 
   let zoom = $state(1);
@@ -35,28 +41,45 @@
   let containerW = $state(800);
   let containerH = $state(600);
 
-  const BASE_W = HALL_LAYOUT.width;
-  const BASE_H = HALL_LAYOUT.height;
+  let KonvaStage: any = $state(null);
+  let KLayer: any = $state(null);
 
-  let scale = $derived(Math.min(containerW / BASE_W, containerH / BASE_H, 1));
+  let viewScale = $derived(Math.min(containerW / hallWidth, containerH / hallHeight, 1));
 
   onMount(() => {
-    if (!containerEl) return;
-    const ro = new ResizeObserver(entries => {
-      for (const entry of entries) {
-        containerW = entry.contentRect.width;
-        containerH = entry.contentRect.height;
-      }
-    });
-    ro.observe(containerEl);
-    return () => ro.disconnect();
-  });
+    if (containerEl) {
+      const ro = new ResizeObserver(entries => {
+        for (const entry of entries) {
+          containerW = entry.contentRect.width;
+          containerH = entry.contentRect.height;
+        }
+      });
+      ro.observe(containerEl);
+    }
 
-  function handleWheel(e: WheelEvent) {
-    e.preventDefault();
-    const delta = e.deltaY > 0 ? -0.08 : 0.08;
-    zoom = Math.max(0.3, Math.min(3, zoom + delta));
-  }
+    (async () => {
+      const mod = await import('svelte-konva');
+      KonvaStage = mod.Stage;
+      KLayer = mod.Layer;
+
+      // Attach wheel to canvas for preventDefault
+      const canvas = containerEl?.querySelector('canvas');
+      if (canvas) {
+        canvas.addEventListener('wheel', (e: WheelEvent) => {
+          e.preventDefault();
+          const delta = e.deltaY > 0 ? -0.08 : 0.08;
+          const newZoom = Math.max(0.3, Math.min(3, zoom + delta));
+          const rect = canvas.getBoundingClientRect();
+          const mx = e.clientX - rect.left;
+          const my = e.clientY - rect.top;
+          const scale = newZoom / zoom;
+          panX = mx - scale * (mx - panX);
+          panY = my - scale * (my - panY);
+          zoom = newZoom;
+        }, { passive: false });
+      }
+    })();
+  });
 
   function handleMouseDown(e: MouseEvent) {
     if (e.button !== 0) return;
@@ -96,6 +119,9 @@
   function handleTouchEnd() {
     isDragging = false;
   }
+
+  const stageW = $derived(containerW);
+  const stageH = $derived(containerH);
 </script>
 
 <svelte:window onmousemove={handleMouseMove} onmouseup={handleMouseUp} />
@@ -105,7 +131,6 @@
   class="relative flex-1 overflow-hidden select-none min-h-[300px] {dark ? 'bg-gray-950' : 'bg-gray-50'}"
   class:cursor-grab={!isDragging}
   class:cursor-grabbing={isDragging}
-  onwheel={handleWheel}
   onmousedown={handleMouseDown}
   ontouchstart={handleTouchStart}
   ontouchmove={handleTouchMove}
@@ -135,52 +160,34 @@
     <div class="flex items-center gap-2"><span class="w-2.5 h-2.5 sm:w-3 sm:h-3 rounded-full border-2 border-gold {dark ? 'bg-gold/20' : 'bg-gold-50'}"></span> VIP</div>
   </div>
 
-  <!-- Hall -->
-  <div
-    class="absolute inset-0 flex items-center justify-center"
-    style="transform: translate({panX}px, {panY}px) scale({zoom}); transform-origin: center center; transition: {isDragging ? 'none' : 'transform 0.2s cubic-bezier(0.4,0,0.2,1)'};"
-  >
-    <div class="relative {dark ? 'bg-gray-900 border-gray-700' : 'bg-white border-gray-200'} border-2 rounded-3xl shadow-xl"
-      style="width: {BASE_W * scale}px; height: {BASE_H * scale}px; min-width: {BASE_W * scale}px;">
-
-      <!-- Stage -->
-      <div class="absolute top-0 left-1/2 -translate-x-1/2 w-[55%] h-[6%] flex flex-col items-center justify-center z-10">
-        <div class="absolute inset-0 bg-gradient-to-br from-red via-red-dark to-[#5C0A0C] rounded-b-2xl"></div>
-        <div class="absolute inset-1 rounded-b-xl bg-gradient-to-b from-gold/15 to-transparent pointer-events-none"></div>
-        <span class="relative z-10 text-gold text-[10px] sm:text-sm font-bold tracking-[0.12em] uppercase font-serif">✦ Stage ✦</span>
-      </div>
-
-      <!-- Main aisle -->
-      <div class="absolute top-[8%] bottom-[8%] left-1/2 -translate-x-1/2 w-px z-[1]"
-        style="background: repeating-linear-gradient(180deg, transparent, transparent 8px, {dark ? '#374151' : '#E5E7EB'} 8px, {dark ? '#374151' : '#E5E7EB'} 10px);"></div>
-
-      <!-- Side aisles -->
-      <div class="absolute top-[8%] bottom-[8%] left-[30%] w-px z-[1] opacity-50"
-        style="background: repeating-linear-gradient(180deg, transparent, transparent 8px, {dark ? '#1F2937' : '#F3F4F6'} 8px, {dark ? '#1F2937' : '#F3F4F6'} 10px);"></div>
-      <div class="absolute top-[8%] bottom-[8%] left-[70%] w-px z-[1] opacity-50"
-        style="background: repeating-linear-gradient(180deg, transparent, transparent 8px, {dark ? '#1F2937' : '#F3F4F6'} 8px, {dark ? '#1F2937' : '#F3F4F6'} 10px);"></div>
-
-      <!-- Entrance -->
-      <div class="absolute bottom-0 left-1/2 -translate-x-1/2 w-[14%] h-[4%] {dark ? 'bg-gray-800' : 'bg-gray-100'} rounded-t-xl flex items-center justify-center z-10">
-        <span class="text-[8px] sm:text-[10px] font-semibold {dark ? 'text-gray-500' : 'text-gray-500'} tracking-wide">▼ Entrance ▼</span>
-      </div>
-
-      <!-- Tables -->
-      {#each tables as tableDef (tableDef.id)}
-        <BanquetTableComponent
-          table={tableDef}
-          guests={tableGuestsRaw[tableDef.id] ?? []}
-          isSelected={selectedTableId === tableDef.id}
-          isHighlighted={highlightedTableId === tableDef.id}
-          selectedTableId={selectedTableId}
-          highlightedTableId={highlightedTableId}
-          {dark}
-          hallScale={scale}
-          onTableClick={() => onTableClick?.(tableDef.id)}
-          onSeatClick={(seatNum, guest) => onSeatClick?.(tableDef.id, seatNum, guest)}
-          bind:hoveredSeat
-        />
-      {/each}
-    </div>
-  </div>
+  {#if KonvaStage && KLayer}
+    <KonvaStage
+      width={stageW}
+      height={stageH}
+      scaleX={viewScale * zoom}
+      scaleY={viewScale * zoom}
+      x={panX}
+      y={panY}
+    >
+      <KLayer>
+        {#each elements as el (el.id)}
+          <HallElementNode element={el} {hallWidth} {hallHeight} {dark} />
+        {/each}
+        {#each tables as t (t.id)}
+          <BanquetTableComponent
+            table={t}
+            guests={tableGuestsRaw[t.id] ?? []}
+            isSelected={selectedTableId === t.id}
+            isHighlighted={highlightedTableId === t.id}
+            {dark}
+            {hallWidth}
+            {hallHeight}
+            {mode}
+            onTableClick={() => onTableClick?.(t.id)}
+            onSeatClick={(seatNum, guest) => onSeatClick?.(t.id, seatNum, guest)}
+          />
+        {/each}
+      </KLayer>
+    </KonvaStage>
+  {/if}
 </div>

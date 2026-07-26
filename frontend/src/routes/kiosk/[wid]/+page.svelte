@@ -1,23 +1,26 @@
 <script lang="ts">
   import HallMap from '$lib/components/seating/HallMap.svelte';
-  import { publicSearchGuests as searchGuests, publicListGuests as listGuests, publicListTables as listTables } from '$lib/api/public';
+  import { publicSearchGuests as searchGuests, publicListGuests as listGuests } from '$lib/api/public';
+  import { getPublicLayout } from '$lib/api/layout';
   import { cn, getInitials } from '$lib/utils';
   import { Maximize, Minimize, Monitor, Search, ArrowLeft, MapPin, Users, Star, X } from 'lucide-svelte';
   import { onMount, onDestroy } from 'svelte';
   import { page } from '$app/state';
   import { setWeddingId } from '$lib/stores/weddingId';
   import { decodeId } from '$lib/utils/encode';
-  import type { Guest, BanquetTable } from '$lib/types';
+  import type { Guest, BanquetTable, HallElement } from '$lib/types';
 
   let query = $state('');
   let results = $state<Guest[]>([]);
   let allGuests = $state<Guest[]>([]);
   let tables = $state<BanquetTable[]>([]);
+  let elements = $state<HallElement[]>([]);
+  let hallWidth = $state(860);
+  let hallHeight = $state(1000);
   let selectedGuest = $state<Guest | null>(null);
   let isFullscreen = $state(false);
   let currentTime = $state(new Date());
   let timer: ReturnType<typeof setInterval>;
-  let hoveredSeat = $state<{ seatNum: number; guest: Guest | null; x: number; y: number } | null>(null);
   let searching = $state(false);
 
   // Kiosk customization
@@ -74,7 +77,7 @@
     if (wid) setWeddingId(wid);
     timer = setInterval(() => currentTime = new Date(), 1000);
     listGuests().then(g => allGuests = g).catch(() => {});
-    listTables().then(t => tables = t).catch(() => {});
+    getPublicLayout(wid).then(l => { tables = l.tables; elements = l.elements; hallWidth = l.hallWidth; hallHeight = l.hallHeight; }).catch(() => {});
     // Load kiosk customization (public endpoint)
     fetch(`/api/public/weddings/${wid}/kiosk`).then(r => r.ok ? r.json() : null).then(data => {
       if (data) {
@@ -162,10 +165,12 @@
       <!-- Hall Map (full screen) -->
       <HallMap
         tables={tables}
+        {elements}
+        {hallWidth}
+        {hallHeight}
         selectedTableId={selectedGuest.tableId}
         tableGuests={tableGuests}
         dark={false}
-        hoveredSeat={hoveredSeat}
       />
 
       <!-- Info Panel (floating overlay) -->
@@ -341,18 +346,3 @@
     </div>
   {/if}
 </div>
-
-<!-- Hover Tooltip -->
-{#if hoveredSeat}
-  <div
-    class="fixed z-[500] px-3 py-2 bg-gray-900 text-white text-xs rounded-lg shadow-xl pointer-events-none whitespace-nowrap"
-    style="left: {hoveredSeat.x}px; top: {hoveredSeat.y - 12}px; transform: translate(-50%, -100%);"
-  >
-    {#if hoveredSeat.guest}
-      <div class="font-semibold">{hoveredSeat.guest.name}</div>
-      <div class="text-gray-300">Seat {hoveredSeat.seatNum} • {hoveredSeat.guest.pax} pax</div>
-    {:else}
-      <div>Seat {hoveredSeat.seatNum} — Empty</div>
-    {/if}
-  </div>
-{/if}
