@@ -42,12 +42,12 @@
 
   const s = $derived.by(() => {
     const defaults: Record<string, { fill: string; stroke: string; strokeW: number; textFill: string; defaultLabel: string }> = {
-      stage: { fill: '#7F1D1D', stroke: '#D4AF37', strokeW: 2, textFill: '#D4AF37', defaultLabel: 'Stage' },
-      dj_counter: { fill: '#1F2937', stroke: '#4B5563', strokeW: 1, textFill: '#FFFFFF', defaultLabel: 'DJ' },
-      entrance: { fill: '#E5E7EB', stroke: '#9CA3AF', strokeW: 1, textFill: '#6B7280', defaultLabel: 'Entrance' },
-      tv: { fill: '#111827', stroke: '#374151', strokeW: 1, textFill: '#9CA3AF', defaultLabel: 'TV' },
-      walkway: { fill: dark ? '#374151' : '#6B7280', stroke: dark ? '#4B5563' : '#9CA3AF', strokeW: 1, textFill: dark ? '#D1D5DB' : '#374151', defaultLabel: '' },
-      box: { fill: 'transparent', stroke: '#1F2937', strokeW: 2, textFill: dark ? '#D1D5DB' : '#374151', defaultLabel: '' },
+      stage: { fill: '#E5E7EB', stroke: '#000000', strokeW: 2, textFill: '#000000', defaultLabel: 'Stage' },
+      dj_counter: { fill: '#E5E7EB', stroke: '#000000', strokeW: 1, textFill: '#000000', defaultLabel: 'DJ' },
+      entrance: { fill: '#E5E7EB', stroke: '#000000', strokeW: 1, textFill: '#000000', defaultLabel: 'Entrance' },
+      tv: { fill: '#E5E7EB', stroke: '#000000', strokeW: 1, textFill: '#000000', defaultLabel: 'TV' },
+      walkway: { fill: '#E5E7EB', stroke: '#000000', strokeW: 1, textFill: '#000000', defaultLabel: '' },
+      box: { fill: '#E5E7EB', stroke: '#000000', strokeW: 2, textFill: '#000000', defaultLabel: '' },
     };
     const d = defaults[element.type] ?? defaults.box;
     return {
@@ -55,10 +55,22 @@
       stroke: element.strokeColor || d.stroke,
       strokeW: d.strokeW,
       textFill: element.textColor || d.textFill,
-      opacity: element.opacity > 0 ? element.opacity : 1,
+      fillOpacity: element.opacity > 0 ? element.opacity : 1,
       label: element.label || d.defaultLabel,
     };
   });
+
+  // Convert hex to rgba with alpha for fill-only opacity
+  function hexToRgba(hex: string, alpha: number): string {
+    if (!hex || hex === 'transparent') return 'transparent';
+    const h = hex.replace('#', '');
+    const r = parseInt(h.substring(0, 2), 16);
+    const g = parseInt(h.substring(2, 4), 16);
+    const b = parseInt(h.substring(4, 6), 16);
+    return `rgba(${r},${g},${b},${alpha})`;
+  }
+
+  const fillColor = $derived(hexToRgba(s.fill, s.fillOpacity));
 </script>
 
 {#if Group && Rect && KText}
@@ -77,10 +89,9 @@
       y={-h / 2}
       width={w}
       height={h}
-      fill={s.fill}
+      fill={fillColor}
       stroke={s.stroke}
       strokeWidth={s.strokeW}
-      opacity={s.opacity}
       cornerRadius={4}
     />
     {#if s.label && element.type !== 'box'}
