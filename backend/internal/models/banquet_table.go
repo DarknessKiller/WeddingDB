@@ -11,8 +11,9 @@ type BanquetTable struct {
 	WeddingID uuid.UUID `gorm:"type:uuid;index;not null" json:"weddingId"`
 	Name      string    `gorm:"size:100;not null" json:"name"`
 	Capacity  int       `gorm:"not null" json:"capacity"`
-	Row       int       `gorm:"not null;default:1" json:"row"`
-	Col       int       `gorm:"not null;default:1" json:"col"`
+	X         float64   `gorm:"not null;default:0" json:"x"`
+	Y         float64   `gorm:"not null;default:0" json:"y"`
+	Degree    float64   `gorm:"not null;default:0" json:"degree"`
 	IsVip     bool      `json:"isVip"`
 	CreatedAt time.Time `json:"createdAt"`
 	UpdatedAt time.Time `json:"updatedAt"`
