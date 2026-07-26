@@ -41,14 +41,18 @@
   let containerW = $state(800);
   let containerH = $state(600);
 
+  // ponytail: 3 separate svelte-konva imports; consolidate via props if load time matters
   let KonvaStage: any = $state(null);
   let KLayer: any = $state(null);
 
-  let viewScale = $derived(Math.min(containerW / hallWidth, containerH / hallHeight, 1));
+  let viewScale = $derived(Math.min(containerW / hallWidth, containerH / hallHeight));
 
   onMount(() => {
+    let wheelCleanup: (() => void) | null = null;
+    let ro: ResizeObserver | null = null;
+
     if (containerEl) {
-      const ro = new ResizeObserver(entries => {
+      ro = new ResizeObserver(entries => {
         for (const entry of entries) {
           containerW = entry.contentRect.width;
           containerH = entry.contentRect.height;
@@ -62,10 +66,9 @@
       KonvaStage = mod.Stage;
       KLayer = mod.Layer;
 
-      // Attach wheel to canvas for preventDefault
       const canvas = containerEl?.querySelector('canvas');
       if (canvas) {
-        canvas.addEventListener('wheel', (e: WheelEvent) => {
+        const handler = (e: WheelEvent) => {
           e.preventDefault();
           const delta = e.deltaY > 0 ? -0.08 : 0.08;
           const newZoom = Math.max(0.3, Math.min(3, zoom + delta));
@@ -76,9 +79,16 @@
           panX = mx - scale * (mx - panX);
           panY = my - scale * (my - panY);
           zoom = newZoom;
-        }, { passive: false });
+        };
+        canvas.addEventListener('wheel', handler, { passive: false });
+        wheelCleanup = () => canvas.removeEventListener('wheel', handler);
       }
     })();
+
+    return () => {
+      ro?.disconnect();
+      wheelCleanup?.();
+    };
   });
 
   function handleMouseDown(e: MouseEvent) {

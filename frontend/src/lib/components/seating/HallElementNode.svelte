@@ -44,7 +44,12 @@
       y={-h / 2}
       width={w}
       height={h}
-      fill={s.fill}
+      fill={element.type === 'stage' ? undefined : s.fill}
+      fillRadialGradientStartPoint={element.type === 'stage' ? { x: 0, y: 0 } : undefined}
+      fillRadialGradientStartRadius={element.type === 'stage' ? 0 : undefined}
+      fillRadialGradientEndPoint={element.type === 'stage' ? { x: 0, y: 0 } : undefined}
+      fillRadialGradientEndRadius={element.type === 'stage' ? Math.max(w, h) : undefined}
+      fillRadialGradientColorStops={element.type === 'stage' ? [0, '#A11217', 1, '#7F1D1D'] : undefined}
       stroke={s.stroke}
       strokeWidth={s.strokeW}
       cornerRadius={element.type === 'stage' ? [0, 0, 8, 8] : element.type === 'entrance' ? [8, 8, 0, 0] : 4}

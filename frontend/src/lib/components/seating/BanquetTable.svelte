@@ -103,8 +103,8 @@
 
     <!-- Occupancy ring arc -->
     <Arc
-      innerRadius={RING_R - 1.5}
-      outerRadius={RING_R + 1.5}
+      innerRadius={37}
+      outerRadius={40}
       angle={360 * occupancyPct}
       rotation={-90}
       fill={ringColor}
