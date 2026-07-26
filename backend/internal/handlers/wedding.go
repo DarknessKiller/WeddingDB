@@ -111,6 +111,7 @@ type KioskSettingsRequest struct {
 	KioskLogoSize       string `json:"kioskLogoSize"`
 	KioskLogoPosX       string `json:"kioskLogoPosX"`
 	KioskLogoPosY       string `json:"kioskLogoPosY"`
+	ShowSeatNumbers     *bool  `json:"showSeatNumbers"`
 }
 
 func (h *WeddingHandler) UpdateKioskSettings(c fuego.ContextWithBody[KioskSettingsRequest]) (any, error) {
@@ -137,6 +138,9 @@ func (h *WeddingHandler) UpdateKioskSettings(c fuego.ContextWithBody[KioskSettin
 	w.KioskLogoSize = body.KioskLogoSize
 	w.KioskLogoPosX = body.KioskLogoPosX
 	w.KioskLogoPosY = body.KioskLogoPosY
+	if body.ShowSeatNumbers != nil {
+		w.ShowSeatNumbers = *body.ShowSeatNumbers
+	}
 	if err := h.weddingService.Update(w); err != nil {
 		return nil, fuego.InternalServerError{Title: "Failed to update kiosk settings"}
 	}

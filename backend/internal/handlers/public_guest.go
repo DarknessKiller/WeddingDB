@@ -79,6 +79,7 @@ func (h *PublicKioskHandler) GetKioskSettings(c fuego.ContextWithBody[any]) (any
 		"kioskLogoSize":       w.KioskLogoSize,
 		"kioskLogoPosX":       w.KioskLogoPosX,
 		"kioskLogoPosY":       w.KioskLogoPosY,
+		"showSeatNumbers":     w.ShowSeatNumbers,
 		"name":                w.Name,
 	}, nil
 }
