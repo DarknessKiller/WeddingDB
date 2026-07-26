@@ -318,6 +318,20 @@
   />
 {/if}
 
+{#if mode === 'edit'}
+  <EditToolbar
+    hallWidth={editHallWidth}
+    hallHeight={editHallHeight}
+    {selectedId}
+    onSave={handleSave}
+    onCancel={handleCancel}
+    onDelete={handleDeleteSelected}
+    onAddElement={handleAddElement}
+    onWidthChange={(w) => editHallWidth = w}
+    onHeightChange={(h) => editHallHeight = h}
+  />
+{/if}
+
 <div
   bind:this={containerEl}
   class="relative flex-1 overflow-hidden select-none min-h-[300px] {dark ? 'bg-gray-950' : 'bg-gray-50'}"
