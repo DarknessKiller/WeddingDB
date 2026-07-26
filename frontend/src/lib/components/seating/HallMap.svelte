@@ -162,19 +162,25 @@
     };
   });
 
-  function handleMouseDown(e: MouseEvent) {
-    if (e.button !== 0) return;
-    isDragging = true;
-    dragStart = { x: e.clientX - panX, y: e.clientY - panY };
+  function handleStageMouseDown(e: any) {
+    // Only pan when clicking on stage background, not on elements
+    if (e.target === e.target.getStage()) {
+      isDragging = true;
+      const pos = e.target.getPointerPosition();
+      dragStart = { x: pos.x - panX, y: pos.y - panY };
+    }
   }
 
-  function handleMouseMove(e: MouseEvent) {
+  function handleStageMouseMove(e: any) {
     if (!isDragging) return;
-    panX = e.clientX - dragStart.x;
-    panY = e.clientY - dragStart.y;
+    const pos = e.target.getPointerPosition();
+    if (pos) {
+      panX = pos.x - dragStart.x;
+      panY = pos.y - dragStart.y;
+    }
   }
 
-  function handleMouseUp() {
+  function handleStageMouseUp() {
     isDragging = false;
   }
 
@@ -185,19 +191,18 @@
   }
 
   let touchStart = { x: 0, y: 0 };
-  function handleTouchStart(e: TouchEvent) {
+  function handleStageTouchStart(e: any) {
     if (e.touches.length === 1) {
       isDragging = true;
       touchStart = { x: e.touches[0].clientX - panX, y: e.touches[0].clientY - panY };
     }
   }
-  function handleTouchMove(e: TouchEvent) {
+  function handleStageTouchMove(e: any) {
     if (!isDragging || e.touches.length !== 1) return;
-    e.preventDefault();
     panX = e.touches[0].clientX - touchStart.x;
     panY = e.touches[0].clientY - touchStart.y;
   }
-  function handleTouchEnd() {
+  function handleStageTouchEnd() {
     isDragging = false;
   }
 
@@ -294,8 +299,6 @@
   const offsetY = $derived((stageH - contentH) / 2);
 </script>
 
-<svelte:window onmousemove={handleMouseMove} onmouseup={handleMouseUp} />
-
 {#if mode === 'edit'}
   <EditToolbar
     hallWidth={editHallWidth}
@@ -318,10 +321,6 @@
   class="relative flex-1 overflow-hidden select-none min-h-[300px] {dark ? 'bg-gray-950' : 'bg-gray-50'}"
   class:cursor-grab={!isDragging}
   class:cursor-grabbing={isDragging}
-  onmousedown={handleMouseDown}
-  ontouchstart={handleTouchStart}
-  ontouchmove={handleTouchMove}
-  ontouchend={handleTouchEnd}
   role="application"
   aria-label="Banquet hall seating map"
 >
@@ -356,6 +355,12 @@
       x={panX}
       y={panY}
       onclick={handleStageClick}
+      onmousedown={handleStageMouseDown}
+      onmousemove={handleStageMouseMove}
+      onmouseup={handleStageMouseUp}
+      ontouchstart={handleStageTouchStart}
+      ontouchmove={handleStageTouchMove}
+      ontouchend={handleStageTouchEnd}
     >
       <KLayer>
         <KGroup x={offsetX} y={offsetY} scaleX={viewScale * zoom} scaleY={viewScale * zoom}>
