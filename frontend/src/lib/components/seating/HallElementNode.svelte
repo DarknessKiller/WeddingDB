@@ -41,7 +41,7 @@
   });
 
   const s = $derived.by(() => {
-    const styleMap: Record<string, { fill: string; stroke: string; strokeW: number; textFill: string; defaultLabel: string }> = {
+    const defaults: Record<string, { fill: string; stroke: string; strokeW: number; textFill: string; defaultLabel: string }> = {
       stage: { fill: '#7F1D1D', stroke: '#D4AF37', strokeW: 2, textFill: '#D4AF37', defaultLabel: 'Stage' },
       dj_counter: { fill: '#1F2937', stroke: '#4B5563', strokeW: 1, textFill: '#FFFFFF', defaultLabel: 'DJ' },
       entrance: { fill: '#E5E7EB', stroke: '#9CA3AF', strokeW: 1, textFill: '#6B7280', defaultLabel: 'Entrance' },
@@ -49,9 +49,15 @@
       walkway: { fill: dark ? '#374151' : '#6B7280', stroke: dark ? '#4B5563' : '#9CA3AF', strokeW: 1, textFill: dark ? '#D1D5DB' : '#374151', defaultLabel: '' },
       box: { fill: 'transparent', stroke: '#1F2937', strokeW: 2, textFill: dark ? '#D1D5DB' : '#374151', defaultLabel: '' },
     };
-    const st = styleMap[element.type] ?? styleMap.box;
-    const fill = element.color || st.fill;
-    return { ...st, fill, label: element.label || st.defaultLabel };
+    const d = defaults[element.type] ?? defaults.box;
+    return {
+      fill: element.color || d.fill,
+      stroke: element.strokeColor || d.stroke,
+      strokeW: d.strokeW,
+      textFill: element.textColor || d.textFill,
+      opacity: element.opacity > 0 ? element.opacity : 1,
+      label: element.label || d.defaultLabel,
+    };
   });
 </script>
 
@@ -71,15 +77,11 @@
       y={-h / 2}
       width={w}
       height={h}
-      fill={element.type === 'stage' ? undefined : s.fill}
-      fillRadialGradientStartPoint={element.type === 'stage' ? { x: 0, y: 0 } : undefined}
-      fillRadialGradientStartRadius={element.type === 'stage' ? 0 : undefined}
-      fillRadialGradientEndPoint={element.type === 'stage' ? { x: 0, y: 0 } : undefined}
-      fillRadialGradientEndRadius={element.type === 'stage' ? Math.max(w, h) : undefined}
-      fillRadialGradientColorStops={element.type === 'stage' ? [0, '#A11217', 1, '#7F1D1D'] : undefined}
+      fill={s.fill}
       stroke={s.stroke}
       strokeWidth={s.strokeW}
-      cornerRadius={element.type === 'stage' ? [0, 0, 8, 8] : element.type === 'entrance' ? [8, 8, 0, 0] : 4}
+      opacity={s.opacity}
+      cornerRadius={4}
     />
     {#if s.label && element.type !== 'box'}
       <KText

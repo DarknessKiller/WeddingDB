@@ -51,6 +51,9 @@
       height: d.h,
       label: d.label,
       color: '',
+      textColor: '',
+      strokeColor: '',
+      opacity: 1,
       zIndex: 10,
     });
   }
@@ -184,9 +187,9 @@
           class="w-24 px-1.5 py-1 border border-gray-200 rounded-lg"
         />
       </div>
-      <!-- Color -->
+      <!-- Fill Color -->
       <div class="flex items-center gap-1">
-        <label for="sel-color" class="text-gray-500">Color</label>
+        <label for="sel-color" class="text-gray-500">Fill</label>
         <input
           id="sel-color"
           type="color"
@@ -194,6 +197,43 @@
           oninput={(e) => onUpdateSelected({ color: e.currentTarget.value })}
           class="w-7 h-7 border border-gray-200 rounded cursor-pointer"
         />
+      </div>
+      <!-- Stroke Color -->
+      <div class="flex items-center gap-1">
+        <label for="sel-stroke" class="text-gray-500">Outline</label>
+        <input
+          id="sel-stroke"
+          type="color"
+          value={selectedItem.strokeColor || '#9CA3AF'}
+          oninput={(e) => onUpdateSelected({ strokeColor: e.currentTarget.value })}
+          class="w-7 h-7 border border-gray-200 rounded cursor-pointer"
+        />
+      </div>
+      <!-- Text Color -->
+      <div class="flex items-center gap-1">
+        <label for="sel-text-color" class="text-gray-500">Text</label>
+        <input
+          id="sel-text-color"
+          type="color"
+          value={selectedItem.textColor || '#374151'}
+          oninput={(e) => onUpdateSelected({ textColor: e.currentTarget.value })}
+          class="w-7 h-7 border border-gray-200 rounded cursor-pointer"
+        />
+      </div>
+      <!-- Opacity -->
+      <div class="flex items-center gap-1">
+        <label for="sel-opacity" class="text-gray-500">α</label>
+        <input
+          id="sel-opacity"
+          type="range"
+          min="0"
+          max="1"
+          step="0.05"
+          value={selectedItem.opacity ?? 1}
+          oninput={(e) => onUpdateSelected({ opacity: Number(e.currentTarget.value) })}
+          class="w-16"
+        />
+        <span class="text-gray-400 w-8 text-right">{Math.round((selectedItem.opacity ?? 1) * 100)}%</span>
       </div>
     {/if}
 

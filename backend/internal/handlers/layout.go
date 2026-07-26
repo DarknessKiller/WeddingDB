@@ -26,16 +26,19 @@ type TablePos struct {
 }
 
 type ElementInput struct {
-	ID     string  `json:"id"`
-	Type   string  `json:"type"`
-	X      float64 `json:"x"`
-	Y      float64 `json:"y"`
-	Degree float64 `json:"degree"`
-	Width  float64 `json:"width"`
-	Height float64 `json:"height"`
-	Label  string  `json:"label"`
-	Color  string  `json:"color"`
-	ZIndex int     `json:"zIndex"`
+	ID          string  `json:"id"`
+	Type        string  `json:"type"`
+	X           float64 `json:"x"`
+	Y           float64 `json:"y"`
+	Degree      float64 `json:"degree"`
+	Width       float64 `json:"width"`
+	Height      float64 `json:"height"`
+	Label       string  `json:"label"`
+	Color       string  `json:"color"`
+	TextColor   string  `json:"textColor"`
+	StrokeColor string  `json:"strokeColor"`
+	Opacity     float64 `json:"opacity"`
+	ZIndex      int     `json:"zIndex"`
 }
 
 type LayoutRequest struct {
@@ -104,7 +107,9 @@ func (h *LayoutHandler) Save(c fuego.ContextWithBody[LayoutRequest]) (any, error
 		}
 		el := models.HallElement{
 			Type: e.Type, X: e.X, Y: e.Y, Degree: e.Degree,
-			Width: e.Width, Height: e.Height, Label: e.Label, Color: e.Color, ZIndex: e.ZIndex,
+			Width: e.Width, Height: e.Height, Label: e.Label,
+			Color: e.Color, TextColor: e.TextColor, StrokeColor: e.StrokeColor,
+			Opacity: e.Opacity, ZIndex: e.ZIndex,
 			Name: e.Label,
 		}
 		if e.ID != "" {

@@ -94,6 +94,9 @@ export interface HallElement {
 	height: number;
 	label: string;
 	color: string;
+	textColor: string;
+	strokeColor: string;
+	opacity: number;
 	zIndex: number;
 }
 
