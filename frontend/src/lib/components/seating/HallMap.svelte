@@ -51,6 +51,7 @@
   let KLayer: any = $state(null);
   let KTransformer: any = $state(null);
   let KRect: any = $state(null);
+  let KGroup: any = $state(null);
   let konvaLoaded = $state(false);
 
   // Edit state
@@ -107,6 +108,15 @@
     mode === 'edit' && selectedId !== null && editTables.some(t => t.id === selectedId)
   );
 
+  const selectedItem = $derived(() => {
+    if (!selectedId) return null;
+    const t = editTables.find(t => t.id === selectedId);
+    if (t) return { kind: 'table' as const, ...t };
+    const el = editElements.find(e => e.id === selectedId);
+    if (el) return { kind: 'element' as const, ...el };
+    return null;
+  });
+
   onMount(() => {
     let ro: ResizeObserver | null = null;
 
@@ -126,6 +136,7 @@
       KLayer = mod.Layer;
       KTransformer = mod.Transformer;
       KRect = mod.Rect;
+      KGroup = mod.Group;
       konvaLoaded = true;
 
       // Attach wheel handler after Konva loads and canvas exists
@@ -236,6 +247,19 @@
     editElements = [...editElements, el];
   }
 
+  function handleUpdateSelected(props: Record<string, any>) {
+    if (!selectedId) return;
+    const tidx = editTables.findIndex(t => t.id === selectedId);
+    if (tidx >= 0) {
+      editTables[tidx] = { ...editTables[tidx], ...props };
+      return;
+    }
+    const eidx = editElements.findIndex(el => el.id === selectedId);
+    if (eidx >= 0) {
+      editElements[eidx] = { ...editElements[eidx], ...props };
+    }
+  }
+
   function handleDeleteSelected(id: string) {
     editElements = editElements.filter(el => el.id !== id);
     selectedId = null;
@@ -251,6 +275,12 @@
 
   const stageW = $derived(containerW);
   const stageH = $derived(containerH);
+
+  // Center the hall in the stage
+  const contentW = $derived(displayHallWidth * viewScale);
+  const contentH = $derived(displayHallHeight * viewScale);
+  const offsetX = $derived((stageW - contentW) / 2);
+  const offsetY = $derived((stageH - contentH) / 2);
 </script>
 
 <svelte:window onmousemove={handleMouseMove} onmouseup={handleMouseUp} />
@@ -261,10 +291,12 @@
     hallHeight={editHallHeight}
     {selectedId}
     {isTableSelected}
+    selectedItem={selectedItem()}
     onSave={handleSave}
     onCancel={handleCancel}
     onDelete={handleDeleteSelected}
     onAddElement={handleAddElement}
+    onUpdateSelected={handleUpdateSelected}
     onWidthChange={(w) => editHallWidth = w}
     onHeightChange={(h) => editHallHeight = h}
   />
@@ -310,15 +342,14 @@
     <KonvaStage
       width={stageW}
       height={stageH}
-      scaleX={viewScale * zoom}
-      scaleY={viewScale * zoom}
       x={panX}
       y={panY}
       onclick={handleStageClick}
     >
       <KLayer>
-        <!-- Hall boundary border -->
-        <KRect
+        <KGroup x={offsetX} y={offsetY} scaleX={viewScale * zoom} scaleY={viewScale * zoom}>
+          <!-- Hall boundary border -->
+          <KRect
           x={0}
           y={0}
           width={displayHallWidth}
@@ -376,6 +407,7 @@
             padding={4}
           />
         {/if}
+        </KGroup>
       </KLayer>
     </KonvaStage>
   {/if}

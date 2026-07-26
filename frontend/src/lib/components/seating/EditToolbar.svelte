@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { Plus, Trash2, Save, X } from 'lucide-svelte';
+  import { Plus, Trash2, Save, X, RotateCw, Maximize2 } from 'lucide-svelte';
   import type { HallElement, ElementType } from '$lib/types';
 
   let {
@@ -7,10 +7,12 @@
     hallHeight,
     selectedId = null,
     isTableSelected = false,
+    selectedItem = null,
     onSave,
     onCancel,
     onDelete,
     onAddElement,
+    onUpdateSelected,
     onWidthChange,
     onHeightChange,
   }: {
@@ -18,10 +20,12 @@
     hallHeight: number;
     selectedId?: string | null;
     isTableSelected?: boolean;
+    selectedItem?: any;
     onSave: () => void;
     onCancel: () => void;
     onDelete: (id: string) => void;
     onAddElement: (el: HallElement) => void;
+    onUpdateSelected: (props: Record<string, any>) => void;
     onWidthChange: (w: number) => void;
     onHeightChange: (h: number) => void;
   } = $props();
@@ -81,6 +85,7 @@
     </button>
   {/if}
 
+  <!-- Hall size -->
   <div class="flex items-center gap-1 ml-auto">
     <label for="hall-w" class="text-gray-500">W</label>
     <input
@@ -118,3 +123,92 @@
     <X class="w-3 h-3" /> Cancel
   </button>
 </div>
+
+<!-- Selected item property editor -->
+{#if selectedItem}
+  <div class="flex flex-wrap items-center gap-3 px-3 py-2 bg-gray-50 border-b border-gray-200 text-xs">
+    <span class="font-semibold text-gray-500">
+      {selectedItem.kind === 'table' ? `Table: ${selectedItem.name}` : `${selectedItem.type}`}
+    </span>
+
+    <!-- Degree (both tables and elements) -->
+    <div class="flex items-center gap-1">
+      <RotateCw class="w-3 h-3 text-gray-400" />
+      <label for="sel-degree" class="text-gray-500">°</label>
+      <input
+        id="sel-degree"
+        type="number"
+        value={selectedItem.degree ?? 0}
+        onchange={(e) => onUpdateSelected({ degree: Number(e.currentTarget.value) })}
+        class="w-14 px-1.5 py-1 border border-gray-200 rounded-lg text-center"
+        min="0"
+        max="360"
+        step="15"
+      />
+    </div>
+
+    <!-- Width + Height (elements only) -->
+    {#if selectedItem.kind === 'element'}
+      <div class="flex items-center gap-1">
+        <Maximize2 class="w-3 h-3 text-gray-400" />
+        <label for="sel-w" class="text-gray-500">W</label>
+        <input
+          id="sel-w"
+          type="number"
+          value={selectedItem.width ?? 10}
+          onchange={(e) => onUpdateSelected({ width: Number(e.currentTarget.value) })}
+          class="w-14 px-1.5 py-1 border border-gray-200 rounded-lg text-center"
+          min="1"
+          max="100"
+        />
+        <label for="sel-h" class="text-gray-500 ml-1">H</label>
+        <input
+          id="sel-h"
+          type="number"
+          value={selectedItem.height ?? 10}
+          onchange={(e) => onUpdateSelected({ height: Number(e.currentTarget.value) })}
+          class="w-14 px-1.5 py-1 border border-gray-200 rounded-lg text-center"
+          min="1"
+          max="100"
+        />
+      </div>
+      <!-- Label -->
+      <div class="flex items-center gap-1">
+        <label for="sel-label" class="text-gray-500">Label</label>
+        <input
+          id="sel-label"
+          type="text"
+          value={selectedItem.label ?? ''}
+          oninput={(e) => onUpdateSelected({ label: e.currentTarget.value })}
+          class="w-24 px-1.5 py-1 border border-gray-200 rounded-lg"
+        />
+      </div>
+    {/if}
+
+    <!-- Table-specific: capacity, VIP -->
+    {#if selectedItem.kind === 'table'}
+      <div class="flex items-center gap-1">
+        <label for="sel-cap" class="text-gray-500">Seats</label>
+        <input
+          id="sel-cap"
+          type="number"
+          value={selectedItem.capacity ?? 10}
+          onchange={(e) => onUpdateSelected({ capacity: Number(e.currentTarget.value) })}
+          class="w-14 px-1.5 py-1 border border-gray-200 rounded-lg text-center"
+          min="1"
+          max="50"
+        />
+      </div>
+      <div class="flex items-center gap-1">
+        <label for="sel-vip" class="text-gray-500">VIP</label>
+        <input
+          id="sel-vip"
+          type="checkbox"
+          checked={selectedItem.isVip ?? false}
+          onchange={(e) => onUpdateSelected({ isVip: e.currentTarget.checked })}
+          class="rounded"
+        />
+      </div>
+    {/if}
+  </div>
+{/if}
