@@ -26,7 +26,6 @@
   let editMode = $state(false);
 
   let selectedTableId = $state<string | null>(null);
-  let hoveredSeat = $state<{ seatNum: number; guest: Guest | null; x: number; y: number } | null>(null);
   let showMobilePanel = $state(false);
   let guestSearch = $state('');
   let unassignedGuests = $state<Guest[]>([]);
@@ -248,7 +247,6 @@
     onSeatClick={editMode ? undefined : handleSeatClick}
     onSaveLayout={handleSaveLayout}
     onCancelEdit={handleCancelEdit}
-    bind:hoveredSeat
   />
 
   <!-- Desktop Side Panel -->
@@ -296,7 +294,7 @@
           {@const seatNum = seatIdx + 1}
           {@const guest = selectedTableGuests.find(g => g.seatNumber !== null && seatNum >= g.seatNumber && seatNum < g.seatNumber + g.pax)}
           <button
-            class="w-full flex items-center gap-3 p-2.5 rounded-xl transition-all duration-150 text-left {guest ? 'hover:bg-gray-50' : 'hover:bg-gray-50/50'} {hoveredSeat?.seatNum === seatNum ? 'bg-gold-50 ring-1 ring-gold-200' : ''}"
+            class="w-full flex items-center gap-3 p-2.5 rounded-xl transition-all duration-150 text-left {guest ? 'hover:bg-gray-50' : 'hover:bg-gray-50/50'}"
             onclick={() => {
               if (guest) {
                 $selectedGuest = guest;
@@ -428,7 +426,7 @@
             {@const seatNum = seatIdx + 1}
             {@const guest = selectedTableGuests.find(g => g.seatNumber !== null && seatNum >= g.seatNumber && seatNum < g.seatNumber + g.pax)}
             <button
-              class="flex items-center gap-2 p-2 rounded-lg text-left {hoveredSeat?.seatNum === seatNum ? 'bg-gold-50' : guest ? 'bg-gray-50' : 'bg-white border border-gray-100'}"
+              class="flex items-center gap-2 p-2 rounded-lg text-left {guest ? 'bg-gray-50' : 'bg-white border border-gray-100'}"
               onclick={() => { if (guest) { $selectedGuest = guest; $isDrawerOpen = true; } }}
             >
               <div class={cn(
@@ -454,21 +452,6 @@
     </div>
   {/if}
 </div>
-
-<!-- Hover Tooltip -->
-{#if hoveredSeat && !editMode}
-  <div
-    class="fixed z-[500] px-3 py-2 bg-gray-900 text-white text-xs rounded-lg shadow-xl pointer-events-none whitespace-nowrap"
-    style="left: {hoveredSeat.x}px; top: {hoveredSeat.y - 12}px; transform: translate(-50%, -100%);"
-  >
-    {#if hoveredSeat.guest}
-      <div class="font-semibold">{hoveredSeat.guest.name}</div>
-      <div class="text-gray-300">Seat {hoveredSeat.seatNum} • {hoveredSeat.guest.pax} pax</div>
-    {:else}
-      <div>Seat {hoveredSeat.seatNum} — Empty</div>
-    {/if}
-  </div>
-{/if}
 
 {/if}
 

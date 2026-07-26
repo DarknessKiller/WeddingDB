@@ -90,11 +90,13 @@ func Init(env config.Env) *App {
 		}
 		var weddingIDs []uuid.UUID
 		if err := db.Model(&models.BanquetTable{}).Distinct().Pluck("wedding_id", &weddingIDs).Error; err != nil {
-			log.Println("Warning: pluck wedding_ids for row/col migration:", err)
+			log.Fatal("row/col migration: pluck wedding_ids failed:", err)
 		}
 		for _, wid := range weddingIDs {
 			var rows []legacyTable
-			db.Table("banquet_tables").Select("id, row, col").Where("wedding_id = ?", wid).Scan(&rows)
+			if err := db.Table("banquet_tables").Select("id, row, col").Where("wedding_id = ?", wid).Scan(&rows).Error; err != nil {
+				log.Fatal("row/col migration: scan rows for wedding ", wid, ":", err)
+			}
 			ids := make([]uuid.UUID, len(rows))
 			r := make([]int, len(rows))
 			c := make([]int, len(rows))

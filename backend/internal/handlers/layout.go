@@ -77,6 +77,17 @@ func (h *LayoutHandler) Save(c fuego.ContextWithBody[LayoutRequest]) (any, error
 		return nil, fuego.BadRequestError{Title: "Invalid request"}
 	}
 	wid := DecodeWID(c)
+	if body.HallWidth <= 0 || body.HallHeight <= 0 {
+		return nil, fuego.BadRequestError{Title: "HallWidth and HallHeight must be > 0"}
+	}
+	for _, e := range body.Elements {
+		if e.X < 0 || e.X > 100 || e.Y < 0 || e.Y > 100 {
+			return nil, fuego.BadRequestError{Title: "Element X/Y must be 0–100"}
+		}
+		if e.Width <= 0 || e.Height <= 0 {
+			return nil, fuego.BadRequestError{Title: "Element Width/Height must be > 0"}
+		}
+	}
 	tablePos := make(map[uuid.UUID][3]float64, len(body.Tables))
 	for _, t := range body.Tables {
 		id, err := uuid.Parse(t.ID)
