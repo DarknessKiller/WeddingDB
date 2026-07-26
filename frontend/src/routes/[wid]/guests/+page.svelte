@@ -122,6 +122,10 @@
     loading = true;
     try {
       guests = await searchGuests(wid, searchQuery);
+      currentPage = 0;
+      cursors = [];
+      totalGuests = guests.length;
+      nextCursor = null;
     } catch (e: any) {
       addToast(e.message ?? 'Search failed', 'error');
     } finally {
@@ -135,6 +139,8 @@
     if (q) {
       timer = setTimeout(() => handleSearch(), 300);
     } else {
+      currentPage = 0;
+      cursors = [];
       loadGuests();
     }
     return () => clearTimeout(timer);
