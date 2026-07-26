@@ -324,10 +324,12 @@
     hallHeight={editHallHeight}
     {selectedId}
     {isTableSelected}
+    selectedItem={selectedItem()}
     onSave={handleSave}
     onCancel={handleCancel}
     onDelete={handleDeleteSelected}
     onAddElement={handleAddElement}
+    onUpdateSelected={handleUpdateSelected}
     onWidthChange={(w) => editHallWidth = w}
     onHeightChange={(h) => editHallHeight = h}
   />
