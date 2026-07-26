@@ -163,7 +163,6 @@
   });
 
   function handleMouseDown(e: MouseEvent) {
-    if (mode === 'edit') return;
     if (e.button !== 0) return;
     isDragging = true;
     dragStart = { x: e.clientX - panX, y: e.clientY - panY };
@@ -187,7 +186,6 @@
 
   let touchStart = { x: 0, y: 0 };
   function handleTouchStart(e: TouchEvent) {
-    if (mode === 'edit') return;
     if (e.touches.length === 1) {
       isDragging = true;
       touchStart = { x: e.touches[0].clientX - panX, y: e.touches[0].clientY - panY };
@@ -318,8 +316,8 @@
 <div
   bind:this={containerEl}
   class="relative flex-1 overflow-hidden select-none min-h-[300px] {dark ? 'bg-gray-950' : 'bg-gray-50'}"
-  class:cursor-grab={mode !== 'edit' && !isDragging}
-  class:cursor-grabbing={mode !== 'edit' && isDragging}
+  class:cursor-grab={!isDragging}
+  class:cursor-grabbing={isDragging}
   onmousedown={handleMouseDown}
   ontouchstart={handleTouchStart}
   ontouchmove={handleTouchMove}

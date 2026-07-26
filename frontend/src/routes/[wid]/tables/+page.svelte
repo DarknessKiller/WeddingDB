@@ -228,7 +228,7 @@
   </div>
 
   {#if editMode}
-    <div class="mb-4 rounded-2xl overflow-hidden border border-gray-200" style="height: 600px;">
+    <div class="mb-4 rounded-2xl overflow-hidden border border-gray-200 flex flex-col" style="height: 600px;">
       <HallMap
         mode="edit"
         {tables}

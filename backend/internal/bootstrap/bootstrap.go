@@ -81,44 +81,7 @@ func Init(env config.Env) *App {
 	db.Exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_admin_users_email ON admin_users (email)")
 	db.Exec("CREATE INDEX IF NOT EXISTS idx_banquet_tables_wedding_name ON banquet_tables (wedding_id, name)")
 
-	// ponytail: one-time row/col -> x/y backfill + default hall elements (idempotent)
-	if db.Migrator().HasColumn(&models.BanquetTable{}, "Row") {
-		type legacyTable struct {
-			ID  uuid.UUID
-			Row int
-			Col int
-		}
-		var weddingIDs []uuid.UUID
-		if err := db.Model(&models.BanquetTable{}).Distinct().Pluck("wedding_id", &weddingIDs).Error; err != nil {
-			log.Fatal("row/col migration: pluck wedding_ids failed:", err)
-		}
-		for _, wid := range weddingIDs {
-			var rows []legacyTable
-			// Only backfill tables where x and y are both 0 (not already set)
-			if err := db.Table("banquet_tables").Select("id, row, col").Where("wedding_id = ? AND x = 0 AND y = 0", wid).Scan(&rows).Error; err != nil {
-				log.Fatal("row/col migration: scan rows for wedding ", wid, ":", err)
-			}
-			if len(rows) == 0 {
-				continue
-			}
-			ids := make([]uuid.UUID, len(rows))
-			r := make([]int, len(rows))
-			c := make([]int, len(rows))
-			for i, t := range rows {
-				ids[i], r[i], c[i] = t.ID, t.Row, t.Col
-			}
-			for id, pos := range models.RowColToXY(ids, r, c) {
-				db.Model(&models.BanquetTable{}).Where("id = ?", id).Updates(map[string]any{"x": pos[0], "y": pos[1]})
-			}
-		}
-		if err := db.Migrator().DropColumn(&models.BanquetTable{}, "Row"); err != nil {
-			log.Println("Warning: drop row column:", err)
-		}
-		if err := db.Migrator().DropColumn(&models.BanquetTable{}, "Col"); err != nil {
-			log.Println("Warning: drop col column:", err)
-		}
-	}
-	// Backfill element Name from Label where Name is empty
+	// Sync element Name from Label (DB has NOT NULL name column)
 	db.Model(&models.HallElement{}).Where("name = '' OR name IS NULL").Update("name", gorm.Expr("label"))
 	// Seed default elements for weddings that have none
 	var allWeddings []uuid.UUID
