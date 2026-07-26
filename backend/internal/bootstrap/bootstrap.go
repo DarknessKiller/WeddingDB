@@ -56,6 +56,7 @@ func Init(env config.Env) *App {
 		&models.GuestRecord{},
 		&models.RefreshToken{},
 		&models.UserWedding{},
+		&models.HallElement{},
 	); err != nil {
 		log.Fatal("Failed to migrate database:", err)
 	}
@@ -79,6 +80,46 @@ func Init(env config.Env) *App {
 	// ponytail: FK lookup indexes
 	db.Exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_admin_users_email ON admin_users (email)")
 	db.Exec("CREATE INDEX IF NOT EXISTS idx_banquet_tables_wedding_name ON banquet_tables (wedding_id, name)")
+
+	// ponytail: one-time row/col -> x/y backfill + default hall elements (idempotent)
+	if db.Migrator().HasColumn(&models.BanquetTable{}, "Row") {
+		type legacyTable struct {
+			ID  uuid.UUID
+			Row int
+			Col int
+		}
+		var weddingIDs []uuid.UUID
+		db.Model(&models.BanquetTable{}).Distinct().Pluck("wedding_id", &weddingIDs)
+		for _, wid := range weddingIDs {
+			var rows []legacyTable
+			db.Table("banquet_tables").Select("id, row, col").Where("wedding_id = ?", wid).Scan(&rows)
+			ids := make([]uuid.UUID, len(rows))
+			r := make([]int, len(rows))
+			c := make([]int, len(rows))
+			for i, t := range rows {
+				ids[i], r[i], c[i] = t.ID, t.Row, t.Col
+			}
+			for id, pos := range models.RowColToXY(ids, r, c) {
+				db.Model(&models.BanquetTable{}).Where("id = ?", id).Updates(map[string]any{"x": pos[0], "y": pos[1]})
+			}
+		}
+		if err := db.Migrator().DropColumn(&models.BanquetTable{}, "Row"); err != nil {
+			log.Println("Warning: drop row column:", err)
+		}
+		if err := db.Migrator().DropColumn(&models.BanquetTable{}, "Col"); err != nil {
+			log.Println("Warning: drop col column:", err)
+		}
+	}
+	// Seed default elements for weddings that have none
+	var allWeddings []uuid.UUID
+	db.Model(&models.WeddingEvent{}).Pluck("id", &allWeddings)
+	for _, wid := range allWeddings {
+		var n int64
+		db.Model(&models.HallElement{}).Where("wedding_id = ?", wid).Count(&n)
+		if n == 0 {
+			db.Create(models.DefaultElements(wid))
+		}
+	}
 
 	redisAddr := env.RedisURL
 	if redisAddr == "" {
