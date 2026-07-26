@@ -104,6 +104,7 @@ func (h *LayoutHandler) Save(c fuego.ContextWithBody[LayoutRequest]) (any, error
 		el := models.HallElement{
 			Type: e.Type, X: e.X, Y: e.Y, Degree: e.Degree,
 			Width: e.Width, Height: e.Height, Label: e.Label, ZIndex: e.ZIndex,
+			Name: e.Label,
 		}
 		if e.ID != "" {
 			id, err := uuid.Parse(e.ID)

@@ -20,6 +20,7 @@ func ValidElementType(t string) bool {
 type HallElement struct {
 	ID        uuid.UUID `gorm:"type:uuid;primaryKey;default:gen_random_uuid()" json:"id"`
 	WeddingID uuid.UUID `gorm:"type:uuid;index;not null" json:"weddingId"`
+	Name      string    `gorm:"size:255;not null" json:"-"`
 	Type      string    `gorm:"size:20;not null" json:"type"`
 	X         float64   `gorm:"not null;default:0" json:"x"`
 	Y         float64   `gorm:"not null;default:0" json:"y"`
