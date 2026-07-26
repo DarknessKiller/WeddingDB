@@ -6,15 +6,19 @@
   import { CheckCircle2, AlertCircle } from 'lucide-svelte';
   import { listGuests, createGuest, type GuestResponse } from '$lib/api/guests';
   import { listTables } from '$lib/api/tables';
+  import { getLayout } from '$lib/api/layout';
   import { weddingId } from '$lib/stores/weddingId';
   import { get } from 'svelte/store';
   import { onMount } from 'svelte';
-  import type { BanquetTable, Guest, RSVPStatus } from '$lib/types';
+  import type { BanquetTable, Guest, HallElement, RSVPStatus } from '$lib/types';
   import HallMap from '$lib/components/seating/HallMap.svelte';
   import { encodeId } from '$lib/utils/encode';
 
   let apiTables = $state<BanquetTable[]>([]);
   let apiGuests = $state<Guest[]>([]);
+  let elements = $state<HallElement[]>([]);
+  let hallWidth = $state(860);
+  let hallHeight = $state(1000);
   let dataLoaded = $state(false);
 
   function mapGuest(r: GuestResponse): Guest {
@@ -41,9 +45,12 @@
   onMount(async () => {
     const wid = get(weddingId);
     try {
-      const [tablesRes, guestsRes] = await Promise.all([listTables(wid), listGuests(wid)]);
+      const [tablesRes, guestsRes, layout] = await Promise.all([listTables(wid), listGuests(wid), getLayout(wid)]);
       apiTables = tablesRes;
       apiGuests = guestsRes.guests.map(mapGuest);
+      elements = layout.elements;
+      hallWidth = layout.hallWidth;
+      hallHeight = layout.hallHeight;
       dataLoaded = true;
     } catch (e) {
       addToast('Failed to load data', 'error');
@@ -242,6 +249,9 @@
     {#if apiTables.length > 0}
       <HallMap
         tables={apiTables}
+        {elements}
+        {hallWidth}
+        {hallHeight}
         tableGuests={tableGuests}
         selectedTableId={form.tableId}
         onTableClick={handleTableClick}

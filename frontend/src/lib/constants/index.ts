@@ -1,14 +1,3 @@
-import type { HallLayout } from '$lib/types';
-
-export const HALL_LAYOUT: HallLayout = {
-	width: 860,
-	height: 1000,
-	stageTop: 0,
-	stageHeight: 60,
-	entranceBottom: 1000,
-	aisleWidth: 40
-};
-
 export const DIETARY_OPTIONS = [
 	'Vegetarian',
 	'Vegan',

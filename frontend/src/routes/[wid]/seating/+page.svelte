@@ -5,23 +5,27 @@
   import { goto } from '$app/navigation';
   import { listGuests, assignSeat, type GuestResponse } from '$lib/api/guests';
   import { getOccupancy, listTables } from '$lib/api/tables';
+  import { getLayout, saveLayout } from '$lib/api/layout';
   import Badge from '$lib/components/ui/Badge.svelte';
   import { cn } from '$lib/utils';
   import { page } from '$app/state';
   import { onMount } from 'svelte';
-  import { Users, Star, X, Search, AlertCircle, Plus } from 'lucide-svelte';
+  import { Users, Star, X, Search, AlertCircle, Plus, Map } from 'lucide-svelte';
   import { get } from 'svelte/store';
-  import type { BanquetTable, Guest, RSVPStatus, TableOccupancy } from '$lib/types';
+  import type { BanquetTable, Guest, RSVPStatus, TableOccupancy, HallElement } from '$lib/types';
 
   let allGuests = $state<Guest[]>([]);
   let allTables = $state<BanquetTable[]>([]);
-  let occupancyData = $state.raw<Map<string, number>>(new Map());
+  let elements = $state<HallElement[]>([]);
+  let hallWidth = $state(860);
+  let hallHeight = $state(1000);
+  let occupancyData: Record<string, number> = $state.raw({});
   let loading = $state(true);
   let errored = $state(false);
   let error = $state<string | null>(null);
+  let editMode = $state(false);
 
   let selectedTableId = $state<string | null>(null);
-  let hoveredSeat = $state<{ seatNum: number; guest: Guest | null; x: number; y: number } | null>(null);
   let showMobilePanel = $state(false);
   let guestSearch = $state('');
   let unassignedGuests = $state<Guest[]>([]);
@@ -60,16 +64,23 @@
 
   async function loadData() {
     const wid = get(weddingId);
-    const [guestRes, rawOcc, tablesRes] = await Promise.all([
+    const [guestRes, rawOcc, layout] = await Promise.all([
       listGuests(wid).catch(() => ({ guests: [], total: 0 })),
       getOccupancy(wid).catch(() => []),
-      listTables(wid).catch(() => [])
+      getLayout(wid).catch(() => null),
     ]);
     allGuests = guestRes.guests.map(mapGuest);
     unassignedGuests = allGuests.filter(g => g.tableId === null);
-    allTables = tablesRes;
-    const occMap = new Map<string, number>();
-    for (const o of rawOcc) occMap.set(o.TableID, o.Pax);
+    if (layout) {
+      allTables = layout.tables ?? [];
+      elements = layout.elements ?? [];
+      hallWidth = layout.hallWidth ?? 860;
+      hallHeight = layout.hallHeight ?? 1000;
+    } else {
+      allTables = await listTables(wid).catch(() => []);
+    }
+    const occMap: Record<string, number> = {};
+    for (const o of rawOcc) occMap[o.TableID] = o.Pax;
     occupancyData = occMap;
   }
 
@@ -108,7 +119,7 @@
   });
   let selectedOccupancy = $derived.by((): TableOccupancy | null => {
     if (!selectedTableId || !selectedTable) return null;
-    const occupied = occupancyData.get(selectedTableId) ?? 0;
+    const occupied = (selectedTableId ? occupancyData[selectedTableId] : 0) ?? 0;
     const capacity = selectedTable.capacity;
     return { tableId: selectedTableId, tableName: selectedTable.name || `Table`, occupied, capacity, percentage: capacity > 0 ? Math.round((occupied / capacity) * 100) : 0 };
   });
@@ -162,6 +173,27 @@
       addToast(e.message ?? 'Assignment failed', 'error');
     }
   }
+
+  async function handleSaveLayout(editTables: BanquetTable[], editElements: HallElement[], hw: number, hh: number) {
+    const wid = get(weddingId);
+    try {
+      await saveLayout(wid, {
+        hallWidth: hw,
+        hallHeight: hh,
+        tables: editTables.map(t => ({ id: t.id, x: t.x, y: t.y, degree: t.degree })),
+        elements: editElements,
+      });
+      addToast('Layout saved', 'success');
+      editMode = false;
+      await loadData();
+    } catch (e: any) {
+      addToast(e.message ?? 'Save failed', 'error');
+    }
+  }
+
+  function handleCancelEdit() {
+    editMode = false;
+  }
 </script>
 
 <svelte:head><title>Seating Map – WeddingDB</title></svelte:head>
@@ -204,16 +236,21 @@
 <div class="flex h-[calc(100dvh-56px)] sm:h-[calc(100dvh-64px)]">
   <!-- Map -->
   <HallMap
-    selectedTableId={selectedTableId}
+    selectedTableId={editMode ? null : selectedTableId}
     tableGuests={tableGuests}
     tables={allTables}
-    onTableClick={handleTableClick}
-    onSeatClick={handleSeatClick}
-    bind:hoveredSeat
+    {elements}
+    {hallWidth}
+    {hallHeight}
+    mode={editMode ? 'edit' : 'view'}
+    onTableClick={editMode ? undefined : handleTableClick}
+    onSeatClick={editMode ? undefined : handleSeatClick}
+    onSaveLayout={handleSaveLayout}
+    onCancelEdit={handleCancelEdit}
   />
 
   <!-- Desktop Side Panel -->
-  {#if selectedTable}
+  {#if selectedTable && !editMode}
     <div class="hidden md:flex w-[340px] bg-white border-l border-gray-200 flex-col overflow-hidden animate-in">
       <!-- Panel Header -->
       <div class="flex items-center justify-between px-5 py-4 border-b border-gray-100">
@@ -257,7 +294,7 @@
           {@const seatNum = seatIdx + 1}
           {@const guest = selectedTableGuests.find(g => g.seatNumber !== null && seatNum >= g.seatNumber && seatNum < g.seatNumber + g.pax)}
           <button
-            class="w-full flex items-center gap-3 p-2.5 rounded-xl transition-all duration-150 text-left {guest ? 'hover:bg-gray-50' : 'hover:bg-gray-50/50'} {hoveredSeat?.seatNum === seatNum ? 'bg-gold-50 ring-1 ring-gold-200' : ''}"
+            class="w-full flex items-center gap-3 p-2.5 rounded-xl transition-all duration-150 text-left {guest ? 'hover:bg-gray-50' : 'hover:bg-gray-50/50'}"
             onclick={() => {
               if (guest) {
                 $selectedGuest = guest;
@@ -340,12 +377,15 @@
         <button onclick={() => goto(`/${$weddingId}/tables`)} class="flex-1 py-2.5 border border-gray-200 bg-white rounded-xl text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors">
           Edit Table
         </button>
+        <button onclick={() => editMode = true} class="flex-1 py-2.5 bg-red text-white rounded-xl text-sm font-semibold hover:bg-red-light transition-colors flex items-center justify-center gap-1.5">
+          <Map class="w-3.5 h-3.5" /> Edit Layout
+        </button>
       </div>
     </div>
   {/if}
 
   <!-- Mobile Bottom Panel -->
-  {#if selectedTable && showMobilePanel}
+  {#if selectedTable && showMobilePanel && !editMode}
     <!-- svelte-ignore a11y_no_static_element_interactions -->
     <div class="md:hidden fixed inset-x-0 bottom-0 z-40 bg-white border-t border-gray-200 rounded-t-2xl shadow-2xl animate-slide-up" style="max-height: 60vh;">
       <!-- Drag handle -->
@@ -386,7 +426,7 @@
             {@const seatNum = seatIdx + 1}
             {@const guest = selectedTableGuests.find(g => g.seatNumber !== null && seatNum >= g.seatNumber && seatNum < g.seatNumber + g.pax)}
             <button
-              class="flex items-center gap-2 p-2 rounded-lg text-left {hoveredSeat?.seatNum === seatNum ? 'bg-gold-50' : guest ? 'bg-gray-50' : 'bg-white border border-gray-100'}"
+              class="flex items-center gap-2 p-2 rounded-lg text-left {guest ? 'bg-gray-50' : 'bg-white border border-gray-100'}"
               onclick={() => { if (guest) { $selectedGuest = guest; $isDrawerOpen = true; } }}
             >
               <div class={cn(
@@ -412,21 +452,6 @@
     </div>
   {/if}
 </div>
-
-<!-- Hover Tooltip -->
-{#if hoveredSeat}
-  <div
-    class="fixed z-[500] px-3 py-2 bg-gray-900 text-white text-xs rounded-lg shadow-xl pointer-events-none whitespace-nowrap"
-    style="left: {hoveredSeat.x}px; top: {hoveredSeat.y - 12}px; transform: translate(-50%, -100%);"
-  >
-    {#if hoveredSeat.guest}
-      <div class="font-semibold">{hoveredSeat.guest.name}</div>
-      <div class="text-gray-300">Seat {hoveredSeat.seatNum} • {hoveredSeat.guest.pax} pax</div>
-    {:else}
-      <div>Seat {hoveredSeat.seatNum} — Empty</div>
-    {/if}
-  </div>
-{/if}
 
 {/if}
 

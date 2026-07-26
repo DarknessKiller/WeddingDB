@@ -56,6 +56,7 @@ func Init(env config.Env) *App {
 		&models.GuestRecord{},
 		&models.RefreshToken{},
 		&models.UserWedding{},
+		&models.HallElement{},
 	); err != nil {
 		log.Fatal("Failed to migrate database:", err)
 	}
@@ -80,6 +81,21 @@ func Init(env config.Env) *App {
 	db.Exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_admin_users_email ON admin_users (email)")
 	db.Exec("CREATE INDEX IF NOT EXISTS idx_banquet_tables_wedding_name ON banquet_tables (wedding_id, name)")
 
+	// Sync element Name from Label (DB has NOT NULL name column)
+	db.Model(&models.HallElement{}).Where("name = '' OR name IS NULL").Update("name", gorm.Expr("label"))
+	// Seed default elements for weddings that have none
+	var allWeddings []uuid.UUID
+	db.Model(&models.WeddingEvent{}).Pluck("id", &allWeddings)
+	for _, wid := range allWeddings {
+		var n int64
+		db.Model(&models.HallElement{}).Where("wedding_id = ?", wid).Count(&n)
+		if n == 0 {
+			if err := db.Create(models.DefaultElements(wid)).Error; err != nil {
+				log.Println("Warning: seed default elements for wedding", wid, ":", err)
+			}
+		}
+	}
+
 	redisAddr := env.RedisURL
 	if redisAddr == "" {
 		redisAddr = "redis://localhost:6379"
@@ -95,11 +111,13 @@ func Init(env config.Env) *App {
 	tableRepo := repository.NewTableRepo(db)
 	guestRepo := repository.NewGuestRepo(db)
 	tokenRepo := repository.NewTokenRepo(db)
+	layoutRepo := repository.NewLayoutRepo(db)
 
 	authService := services.NewAuthService(adminRepo, weddingRepo, tokenRepo, env.JWTSecret)
 	tableService := services.NewTableService(tableRepo)
 	guestService := services.NewGuestService(guestRepo, tableRepo)
 	weddingService := services.NewWeddingService(weddingRepo)
+	layoutService := services.NewLayoutService(layoutRepo)
 
 	server := config.NewFuegoServer(env)
 
@@ -116,7 +134,7 @@ func Init(env config.Env) *App {
 		http.ServeFile(w, r, filePath)
 	})
 
-	handlers.RegisterRoutes(server, authService, guestService, tableService, weddingService, adminRepo)
+	handlers.RegisterRoutes(server, authService, guestService, tableService, weddingService, layoutService, adminRepo)
 
 	// Seed default admin if none exists
 	var count int64

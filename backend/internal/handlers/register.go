@@ -15,6 +15,7 @@ func RegisterRoutes(
 	guestService *services.GuestService,
 	tableService *services.TableService,
 	weddingService *services.WeddingService,
+	layoutService *services.LayoutService,
 	adminRepo *repository.AdminRepo,
 ) {
 	authHandler := NewAuthHandler(authService, adminRepo)
@@ -22,6 +23,7 @@ func RegisterRoutes(
 	guestHandler := NewGuestHandler(guestService)
 	tableHandler := NewTableHandler(tableService)
 	weddingHandler := NewWeddingHandler(weddingService, adminRepo)
+	layoutHandler := NewLayoutHandler(layoutService, tableService, weddingService)
 	uploadHandler := NewUploadHandler()
 
 	// ── Public (no middleware) ──
@@ -39,6 +41,7 @@ func RegisterRoutes(
 	fuego.Get(pubScoped, "/guests", pubGuestHandler.List)
 	fuego.Get(pubScoped, "/guests/search", pubGuestHandler.Search)
 	fuego.Get(pubScoped, "/tables", tableHandler.List)
+	fuego.Get(pubScoped, "/layout", layoutHandler.Get)
 	fuego.Get(pubScoped, "/kiosk", pubKioskHandler.GetKioskSettings)
 
 	// ── Auth-protected ──
@@ -90,4 +93,8 @@ func RegisterRoutes(
 	fuego.Get(scoped, "/guests/search", guestHandler.Search)
 	fuego.Post(scoped, "/guests/import", guestHandler.BulkImport)
 	fuego.Get(scoped, "/occupancy", guestHandler.Occupancy)
+
+	// Layout
+	fuego.Get(scoped, "/layout", layoutHandler.Get)
+	fuego.Patch(scoped, "/layout", layoutHandler.Save)
 }

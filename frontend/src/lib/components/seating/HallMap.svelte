@@ -1,28 +1,39 @@
 <script lang="ts">
-  import BanquetTableComponent from './BanquetTable.svelte';
-  import { HALL_LAYOUT } from '$lib/constants';
-  import type { BanquetTable as BanquetTableType, Guest } from '$lib/types';
-  import { ZoomIn, ZoomOut, RotateCcw } from 'lucide-svelte';
   import { onMount } from 'svelte';
+  import BanquetTableComponent from './BanquetTable.svelte';
+  import HallElementNode from './HallElementNode.svelte';
+  import EditToolbar from './EditToolbar.svelte';
+  import type { BanquetTable as BanquetTableType, HallElement, Guest } from '$lib/types';
+  import { ZoomIn, ZoomOut, RotateCcw } from 'lucide-svelte';
 
   let {
+    mode = 'view',
+    tables = [],
+    elements = [],
+    hallWidth = 860,
+    hallHeight = 1000,
+    tableGuests: tableGuestsRaw = {},
     selectedTableId = null,
     highlightedTableId = null,
-    tableGuests: tableGuestsRaw = {},
-    tables,
     dark = false,
     onTableClick,
     onSeatClick,
-    hoveredSeat = $bindable(null),
+    onSaveLayout,
+    onCancelEdit,
   }: {
+    mode?: 'view' | 'edit';
+    tables?: BanquetTableType[];
+    elements?: HallElement[];
+    hallWidth?: number;
+    hallHeight?: number;
+    tableGuests?: Record<string, Guest[]>;
     selectedTableId?: string | null;
     highlightedTableId?: string | null;
-    tableGuests?: Record<string, Guest[]>;
-    tables?: BanquetTableType[];
     dark?: boolean;
     onTableClick?: (id: string) => void;
     onSeatClick?: (tableId: string, seatNum: number, guest: Guest | null) => void;
-    hoveredSeat?: { seatNum: number; guest: Guest | null; x: number; y: number } | null;
+    onSaveLayout?: (tables: BanquetTableType[], elements: HallElement[], hallWidth: number, hallHeight: number) => Promise<void>;
+    onCancelEdit?: () => void;
   } = $props();
 
   let zoom = $state(1);
@@ -35,42 +46,141 @@
   let containerW = $state(800);
   let containerH = $state(600);
 
-  const BASE_W = HALL_LAYOUT.width;
-  const BASE_H = HALL_LAYOUT.height;
+  // ponytail: 3 separate svelte-konva imports; consolidate via props if load time matters
+  let KonvaStage: any = $state(null);
+  let KLayer: any = $state(null);
+  let KTransformer: any = $state(null);
+  let KRect: any = $state(null);
+  let KGroup: any = $state(null);
+  let KLine: any = $state(null);
+  let konvaLoaded = $state(false);
 
-  let scale = $derived(Math.min(containerW / BASE_W, containerH / BASE_H, 1));
+  // Edit state
+  let editTables = $state<BanquetTableType[]>([]);
+  let editElements = $state<HallElement[]>([]);
+  let editHallWidth = $state(0);
+  let editHallHeight = $state(0);
+  let selectedId = $state<string | null>(null);
+  let transformerEl = $state<any>(null);
+  let nodeRefs = $state<Record<string, any>>({});
 
-  onMount(() => {
-    if (!containerEl) return;
-    const ro = new ResizeObserver(entries => {
-      for (const entry of entries) {
-        containerW = entry.contentRect.width;
-        containerH = entry.contentRect.height;
-      }
-    });
-    ro.observe(containerEl);
-    return () => ro.disconnect();
+  $effect(() => {
+    if (mode === 'edit') {
+      editTables = JSON.parse(JSON.stringify(tables));
+      editElements = JSON.parse(JSON.stringify(elements));
+      editHallWidth = hallWidth;
+      editHallHeight = hallHeight;
+      selectedId = null;
+    } else {
+      selectedId = null;
+    }
   });
 
-  function handleWheel(e: WheelEvent) {
-    e.preventDefault();
-    const delta = e.deltaY > 0 ? -0.08 : 0.08;
-    zoom = Math.max(0.3, Math.min(3, zoom + delta));
+  // Attach transformer to selected node
+  $effect(() => {
+    const _ = selectedId;
+    if (transformerEl) {
+      const konvaTransformer = transformerEl.getNode?.() ?? transformerEl;
+      if (konvaTransformer?.nodes) {
+        if (selectedId) {
+          const node = nodeRefs[selectedId];
+          konvaTransformer.nodes(node ? [node] : []);
+        } else {
+          konvaTransformer.nodes([]);
+        }
+        konvaTransformer.getLayer()?.batchDraw();
+      }
+    }
+  });
+
+  // Expose nodeRef setter for child components
+  function setNodeRef(id: string, node: any) {
+    if (node) nodeRefs[id] = node;
   }
 
-  function handleMouseDown(e: MouseEvent) {
-    if (e.button !== 0) return;
-    isDragging = true;
-    dragStart = { x: e.clientX - panX, y: e.clientY - panY };
+  const displayTables = $derived(mode === 'edit' ? editTables : tables);
+  const displayElements = $derived(mode === 'edit' ? editElements : elements);
+  const displayHallWidth = $derived(mode === 'edit' ? editHallWidth : hallWidth);
+  const displayHallHeight = $derived(mode === 'edit' ? editHallHeight : hallHeight);
+
+  let viewScale = $derived(Math.min(containerW / displayHallWidth, containerH / displayHallHeight));
+
+  const isTableSelected = $derived(
+    mode === 'edit' && selectedId !== null && editTables.some(t => t.id === selectedId)
+  );
+
+  const selectedItem = $derived.by(() => {
+    if (!selectedId) return null;
+    const t = editTables.find(t => t.id === selectedId);
+    if (t) return { kind: 'table' as const, ...t };
+    const el = editElements.find(e => e.id === selectedId);
+    if (el) return { kind: 'element' as const, ...el };
+    return null;
+  });
+
+  onMount(() => {
+    let ro: ResizeObserver | null = null;
+
+    if (containerEl) {
+      ro = new ResizeObserver(entries => {
+        for (const entry of entries) {
+          containerW = entry.contentRect.width;
+          containerH = entry.contentRect.height;
+        }
+      });
+      ro.observe(containerEl);
+    }
+
+    (async () => {
+      const mod = await import('svelte-konva');
+      KonvaStage = mod.Stage;
+      KLayer = mod.Layer;
+      KTransformer = mod.Transformer;
+      KRect = mod.Rect;
+      KGroup = mod.Group;
+      KLine = mod.Line;
+      konvaLoaded = true;
+
+      // Attach wheel handler after Konva loads and canvas exists
+      const attachWheel = () => {
+        const canvas = containerEl?.querySelector('canvas');
+        if (canvas) {
+          canvas.addEventListener('wheel', (e: WheelEvent) => {
+            e.preventDefault();
+            const delta = e.deltaY > 0 ? -0.08 : 0.08;
+            zoom = Math.max(0.3, Math.min(3, zoom + delta));
+          }, { passive: false });
+        } else {
+          requestAnimationFrame(attachWheel);
+        }
+      };
+      requestAnimationFrame(attachWheel);
+    })();
+
+    return () => {
+      ro?.disconnect();
+    };
+  });
+
+  function handleStageMouseDown(e: any) {
+    // Only pan when clicking on stage background, not on elements
+    if (e.target === e.target.getStage()) {
+      isDragging = true;
+      const pos = e.target.getPointerPosition();
+      dragStart = { x: pos.x - panX, y: pos.y - panY };
+    }
   }
 
-  function handleMouseMove(e: MouseEvent) {
+  function handleStageMouseMove(e: any) {
     if (!isDragging) return;
-    panX = e.clientX - dragStart.x;
-    panY = e.clientY - dragStart.y;
+    const pos = e.target.getPointerPosition();
+    if (pos) {
+      panX = pos.x - dragStart.x;
+      panY = pos.y - dragStart.y;
+    }
   }
 
-  function handleMouseUp() {
+  function handleStageMouseUp() {
     isDragging = false;
   }
 
@@ -81,35 +191,138 @@
   }
 
   let touchStart = { x: 0, y: 0 };
-  function handleTouchStart(e: TouchEvent) {
-    if (e.touches.length === 1) {
+  function handleStageTouchStart(e: any) {
+    const touches = e.evt.touches;
+    if (touches.length === 1) {
       isDragging = true;
-      touchStart = { x: e.touches[0].clientX - panX, y: e.touches[0].clientY - panY };
+      touchStart = { x: touches[0].clientX - panX, y: touches[0].clientY - panY };
     }
   }
-  function handleTouchMove(e: TouchEvent) {
-    if (!isDragging || e.touches.length !== 1) return;
-    e.preventDefault();
-    panX = e.touches[0].clientX - touchStart.x;
-    panY = e.touches[0].clientY - touchStart.y;
+  function handleStageTouchMove(e: any) {
+    const touches = e.evt.touches;
+    if (!isDragging || touches.length !== 1) return;
+    panX = touches[0].clientX - touchStart.x;
+    panY = touches[0].clientY - touchStart.y;
   }
-  function handleTouchEnd() {
+  function handleStageTouchEnd() {
     isDragging = false;
   }
+
+  function handleStageClick(e: any) {
+    if (mode !== 'edit') return;
+    if (e.target === e.target.getStage()) {
+      selectedId = null;
+    }
+  }
+
+  // Grid snap: snap to nearest 2.5% increment
+  const GRID_STEP = 2.5;
+  function snapGrid(v: number): number {
+    return Math.round(v / GRID_STEP) * GRID_STEP;
+  }
+
+  function handleDragEnd(id: string, e: any) {
+    const rawX = e.target.x() / displayHallWidth * 100;
+    const rawY = e.target.y() / displayHallHeight * 100;
+    const x = Math.max(0, Math.min(100, snapGrid(rawX)));
+    const y = Math.max(0, Math.min(100, snapGrid(rawY)));
+    // Move node to snapped position
+    e.target.x(x / 100 * displayHallWidth);
+    e.target.y(y / 100 * displayHallHeight);
+    const idx = editTables.findIndex(t => t.id === id);
+    if (idx >= 0) {
+      editTables[idx] = { ...editTables[idx], x, y };
+      return;
+    }
+    const eidx = editElements.findIndex(el => el.id === id);
+    if (eidx >= 0) {
+      editElements[eidx] = { ...editElements[eidx], x, y };
+    }
+  }
+
+  function handleTransformEnd(id: string, e: any) {
+    const node = e.target;
+    const rotation = node.rotation();
+    const idx = editTables.findIndex(t => t.id === id);
+    if (idx >= 0) {
+      editTables[idx] = { ...editTables[idx], degree: rotation };
+      return;
+    }
+    const eidx = editElements.findIndex(el => el.id === id);
+    if (eidx >= 0) {
+      const el = editElements[eidx];
+      const baseW = el.width / 100 * displayHallWidth;
+      const baseH = el.height / 100 * displayHallHeight;
+      const newW = (node.scaleX() * baseW) / displayHallWidth * 100;
+      const newH = (node.scaleY() * baseH) / displayHallHeight * 100;
+      node.scaleX(1);
+      node.scaleY(1);
+      editElements[eidx] = { ...el, degree: rotation, width: newW, height: newH };
+    }
+  }
+
+  function handleAddElement(el: HallElement) {
+    editElements = [...editElements, el];
+  }
+
+  function handleUpdateSelected(props: Record<string, any>) {
+    if (!selectedId) return;
+    const tidx = editTables.findIndex(t => t.id === selectedId);
+    if (tidx >= 0) {
+      editTables[tidx] = { ...editTables[tidx], ...props };
+      return;
+    }
+    const eidx = editElements.findIndex(el => el.id === selectedId);
+    if (eidx >= 0) {
+      editElements[eidx] = { ...editElements[eidx], ...props };
+    }
+  }
+
+  function handleDeleteSelected(id: string) {
+    editElements = editElements.filter(el => el.id !== id);
+    selectedId = null;
+  }
+
+  async function handleSave() {
+    await onSaveLayout?.(editTables, editElements, editHallWidth, editHallHeight);
+  }
+
+  function handleCancel() {
+    onCancelEdit?.();
+  }
+
+  const stageW = $derived(containerW);
+  const stageH = $derived(containerH);
+
+  // Center the hall in the stage
+  const contentW = $derived(displayHallWidth * viewScale);
+  const contentH = $derived(displayHallHeight * viewScale);
+  const offsetX = $derived((stageW - contentW) / 2);
+  const offsetY = $derived((stageH - contentH) / 2);
 </script>
 
-<svelte:window onmousemove={handleMouseMove} onmouseup={handleMouseUp} />
+{#if mode === 'edit'}
+  <EditToolbar
+    hallWidth={editHallWidth}
+    hallHeight={editHallHeight}
+    {selectedId}
+    {isTableSelected}
+    selectedItem={selectedItem}
+    onSave={handleSave}
+    onCancel={handleCancel}
+    onDelete={handleDeleteSelected}
+    onAddElement={handleAddElement}
+    onUpdateSelected={handleUpdateSelected}
+    onWidthChange={(w) => editHallWidth = w}
+    onHeightChange={(h) => editHallHeight = h}
+  />
+{/if}
 
 <div
   bind:this={containerEl}
   class="relative flex-1 overflow-hidden select-none min-h-[300px] {dark ? 'bg-gray-950' : 'bg-gray-50'}"
   class:cursor-grab={!isDragging}
   class:cursor-grabbing={isDragging}
-  onwheel={handleWheel}
-  onmousedown={handleMouseDown}
-  ontouchstart={handleTouchStart}
-  ontouchmove={handleTouchMove}
-  ontouchend={handleTouchEnd}
   role="application"
   aria-label="Banquet hall seating map"
 >
@@ -127,60 +340,112 @@
     <div class="text-center text-[10px] {dark ? 'text-gray-500' : 'text-gray-400'} font-medium mt-0.5">{Math.round(zoom * 100)}%</div>
   </div>
 
-  <!-- Legend -->
-  <div class="absolute bottom-3 left-3 sm:bottom-4 sm:left-4 z-30 {dark ? 'bg-gray-800/90 border-gray-700' : 'bg-white/90 border-gray-200'} backdrop-blur-sm border rounded-xl px-3 sm:px-4 py-2 sm:py-3 text-[10px] sm:text-xs space-y-1 sm:space-y-1.5">
-    <div class="flex items-center gap-2"><span class="w-2.5 h-2.5 sm:w-3 sm:h-3 rounded-full border-2 {dark ? 'border-gray-600 bg-gray-700' : 'border-gray-200 bg-gray-100'}"></span> Empty</div>
-    <div class="flex items-center gap-2"><span class="w-2.5 h-2.5 sm:w-3 sm:h-3 rounded-full border-2 border-red {dark ? 'bg-red-900/40' : 'bg-red-50'}"></span> Occupied</div>
-    <div class="flex items-center gap-2"><span class="w-2.5 h-2.5 sm:w-3 sm:h-3 rounded-full border-2 border-emerald-500 {dark ? 'bg-emerald-900/40' : 'bg-emerald-50'}"></span> Checked In</div>
-    <div class="flex items-center gap-2"><span class="w-2.5 h-2.5 sm:w-3 sm:h-3 rounded-full border-2 border-gold {dark ? 'bg-gold/20' : 'bg-gold-50'}"></span> VIP</div>
-  </div>
-
-  <!-- Hall -->
-  <div
-    class="absolute inset-0 flex items-center justify-center"
-    style="transform: translate({panX}px, {panY}px) scale({zoom}); transform-origin: center center; transition: {isDragging ? 'none' : 'transform 0.2s cubic-bezier(0.4,0,0.2,1)'};"
-  >
-    <div class="relative {dark ? 'bg-gray-900 border-gray-700' : 'bg-white border-gray-200'} border-2 rounded-3xl shadow-xl"
-      style="width: {BASE_W * scale}px; height: {BASE_H * scale}px; min-width: {BASE_W * scale}px;">
-
-      <!-- Stage -->
-      <div class="absolute top-0 left-1/2 -translate-x-1/2 w-[55%] h-[6%] flex flex-col items-center justify-center z-10">
-        <div class="absolute inset-0 bg-gradient-to-br from-red via-red-dark to-[#5C0A0C] rounded-b-2xl"></div>
-        <div class="absolute inset-1 rounded-b-xl bg-gradient-to-b from-gold/15 to-transparent pointer-events-none"></div>
-        <span class="relative z-10 text-gold text-[10px] sm:text-sm font-bold tracking-[0.12em] uppercase font-serif">✦ Stage ✦</span>
-      </div>
-
-      <!-- Main aisle -->
-      <div class="absolute top-[8%] bottom-[8%] left-1/2 -translate-x-1/2 w-px z-[1]"
-        style="background: repeating-linear-gradient(180deg, transparent, transparent 8px, {dark ? '#374151' : '#E5E7EB'} 8px, {dark ? '#374151' : '#E5E7EB'} 10px);"></div>
-
-      <!-- Side aisles -->
-      <div class="absolute top-[8%] bottom-[8%] left-[30%] w-px z-[1] opacity-50"
-        style="background: repeating-linear-gradient(180deg, transparent, transparent 8px, {dark ? '#1F2937' : '#F3F4F6'} 8px, {dark ? '#1F2937' : '#F3F4F6'} 10px);"></div>
-      <div class="absolute top-[8%] bottom-[8%] left-[70%] w-px z-[1] opacity-50"
-        style="background: repeating-linear-gradient(180deg, transparent, transparent 8px, {dark ? '#1F2937' : '#F3F4F6'} 8px, {dark ? '#1F2937' : '#F3F4F6'} 10px);"></div>
-
-      <!-- Entrance -->
-      <div class="absolute bottom-0 left-1/2 -translate-x-1/2 w-[14%] h-[4%] {dark ? 'bg-gray-800' : 'bg-gray-100'} rounded-t-xl flex items-center justify-center z-10">
-        <span class="text-[8px] sm:text-[10px] font-semibold {dark ? 'text-gray-500' : 'text-gray-500'} tracking-wide">▼ Entrance ▼</span>
-      </div>
-
-      <!-- Tables -->
-      {#each tables as tableDef (tableDef.id)}
-        <BanquetTableComponent
-          table={tableDef}
-          guests={tableGuestsRaw[tableDef.id] ?? []}
-          isSelected={selectedTableId === tableDef.id}
-          isHighlighted={highlightedTableId === tableDef.id}
-          selectedTableId={selectedTableId}
-          highlightedTableId={highlightedTableId}
-          {dark}
-          hallScale={scale}
-          onTableClick={() => onTableClick?.(tableDef.id)}
-          onSeatClick={(seatNum, guest) => onSeatClick?.(tableDef.id, seatNum, guest)}
-          bind:hoveredSeat
-        />
-      {/each}
+  <!-- Legend (view mode only) -->
+  {#if mode !== 'edit'}
+    <div class="absolute bottom-3 left-3 sm:bottom-4 sm:left-4 z-30 {dark ? 'bg-gray-800/90 border-gray-700' : 'bg-white/90 border-gray-200'} backdrop-blur-sm border rounded-xl px-3 sm:px-4 py-2 sm:py-3 text-[10px] sm:text-xs space-y-1 sm:space-y-1.5">
+      <div class="flex items-center gap-2"><span class="w-2.5 h-2.5 sm:w-3 sm:h-3 rounded-full border-2 {dark ? 'border-gray-600 bg-gray-700' : 'border-gray-200 bg-gray-100'}"></span> Empty</div>
+      <div class="flex items-center gap-2"><span class="w-2.5 h-2.5 sm:w-3 sm:h-3 rounded-full border-2 border-red {dark ? 'bg-red-900/40' : 'bg-red-50'}"></span> Occupied</div>
+      <div class="flex items-center gap-2"><span class="w-2.5 h-2.5 sm:w-3 sm:h-3 rounded-full border-2 border-emerald-500 {dark ? 'bg-emerald-900/40' : 'bg-emerald-50'}"></span> Checked In</div>
+      <div class="flex items-center gap-2"><span class="w-2.5 h-2.5 sm:w-3 sm:h-3 rounded-full border-2 border-gold {dark ? 'bg-gold/20' : 'bg-gold-50'}"></span> VIP</div>
     </div>
-  </div>
+  {/if}
+
+  {#if KonvaStage && KLayer && KRect}
+    <KonvaStage
+      width={stageW}
+      height={stageH}
+      x={panX}
+      y={panY}
+      onclick={handleStageClick}
+      onmousedown={handleStageMouseDown}
+      onmousemove={handleStageMouseMove}
+      onmouseup={handleStageMouseUp}
+      ontouchstart={handleStageTouchStart}
+      ontouchmove={handleStageTouchMove}
+      ontouchend={handleStageTouchEnd}
+    >
+      <KLayer>
+        <KGroup x={offsetX} y={offsetY} scaleX={viewScale * zoom} scaleY={viewScale * zoom}>
+          <!-- Hall boundary border -->
+          <KRect
+          x={0}
+          y={0}
+          width={displayHallWidth}
+          height={displayHallHeight}
+          fill={dark ? '#111827' : '#FFFFFF'}
+          stroke={dark ? '#4B5563' : '#D1D5DB'}
+          strokeWidth={2}
+          cornerRadius={12}
+          shadowColor={dark ? 'rgba(0,0,0,0.5)' : 'rgba(0,0,0,0.08)'}
+          shadowBlur={20}
+          shadowOffsetY={4}
+        />
+        <!-- Grid lines (edit mode only, on top of hall rect) -->
+        {#if mode === 'edit' && KLine}
+          {#each Array(Math.floor(100 / GRID_STEP) + 1) as _, i (i)}
+            <KLine
+              points={[i * GRID_STEP / 100 * displayHallWidth, 0, i * GRID_STEP / 100 * displayHallWidth, displayHallHeight]}
+              stroke={dark ? '#4B5563' : '#D1D5DB'}
+              strokeWidth={0.5}
+              dash={[4, 4]}
+              listening={false}
+            />
+            <KLine
+              points={[0, i * GRID_STEP / 100 * displayHallHeight, displayHallWidth, i * GRID_STEP / 100 * displayHallHeight]}
+              stroke={dark ? '#4B5563' : '#D1D5DB'}
+              strokeWidth={0.5}
+              dash={[4, 4]}
+              listening={false}
+            />
+          {/each}
+        {/if}
+        {#each displayElements as el (el.id)}
+          <HallElementNode
+            element={el}
+            hallWidth={displayHallWidth}
+            hallHeight={displayHallHeight}
+            {dark}
+            mode={mode}
+            onrefready={(node: any) => { nodeRefs[el.id] = node; }}
+            ondragend={(e: any) => handleDragEnd(el.id, e)}
+            ontransformend={(e: any) => handleTransformEnd(el.id, e)}
+            onselect={() => { if (mode === 'edit') selectedId = el.id; }}
+          />
+        {/each}
+        {#each displayTables as t (t.id)}
+          <BanquetTableComponent
+            table={t}
+            guests={tableGuestsRaw[t.id] ?? []}
+            isSelected={selectedTableId === t.id}
+            isHighlighted={highlightedTableId === t.id}
+            {dark}
+            hallWidth={displayHallWidth}
+            hallHeight={displayHallHeight}
+            {mode}
+            onrefready={(node: any) => { nodeRefs[t.id] = node; }}
+            onTableClick={mode === 'edit' ? () => { selectedId = t.id; } : () => onTableClick?.(t.id)}
+            onSeatClick={mode === 'edit' ? undefined : (seatNum, guest) => onSeatClick?.(t.id, seatNum, guest)}
+            ondragend={(e: any) => handleDragEnd(t.id, e)}
+            ontransformend={(e: any) => handleTransformEnd(t.id, e)}
+          />
+        {/each}
+        {#if KTransformer && mode === 'edit'}
+          <KTransformer
+            bind:this={transformerEl}
+            rotateEnabled={true}
+            enabledAnchors={isTableSelected ? [] : undefined}
+            anchorSize={8}
+            anchorCornerRadius={2}
+            borderStroke="#D4AF37"
+            anchorStroke="#D4AF37"
+            anchorFill="#FFFFFF"
+            anchorStrokeWidth={2}
+            borderStrokeWidth={1.5}
+            padding={4}
+          />
+        {/if}
+        </KGroup>
+      </KLayer>
+    </KonvaStage>
+  {/if}
 </div>
