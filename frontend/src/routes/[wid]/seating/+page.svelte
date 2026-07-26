@@ -48,20 +48,34 @@
     };
   }
 
+  let prevDrawerOpen = $state(false);
+  $effect(() => {
+    const isOpen = $isDrawerOpen;
+    if (prevDrawerOpen && !isOpen) {
+      // Drawer just closed — refresh data
+      loadData();
+    }
+    prevDrawerOpen = isOpen;
+  });
+
+  async function loadData() {
+    const wid = get(weddingId);
+    const [guestRes, rawOcc, tablesRes] = await Promise.all([
+      listGuests(wid).catch(() => ({ guests: [], total: 0 })),
+      getOccupancy(wid).catch(() => []),
+      listTables(wid).catch(() => [])
+    ]);
+    allGuests = guestRes.guests.map(mapGuest);
+    unassignedGuests = allGuests.filter(g => g.tableId === null);
+    allTables = tablesRes;
+    const occMap = new Map<string, number>();
+    for (const o of rawOcc) occMap.set(o.TableID, o.Pax);
+    occupancyData = occMap;
+  }
+
   onMount(async () => {
     try {
-      const wid = get(weddingId);
-      const [guestRes, rawOcc, tablesRes] = await Promise.all([
-        listGuests(wid).catch(() => ({ guests: [], total: 0 })),
-        getOccupancy(wid).catch(() => []),
-        listTables(wid).catch(() => [])
-      ]);
-      allGuests = guestRes.guests.map(mapGuest);
-      unassignedGuests = allGuests.filter(g => g.tableId === null);
-      allTables = tablesRes;
-      const occMap = new Map<string, number>();
-      for (const o of rawOcc) occMap.set(o.TableID, o.Pax);
-      occupancyData = occMap;
+      await loadData();
       errored = false;
       error = null;
     } catch (e: any) {

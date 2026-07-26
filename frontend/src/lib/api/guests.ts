@@ -52,8 +52,12 @@ export interface GuestCreateData {
 	giftItem?: string | null;
 }
 
-export async function listGuests(weddingId: string): Promise<{ guests: GuestResponse[]; total: number }> {
-	const res = await apiFetch(`/api/weddings/${weddingId}/guests`);
+export async function listGuests(weddingId: string, opts?: { limit?: number; cursor?: string }): Promise<{ guests: GuestResponse[]; total: number; nextCursor: string | null }> {
+	const params = new URLSearchParams();
+	if (opts?.limit) params.set('limit', String(opts.limit));
+	if (opts?.cursor) params.set('cursor', opts.cursor);
+	const qs = params.toString();
+	const res = await apiFetch(`/api/weddings/${weddingId}/guests${qs ? '?' + qs : ''}`);
 	if (!res.ok) throw new Error(`Failed to list guests: ${res.status}`);
 	return res.json();
 }

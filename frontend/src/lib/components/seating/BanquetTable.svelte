@@ -8,6 +8,7 @@
     isSelected = false,
     isHighlighted = false,
     selectedTableId = null,
+    highlightedTableId = null,
     dark = false,
     hallScale = 1,
     onTableClick,
@@ -19,6 +20,7 @@
     isSelected?: boolean;
     isHighlighted?: boolean;
     selectedTableId?: string | null;
+    highlightedTableId?: string | null;
     dark?: boolean;
     hallScale?: number;
     onTableClick?: () => void;
@@ -56,7 +58,7 @@
   class={cn(
     'absolute cursor-pointer transition-all duration-300 ease-out',
     isSelected ? 'z-20' : 'z-10',
-    selectedTableId !== null && !isSelected && !isHighlighted ? 'opacity-30 grayscale blur-[0.3px]' : '',
+    ((selectedTableId !== null || highlightedTableId !== null) && !isSelected && !isHighlighted) ? 'opacity-30 grayscale blur-[0.3px]' : '',
     isHighlighted ? 'z-20' : ''
   )}
   style="left: {table.x}%; top: {table.y}%; transform: {tableTransform};"

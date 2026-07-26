@@ -28,7 +28,7 @@ func NewPublicGuestHandler(guestService *services.GuestService) *PublicGuestHand
 
 func (h *PublicGuestHandler) List(c fuego.ContextWithBody[any]) (any, error) {
 	wid := DecodeWID(c)
-	guests, _, err := h.guestService.List(wid, 0, 1000)
+	guests, _, err := h.guestService.List(wid, "", 1000)
 	if err != nil {
 		return nil, err
 	}

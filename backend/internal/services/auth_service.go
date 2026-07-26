@@ -18,9 +18,6 @@ type AccessClaims struct {
 	AdminID   uuid.UUID  `json:"sub"`
 	WeddingID *uuid.UUID `json:"wid,omitempty"`
 	Role      string     `json:"role"`
-	JTI       string     `json:"jti"`
-	IAT       int64      `json:"iat"`
-	EXP       int64      `json:"exp"`
 	jwt.RegisteredClaims
 }
 
@@ -159,13 +156,16 @@ func (s *AuthService) ValidateToken(tokenStr string) (*AccessClaims, error) {
 
 func (s *AuthService) generateAccessToken(admin *models.AdminUser, weddingID *uuid.UUID) (string, error) {
 	now := time.Now()
+	expiry := now.Add(15 * time.Minute)
 	claims := AccessClaims{
 		AdminID:   admin.ID,
 		WeddingID: weddingID,
 		Role:      admin.Role,
-		JTI:       uuid.New().String(),
-		IAT:       now.Unix(),
-		EXP:       now.Add(15 * time.Minute).Unix(),
+		RegisteredClaims: jwt.RegisteredClaims{
+			ID:        uuid.New().String(),
+			IssuedAt:  jwt.NewNumericDate(now),
+			ExpiresAt: jwt.NewNumericDate(expiry),
+		},
 	}
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
 	return token.SignedString(s.secret)

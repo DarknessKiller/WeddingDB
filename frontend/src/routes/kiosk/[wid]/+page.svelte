@@ -1,7 +1,7 @@
 <script lang="ts">
   import HallMap from '$lib/components/seating/HallMap.svelte';
   import { publicSearchGuests as searchGuests, publicListGuests as listGuests, publicListTables as listTables } from '$lib/api/public';
-  import { cn } from '$lib/utils';
+  import { cn, getInitials } from '$lib/utils';
   import { Maximize, Minimize, Monitor, Search, ArrowLeft, MapPin, Users, Star, X } from 'lucide-svelte';
   import { onMount, onDestroy } from 'svelte';
   import { page } from '$app/state';
@@ -179,7 +179,7 @@
                 selectedGuest.isVip ? "bg-gold-50 text-gold border-2 border-gold-200" :
                 "bg-red-50 text-red border-2 border-red-200"
               )}>
-                {selectedGuest.name.split(' ').map(n => n[0]).join('')}
+                {getInitials(selectedGuest.name)}
               </div>
               <div class="flex-1 min-w-0">
                 <div class="flex items-center gap-2">
@@ -295,7 +295,7 @@
                   guest.isVip ? "bg-gold-50 text-gold border-2 border-gold-200" :
                   "bg-red-50 text-red border-2 border-red-200"
                 )}>
-                  {guest.name.split(' ').map(n => n[0]).join('')}
+                  {getInitials(guest.name)}
                 </div>
                 <div class="flex-1 min-w-0">
                   <div class="flex items-center gap-2">
