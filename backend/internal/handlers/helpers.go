@@ -25,9 +25,10 @@ func RoleFromContext(ctx context.Context) string {
 	return v
 }
 
-// DecodeWID parses a UUID from the path param "wid".
+// DecodeWID parses a UUID from the path param "wid", supporting base64-encoded IDs.
 func DecodeWID(c interface{ PathParam(string) string }) uuid.UUID {
-	return middleware.ParseUUID(c.PathParam("wid"))
+	id, _ := middleware.DecodeWIDString(c.PathParam("wid"))
+	return id
 }
 
 // DecodeID parses a UUID from a string.
