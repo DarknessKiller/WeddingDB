@@ -3,6 +3,7 @@
   import { publicSearchGuests as searchGuests, publicListGuests as listGuests } from '$lib/api/public';
   import { getPublicLayout } from '$lib/api/layout';
   import { cn, getInitials } from '$lib/utils';
+  import { formatSeatRange } from '$lib/utils/seat';
   import { Maximize, Minimize, Monitor, Search, ArrowLeft, MapPin, Users, Star, X } from 'lucide-svelte';
   import { onMount, onDestroy } from 'svelte';
   import { page } from '$app/state';
@@ -47,16 +48,6 @@
   let selectedTable = $derived(selectedGuest?.tableId ? tables.find(t => t.id === selectedGuest!.tableId) ?? null : null);
   let selectedTableName = $derived(selectedTable?.name ?? selectedGuest?.tableId ?? '—');
   let hasValidTable = $derived(selectedGuest?.tableId != null && selectedTable !== null);
-  let seatOccupants = $derived(
-    selectedGuest?.tableId
-      ? Array.from({ length: selectedTable?.capacity ?? 10 }, (_, i) => {
-          const seatNum = i + 1;
-          const guest = allGuests.find(g => g.tableId === selectedGuest!.tableId && g.seatNumber === seatNum) ?? null;
-          return { seatNum, guest };
-        })
-      : []
-  );
-
   $effect(() => {
     const q = query.trim();
     if (!q) { results = []; searching = false; return; }
@@ -214,24 +205,9 @@
                 <div class="text-center">
                   <div class="text-[10px] text-gray-500 uppercase tracking-wider mb-1">Seats</div>
                   <div class="text-xl font-bold text-gray-900">
-                    {selectedGuest.seatNumber}–{(selectedGuest.seatNumber ?? 0) + selectedGuest.pax - 1}
+                    {formatSeatRange(selectedGuest.seatNumber, selectedGuest.pax)}
                   </div>
                 </div>
-              </div>
-
-              <!-- Mini Seat Map -->
-              <div class="grid grid-cols-5 gap-1.5">
-                {#each seatOccupants as { seatNum, guest }}
-                  {@const isOwn = seatNum >= (selectedGuest.seatNumber ?? 0) && seatNum < (selectedGuest.seatNumber ?? 0) + selectedGuest.pax}
-                  <div class={cn(
-                    "aspect-square rounded-md flex items-center justify-center text-[10px] font-bold border transition-colors",
-                    isOwn ? "bg-red text-white border-red shadow-md shadow-red/20" :
-                    guest ? "bg-gray-100 text-gray-500 border-gray-200" :
-                    "bg-gray-50 text-gray-400 border-gray-200"
-                  )}>
-                    {seatNum}
-                  </div>
-                {/each}
               </div>
 
               <p class="text-center text-[11px] text-gray-400 mt-3">
@@ -312,7 +288,7 @@
                   <div class="flex items-center gap-3 text-sm text-gray-500 mt-0.5">
                     {#if guest.tableId}
                       <span class="flex items-center gap-1"><MapPin class="w-3.5 h-3.5" />Table {tables.find(t => t.id === guest.tableId)?.name ?? guest.tableId}</span>
-                      <span>Seat {guest.seatNumber}–{(guest.seatNumber ?? 0) + guest.pax - 1}</span>
+                      <span>{formatSeatRange(guest.seatNumber, guest.pax)}</span>
                     {:else}
                       <span class="text-gray-500">No seat assigned</span>
                     {/if}

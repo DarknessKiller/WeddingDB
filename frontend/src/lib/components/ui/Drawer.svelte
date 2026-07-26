@@ -3,6 +3,7 @@
   import { X, Phone, Mail, Utensils, StickyNote, Banknote, Gift, Pencil, Check } from 'lucide-svelte';
   import Badge from './Badge.svelte';
   import { getInitials, cn } from '$lib/utils';
+  import { formatSeatRange } from '$lib/utils/seat';
   import { addToast } from '$lib/stores';
   import { weddingId } from '$lib/stores/weddingId';
   import { updateGuest } from '$lib/api/guests';
@@ -219,13 +220,7 @@
           </div>
           <div class="bg-gray-50 rounded-xl p-4">
             <div class="text-xs text-gray-500 font-medium mb-1">Seat{guest.pax > 1 ? 's' : ''}</div>
-            <div class="text-2xl font-bold text-gray-900">
-              {#if guest.seatNumber !== null}
-                {guest.pax > 1 ? `${guest.seatNumber}–${guest.seatNumber + guest.pax - 1}` : guest.seatNumber}
-              {:else}
-                —
-              {/if}
-            </div>
+            <div class="text-2xl font-bold text-gray-900">{formatSeatRange(guest.seatNumber, guest.pax)}</div>
           </div>
           <div class="bg-gray-50 rounded-xl p-4">
             <div class="text-xs text-gray-500 font-medium mb-1">Party Size</div>

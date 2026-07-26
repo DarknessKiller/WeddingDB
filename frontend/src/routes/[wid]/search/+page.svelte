@@ -6,6 +6,7 @@
   import { get } from 'svelte/store';
   import Badge from '$lib/components/ui/Badge.svelte';
   import { getInitials, cn } from '$lib/utils';
+  import { formatSeatRange } from '$lib/utils/seat';
   import { goto } from '$app/navigation';
   import { Search, CheckCircle2, UserCheck, Phone, MapPin, Gift, Banknote, X, MapPinned, Loader2 } from 'lucide-svelte';
   import { onMount } from 'svelte';
@@ -364,7 +365,7 @@
             </div>
             <div class="bg-gray-50 rounded-xl p-3 text-center">
               <div class="text-gray-500 text-xs">Seat</div>
-              <div class="font-bold text-gray-900 text-lg">{selectedGuest.seatNumber ?? '—'}</div>
+              <div class="font-bold text-gray-900 text-lg">{formatSeatRange(selectedGuest.seatNumber, selectedGuest.pax)}</div>
             </div>
             <div class="bg-gray-50 rounded-xl p-3 text-center">
               <div class="text-gray-500 text-xs">Pax</div>
@@ -444,24 +445,9 @@
                 <span class="text-gold font-semibold text-sm">★ VIP Table</span>
               {/if}
               <div class="text-sm text-gray-500 mt-1">
-                Seats {checkinGuest.seatNumber}–{(checkinGuest.seatNumber ?? 0) + checkinGuest.pax - 1}
+                {formatSeatRange(checkinGuest.seatNumber, checkinGuest.pax)}
                 · {checkinGuest.pax} pax
               </div>
-            </div>
-
-            {@const seats = getSeatOccupants(checkinGuest.tableId, table?.capacity ?? 10)}
-            <div class="grid grid-cols-5 gap-2">
-              {#each seats as { seatNum, guest }}
-                {@const isOwn = seatNum >= (checkinGuest.seatNumber ?? 0) && seatNum < (checkinGuest.seatNumber ?? 0) + checkinGuest.pax}
-                <div class={cn(
-                  "aspect-square rounded-lg flex items-center justify-center text-[11px] font-bold border-2 transition-colors",
-                  isOwn ? "bg-red text-white border-red" :
-                  guest ? "bg-gray-100 text-gray-500 border-gray-200" :
-                  "bg-gray-50 text-gray-300 border-gray-100"
-                )}>
-                  {seatNum}
-                </div>
-              {/each}
             </div>
 
             <button
