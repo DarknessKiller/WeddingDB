@@ -11,7 +11,6 @@
   let showPassword = $state(false);
   let loading = $state(false);
 
-  // Wedding selector state
   let step = $state<'login' | 'select'>('login');
   let availableWeddings = $state<{ id: string; name: string; date: string }[]>([]);
   let loginRole = $state('');
@@ -19,7 +18,6 @@
   let loginAccessToken = $state('');
   let loginRefreshToken = $state('');
 
-  // Create wedding state (admin only, when no weddings exist)
   let showCreate = $state(false);
   let newName = $state('');
   let newDate = $state('');

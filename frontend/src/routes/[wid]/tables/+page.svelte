@@ -2,7 +2,7 @@
   import { onMount } from 'svelte';
   import { goto } from '$app/navigation';
   import { cn } from '$lib/utils';
-  import { addToast } from '$lib/stores';
+  import { addToast, isDrawerOpen } from '$lib/stores';
   import { Star, Users, Plus, MoreVertical, Pencil, Trash2, X, AlertCircle } from 'lucide-svelte';
   import { listTables, createTable, updateTable, deleteTable, getOccupancy } from '$lib/api/tables';
   import { weddingId } from '$lib/stores/weddingId';
@@ -43,13 +43,45 @@
   let formVip = $state(false);
   let saving = $state(false);
 
-  // ponytail: mirrors backend yPositions + dynamic x from table.go computeLayout
+  let prevDrawerOpen = $state(false);
+  $effect(() => {
+    const isOpen = $isDrawerOpen;
+    if (prevDrawerOpen && !isOpen) {
+      loadData();
+    }
+    prevDrawerOpen = isOpen;
+  });
+
+  async function loadData() {
+    const [apiTables, rawOcc] = await Promise.all([listTables(wid), getOccupancy(wid)]);
+    tables = apiTables;
+    tablesError = null;
+    const occMap = new Map<string, TableOccupancy>();
+    for (const o of rawOcc) {
+      const table = tables.find(t => t.id === o.TableID);
+      const capacity = table?.capacity ?? 0;
+      occMap.set(o.TableID, {
+        tableId: o.TableID,
+        tableName: table?.name ?? '',
+        occupied: o.Pax,
+        capacity,
+        percentage: capacity > 0 ? Math.round((o.Pax / capacity) * 100) : 0
+      });
+    }
+    occupancy = occMap;
+  }
+
+  // ponytail: mirrors backend yPositions + fixed column layout from table.go computeLayout
   const yPositions: Record<number, number> = { 1: 15, 2: 30, 3: 45, 4: 60, 5: 75, 6: 90 };
   function rowColToXY(row: number, col: number): { x: number; y: number } {
     const y = yPositions[row] ?? 50;
-    const tablesInRow = (tables ?? []).filter(t => t.row === row).length;
-    const n = editingTable ? tablesInRow : tablesInRow + 1;
-    const x = (100 / (n + 1)) * col;
+    // Use max columns across all rows to align columns consistently
+    let maxCol = 0;
+    for (const t of (tables ?? [])) {
+      if (t.col > maxCol) maxCol = t.col;
+    }
+    if (maxCol === 0) maxCol = 3; // default
+    const x = (100 / (maxCol + 1)) * col;
     return { x, y };
   }
 
@@ -155,23 +187,7 @@
 
   onMount(async () => {
     try {
-      const [apiTables, rawOcc] = await Promise.all([listTables(wid), getOccupancy(wid)]);
-      tables = apiTables;
-      tablesError = null;
-
-      const occMap = new Map<string, TableOccupancy>();
-      for (const o of rawOcc) {
-        const table = tables.find(t => t.id === o.TableID);
-        const capacity = table?.capacity ?? 0;
-        occMap.set(o.TableID, {
-          tableId: o.TableID,
-          tableName: table?.name ?? '',
-          occupied: o.Pax,
-          capacity,
-          percentage: capacity > 0 ? Math.round((o.Pax / capacity) * 100) : 0
-        });
-      }
-      occupancy = occMap;
+      await loadData();
     } catch (e: any) {
       tablesError = e.message ?? 'Failed to load tables';
       addToast(tablesError ?? 'Failed to load tables', 'error');

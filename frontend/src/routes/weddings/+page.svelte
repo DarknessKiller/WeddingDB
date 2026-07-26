@@ -1,19 +1,19 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { goto } from '$app/navigation';
-  import { addToast, getAuth } from '$lib/stores';
+  import { addToast, getAuth, setAuth } from '$lib/stores';
   import { weddingId, setWeddingId } from '$lib/stores/weddingId';
   import { listWeddings, createWedding, updateWedding, deleteWedding, type Wedding } from '$lib/api/weddings';
   import { Plus, Pencil, Trash2, X, Calendar, Check, ChevronRight } from 'lucide-svelte';
   import dayjs from 'dayjs';
   import { encodeId } from '$lib/utils/encode';
+  import { validateToken } from '$lib/utils/auth';
+  import { apiFetch } from '$lib/api/client';
 
   let weddings = $state<Wedding[]>([]);
   let loading = $state(true);
   let selecting = $state<string | null>(null);
-
-  const auth = getAuth();
-  const isAdmin = auth.role === 'admin';
+  let auth = $state<ReturnType<typeof getAuth> | null>(null);
   let currentWeddingId = $state('');
 
   weddingId.subscribe(v => { currentWeddingId = v; });
@@ -24,7 +24,11 @@
   let formDate = $state('');
   let saving = $state(false);
 
-  onMount(async () => { await loadWeddings(); });
+  onMount(async () => {
+    if (!await validateToken()) return;
+    auth = getAuth();
+    await loadWeddings();
+  });
 
   async function loadWeddings() {
     loading = true;
@@ -36,10 +40,10 @@
   async function selectWedding(w: Wedding) {
     if (selecting !== null) return;
     selecting = w.id;
+    let targetUrl = '';
     try {
-      const res = await fetch('/api/auth/select-wedding', {
+      const res = await apiFetch('/api/auth/select-wedding', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${auth.accessToken}` },
         body: JSON.stringify({ weddingId: w.id })
       });
       if (!res.ok) {
@@ -48,12 +52,16 @@
         return;
       }
       const data = await res.json();
-      localStorage.setItem('weddingdb_access_token', data.accessToken);
+      const current = getAuth();
+      setAuth(data.accessToken, current.refreshToken ?? '', current.role ?? '', current.name ?? '');
       setWeddingId(w.id);
       addToast(`Switched to ${w.name}`, 'success');
-      goto(`/${encodeId(w.id)}/dashboard`, { replaceState: true });
+      targetUrl = `/${encodeId(w.id)}/dashboard`;
     } catch { addToast('Network error', 'error'); }
-    finally { selecting = null; }
+    finally {
+      selecting = null;
+      if (targetUrl) goto(targetUrl, { replaceState: true });
+    }
   }
 
   function openCreate() {
@@ -121,7 +129,7 @@
             <div class="h-14 bg-gray-50 rounded-xl animate-pulse"></div>
           {/each}
         </div>
-      {:else if weddings.length === 0 && isAdmin}
+      {:else if weddings.length === 0 && auth?.role === 'admin'}
         <div class="text-center py-4">
           <Calendar class="w-10 h-10 text-gray-300 mx-auto mb-3" />
           <p class="text-sm text-gray-500 mb-4">No weddings yet. Create your first wedding to get started.</p>
@@ -158,7 +166,7 @@
                 {:else}
                   <ChevronRight class="w-4 h-4 text-gray-400 group-hover:text-deep-red transition-colors" />
                 {/if}
-                {#if isAdmin}
+                {#if auth?.role === 'admin'}
                   <div class="flex items-center gap-1 ml-2 {isSelected ? 'opacity-0 group-hover:opacity-100' : 'opacity-0 group-hover:opacity-100'} transition-opacity">
                     <button onclick={(e) => openEdit(w, e)} class="p-1.5 rounded-lg hover:bg-white/80 text-gray-400 hover:text-gray-600 transition-colors" aria-label="Edit">
                       <Pencil class="w-3.5 h-3.5" />
@@ -173,7 +181,7 @@
           {/each}
         </div>
 
-        {#if isAdmin}
+        {#if auth?.role === 'admin'}
           <button onclick={openCreate}
             class="w-full mt-3 px-4 py-2.5 border border-dashed border-gray-300 rounded-xl text-sm font-medium text-gray-500 hover:border-deep-red hover:text-deep-red hover:bg-red-50 transition-colors flex items-center justify-center gap-2">
             <Plus class="w-4 h-4" /> New Wedding

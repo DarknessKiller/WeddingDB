@@ -19,7 +19,6 @@ export async function apiFetch(path: string, opts: RequestInit = {}): Promise<Re
 		}
 	});
 
-	// Auto-refresh on 401
 	if (res.status === 401) {
 		const { refreshToken } = getAuth();
 		if (refreshToken) {
@@ -39,7 +38,6 @@ export async function apiFetch(path: string, opts: RequestInit = {}): Promise<Re
 						return res;
 					}
 					setAuth(data.accessToken, data.refreshToken, data.role ?? getAuth().role ?? '', data.name ?? getAuth().name ?? '');
-					// On refresh, if we have a stored wedding ID keep it
 					res = await fetch(`${BASE}${path}`, {
 						...opts,
 						headers: {

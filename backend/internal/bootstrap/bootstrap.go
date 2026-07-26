@@ -60,6 +60,26 @@ func Init(env config.Env) *App {
 		log.Fatal("Failed to migrate database:", err)
 	}
 
+	// ponytail: backfill name_pinyin for all guests (safe to re-run, idempotent)
+	var guests []models.GuestRecord
+	db.Find(&guests)
+	for _, g := range guests {
+		py := models.GenerateNamePinyin(g.Name)
+		if py != g.NamePinyin {
+			db.Model(&models.GuestRecord{}).Where("id = ?", g.ID).Update("name_pinyin", py)
+		}
+	}
+
+	// ponytail: GIN indexes for trigram search (ILIKE '%..%')
+	db.Exec("CREATE EXTENSION IF NOT EXISTS pg_trgm")
+	db.Exec("CREATE INDEX IF NOT EXISTS idx_guest_records_name_trgm ON guest_records USING gin (name gin_trgm_ops)")
+	db.Exec("CREATE INDEX IF NOT EXISTS idx_guest_records_name_pinyin_trgm ON guest_records USING gin (name_pinyin gin_trgm_ops)")
+	db.Exec("CREATE INDEX IF NOT EXISTS idx_guest_records_phone_trgm ON guest_records USING gin (phone gin_trgm_ops)")
+
+	// ponytail: FK lookup indexes
+	db.Exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_admin_users_email ON admin_users (email)")
+	db.Exec("CREATE INDEX IF NOT EXISTS idx_banquet_tables_wedding_name ON banquet_tables (wedding_id, name)")
+
 	redisAddr := env.RedisURL
 	if redisAddr == "" {
 		redisAddr = "redis://localhost:6379"

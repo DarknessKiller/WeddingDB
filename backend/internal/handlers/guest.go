@@ -34,22 +34,22 @@ type GuestCreateRequest struct {
 func (h *GuestHandler) List(c fuego.ContextWithBody[any]) (any, error) {
 	wid := DecodeWID(c)
 	limit := 100
-	offset := 0
+	cursor := c.QueryParam("cursor")
 	if v := c.QueryParam("limit"); v != "" {
 		if n, err := strconv.Atoi(v); err == nil && n > 0 {
 			limit = n
 		}
 	}
-	if v := c.QueryParam("offset"); v != "" {
-		if n, err := strconv.Atoi(v); err == nil && n >= 0 {
-			offset = n
-		}
-	}
-	guests, total, err := h.guestService.List(wid, offset, limit)
+	guests, total, err := h.guestService.List(wid, cursor, limit)
 	if err != nil {
 		return nil, err
 	}
-	return map[string]any{"guests": guests, "total": total}, nil
+	var nextCursor string
+	if len(guests) > limit {
+		nextCursor = guests[limit].ID.String()
+		guests = guests[:limit]
+	}
+	return map[string]any{"guests": guests, "total": total, "nextCursor": nextCursor}, nil
 }
 
 func (h *GuestHandler) Get(c fuego.ContextWithBody[any]) (any, error) {
@@ -138,8 +138,12 @@ func (h *GuestHandler) Update(c fuego.ContextWithBody[GuestCreateRequest]) (any,
 	guest.Dietary = body.Dietary
 	guest.AngbaoAmt = body.AngbaoAmt
 	guest.GiftItem = body.GiftItem
-	if body.TableID != nil && *body.TableID != "" {
-		if tid, err := uuid.Parse(*body.TableID); err == nil {
+	if body.TableID != nil {
+		if *body.TableID == "" {
+			// Explicitly clearing seat
+			guest.TableID = nil
+			guest.SeatNum = nil
+		} else if tid, err := uuid.Parse(*body.TableID); err == nil {
 			seatNum := 1
 			if body.SeatNum != nil {
 				seatNum = *body.SeatNum
@@ -149,10 +153,8 @@ func (h *GuestHandler) Update(c fuego.ContextWithBody[GuestCreateRequest]) (any,
 				guest.SeatNum = &seatNum
 			}
 		}
-	} else {
-		guest.TableID = nil
-		guest.SeatNum = nil
 	}
+	// else: tableId not provided — preserve existing seat assignment
 	if err := h.guestService.Update(guest); err != nil {
 		return nil, err
 	}

@@ -69,18 +69,30 @@ func computeLayout(tables []models.BanquetTable) []TableResponse {
 			}
 		}
 	}
+	// Find max columns across all rows to align columns consistently
+	maxCol := 0
+	for _, rowTables := range rowMap {
+		for _, t := range rowTables {
+			if t.Col > maxCol {
+				maxCol = t.Col
+			}
+		}
+	}
+	if maxCol == 0 {
+		maxCol = 3 // default
+	}
+
 	result := make([]TableResponse, 0)
 	for row, rowTables := range rowMap {
 		sort.Slice(rowTables, func(i, j int) bool {
 			return rowTables[i].Col < rowTables[j].Col
 		})
-		n := len(rowTables)
 		y := yPos[row]
 		if y == 0 {
 			y = 50
 		}
-		for i, t := range rowTables {
-			t.x = float64(100) / float64(n+1) * float64(i+1)
+		for _, t := range rowTables {
+			t.x = float64(100) / float64(maxCol+1) * float64(t.Col)
 			t.y = y
 			result = append(result, TableResponse{
 				ID: t.ID.String(), WeddingID: t.WeddingID.String(), Name: t.Name, Capacity: t.Capacity,
