@@ -21,9 +21,16 @@ export interface SaveLayoutPayload {
 }
 
 export async function saveLayout(wid: string, data: SaveLayoutPayload): Promise<void> {
+	// Strip extra fields (weddingId, createdAt, updatedAt) that Fuego rejects
+	const clean = {
+		...data,
+		elements: data.elements.map(({ id, type, x, y, degree, width, height, label, zIndex }) => ({
+			id, type, x, y, degree, width, height, label, zIndex
+		}))
+	};
 	const res = await apiFetch(`/api/weddings/${wid}/layout`, {
 		method: 'PATCH',
-		body: JSON.stringify(data)
+		body: JSON.stringify(clean)
 	});
 	if (!res.ok) throw new Error('Failed to save layout');
 }

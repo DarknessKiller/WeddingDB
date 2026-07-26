@@ -52,6 +52,7 @@
   let KTransformer: any = $state(null);
   let KRect: any = $state(null);
   let KGroup: any = $state(null);
+  let KLine: any = $state(null);
   let konvaLoaded = $state(false);
 
   // Edit state
@@ -137,6 +138,7 @@
       KTransformer = mod.Transformer;
       KRect = mod.Rect;
       KGroup = mod.Group;
+      KLine = mod.Line;
       konvaLoaded = true;
 
       // Attach wheel handler after Konva loads and canvas exists
@@ -208,9 +210,20 @@
     }
   }
 
+  // Grid snap: snap to nearest 2.5% increment
+  const GRID_STEP = 2.5;
+  function snapGrid(v: number): number {
+    return Math.round(v / GRID_STEP) * GRID_STEP;
+  }
+
   function handleDragEnd(id: string, e: any) {
-    const x = Math.max(0, Math.min(100, e.target.x() / displayHallWidth * 100));
-    const y = Math.max(0, Math.min(100, e.target.y() / displayHallHeight * 100));
+    const rawX = e.target.x() / displayHallWidth * 100;
+    const rawY = e.target.y() / displayHallHeight * 100;
+    const x = Math.max(0, Math.min(100, snapGrid(rawX)));
+    const y = Math.max(0, Math.min(100, snapGrid(rawY)));
+    // Move node to snapped position
+    e.target.x(x / 100 * displayHallWidth);
+    e.target.y(y / 100 * displayHallHeight);
     const idx = editTables.findIndex(t => t.id === id);
     if (idx >= 0) {
       editTables[idx] = { ...editTables[idx], x, y };
@@ -348,6 +361,28 @@
     >
       <KLayer>
         <KGroup x={offsetX} y={offsetY} scaleX={viewScale * zoom} scaleY={viewScale * zoom}>
+          <!-- Grid lines (edit mode only) -->
+          {#if mode === 'edit' && KLine}
+            {#each Array(Math.floor(100 / GRID_STEP) + 1) as _, i}
+              {@const pos = i * GRID_STEP}
+              <!-- Vertical -->
+              <KLine
+                points={[pos / 100 * displayHallWidth, 0, pos / 100 * displayHallWidth, displayHallHeight]}
+                stroke={dark ? '#374151' : '#E5E7EB'}
+                strokeWidth={0.5}
+                dash={[4, 4]}
+                listening={false}
+              />
+              <!-- Horizontal -->
+              <KLine
+                points={[0, pos / 100 * displayHallHeight, displayHallWidth, pos / 100 * displayHallHeight]}
+                stroke={dark ? '#374151' : '#E5E7EB'}
+                strokeWidth={0.5}
+                dash={[4, 4]}
+                listening={false}
+              />
+            {/each}
+          {/if}
           <!-- Hall boundary border -->
           <KRect
           x={0}
