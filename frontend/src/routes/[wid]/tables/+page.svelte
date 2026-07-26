@@ -3,22 +3,28 @@
   import { goto } from '$app/navigation';
   import { cn } from '$lib/utils';
   import { addToast, isDrawerOpen } from '$lib/stores';
-  import { Star, Users, Plus, MoreVertical, Pencil, Trash2, X, AlertCircle } from 'lucide-svelte';
+  import { Star, Users, Plus, MoreVertical, Pencil, Trash2, X, AlertCircle, Map } from 'lucide-svelte';
   import { listTables, createTable, updateTable, deleteTable, getOccupancy } from '$lib/api/tables';
+  import { getLayout, saveLayout } from '$lib/api/layout';
+  import { defaultSlot } from '$lib/utils/layout';
   import { weddingId } from '$lib/stores/weddingId';
   import { get } from 'svelte/store';
-  import type { BanquetTable, TableOccupancy } from '$lib/types';
+  import type { BanquetTable, TableOccupancy, HallElement, HallLayoutData } from '$lib/types';
 
-  type TableCreateData = Omit<BanquetTable, 'id' | 'x' | 'y'>;
+  type TableCreateData = Omit<BanquetTable, 'id'>;
   import HallMap from '$lib/components/seating/HallMap.svelte';
 
   const RING_R = 24;
   const RING_CIRCUM = 2 * Math.PI * RING_R;
 
   let tables = $state<BanquetTable[]>([]);
+  let elements = $state<HallElement[]>([]);
+  let hallWidth = $state(860);
+  let hallHeight = $state(1000);
   let tablesError = $state<string | null>(null);
   let occupancy = $state.raw<Map<string, TableOccupancy>>(new Map());
   let loading = $state(true);
+  let editMode = $state(false);
 
   let gridCols = $derived.by(() => {
     const n = (tables ?? []).length;
@@ -38,8 +44,6 @@
   let editingTable = $state<BanquetTable | null>(null);
   let formName = $state('');
   let formCapacity = $state(10);
-  let formRow = $state(1);
-  let formCol = $state(1);
   let formVip = $state(false);
   let saving = $state(false);
 
@@ -53,8 +57,11 @@
   });
 
   async function loadData() {
-    const [apiTables, rawOcc] = await Promise.all([listTables(wid), getOccupancy(wid)]);
-    tables = apiTables;
+    const [layout, rawOcc] = await Promise.all([getLayout(wid), getOccupancy(wid)]);
+    tables = layout.tables ?? [];
+    elements = layout.elements ?? [];
+    hallWidth = layout.hallWidth ?? 860;
+    hallHeight = layout.hallHeight ?? 1000;
     tablesError = null;
     const occMap = new Map<string, TableOccupancy>();
     for (const o of rawOcc) {
@@ -71,30 +78,15 @@
     occupancy = occMap;
   }
 
-  // ponytail: mirrors backend yPositions + fixed column layout from table.go computeLayout
-  const yPositions: Record<number, number> = { 1: 15, 2: 30, 3: 45, 4: 60, 5: 75, 6: 90 };
-  function rowColToXY(row: number, col: number): { x: number; y: number } {
-    const y = yPositions[row] ?? 50;
-    // Use max columns across all rows to align columns consistently
-    let maxCol = 0;
-    for (const t of (tables ?? [])) {
-      if (t.col > maxCol) maxCol = t.col;
-    }
-    if (maxCol === 0) maxCol = 3; // default
-    const x = (100 / (maxCol + 1)) * col;
-    return { x, y };
-  }
-
   let previewTable = $derived.by(() => {
-    const pos = rowColToXY(formRow, formCol);
+    const pos = defaultSlot(tables);
     return {
       id: '',
       name: formName || 'New',
       capacity: formCapacity,
-      row: formRow,
-      col: formCol,
       x: pos.x,
       y: pos.y,
+      degree: 0,
       isVip: formVip,
     };
   });
@@ -112,15 +104,6 @@
     formName = '';
     formCapacity = 10;
     formVip = false;
-    // Find next available row/col
-    const occupied = new Set((tables ?? []).map(t => `${t.row},${t.col}`));
-    let r = 1, c = 1;
-    while (occupied.has(`${r},${c}`)) {
-      c++;
-      if (c > 5) { c = 1; r++; }
-    }
-    formRow = r;
-    formCol = c;
     showModal = true;
   }
 
@@ -128,8 +111,6 @@
     editingTable = table;
     formName = table.name;
     formCapacity = table.capacity;
-    formRow = table.row;
-    formCol = table.col;
     formVip = table.isVip;
     showModal = true;
     contextMenu = null;
@@ -143,7 +124,15 @@
   async function handleSave() {
     saving = true;
     try {
-      const data: TableCreateData = { name: formName || `Table ${(tables ?? []).length + 1}`, capacity: formCapacity, row: formRow, col: formCol, isVip: formVip };
+      const pos = defaultSlot(tables);
+      const data: TableCreateData = {
+        name: formName || `Table ${(tables ?? []).length + 1}`,
+        capacity: formCapacity,
+        x: editingTable ? editingTable.x : pos.x,
+        y: editingTable ? editingTable.y : pos.y,
+        degree: editingTable ? editingTable.degree : 0,
+        isVip: formVip,
+      };
       if (editingTable) {
         const updated = await updateTable(wid, editingTable.id, data);
         tables = tables.map(t => t.id === editingTable!.id ? updated : t);
@@ -185,6 +174,26 @@
     return `left: ${Math.max(0, left)}px; top: ${Math.max(0, top)}px;`;
   }
 
+  async function handleSaveLayout(editTables: BanquetTable[], editElements: HallElement[], hw: number, hh: number) {
+    try {
+      await saveLayout(wid, {
+        hallWidth: hw,
+        hallHeight: hh,
+        tables: editTables.map(t => ({ id: t.id, x: t.x, y: t.y, degree: t.degree })),
+        elements: editElements,
+      });
+      addToast('Layout saved', 'success');
+      editMode = false;
+      await loadData();
+    } catch (e: any) {
+      addToast(e.message ?? 'Save failed', 'error');
+    }
+  }
+
+  function handleCancelEdit() {
+    editMode = false;
+  }
+
   onMount(async () => {
     try {
       await loadData();
@@ -206,6 +215,9 @@
       <p class="text-sm text-gray-500 mt-0.5">Overview of all {(tables ?? []).length} tables</p>
     </div>
     <div class="flex items-center gap-2">
+      <button onclick={() => editMode = !editMode} class="px-4 py-2.5 border border-gray-200 bg-white rounded-xl text-sm font-semibold hover:bg-gray-50 transition-colors flex items-center gap-2">
+        <Map class="w-4 h-4" /> {editMode ? 'Exit Editor' : 'Edit Layout'}
+      </button>
       <button onclick={openCreate} class="px-4 py-2.5 bg-red text-white rounded-xl text-sm font-semibold hover:bg-red-light transition-colors flex items-center gap-2">
         <Plus class="w-4 h-4" /> Add Table
       </button>
@@ -214,6 +226,21 @@
       </button>
     </div>
   </div>
+
+  {#if editMode}
+    <div class="mb-4 rounded-2xl overflow-hidden border border-gray-200" style="height: 600px;">
+      <HallMap
+        mode="edit"
+        {tables}
+        {elements}
+        {hallWidth}
+        {hallHeight}
+        tableGuests={{}}
+        onSaveLayout={handleSaveLayout}
+        onCancelEdit={handleCancelEdit}
+      />
+    </div>
+  {/if}
 
   {#if loading}
     <div class="grid {gridCols} gap-4">
@@ -339,10 +366,6 @@
       </div>
 
       <div class="p-5 space-y-4">
-        <div class="text-sm text-gray-500 mb-2">
-          {editingTable ? editingTable.name : 'New Table'} — Row {formRow}, Col {formCol}
-        </div>
-
         <div>
           <label for="table-name" class="text-sm font-semibold text-gray-700 mb-1.5 block">Table Name</label>
           <input
@@ -352,31 +375,6 @@
             placeholder="e.g. Table 1, VIP A, 圆桌"
             class="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm bg-white focus:border-gold focus:ring-2 focus:ring-gold/15 outline-none transition-all"
           />
-        </div>
-
-        <div class="grid grid-cols-2 gap-4">
-          <div>
-            <label for="table-row" class="text-sm font-semibold text-gray-700 mb-1.5 block">Row</label>
-            <input
-              id="table-row"
-              type="number"
-              min="1"
-              max="6"
-              bind:value={formRow}
-              class="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm bg-white focus:border-gold focus:ring-2 focus:ring-gold/15 outline-none transition-all"
-            />
-          </div>
-          <div>
-            <label for="table-col" class="text-sm font-semibold text-gray-700 mb-1.5 block">Column</label>
-            <input
-              id="table-col"
-              type="number"
-              min="1"
-              max="5"
-              bind:value={formCol}
-              class="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm bg-white focus:border-gold focus:ring-2 focus:ring-gold/15 outline-none transition-all"
-            />
-          </div>
         </div>
 
         <!-- Mini Map Preview -->

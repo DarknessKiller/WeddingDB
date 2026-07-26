@@ -2,6 +2,7 @@
   import { onMount } from 'svelte';
   import BanquetTableComponent from './BanquetTable.svelte';
   import HallElementNode from './HallElementNode.svelte';
+  import EditToolbar from './EditToolbar.svelte';
   import type { BanquetTable as BanquetTableType, HallElement, Guest } from '$lib/types';
   import { ZoomIn, ZoomOut, RotateCcw } from 'lucide-svelte';
 
@@ -17,6 +18,8 @@
     dark = false,
     onTableClick,
     onSeatClick,
+    onSaveLayout,
+    onCancelEdit,
   }: {
     mode?: 'view' | 'edit';
     tables?: BanquetTableType[];
@@ -29,6 +32,8 @@
     dark?: boolean;
     onTableClick?: (id: string) => void;
     onSeatClick?: (tableId: string, seatNum: number, guest: Guest | null) => void;
+    onSaveLayout?: (tables: BanquetTableType[], elements: HallElement[], hallWidth: number, hallHeight: number) => Promise<void>;
+    onCancelEdit?: () => void;
   } = $props();
 
   let zoom = $state(1);
@@ -44,8 +49,56 @@
   // ponytail: 3 separate svelte-konva imports; consolidate via props if load time matters
   let KonvaStage: any = $state(null);
   let KLayer: any = $state(null);
+  let KTransformer: any = $state(null);
 
-  let viewScale = $derived(Math.min(containerW / hallWidth, containerH / hallHeight));
+  // Edit state
+  let editTables = $state<BanquetTableType[]>([]);
+  let editElements = $state<HallElement[]>([]);
+  let editHallWidth = $state(0);
+  let editHallHeight = $state(0);
+  let selectedId = $state<string | null>(null);
+  let transformerEl = $state<any>(null);
+  let nodeRefs = $state<Map<string, any>>(new Map());
+
+  $effect(() => {
+    if (mode === 'edit') {
+      editTables = structuredClone(tables);
+      editElements = structuredClone(elements);
+      editHallWidth = hallWidth;
+      editHallHeight = hallHeight;
+      selectedId = null;
+    } else {
+      selectedId = null;
+    }
+  });
+
+  // Attach transformer to selected node
+  $effect(() => {
+    const _ = selectedId;
+    if (transformerEl) {
+      const konvaTransformer = transformerEl.getNode?.() ?? transformerEl;
+      if (konvaTransformer?.nodes) {
+        if (selectedId) {
+          const node = nodeRefs.get(selectedId);
+          konvaTransformer.nodes(node ? [node] : []);
+        } else {
+          konvaTransformer.nodes([]);
+        }
+        konvaTransformer.getLayer()?.batchDraw();
+      }
+    }
+  });
+
+  const displayTables = $derived(mode === 'edit' ? editTables : tables);
+  const displayElements = $derived(mode === 'edit' ? editElements : elements);
+  const displayHallWidth = $derived(mode === 'edit' ? editHallWidth : hallWidth);
+  const displayHallHeight = $derived(mode === 'edit' ? editHallHeight : hallHeight);
+
+  let viewScale = $derived(Math.min(containerW / displayHallWidth, containerH / displayHallHeight));
+
+  const isTableSelected = $derived(
+    mode === 'edit' && selectedId !== null && editTables.some(t => t.id === selectedId)
+  );
 
   onMount(() => {
     let wheelCleanup: (() => void) | null = null;
@@ -65,6 +118,7 @@
       const mod = await import('svelte-konva');
       KonvaStage = mod.Stage;
       KLayer = mod.Layer;
+      KTransformer = mod.Transformer;
 
       const canvas = containerEl?.querySelector('canvas');
       if (canvas) {
@@ -92,6 +146,7 @@
   });
 
   function handleMouseDown(e: MouseEvent) {
+    if (mode === 'edit') return;
     if (e.button !== 0) return;
     isDragging = true;
     dragStart = { x: e.clientX - panX, y: e.clientY - panY };
@@ -115,6 +170,7 @@
 
   let touchStart = { x: 0, y: 0 };
   function handleTouchStart(e: TouchEvent) {
+    if (mode === 'edit') return;
     if (e.touches.length === 1) {
       isDragging = true;
       touchStart = { x: e.touches[0].clientX - panX, y: e.touches[0].clientY - panY };
@@ -130,17 +186,90 @@
     isDragging = false;
   }
 
+  function handleStageClick(e: any) {
+    if (mode !== 'edit') return;
+    if (e.target === e.target.getStage()) {
+      selectedId = null;
+    }
+  }
+
+  function handleDragEnd(id: string, e: any) {
+    const x = Math.max(0, Math.min(100, e.target.x() / displayHallWidth * 100));
+    const y = Math.max(0, Math.min(100, e.target.y() / displayHallHeight * 100));
+    const idx = editTables.findIndex(t => t.id === id);
+    if (idx >= 0) {
+      editTables[idx] = { ...editTables[idx], x, y };
+      return;
+    }
+    const eidx = editElements.findIndex(el => el.id === id);
+    if (eidx >= 0) {
+      editElements[eidx] = { ...editElements[eidx], x, y };
+    }
+  }
+
+  function handleTransformEnd(id: string, e: any) {
+    const node = e.target;
+    const rotation = node.rotation();
+    const idx = editTables.findIndex(t => t.id === id);
+    if (idx >= 0) {
+      editTables[idx] = { ...editTables[idx], degree: rotation };
+      return;
+    }
+    const eidx = editElements.findIndex(el => el.id === id);
+    if (eidx >= 0) {
+      const el = editElements[eidx];
+      const baseW = el.width / 100 * displayHallWidth;
+      const baseH = el.height / 100 * displayHallHeight;
+      const newW = (node.scaleX() * baseW) / displayHallWidth * 100;
+      const newH = (node.scaleY() * baseH) / displayHallHeight * 100;
+      node.scaleX(1);
+      node.scaleY(1);
+      editElements[eidx] = { ...el, degree: rotation, width: newW, height: newH };
+    }
+  }
+
+  function handleAddElement(el: HallElement) {
+    editElements = [...editElements, el];
+  }
+
+  function handleDeleteSelected(id: string) {
+    editElements = editElements.filter(el => el.id !== id);
+    selectedId = null;
+  }
+
+  async function handleSave() {
+    await onSaveLayout?.(editTables, editElements, editHallWidth, editHallHeight);
+  }
+
+  function handleCancel() {
+    onCancelEdit?.();
+  }
+
   const stageW = $derived(containerW);
   const stageH = $derived(containerH);
 </script>
 
 <svelte:window onmousemove={handleMouseMove} onmouseup={handleMouseUp} />
 
+{#if mode === 'edit'}
+  <EditToolbar
+    hallWidth={editHallWidth}
+    hallHeight={editHallHeight}
+    {selectedId}
+    onSave={handleSave}
+    onCancel={handleCancel}
+    onDelete={handleDeleteSelected}
+    onAddElement={handleAddElement}
+    onWidthChange={(w) => editHallWidth = w}
+    onHeightChange={(h) => editHallHeight = h}
+  />
+{/if}
+
 <div
   bind:this={containerEl}
   class="relative flex-1 overflow-hidden select-none min-h-[300px] {dark ? 'bg-gray-950' : 'bg-gray-50'}"
-  class:cursor-grab={!isDragging}
-  class:cursor-grabbing={isDragging}
+  class:cursor-grab={mode !== 'edit' && !isDragging}
+  class:cursor-grabbing={mode !== 'edit' && isDragging}
   onmousedown={handleMouseDown}
   ontouchstart={handleTouchStart}
   ontouchmove={handleTouchMove}
@@ -162,13 +291,15 @@
     <div class="text-center text-[10px] {dark ? 'text-gray-500' : 'text-gray-400'} font-medium mt-0.5">{Math.round(zoom * 100)}%</div>
   </div>
 
-  <!-- Legend -->
-  <div class="absolute bottom-3 left-3 sm:bottom-4 sm:left-4 z-30 {dark ? 'bg-gray-800/90 border-gray-700' : 'bg-white/90 border-gray-200'} backdrop-blur-sm border rounded-xl px-3 sm:px-4 py-2 sm:py-3 text-[10px] sm:text-xs space-y-1 sm:space-y-1.5">
-    <div class="flex items-center gap-2"><span class="w-2.5 h-2.5 sm:w-3 sm:h-3 rounded-full border-2 {dark ? 'border-gray-600 bg-gray-700' : 'border-gray-200 bg-gray-100'}"></span> Empty</div>
-    <div class="flex items-center gap-2"><span class="w-2.5 h-2.5 sm:w-3 sm:h-3 rounded-full border-2 border-red {dark ? 'bg-red-900/40' : 'bg-red-50'}"></span> Occupied</div>
-    <div class="flex items-center gap-2"><span class="w-2.5 h-2.5 sm:w-3 sm:h-3 rounded-full border-2 border-emerald-500 {dark ? 'bg-emerald-900/40' : 'bg-emerald-50'}"></span> Checked In</div>
-    <div class="flex items-center gap-2"><span class="w-2.5 h-2.5 sm:w-3 sm:h-3 rounded-full border-2 border-gold {dark ? 'bg-gold/20' : 'bg-gold-50'}"></span> VIP</div>
-  </div>
+  <!-- Legend (view mode only) -->
+  {#if mode !== 'edit'}
+    <div class="absolute bottom-3 left-3 sm:bottom-4 sm:left-4 z-30 {dark ? 'bg-gray-800/90 border-gray-700' : 'bg-white/90 border-gray-200'} backdrop-blur-sm border rounded-xl px-3 sm:px-4 py-2 sm:py-3 text-[10px] sm:text-xs space-y-1 sm:space-y-1.5">
+      <div class="flex items-center gap-2"><span class="w-2.5 h-2.5 sm:w-3 sm:h-3 rounded-full border-2 {dark ? 'border-gray-600 bg-gray-700' : 'border-gray-200 bg-gray-100'}"></span> Empty</div>
+      <div class="flex items-center gap-2"><span class="w-2.5 h-2.5 sm:w-3 sm:h-3 rounded-full border-2 border-red {dark ? 'bg-red-900/40' : 'bg-red-50'}"></span> Occupied</div>
+      <div class="flex items-center gap-2"><span class="w-2.5 h-2.5 sm:w-3 sm:h-3 rounded-full border-2 border-emerald-500 {dark ? 'bg-emerald-900/40' : 'bg-emerald-50'}"></span> Checked In</div>
+      <div class="flex items-center gap-2"><span class="w-2.5 h-2.5 sm:w-3 sm:h-3 rounded-full border-2 border-gold {dark ? 'bg-gold/20' : 'bg-gold-50'}"></span> VIP</div>
+    </div>
+  {/if}
 
   {#if KonvaStage && KLayer}
     <KonvaStage
@@ -178,25 +309,54 @@
       scaleY={viewScale * zoom}
       x={panX}
       y={panY}
+      onclick={handleStageClick}
     >
       <KLayer>
-        {#each elements as el (el.id)}
-          <HallElementNode element={el} {hallWidth} {hallHeight} {dark} />
+        {#each displayElements as el (el.id)}
+          <HallElementNode
+            element={el}
+            hallWidth={displayHallWidth}
+            hallHeight={displayHallHeight}
+            {dark}
+            mode={mode}
+            bind:this={nodeRefs[el.id]}
+            ondragend={(e: any) => handleDragEnd(el.id, e)}
+            ontransformend={(e: any) => handleTransformEnd(el.id, e)}
+            onselect={() => { if (mode === 'edit') selectedId = el.id; }}
+          />
         {/each}
-        {#each tables as t (t.id)}
+        {#each displayTables as t (t.id)}
           <BanquetTableComponent
             table={t}
             guests={tableGuestsRaw[t.id] ?? []}
             isSelected={selectedTableId === t.id}
             isHighlighted={highlightedTableId === t.id}
             {dark}
-            {hallWidth}
-            {hallHeight}
+            hallWidth={displayHallWidth}
+            hallHeight={displayHallHeight}
             {mode}
-            onTableClick={() => onTableClick?.(t.id)}
-            onSeatClick={(seatNum, guest) => onSeatClick?.(t.id, seatNum, guest)}
+            bind:this={nodeRefs[t.id]}
+            onTableClick={mode === 'edit' ? () => { selectedId = t.id; } : () => onTableClick?.(t.id)}
+            onSeatClick={mode === 'edit' ? undefined : (seatNum, guest) => onSeatClick?.(t.id, seatNum, guest)}
+            ondragend={(e: any) => handleDragEnd(t.id, e)}
+            ontransformend={(e: any) => handleTransformEnd(t.id, e)}
           />
         {/each}
+        {#if KTransformer && mode === 'edit'}
+          <KTransformer
+            bind:this={transformerEl}
+            rotateEnabled={true}
+            enabledAnchors={isTableSelected ? [] : undefined}
+            anchorSize={8}
+            anchorCornerRadius={2}
+            borderStroke="#D4AF37"
+            anchorStroke="#D4AF37"
+            anchorFill="#FFFFFF"
+            anchorStrokeWidth={2}
+            borderStrokeWidth={1.5}
+            padding={4}
+          />
+        {/if}
       </KLayer>
     </KonvaStage>
   {/if}

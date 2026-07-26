@@ -14,6 +14,8 @@
     mode = 'view',
     onTableClick,
     onSeatClick,
+    ondragend,
+    ontransformend,
   }: {
     table: BanquetTable;
     guests?: Guest[];
@@ -25,6 +27,8 @@
     mode?: 'view' | 'edit';
     onTableClick?: () => void;
     onSeatClick?: (seatNum: number, guest: Guest | null) => void;
+    ondragend?: (e: any) => void;
+    ontransformend?: (e: any) => void;
   } = $props();
 
   const px = $derived(table.x / 100 * hallWidth);
@@ -43,6 +47,11 @@
   let Circle: any = $state(null);
   let Arc: any = $state(null);
   let KText: any = $state(null);
+  let groupEl = $state<any>(null);
+
+  export function getNode() {
+    return groupEl;
+  }
 
   onMount(async () => {
     const mod = await import('svelte-konva');
@@ -91,7 +100,10 @@
     y={py}
     rotation={table.degree}
     draggable={mode === 'edit'}
+    bind:this={groupEl}
     onclick={() => onTableClick?.()}
+    ondragend={ondragend}
+    ontransformend={ontransformend}
   >
     <!-- Occupancy ring background -->
     <Circle

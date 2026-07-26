@@ -2,11 +2,15 @@
   import { onMount } from 'svelte';
   import type { HallElement } from '$lib/types';
 
-  let { element, hallWidth, hallHeight, dark = false }: {
+  let { element, hallWidth, hallHeight, dark = false, mode = 'view', ondragend, ontransformend, onselect }: {
     element: HallElement;
     hallWidth: number;
     hallHeight: number;
     dark?: boolean;
+    mode?: 'view' | 'edit';
+    ondragend?: (e: any) => void;
+    ontransformend?: (e: any) => void;
+    onselect?: () => void;
   } = $props();
 
   const px = $derived(element.x / 100 * hallWidth);
@@ -17,6 +21,11 @@
   let Group: any = $state(null);
   let Rect: any = $state(null);
   let KText: any = $state(null);
+  let groupEl = $state<any>(null);
+
+  export function getNode() {
+    return groupEl;
+  }
 
   onMount(async () => {
     const mod = await import('svelte-konva');
@@ -25,20 +34,30 @@
     KText = mod.Text;
   });
 
-  const styleMap: Record<string, { fill: string; stroke: string; strokeW: number; textFill: string; label: string }> = {
-    stage: { fill: '#7F1D1D', stroke: '#D4AF37', strokeW: 2, textFill: '#D4AF37', label: '✦ Stage ✦' },
-    dj_counter: { fill: '#1F2937', stroke: '#4B5563', strokeW: 1, textFill: '#FFFFFF', label: element.label },
-    entrance: { fill: '#E5E7EB', stroke: '#9CA3AF', strokeW: 1, textFill: '#6B7280', label: element.label || '▼ Entrance ▼' },
-    tv: { fill: '#111827', stroke: '#374151', strokeW: 1, textFill: '#9CA3AF', label: 'TV' },
-    walkway: { fill: '#374151', stroke: 'transparent', strokeW: 0, textFill: 'transparent', label: '' },
-    box: { fill: 'transparent', stroke: '#1F2937', strokeW: 2, textFill: dark ? '#D1D5DB' : '#374151', label: element.label },
-  };
-
-  const s = $derived(styleMap[element.type] ?? styleMap.box);
+  const s = $derived.by(() => {
+    const styleMap: Record<string, { fill: string; stroke: string; strokeW: number; textFill: string; label: string }> = {
+      stage: { fill: '#7F1D1D', stroke: '#D4AF37', strokeW: 2, textFill: '#D4AF37', label: '✦ Stage ✦' },
+      dj_counter: { fill: '#1F2937', stroke: '#4B5563', strokeW: 1, textFill: '#FFFFFF', label: element.label },
+      entrance: { fill: '#E5E7EB', stroke: '#9CA3AF', strokeW: 1, textFill: '#6B7280', label: element.label || '▼ Entrance ▼' },
+      tv: { fill: '#111827', stroke: '#374151', strokeW: 1, textFill: '#9CA3AF', label: 'TV' },
+      walkway: { fill: '#374151', stroke: 'transparent', strokeW: 0, textFill: 'transparent', label: '' },
+      box: { fill: 'transparent', stroke: '#1F2937', strokeW: 2, textFill: dark ? '#D1D5DB' : '#374151', label: element.label },
+    };
+    return styleMap[element.type] ?? styleMap.box;
+  });
 </script>
 
 {#if Group && Rect && KText}
-  <Group x={px} y={py} rotation={element.degree}>
+  <Group
+    x={px}
+    y={py}
+    rotation={element.degree}
+    draggable={mode === 'edit'}
+    bind:this={groupEl}
+    onclick={() => onselect?.()}
+    ondragend={ondragend}
+    ontransformend={ontransformend}
+  >
     <Rect
       x={-w / 2}
       y={-h / 2}
