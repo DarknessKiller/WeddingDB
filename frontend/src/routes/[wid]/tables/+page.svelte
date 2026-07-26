@@ -22,7 +22,7 @@
   let hallWidth = $state(860);
   let hallHeight = $state(1000);
   let tablesError = $state<string | null>(null);
-  let occupancy = $state.raw<Map<string, TableOccupancy>>(new Map());
+  let occupancy: Record<string, TableOccupancy> = $state.raw({});
   let loading = $state(true);
   let editMode = $state(false);
 
@@ -63,17 +63,17 @@
     hallWidth = layout.hallWidth ?? 860;
     hallHeight = layout.hallHeight ?? 1000;
     tablesError = null;
-    const occMap = new Map<string, TableOccupancy>();
+    const occMap: Record<string, TableOccupancy> = {};
     for (const o of rawOcc) {
       const table = tables.find(t => t.id === o.TableID);
       const capacity = table?.capacity ?? 0;
-      occMap.set(o.TableID, {
+      occMap[o.TableID] = {
         tableId: o.TableID,
         tableName: table?.name ?? '',
         occupied: o.Pax,
         capacity,
         percentage: capacity > 0 ? Math.round((o.Pax / capacity) * 100) : 0
-      });
+      };
     }
     occupancy = occMap;
   }
@@ -94,7 +94,7 @@
   const wid = get(weddingId);
 
   function getOcc(tableId: string): { occupied: number; percentage: number } {
-    const occ = occupancy.get(tableId);
+    const occ = occupancy[tableId];
     if (occ) return occ;
     return { occupied: 0, percentage: 0 };
   }

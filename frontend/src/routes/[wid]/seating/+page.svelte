@@ -19,7 +19,7 @@
   let elements = $state<HallElement[]>([]);
   let hallWidth = $state(860);
   let hallHeight = $state(1000);
-  let occupancyData = $state.raw<Map<string, number>>(new Map());
+  let occupancyData: Record<string, number> = $state.raw({});
   let loading = $state(true);
   let errored = $state(false);
   let error = $state<string | null>(null);
@@ -79,8 +79,8 @@
     } else {
       allTables = await listTables(wid).catch(() => []);
     }
-    const occMap = new Map<string, number>();
-    for (const o of rawOcc) occMap.set(o.TableID, o.Pax);
+    const occMap: Record<string, number> = {};
+    for (const o of rawOcc) occMap[o.TableID] = o.Pax;
     occupancyData = occMap;
   }
 
@@ -119,7 +119,7 @@
   });
   let selectedOccupancy = $derived.by((): TableOccupancy | null => {
     if (!selectedTableId || !selectedTable) return null;
-    const occupied = occupancyData.get(selectedTableId) ?? 0;
+    const occupied = (selectedTableId ? occupancyData[selectedTableId] : 0) ?? 0;
     const capacity = selectedTable.capacity;
     return { tableId: selectedTableId, tableName: selectedTable.name || `Table`, occupied, capacity, percentage: capacity > 0 ? Math.round((occupied / capacity) * 100) : 0 };
   });
