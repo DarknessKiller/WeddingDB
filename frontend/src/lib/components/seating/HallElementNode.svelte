@@ -46,11 +46,12 @@
       dj_counter: { fill: '#1F2937', stroke: '#4B5563', strokeW: 1, textFill: '#FFFFFF', defaultLabel: 'DJ' },
       entrance: { fill: '#E5E7EB', stroke: '#9CA3AF', strokeW: 1, textFill: '#6B7280', defaultLabel: 'Entrance' },
       tv: { fill: '#111827', stroke: '#374151', strokeW: 1, textFill: '#9CA3AF', defaultLabel: 'TV' },
-      walkway: { fill: dark ? '#374151' : '#6B7280', stroke: dark ? '#4B5563' : '#9CA3AF', strokeW: 1, textFill: 'transparent', defaultLabel: '' },
+      walkway: { fill: dark ? '#374151' : '#6B7280', stroke: dark ? '#4B5563' : '#9CA3AF', strokeW: 1, textFill: dark ? '#D1D5DB' : '#374151', defaultLabel: '' },
       box: { fill: 'transparent', stroke: '#1F2937', strokeW: 2, textFill: dark ? '#D1D5DB' : '#374151', defaultLabel: '' },
     };
     const st = styleMap[element.type] ?? styleMap.box;
-    return { ...st, label: element.label || st.defaultLabel };
+    const fill = element.color || st.fill;
+    return { ...st, fill, label: element.label || st.defaultLabel };
   });
 </script>
 

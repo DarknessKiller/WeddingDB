@@ -50,6 +50,7 @@
       width: d.w,
       height: d.h,
       label: d.label,
+      color: '',
       zIndex: 10,
     });
   }
@@ -181,6 +182,17 @@
           value={selectedItem.label ?? ''}
           oninput={(e) => onUpdateSelected({ label: e.currentTarget.value })}
           class="w-24 px-1.5 py-1 border border-gray-200 rounded-lg"
+        />
+      </div>
+      <!-- Color -->
+      <div class="flex items-center gap-1">
+        <label for="sel-color" class="text-gray-500">Color</label>
+        <input
+          id="sel-color"
+          type="color"
+          value={selectedItem.color || '#6B7280'}
+          oninput={(e) => onUpdateSelected({ color: e.currentTarget.value })}
+          class="w-7 h-7 border border-gray-200 rounded cursor-pointer"
         />
       </div>
     {/if}

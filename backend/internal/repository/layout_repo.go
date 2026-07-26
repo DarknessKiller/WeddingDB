@@ -51,7 +51,7 @@ func (r *LayoutRepo) SaveLayout(
 				Updates(map[string]any{
 					"type": toUpdate[i].Type, "x": toUpdate[i].X, "y": toUpdate[i].Y,
 					"degree": toUpdate[i].Degree, "width": toUpdate[i].Width, "height": toUpdate[i].Height,
-					"label": toUpdate[i].Label, "z_index": toUpdate[i].ZIndex,
+					"label": toUpdate[i].Label, "color": toUpdate[i].Color, "z_index": toUpdate[i].ZIndex,
 				})
 			if res.Error != nil {
 				return res.Error

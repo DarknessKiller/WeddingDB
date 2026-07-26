@@ -24,9 +24,9 @@ export async function saveLayout(wid: string, data: SaveLayoutPayload): Promise<
 	// Strip extra fields AND temp IDs (new-* → "") that Fuego rejects
 	const clean = {
 		...data,
-		elements: data.elements.map(({ id, type, x, y, degree, width, height, label, zIndex }) => ({
+		elements: data.elements.map(({ id, type, x, y, degree, width, height, label, color, zIndex }) => ({
 			id: id.startsWith('new-') ? '' : id,
-			type, x, y, degree, width, height, label, zIndex
+			type, x, y, degree, width, height, label, color: color || '', zIndex
 		}))
 	};
 	const res = await apiFetch(`/api/weddings/${wid}/layout`, {

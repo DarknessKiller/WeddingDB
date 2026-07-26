@@ -85,15 +85,16 @@ export interface SearchResult {
 export type ElementType = 'stage' | 'dj_counter' | 'entrance' | 'tv' | 'walkway' | 'box';
 
 export interface HallElement {
-  id: string;
-  type: ElementType;
-  x: number;
-  y: number;
-  degree: number;
-  width: number;
-  height: number;
-  label: string;
-  zIndex: number;
+	id: string;
+	type: ElementType;
+	x: number;
+	y: number;
+	degree: number;
+	width: number;
+	height: number;
+	label: string;
+	color: string;
+	zIndex: number;
 }
 
 export interface HallLayoutData {
