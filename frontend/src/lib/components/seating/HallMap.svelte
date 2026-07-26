@@ -323,6 +323,7 @@
     hallWidth={editHallWidth}
     hallHeight={editHallHeight}
     {selectedId}
+    {isTableSelected}
     onSave={handleSave}
     onCancel={handleCancel}
     onDelete={handleDeleteSelected}
