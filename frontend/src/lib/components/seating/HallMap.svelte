@@ -62,8 +62,8 @@
 
   $effect(() => {
     if (mode === 'edit') {
-      editTables = structuredClone(tables);
-      editElements = structuredClone(elements);
+      editTables = JSON.parse(JSON.stringify(tables));
+      editElements = JSON.parse(JSON.stringify(elements));
       editHallWidth = hallWidth;
       editHallHeight = hallHeight;
       selectedId = null;
