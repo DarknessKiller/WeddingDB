@@ -59,3 +59,19 @@ export interface KioskSettings {
 	kioskLogoUrl: string;
 	kioskBackgroundUrl: string;
 	kioskBackgroundBlur: number;
+	kioskBackgroundSize: string;
+	kioskBackgroundPosX: string;
+	kioskBackgroundPosY: string;
+	kioskLogoSize: string;
+	kioskLogoPosX: string;
+	kioskLogoPosY: string;
+}
+
+export async function updateKioskSettings(id: string, settings: KioskSettings): Promise<Wedding> {
+	const res = await apiFetch(`/api/weddings/${id}/kiosk`, {
+		method: 'PUT',
+		body: JSON.stringify(settings),
+	});
+	if (!res.ok) throw new Error('Failed to update kiosk settings');
+	return res.json();
+}

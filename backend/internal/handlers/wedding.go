@@ -101,3 +101,52 @@ func (h *WeddingHandler) Update(c fuego.ContextWithBody[WeddingRequest]) (any, e
 
 type KioskSettingsRequest struct {
 	KioskTitle          string `json:"kioskTitle"`
+	KioskDescription    string `json:"kioskDescription"`
+	KioskLogoUrl        string `json:"kioskLogoUrl"`
+	KioskBackgroundUrl  string `json:"kioskBackgroundUrl"`
+	KioskBackgroundBlur int    `json:"kioskBackgroundBlur"`
+	KioskBackgroundSize string `json:"kioskBackgroundSize"`
+	KioskBackgroundPosX string `json:"kioskBackgroundPosX"`
+	KioskBackgroundPosY string `json:"kioskBackgroundPosY"`
+	KioskLogoSize       string `json:"kioskLogoSize"`
+	KioskLogoPosX       string `json:"kioskLogoPosX"`
+	KioskLogoPosY       string `json:"kioskLogoPosY"`
+}
+
+func (h *WeddingHandler) UpdateKioskSettings(c fuego.ContextWithBody[KioskSettingsRequest]) (any, error) {
+	id := DecodeID(c.PathParam("id"))
+	if err := requireWeddingAccess(c.Context(), id); err != nil {
+		return nil, fuego.UnauthorizedError{Title: err.Error()}
+	}
+	body, err := c.Body()
+	if err != nil {
+		return nil, fuego.BadRequestError{Title: "Invalid request"}
+	}
+	w, err := h.weddingService.Get(id)
+	if err != nil {
+		return nil, fuego.NotFoundError{Title: "Wedding not found"}
+	}
+	w.KioskTitle = body.KioskTitle
+	w.KioskDescription = body.KioskDescription
+	w.KioskLogoUrl = body.KioskLogoUrl
+	w.KioskBackgroundUrl = body.KioskBackgroundUrl
+	w.KioskBackgroundBlur = body.KioskBackgroundBlur
+	w.KioskBackgroundSize = body.KioskBackgroundSize
+	w.KioskBackgroundPosX = body.KioskBackgroundPosX
+	w.KioskBackgroundPosY = body.KioskBackgroundPosY
+	w.KioskLogoSize = body.KioskLogoSize
+	w.KioskLogoPosX = body.KioskLogoPosX
+	w.KioskLogoPosY = body.KioskLogoPosY
+	if err := h.weddingService.Update(w); err != nil {
+		return nil, fuego.InternalServerError{Title: "Failed to update kiosk settings"}
+	}
+	return w, nil
+}
+
+func (h *WeddingHandler) Delete(c fuego.ContextWithBody[any]) (any, error) {
+	if err := requireAdmin(c.Context()); err != nil {
+		return nil, fuego.UnauthorizedError{Title: err.Error()}
+	}
+	id := DecodeID(c.PathParam("id"))
+	return nil, h.weddingService.Delete(id)
+}
