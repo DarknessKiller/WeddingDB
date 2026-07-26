@@ -1,6 +1,7 @@
 <script lang="ts">
   import { searchGuests, getGuest, listGuests, listTables, checkInGuest } from '$lib/api/search';
   import { getLayout } from '$lib/api/layout';
+  import { listWeddings } from '$lib/api/weddings';
   import { addToast } from '$lib/stores';
   import { weddingId } from '$lib/stores/weddingId';
   import { get } from 'svelte/store';
@@ -32,6 +33,7 @@
   let hallWidth = $state(860);
   let hallHeight = $state(1000);
   let dataLoading = $state(true);
+  let showSeatNumbers = $state(true);
 
   // ponytail: load tables/guests on mount for seating map
   let initialized = $state(false);
@@ -56,6 +58,11 @@
         hallWidth = layout.hallWidth;
         hallHeight = layout.hallHeight;
       }
+      // Load showSeatNumbers from wedding data
+      const weddings = await listWeddings().catch(() => []);
+      const wid = get(weddingId);
+      const w = weddings.find(x => x.id === wid) as any;
+      if (w?.showSeatNumbers !== undefined) showSeatNumbers = w.showSeatNumbers;
     } catch {
       addToast('Failed to load data', 'error');
     } finally {
@@ -358,15 +365,17 @@
 
         <!-- Guest Info -->
         <div class="px-5 py-4">
-          <div class="grid grid-cols-3 gap-3 text-sm mb-4">
+          <div class="grid grid-cols-{showSeatNumbers ? '3' : '2'} gap-3 text-sm mb-4">
             <div class="bg-gray-50 rounded-xl p-3 text-center">
               <div class="text-gray-500 text-xs">Table</div>
               <div class="font-bold text-gray-900 text-lg">{tables.find(t => selectedGuest && t.id === selectedGuest.tableId)?.name || (selectedGuest?.tableId ?? '—')}</div>
             </div>
+            {#if showSeatNumbers}
             <div class="bg-gray-50 rounded-xl p-3 text-center">
               <div class="text-gray-500 text-xs">Seat</div>
               <div class="font-bold text-gray-900 text-lg">{formatSeatRange(selectedGuest.seatNumber, selectedGuest.pax)}</div>
             </div>
+            {/if}
             <div class="bg-gray-50 rounded-xl p-3 text-center">
               <div class="text-gray-500 text-xs">Pax</div>
               <div class="font-bold text-gray-900 text-lg">{selectedGuest.pax}</div>
@@ -445,8 +454,7 @@
                 <span class="text-gold font-semibold text-sm">★ VIP Table</span>
               {/if}
               <div class="text-sm text-gray-500 mt-1">
-                {formatSeatRange(checkinGuest.seatNumber, checkinGuest.pax)}
-                · {checkinGuest.pax} pax
+                {#if showSeatNumbers}{formatSeatRange(checkinGuest.seatNumber, checkinGuest.pax)} · {/if}{checkinGuest.pax} pax
               </div>
             </div>
 

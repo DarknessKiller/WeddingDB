@@ -65,6 +65,7 @@ export interface KioskSettings {
 	kioskLogoSize: string;
 	kioskLogoPosX: string;
 	kioskLogoPosY: string;
+	showSeatNumbers: boolean;
 }
 
 export async function updateKioskSettings(id: string, settings: KioskSettings): Promise<Wedding> {

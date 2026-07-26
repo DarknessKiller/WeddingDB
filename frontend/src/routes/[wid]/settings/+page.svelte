@@ -25,6 +25,7 @@
   let kioskLogoPosX = $state('50%');
   let kioskLogoPosY = $state('50%');
   let kioskLogoBlur = $state(0);
+  let showSeatNumbers = $state(true);
 
   onMount(async () => {
     try {
@@ -43,6 +44,7 @@
         if ((wedding as any).kioskLogoSize) kioskLogoSize = (wedding as any).kioskLogoSize;
         if ((wedding as any).kioskLogoPosX) kioskLogoPosX = (wedding as any).kioskLogoPosX;
         if ((wedding as any).kioskLogoPosY) kioskLogoPosY = (wedding as any).kioskLogoPosY;
+        showSeatNumbers = (wedding as any).showSeatNumbers ?? true;
       }
     } catch {
       addToast('Failed to load settings', 'error');
@@ -67,6 +69,7 @@
         kioskLogoSize,
         kioskLogoPosX,
         kioskLogoPosY,
+        showSeatNumbers,
       });
       addToast('Kiosk settings saved', 'success');
     } catch (e: any) {
@@ -182,7 +185,6 @@
               showBlur={true}
             />
           </div>
-
         </div>
 
         <!-- Save -->
@@ -194,6 +196,20 @@
             {:else}
               <Save class="w-4 h-4" /> Save Settings
             {/if}
+          </button>
+        </div>
+      </div>
+
+      <!-- Seat Numbers Toggle -->
+      <div class="bg-white border border-gray-200 rounded-2xl p-5">
+        <div class="flex items-center justify-between py-1">
+          <div>
+            <p class="text-sm font-semibold text-gray-900">Show Seat Numbers</p>
+            <p class="text-xs text-gray-500">Display individual seat numbers on the kiosk and check-in screens</p>
+          </div>
+          <button onclick={() => { showSeatNumbers = !showSeatNumbers; }}
+            class="relative inline-flex h-6 w-11 items-center rounded-full transition-colors {showSeatNumbers ? 'bg-deep-red' : 'bg-gray-200'}">
+            <span class="inline-block h-4 w-4 transform rounded-full bg-white transition-transform {showSeatNumbers ? 'translate-x-6' : 'translate-x-1'}" />
           </button>
         </div>
       </div>
