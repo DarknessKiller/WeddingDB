@@ -55,7 +55,5 @@ func DefaultElements(weddingID uuid.UUID) []HallElement {
 	return []HallElement{
 		mk("stage", 50, 3, 30, 6, "Stage", 10),
 		mk("entrance", 50, 97, 16, 4, "Entrance", 10),
-		mk("walkway", 35, 55, 2, 70, "", 1),
-		mk("walkway", 55, 78, 40, 2, "", 1),
 	}
 }
