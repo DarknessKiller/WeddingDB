@@ -47,16 +47,15 @@ func RowColToXY(ids []uuid.UUID, rows, cols []int) map[uuid.UUID][2]float64 {
 	return out
 }
 
-// DefaultElements returns the hardcoded hall decoration elements.
+// DefaultElements returns a sensible default hall layout.
 func DefaultElements(weddingID uuid.UUID) []HallElement {
 	mk := func(typ string, x, y, w, h float64, label string, z int) HallElement {
-		return HallElement{WeddingID: weddingID, Type: typ, X: x, Y: y, Width: w, Height: h, Label: label, ZIndex: z}
+		return HallElement{WeddingID: weddingID, Type: typ, X: x, Y: y, Width: w, Height: h, Label: label, Name: label, ZIndex: z}
 	}
 	return []HallElement{
-		mk("stage", 50, 3, 55, 6, "\u2726 Stage \u2726", 10),
-		mk("entrance", 50, 98, 14, 4, "\u25bc Entrance \u25bc", 10),
-		mk("walkway", 50, 50, 0.3, 84, "", 1),
-		mk("walkway", 30, 50, 0.3, 84, "", 1),
-		mk("walkway", 70, 50, 0.3, 84, "", 1),
+		mk("stage", 50, 3, 30, 6, "Stage", 10),
+		mk("entrance", 50, 97, 16, 4, "Entrance", 10),
+		mk("walkway", 35, 55, 2, 70, "", 1),
+		mk("walkway", 55, 78, 40, 2, "", 1),
 	}
 }

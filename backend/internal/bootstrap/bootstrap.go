@@ -94,8 +94,12 @@ func Init(env config.Env) *App {
 		}
 		for _, wid := range weddingIDs {
 			var rows []legacyTable
-			if err := db.Table("banquet_tables").Select("id, row, col").Where("wedding_id = ?", wid).Scan(&rows).Error; err != nil {
+			// Only backfill tables where x and y are both 0 (not already set)
+			if err := db.Table("banquet_tables").Select("id, row, col").Where("wedding_id = ? AND x = 0 AND y = 0", wid).Scan(&rows).Error; err != nil {
 				log.Fatal("row/col migration: scan rows for wedding ", wid, ":", err)
+			}
+			if len(rows) == 0 {
+				continue
 			}
 			ids := make([]uuid.UUID, len(rows))
 			r := make([]int, len(rows))
@@ -114,6 +118,8 @@ func Init(env config.Env) *App {
 			log.Println("Warning: drop col column:", err)
 		}
 	}
+	// Backfill element Name from Label where Name is empty
+	db.Model(&models.HallElement{}).Where("name = '' OR name IS NULL").Update("name", gorm.Expr("label"))
 	// Seed default elements for weddings that have none
 	var allWeddings []uuid.UUID
 	db.Model(&models.WeddingEvent{}).Pluck("id", &allWeddings)

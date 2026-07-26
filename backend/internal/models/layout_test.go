@@ -40,8 +40,8 @@ func TestRowColToXY_BeyondSixRows(t *testing.T) {
 func TestDefaultElements(t *testing.T) {
 	wid := uuid.New()
 	els := DefaultElements(wid)
-	if len(els) != 5 {
-		t.Fatalf("want 5 default elements, got %d", len(els))
+	if len(els) != 4 {
+		t.Fatalf("want 4 default elements, got %d", len(els))
 	}
 	counts := map[string]int{}
 	for _, e := range els {
@@ -50,7 +50,7 @@ func TestDefaultElements(t *testing.T) {
 		}
 		counts[e.Type]++
 	}
-	if counts["stage"] != 1 || counts["entrance"] != 1 || counts["walkway"] != 3 {
+	if counts["stage"] != 1 || counts["entrance"] != 1 || counts["walkway"] != 2 {
 		t.Errorf("bad defaults: %v", counts)
 	}
 }

@@ -46,7 +46,7 @@
       dj_counter: { fill: '#1F2937', stroke: '#4B5563', strokeW: 1, textFill: '#FFFFFF', label: element.label },
       entrance: { fill: '#E5E7EB', stroke: '#9CA3AF', strokeW: 1, textFill: '#6B7280', label: element.label || '▼ Entrance ▼' },
       tv: { fill: '#111827', stroke: '#374151', strokeW: 1, textFill: '#9CA3AF', label: 'TV' },
-      walkway: { fill: 'transparent', stroke: dark ? '#4B5563' : '#D1D5DB', strokeW: 1, textFill: 'transparent', label: '', dash: [6, 4] },
+      walkway: { fill: dark ? '#374151' : '#6B7280', stroke: dark ? '#4B5563' : '#9CA3AF', strokeW: 1, textFill: 'transparent', label: '' },
       box: { fill: 'transparent', stroke: '#1F2937', strokeW: 2, textFill: dark ? '#D1D5DB' : '#374151', label: element.label },
     };
     return styleMap[element.type] ?? styleMap.box;
@@ -77,7 +77,6 @@
       fillRadialGradientColorStops={element.type === 'stage' ? [0, '#A11217', 1, '#7F1D1D'] : undefined}
       stroke={s.stroke}
       strokeWidth={s.strokeW}
-      dash={s.dash}
       cornerRadius={element.type === 'stage' ? [0, 0, 8, 8] : element.type === 'entrance' ? [8, 8, 0, 0] : 4}
     />
     {#if s.label && element.type !== 'box'}

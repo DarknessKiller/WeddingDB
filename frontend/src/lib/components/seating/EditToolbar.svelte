@@ -35,7 +35,7 @@
     dj_counter: { w: 12, h: 5, label: 'DJ' },
     entrance: { w: 14, h: 4, label: 'Entrance' },
     tv: { w: 5, h: 3, label: 'TV' },
-    walkway: { w: 3, h: 40, label: '' },
+    walkway: { w: 2, h: 50, label: '' },
     box: { w: 25, h: 30, label: '' },
   };
 
