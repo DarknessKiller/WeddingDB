@@ -58,7 +58,7 @@
   let editHallHeight = $state(0);
   let selectedId = $state<string | null>(null);
   let transformerEl = $state<any>(null);
-  let nodeRefs = $state<Map<string, any>>(new Map());
+  let nodeRefs = $state<Record<string, any>>({});
 
   $effect(() => {
     if (mode === 'edit') {
@@ -79,7 +79,7 @@
       const konvaTransformer = transformerEl.getNode?.() ?? transformerEl;
       if (konvaTransformer?.nodes) {
         if (selectedId) {
-          const node = nodeRefs.get(selectedId);
+          const node = nodeRefs[selectedId];
           konvaTransformer.nodes(node ? [node] : []);
         } else {
           konvaTransformer.nodes([]);
@@ -256,6 +256,7 @@
     hallWidth={editHallWidth}
     hallHeight={editHallHeight}
     {selectedId}
+    {isTableSelected}
     onSave={handleSave}
     onCancel={handleCancel}
     onDelete={handleDeleteSelected}

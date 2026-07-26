@@ -6,6 +6,7 @@
     hallWidth,
     hallHeight,
     selectedId = null,
+    isTableSelected = false,
     onSave,
     onCancel,
     onDelete,
@@ -16,6 +17,7 @@
     hallWidth: number;
     hallHeight: number;
     selectedId?: string | null;
+    isTableSelected?: boolean;
     onSave: () => void;
     onCancel: () => void;
     onDelete: (id: string) => void;
@@ -36,7 +38,7 @@
   function addElement(type: ElementType) {
     const d = defaults[type];
     onAddElement({
-      id: crypto.randomUUID(),
+      id: '',
       type,
       x: 50,
       y: 50,
@@ -70,7 +72,7 @@
     </button>
   {/each}
 
-  {#if selectedId}
+  {#if selectedId && !isTableSelected}
     <button
       onclick={() => onDelete(selectedId!)}
       class="px-2 py-1 border border-red-200 text-red rounded-lg hover:bg-red-50 font-medium transition-colors flex items-center gap-1"
