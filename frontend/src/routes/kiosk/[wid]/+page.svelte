@@ -33,6 +33,7 @@
   let kioskBackgroundSize = $state('cover');
   let kioskBackgroundPosX = $state('center');
   let kioskBackgroundPosY = $state('center');
+  let showSeatNumbers = $state(true);
 
   let tableGuests = $derived.by(() => {
     const obj: Record<string, Guest[]> = {};
@@ -80,6 +81,7 @@
         if (data.kioskBackgroundSize) kioskBackgroundSize = data.kioskBackgroundSize;
         if (data.kioskBackgroundPosX) kioskBackgroundPosX = data.kioskBackgroundPosX;
         if (data.kioskBackgroundPosY) kioskBackgroundPosY = data.kioskBackgroundPosY;
+        if (data.showSeatNumbers !== undefined) showSeatNumbers = data.showSeatNumbers;
       }
     }).catch(() => {});
   });
@@ -201,6 +203,7 @@
                     <span class="text-gold text-[10px] font-semibold">★ VIP</span>
                   {/if}
                 </div>
+                {#if showSeatNumbers}
                 <div class="w-px h-10 bg-gray-200"></div>
                 <div class="text-center">
                   <div class="text-[10px] text-gray-500 uppercase tracking-wider mb-1">Seats</div>
@@ -208,6 +211,7 @@
                     {formatSeatRange(selectedGuest.seatNumber, selectedGuest.pax)}
                   </div>
                 </div>
+                {/if}
               </div>
 
               <p class="text-center text-[11px] text-gray-400 mt-3">
@@ -288,7 +292,7 @@
                   <div class="flex items-center gap-3 text-sm text-gray-500 mt-0.5">
                     {#if guest.tableId}
                       <span class="flex items-center gap-1"><MapPin class="w-3.5 h-3.5" />Table {tables.find(t => t.id === guest.tableId)?.name ?? guest.tableId}</span>
-                      <span>{formatSeatRange(guest.seatNumber, guest.pax)}</span>
+                      {#if showSeatNumbers}<span>{formatSeatRange(guest.seatNumber, guest.pax)}</span>{/if}
                     {:else}
                       <span class="text-gray-500">No seat assigned</span>
                     {/if}
