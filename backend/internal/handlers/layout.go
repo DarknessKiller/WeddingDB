@@ -98,6 +98,9 @@ func (h *LayoutHandler) Save(c fuego.ContextWithBody[LayoutRequest]) (any, error
 		if err != nil {
 			return nil, fuego.BadRequestError{Title: "Invalid table id"}
 		}
+		if t.X < 0 || t.X > 100 || t.Y < 0 || t.Y > 100 {
+			return nil, fuego.BadRequestError{Title: "Table X/Y must be 0–100"}
+		}
 		tablePos[id] = [3]float64{t.X, t.Y, t.Degree}
 	}
 	elements := make([]models.HallElement, 0, len(body.Elements))

@@ -109,7 +109,7 @@
     mode === 'edit' && selectedId !== null && editTables.some(t => t.id === selectedId)
   );
 
-  const selectedItem = $derived(() => {
+  const selectedItem = $derived.by(() => {
     if (!selectedId) return null;
     const t = editTables.find(t => t.id === selectedId);
     if (t) return { kind: 'table' as const, ...t };
@@ -192,15 +192,17 @@
 
   let touchStart = { x: 0, y: 0 };
   function handleStageTouchStart(e: any) {
-    if (e.touches.length === 1) {
+    const touches = e.evt.touches;
+    if (touches.length === 1) {
       isDragging = true;
-      touchStart = { x: e.touches[0].clientX - panX, y: e.touches[0].clientY - panY };
+      touchStart = { x: touches[0].clientX - panX, y: touches[0].clientY - panY };
     }
   }
   function handleStageTouchMove(e: any) {
-    if (!isDragging || e.touches.length !== 1) return;
-    panX = e.touches[0].clientX - touchStart.x;
-    panY = e.touches[0].clientY - touchStart.y;
+    const touches = e.evt.touches;
+    if (!isDragging || touches.length !== 1) return;
+    panX = touches[0].clientX - touchStart.x;
+    panY = touches[0].clientY - touchStart.y;
   }
   function handleStageTouchEnd() {
     isDragging = false;
@@ -305,7 +307,7 @@
     hallHeight={editHallHeight}
     {selectedId}
     {isTableSelected}
-    selectedItem={selectedItem()}
+    selectedItem={selectedItem}
     onSave={handleSave}
     onCancel={handleCancel}
     onDelete={handleDeleteSelected}
