@@ -383,6 +383,28 @@
     >
       <KLayer>
         <KGroup x={offsetX} y={offsetY} scaleX={viewScale * zoom} scaleY={viewScale * zoom}>
+          <!-- Grid lines (edit mode only) -->
+          {#if mode === 'edit' && KLine}
+            {#each Array(Math.floor(100 / GRID_STEP) + 1) as _, i}
+              {@const pos = i * GRID_STEP}
+              <!-- Vertical -->
+              <KLine
+                points={[pos / 100 * displayHallWidth, 0, pos / 100 * displayHallWidth, displayHallHeight]}
+                stroke={dark ? '#374151' : '#E5E7EB'}
+                strokeWidth={0.5}
+                dash={[4, 4]}
+                listening={false}
+              />
+              <!-- Horizontal -->
+              <KLine
+                points={[0, pos / 100 * displayHallHeight, displayHallWidth, pos / 100 * displayHallHeight]}
+                stroke={dark ? '#374151' : '#E5E7EB'}
+                strokeWidth={0.5}
+                dash={[4, 4]}
+                listening={false}
+              />
+            {/each}
+          {/if}
           <!-- Hall boundary border -->
           <KRect
           x={0}
