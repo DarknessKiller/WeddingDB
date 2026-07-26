@@ -25,8 +25,7 @@ export interface BanquetTable {
   capacity: number;
   x: number;
   y: number;
-  row: number;
-  col: number;
+  degree: number;
   isVip: boolean;
 }
 
@@ -83,13 +82,29 @@ export interface SearchResult {
   matchType: 'name' | 'phone' | 'email';
 }
 
-export interface HallLayout {
-  width: number;
-  height: number;
-  stageTop: number;
-  stageHeight: number;
-  entranceBottom: number;
-  aisleWidth: number;
+export type ElementType = 'stage' | 'dj_counter' | 'entrance' | 'tv' | 'walkway' | 'box';
+
+export interface HallElement {
+	id: string;
+	type: ElementType;
+	x: number;
+	y: number;
+	degree: number;
+	width: number;
+	height: number;
+	label: string;
+	color: string;
+	textColor: string;
+	strokeColor: string;
+	opacity: number;
+	zIndex: number;
+}
+
+export interface HallLayoutData {
+  hallWidth: number;
+  hallHeight: number;
+  tables: BanquetTable[];
+  elements: HallElement[];
 }
 
 export type ViewMode = 'seating' | 'reception' | 'kiosk';

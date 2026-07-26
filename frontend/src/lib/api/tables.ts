@@ -11,7 +11,7 @@ export async function listTables(weddingId: string): Promise<BanquetTable[]> {
 	return res.json();
 }
 
-export async function createTable(weddingId: string, data: Omit<BanquetTable, 'id' | 'x' | 'y'>): Promise<BanquetTable> {
+export async function createTable(weddingId: string, data: Omit<BanquetTable, 'id'>): Promise<BanquetTable> {
 	const res = await apiFetch(wid(weddingId, '/tables'), {
 		method: 'POST',
 		body: JSON.stringify(data)
@@ -20,7 +20,7 @@ export async function createTable(weddingId: string, data: Omit<BanquetTable, 'i
 	return res.json();
 }
 
-export async function updateTable(weddingId: string, id: string, data: Omit<BanquetTable, 'id' | 'x' | 'y'>): Promise<BanquetTable> {
+export async function updateTable(weddingId: string, id: string, data: Omit<BanquetTable, 'id'>): Promise<BanquetTable> {
 	const res = await apiFetch(wid(weddingId, `/tables/${id}`), {
 		method: 'PUT',
 		body: JSON.stringify(data)

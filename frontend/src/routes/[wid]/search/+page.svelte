@@ -1,13 +1,15 @@
 <script lang="ts">
   import { searchGuests, getGuest, listGuests, listTables, checkInGuest } from '$lib/api/search';
+  import { getLayout } from '$lib/api/layout';
   import { addToast } from '$lib/stores';
   import { weddingId } from '$lib/stores/weddingId';
+  import { get } from 'svelte/store';
   import Badge from '$lib/components/ui/Badge.svelte';
   import { getInitials, cn } from '$lib/utils';
   import { goto } from '$app/navigation';
   import { Search, CheckCircle2, UserCheck, Phone, MapPin, Gift, Banknote, X, MapPinned, Loader2 } from 'lucide-svelte';
   import { onMount } from 'svelte';
-  import type { Guest, BanquetTable } from '$lib/types';
+  import type { Guest, BanquetTable, HallElement } from '$lib/types';
   import HallMap from '$lib/components/seating/HallMap.svelte';
 
   let query = $state('');
@@ -25,6 +27,9 @@
 
   let tables = $state<BanquetTable[]>([]);
   let allGuests = $state<Guest[]>([]);
+  let elements = $state<HallElement[]>([]);
+  let hallWidth = $state(860);
+  let hallHeight = $state(1000);
   let dataLoading = $state(true);
 
   // ponytail: load tables/guests on mount for seating map
@@ -38,12 +43,18 @@
     if (initialized) return;
     initialized = true;
     try {
-      const [t, g] = await Promise.all([
+      const [t, g, layout] = await Promise.all([
         listTables().catch(() => [] as BanquetTable[]),
-        listGuests().catch(() => [] as Guest[])
+        listGuests().catch(() => [] as Guest[]),
+        getLayout(get(weddingId)).catch(() => null),
       ]);
       tables = t;
       allGuests = g;
+      if (layout) {
+        elements = layout.elements;
+        hallWidth = layout.hallWidth;
+        hallHeight = layout.hallHeight;
+      }
     } catch {
       addToast('Failed to load data', 'error');
     } finally {
@@ -307,6 +318,9 @@
       {#if tables.length > 0}
         <HallMap
           tables={tables}
+          {elements}
+          {hallWidth}
+          {hallHeight}
           tableGuests={tableGuests}
           onTableClick={handleTableClick}
           highlightedTableId={selectedGuest?.tableId ?? highlightTableId}

@@ -1,18 +1,15 @@
-# Phase 3 Backend — Progress Ledger
+# Hall Map Editor — Progress Ledger
 
 ## Task Status
-- Task 1: Go Module + Dependencies — DONE (e450cce)
-- Task 2: Config Package — DONE (9c0ae07)
-- Task 3: Utils Package — DONE (04512d1)
-- Task 4: Models — DONE (1bc67f2)
-- Task 5: Repository Layer — DONE (9c0ae07)
-- Task 6: Nonce Store (Redis) — DONE (ec5ea40)
-- Task 7: Auth Service — DONE (b15d79e)
-- Task 8: Guest Service — DONE (3d6f2ca)
-- Task 9: Table + Wedding Services — DONE (3269dfe)
-- Task 10: Middleware — DONE (bd04251)
-- Task 11: Handlers — DONE (3453ab1)
-- Task 12: Bootstrap + main.go — DONE (368bb32)
-- Task 13: Frontend Auth Store + API Client — DONE (fb61bbb)
-- Task 14: Remove localStorage Table Logic — DONE (fb61bbb)
-- Task 15: Final Cleanup + README Update — DONE (fb61bbb)
+- Task 1: Backend models + row/col→x/y backfill math — DONE (b763e36)
+- Task 2: Bootstrap migration — DONE (ce05679 + d4980aa fix)
+- Task 3: Table handler — DONE (2aef598)
+- Task 4: Layout API — DONE (7436a05)
+- Task 5: Frontend deps, types, API client, defaultSlot util — DONE (ed6c812)
+- Task 6: Konva HallMap view mode — DONE (33b1ddc + 5a14e7f fix)
+- Task 7: Edit mode + tables/seating page integration — DONE (f4f2c8a + 5392b93 fix)
+- Task 8: Cleanup + E2E verification — DONE (9242298)
+- Final review: DONE (be584ea fix, merge-ready)
+
+## Branch Summary
+13 commits on `hall-map-editor` from base 8d7dc6d to HEAD be584ea.

@@ -21,6 +21,8 @@ type WeddingEvent struct {
 	KioskLogoSize       string    `gorm:"size:20" json:"kioskLogoSize"`
 	KioskLogoPosX       string    `gorm:"size:10" json:"kioskLogoPosX"`
 	KioskLogoPosY       string    `gorm:"size:10" json:"kioskLogoPosY"`
+	HallWidth           int       `gorm:"not null;default:860" json:"hallWidth"`
+	HallHeight          int       `gorm:"not null;default:1000" json:"hallHeight"`
 	CreatedAt           time.Time `json:"createdAt"`
 	UpdatedAt           time.Time `json:"updatedAt"`
 }

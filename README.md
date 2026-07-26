@@ -115,6 +115,8 @@ Server runs at `http://localhost:8080`.
 | POST | `/api/weddings/{wid}/guests/import` | Bulk import guests (max 1000) |
 | GET | `/api/weddings/{wid}/guests/search?q=` | Search guests |
 | GET | `/api/weddings/{wid}/occupancy` | Table occupancy |
+| GET | `/api/weddings/{wid}/layout` | Get hall layout (tables + elements with positions) |
+| PATCH | `/api/weddings/{wid}/layout` | Save hall layout (atomic replace) |
 
 ### Public Endpoints (no auth required)
 
@@ -124,6 +126,7 @@ Server runs at `http://localhost:8080`.
 | GET | `/api/public/weddings/{wid}/guests/search?q=` | Search guests (public) |
 | GET | `/api/public/weddings/{wid}/tables` | List tables (public) |
 | GET | `/api/public/weddings/{wid}/kiosk` | Get kiosk settings |
+| GET | `/api/public/weddings/{wid}/layout` | Get hall layout (public view) |
 
 ## Background Dev Server
 

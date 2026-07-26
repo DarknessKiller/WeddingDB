@@ -1,8 +1,6 @@
 package handlers
 
 import (
-	"sort"
-
 	"weddingdb/internal/models"
 	"weddingdb/internal/services"
 
@@ -16,91 +14,12 @@ func NewTableHandler(tableService *services.TableService) *TableHandler {
 }
 
 type TableRequest struct {
-	Name     string `json:"name"`
-	Capacity int    `json:"capacity"`
-	Row      int    `json:"row"`
-	Col      int    `json:"col"`
-	IsVip    bool   `json:"isVip"`
-}
-
-type TableResponse struct {
-	ID        string  `json:"id"`
-	WeddingID string  `json:"weddingId"`
-	Name      string  `json:"name"`
-	Capacity  int     `json:"capacity"`
-	Row       int     `json:"row"`
-	Col       int     `json:"col"`
-	X         float64 `json:"x"`
-	Y         float64 `json:"y"`
-	IsVip     bool    `json:"isVip"`
-}
-
-var yPositions = map[int]float64{1: 15, 2: 30, 3: 45, 4: 60, 5: 75, 6: 90}
-
-func computeLayout(tables []models.BanquetTable) []TableResponse {
-	type twp struct {
-		models.BanquetTable
-		x, y float64
-	}
-	rowMap := make(map[int][]*twp)
-	for i := range tables {
-		rowMap[tables[i].Row] = append(rowMap[tables[i].Row], &twp{BanquetTable: tables[i]})
-	}
-
-	maxRow := 0
-	for row := range rowMap {
-		if row > maxRow {
-			maxRow = row
-		}
-	}
-
-	yPos := make(map[int]float64)
-	if maxRow <= len(yPositions) {
-		for k, v := range yPositions {
-			yPos[k] = v
-		}
-	} else {
-		start, end := 12.0, 88.0
-		for i := 1; i <= maxRow; i++ {
-			if maxRow == 1 {
-				yPos[i] = (start + end) / 2
-			} else {
-				yPos[i] = start + (end-start)*float64(i-1)/float64(maxRow-1)
-			}
-		}
-	}
-	// Find max columns across all rows to align columns consistently
-	maxCol := 0
-	for _, rowTables := range rowMap {
-		for _, t := range rowTables {
-			if t.Col > maxCol {
-				maxCol = t.Col
-			}
-		}
-	}
-	if maxCol == 0 {
-		maxCol = 3 // default
-	}
-
-	result := make([]TableResponse, 0)
-	for row, rowTables := range rowMap {
-		sort.Slice(rowTables, func(i, j int) bool {
-			return rowTables[i].Col < rowTables[j].Col
-		})
-		y := yPos[row]
-		if y == 0 {
-			y = 50
-		}
-		for _, t := range rowTables {
-			t.x = float64(100) / float64(maxCol+1) * float64(t.Col)
-			t.y = y
-			result = append(result, TableResponse{
-				ID: t.ID.String(), WeddingID: t.WeddingID.String(), Name: t.Name, Capacity: t.Capacity,
-				Row: t.Row, Col: t.Col, X: t.x, Y: t.y, IsVip: t.IsVip,
-			})
-		}
-	}
-	return result
+	Name     string  `json:"name"`
+	Capacity int     `json:"capacity"`
+	X        float64 `json:"x"`
+	Y        float64 `json:"y"`
+	Degree   float64 `json:"degree"`
+	IsVip    bool    `json:"isVip"`
 }
 
 func (h *TableHandler) List(c fuego.ContextWithBody[any]) (any, error) {
@@ -109,7 +28,7 @@ func (h *TableHandler) List(c fuego.ContextWithBody[any]) (any, error) {
 	if err != nil {
 		return nil, err
 	}
-	return computeLayout(tables), nil
+	return tables, nil
 }
 
 func (h *TableHandler) Create(c fuego.ContextWithBody[TableRequest]) (any, error) {
@@ -122,14 +41,15 @@ func (h *TableHandler) Create(c fuego.ContextWithBody[TableRequest]) (any, error
 		WeddingID: wid,
 		Name:      body.Name,
 		Capacity:  body.Capacity,
-		Row:       body.Row,
-		Col:       body.Col,
+		X:         body.X,
+		Y:         body.Y,
+		Degree:    body.Degree,
 		IsVip:     body.IsVip,
 	}
 	if err := h.tableService.Create(table); err != nil {
 		return nil, err
 	}
-	return computeLayout([]models.BanquetTable{*table})[0], nil
+	return table, nil
 }
 
 func (h *TableHandler) Update(c fuego.ContextWithBody[TableRequest]) (any, error) {
@@ -145,13 +65,14 @@ func (h *TableHandler) Update(c fuego.ContextWithBody[TableRequest]) (any, error
 	}
 	table.Name = body.Name
 	table.Capacity = body.Capacity
-	table.Row = body.Row
-	table.Col = body.Col
+	table.X = body.X
+	table.Y = body.Y
+	table.Degree = body.Degree
 	table.IsVip = body.IsVip
 	if err := h.tableService.Update(table); err != nil {
 		return nil, err
 	}
-	return computeLayout([]models.BanquetTable{*table})[0], nil
+	return table, nil
 }
 
 func (h *TableHandler) Delete(c fuego.ContextWithBody[any]) (any, error) {
