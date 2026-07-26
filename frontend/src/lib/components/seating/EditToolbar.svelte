@@ -42,7 +42,7 @@
   function addElement(type: ElementType) {
     const d = defaults[type];
     onAddElement({
-      id: '',
+      id: `new-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
       type,
       x: 50,
       y: 50,

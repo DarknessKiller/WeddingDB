@@ -21,11 +21,12 @@ export interface SaveLayoutPayload {
 }
 
 export async function saveLayout(wid: string, data: SaveLayoutPayload): Promise<void> {
-	// Strip extra fields (weddingId, createdAt, updatedAt) that Fuego rejects
+	// Strip extra fields AND temp IDs (new-* → "") that Fuego rejects
 	const clean = {
 		...data,
 		elements: data.elements.map(({ id, type, x, y, degree, width, height, label, zIndex }) => ({
-			id, type, x, y, degree, width, height, label, zIndex
+			id: id.startsWith('new-') ? '' : id,
+			type, x, y, degree, width, height, label, zIndex
 		}))
 	};
 	const res = await apiFetch(`/api/weddings/${wid}/layout`, {
