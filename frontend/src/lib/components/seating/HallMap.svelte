@@ -50,6 +50,8 @@
   let KonvaStage: any = $state(null);
   let KLayer: any = $state(null);
   let KTransformer: any = $state(null);
+  let KRect: any = $state(null);
+  let konvaLoaded = $state(false);
 
   // Edit state
   let editTables = $state<BanquetTableType[]>([]);
@@ -89,6 +91,11 @@
     }
   });
 
+  // Expose nodeRef setter for child components
+  function setNodeRef(id: string, node: any) {
+    if (node) nodeRefs[id] = node;
+  }
+
   const displayTables = $derived(mode === 'edit' ? editTables : tables);
   const displayElements = $derived(mode === 'edit' ? editElements : elements);
   const displayHallWidth = $derived(mode === 'edit' ? editHallWidth : hallWidth);
@@ -101,7 +108,6 @@
   );
 
   onMount(() => {
-    let wheelCleanup: (() => void) | null = null;
     let ro: ResizeObserver | null = null;
 
     if (containerEl) {
@@ -119,29 +125,27 @@
       KonvaStage = mod.Stage;
       KLayer = mod.Layer;
       KTransformer = mod.Transformer;
+      KRect = mod.Rect;
+      konvaLoaded = true;
 
-      const canvas = containerEl?.querySelector('canvas');
-      if (canvas) {
-        const handler = (e: WheelEvent) => {
-          e.preventDefault();
-          const delta = e.deltaY > 0 ? -0.08 : 0.08;
-          const newZoom = Math.max(0.3, Math.min(3, zoom + delta));
-          const rect = canvas.getBoundingClientRect();
-          const mx = e.clientX - rect.left;
-          const my = e.clientY - rect.top;
-          const scale = newZoom / zoom;
-          panX = mx - scale * (mx - panX);
-          panY = my - scale * (my - panY);
-          zoom = newZoom;
-        };
-        canvas.addEventListener('wheel', handler, { passive: false });
-        wheelCleanup = () => canvas.removeEventListener('wheel', handler);
-      }
+      // Attach wheel handler after Konva loads and canvas exists
+      const attachWheel = () => {
+        const canvas = containerEl?.querySelector('canvas');
+        if (canvas) {
+          canvas.addEventListener('wheel', (e: WheelEvent) => {
+            e.preventDefault();
+            const delta = e.deltaY > 0 ? -0.08 : 0.08;
+            zoom = Math.max(0.3, Math.min(3, zoom + delta));
+          }, { passive: false });
+        } else {
+          requestAnimationFrame(attachWheel);
+        }
+      };
+      requestAnimationFrame(attachWheel);
     })();
 
     return () => {
       ro?.disconnect();
-      wheelCleanup?.();
     };
   });
 
@@ -302,7 +306,7 @@
     </div>
   {/if}
 
-  {#if KonvaStage && KLayer}
+  {#if KonvaStage && KLayer && KRect}
     <KonvaStage
       width={stageW}
       height={stageH}
@@ -313,6 +317,20 @@
       onclick={handleStageClick}
     >
       <KLayer>
+        <!-- Hall boundary border -->
+        <KRect
+          x={0}
+          y={0}
+          width={displayHallWidth}
+          height={displayHallHeight}
+          fill={dark ? '#111827' : '#FFFFFF'}
+          stroke={dark ? '#4B5563' : '#D1D5DB'}
+          strokeWidth={2}
+          cornerRadius={12}
+          shadowColor={dark ? 'rgba(0,0,0,0.5)' : 'rgba(0,0,0,0.08)'}
+          shadowBlur={20}
+          shadowOffsetY={4}
+        />
         {#each displayElements as el (el.id)}
           <HallElementNode
             element={el}
@@ -320,7 +338,7 @@
             hallHeight={displayHallHeight}
             {dark}
             mode={mode}
-            bind:this={nodeRefs[el.id]}
+            onrefready={(node: any) => { nodeRefs[el.id] = node; }}
             ondragend={(e: any) => handleDragEnd(el.id, e)}
             ontransformend={(e: any) => handleTransformEnd(el.id, e)}
             onselect={() => { if (mode === 'edit') selectedId = el.id; }}
@@ -336,7 +354,7 @@
             hallWidth={displayHallWidth}
             hallHeight={displayHallHeight}
             {mode}
-            bind:this={nodeRefs[t.id]}
+            onrefready={(node: any) => { nodeRefs[t.id] = node; }}
             onTableClick={mode === 'edit' ? () => { selectedId = t.id; } : () => onTableClick?.(t.id)}
             onSeatClick={mode === 'edit' ? undefined : (seatNum, guest) => onSeatClick?.(t.id, seatNum, guest)}
             ondragend={(e: any) => handleDragEnd(t.id, e)}

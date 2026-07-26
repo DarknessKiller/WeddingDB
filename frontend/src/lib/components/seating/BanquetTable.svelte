@@ -16,6 +16,7 @@
     onSeatClick,
     ondragend,
     ontransformend,
+    onrefready,
   }: {
     table: BanquetTable;
     guests?: Guest[];
@@ -29,6 +30,7 @@
     onSeatClick?: (seatNum: number, guest: Guest | null) => void;
     ondragend?: (e: any) => void;
     ontransformend?: (e: any) => void;
+    onrefready?: (node: any) => void;
   } = $props();
 
   const px = $derived(table.x / 100 * hallWidth);
@@ -52,6 +54,11 @@
   export function getNode() {
     return groupEl;
   }
+
+  // Register Konva node with parent for transformer
+  $effect(() => {
+    if (groupEl) onrefready?.(groupEl);
+  });
 
   onMount(async () => {
     const mod = await import('svelte-konva');

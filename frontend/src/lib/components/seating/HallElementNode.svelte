@@ -2,7 +2,7 @@
   import { onMount } from 'svelte';
   import type { HallElement } from '$lib/types';
 
-  let { element, hallWidth, hallHeight, dark = false, mode = 'view', ondragend, ontransformend, onselect }: {
+  let { element, hallWidth, hallHeight, dark = false, mode = 'view', ondragend, ontransformend, onselect, onrefready }: {
     element: HallElement;
     hallWidth: number;
     hallHeight: number;
@@ -11,6 +11,7 @@
     ondragend?: (e: any) => void;
     ontransformend?: (e: any) => void;
     onselect?: () => void;
+    onrefready?: (node: any) => void;
   } = $props();
 
   const px = $derived(element.x / 100 * hallWidth);
@@ -26,6 +27,11 @@
   export function getNode() {
     return groupEl;
   }
+
+  // Register Konva node with parent for transformer
+  $effect(() => {
+    if (groupEl) onrefready?.(groupEl);
+  });
 
   onMount(async () => {
     const mod = await import('svelte-konva');
