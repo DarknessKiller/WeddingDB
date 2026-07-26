@@ -140,11 +140,13 @@ func Init(env config.Env) *App {
 	tableRepo := repository.NewTableRepo(db)
 	guestRepo := repository.NewGuestRepo(db)
 	tokenRepo := repository.NewTokenRepo(db)
+	layoutRepo := repository.NewLayoutRepo(db)
 
 	authService := services.NewAuthService(adminRepo, weddingRepo, tokenRepo, env.JWTSecret)
 	tableService := services.NewTableService(tableRepo)
 	guestService := services.NewGuestService(guestRepo, tableRepo)
 	weddingService := services.NewWeddingService(weddingRepo)
+	layoutService := services.NewLayoutService(layoutRepo)
 
 	server := config.NewFuegoServer(env)
 
@@ -161,7 +163,7 @@ func Init(env config.Env) *App {
 		http.ServeFile(w, r, filePath)
 	})
 
-	handlers.RegisterRoutes(server, authService, guestService, tableService, weddingService, adminRepo)
+	handlers.RegisterRoutes(server, authService, guestService, tableService, weddingService, layoutService, adminRepo)
 
 	// Seed default admin if none exists
 	var count int64
