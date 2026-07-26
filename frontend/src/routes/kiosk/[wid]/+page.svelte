@@ -119,7 +119,7 @@
 
 <svelte:head><title>Kiosk – WeddingDB</title></svelte:head>
 
-<div class="min-h-dvh bg-gray-50 text-gray-900 flex flex-col">
+<div class="h-dvh overflow-hidden bg-gray-50 text-gray-900 flex flex-col">
   <!-- Top Bar -->
   <div class="flex items-center justify-between px-4 sm:px-8 py-3 sm:py-4 bg-white border-b border-gray-200 z-20">
     <div class="flex-1 flex items-center gap-3">
@@ -168,12 +168,12 @@
 
       <!-- Info Panel (floating overlay) -->
       {#if hasValidTable}
-        <div class="absolute bottom-4 left-4 right-4 sm:left-auto sm:right-4 sm:bottom-4 sm:w-[360px] z-30">
-          <div class="bg-white border border-gray-200 shadow-xl rounded-2xl shadow-2xl overflow-hidden">
+        <div class="absolute bottom-2 left-2 right-2 sm:bottom-4 sm:left-auto sm:right-4 sm:w-[360px] z-30 pointer-events-none">
+          <div class="bg-white border border-gray-200 shadow-xl rounded-xl sm:rounded-2xl shadow-2xl overflow-hidden pointer-events-auto max-h-[45vh] sm:max-h-none overflow-y-auto">
             <!-- Guest Header -->
-            <div class="flex items-center gap-3 p-4 border-b border-gray-100">
+            <div class="flex items-center gap-3 p-2.5 sm:p-4 border-b border-gray-100">
               <div class={cn(
-                "w-12 h-12 rounded-full flex items-center justify-center text-base font-bold flex-shrink-0",
+                "w-9 h-9 sm:w-12 sm:h-12 rounded-full flex items-center justify-center text-base font-bold flex-shrink-0",
                 selectedGuest.isVip ? "bg-gold-50 text-gold border-2 border-gold-200" :
                 "bg-red-50 text-red border-2 border-red-200"
               )}>
@@ -195,10 +195,10 @@
 
             <!-- Table & Seat Info -->
             <div class="p-4">
-              <div class="flex items-center justify-center gap-8 mb-4">
+              <div class="flex items-center justify-center gap-4 sm:gap-8 mb-2 sm:mb-4">
                 <div class="text-center">
                   <div class="text-[10px] text-gray-500 uppercase tracking-wider mb-1">Table</div>
-                  <div class="text-4xl font-extrabold text-red">{selectedTableName}</div>
+                  <div class="text-2xl sm:text-4xl font-extrabold text-red">{selectedTableName}</div>
                   {#if selectedTable?.isVip}
                     <span class="text-gold text-[10px] font-semibold">★ VIP</span>
                   {/if}
@@ -223,8 +223,8 @@
         </div>
       {:else}
         <!-- No table assigned -->
-        <div class="absolute bottom-4 left-4 right-4 sm:left-auto sm:right-4 sm:bottom-4 sm:w-[360px] z-30">
-          <div class="bg-white border border-gray-200 shadow-xl rounded-2xl shadow-2xl p-6 text-center">
+        <div class="absolute bottom-2 left-2 right-2 sm:bottom-4 sm:left-auto sm:right-4 sm:w-[360px] z-30 pointer-events-none">
+          <div class="bg-white border border-gray-200 shadow-xl rounded-xl sm:rounded-2xl shadow-2xl p-6 text-center pointer-events-auto">
             <MapPin class="w-8 h-8 text-gray-400 mx-auto mb-3" />
             <h3 class="font-bold text-gray-900 mb-1">No Seat Assigned</h3>
             <p class="text-sm text-gray-500">Please see the reception desk for seating.</p>

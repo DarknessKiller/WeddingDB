@@ -39,8 +39,6 @@
   let zoom = $state(1);
   let panX = $state(0);
   let panY = $state(0);
-  let isDragging = $state(false);
-  let dragStart = { x: 0, y: 0 };
 
   let containerEl = $state<HTMLElement | null>(null);
   let containerW = $state(800);
@@ -141,20 +139,74 @@
       KLine = mod.Line;
       konvaLoaded = true;
 
-      // Attach wheel handler after Konva loads and canvas exists
-      const attachWheel = () => {
+      const attachHandlers = () => {
         const canvas = containerEl?.querySelector('canvas');
-        if (canvas) {
-          canvas.addEventListener('wheel', (e: WheelEvent) => {
+        if (!canvas) { requestAnimationFrame(attachHandlers); return; }
+
+        canvas.addEventListener('wheel', (e: WheelEvent) => {
+          e.preventDefault();
+          const delta = e.deltaY > 0 ? -0.08 : 0.08;
+          zoom = Math.max(0.3, Math.min(3, zoom + delta));
+        }, { passive: false });
+
+        let isPanning = false;
+        let startX = 0;
+        let startY = 0;
+
+        canvas.addEventListener('mousedown', (e: MouseEvent) => {
+          isPanning = true;
+          startX = e.clientX - panX;
+          startY = e.clientY - panY;
+          canvas.style.cursor = 'grabbing';
+        });
+        canvas.addEventListener('mousemove', (e: MouseEvent) => {
+          if (!isPanning) return;
+          panX = e.clientX - startX;
+          panY = e.clientY - startY;
+        });
+        canvas.addEventListener('mouseup', () => { isPanning = false; canvas.style.cursor = 'grab'; });
+        canvas.addEventListener('mouseleave', () => { isPanning = false; canvas.style.cursor = 'grab'; });
+
+        let lastTouchDist = 0;
+        let lastTouchMid = { x: 0, y: 0 };
+
+        canvas.addEventListener('touchstart', (e: TouchEvent) => {
+          if (e.touches.length === 1) {
+            isPanning = true;
+            startX = e.touches[0].clientX - panX;
+            startY = e.touches[0].clientY - panY;
+          } else if (e.touches.length === 2) {
+            isPanning = false;
+            const dx = e.touches[0].clientX - e.touches[1].clientX;
+            const dy = e.touches[0].clientY - e.touches[1].clientY;
+            lastTouchDist = Math.sqrt(dx * dx + dy * dy);
+            lastTouchMid = {
+              x: (e.touches[0].clientX + e.touches[1].clientX) / 2,
+              y: (e.touches[0].clientY + e.touches[1].clientY) / 2,
+            };
+          }
+        }, { passive: true });
+
+        canvas.addEventListener('touchmove', (e: TouchEvent) => {
+          if (e.touches.length === 1 && isPanning) {
+            panX = e.touches[0].clientX - startX;
+            panY = e.touches[0].clientY - startY;
+          } else if (e.touches.length === 2) {
             e.preventDefault();
-            const delta = e.deltaY > 0 ? -0.08 : 0.08;
-            zoom = Math.max(0.3, Math.min(3, zoom + delta));
-          }, { passive: false });
-        } else {
-          requestAnimationFrame(attachWheel);
-        }
+            const dx = e.touches[0].clientX - e.touches[1].clientX;
+            const dy = e.touches[0].clientY - e.touches[1].clientY;
+            const dist = Math.sqrt(dx * dx + dy * dy);
+            const scale = dist / lastTouchDist;
+            zoom = Math.max(0.3, Math.min(3, zoom * scale));
+            lastTouchDist = dist;
+          }
+        }, { passive: false });
+
+        canvas.addEventListener('touchend', () => { isPanning = false; });
+
+        canvas.style.cursor = 'grab';
       };
-      requestAnimationFrame(attachWheel);
+      requestAnimationFrame(attachHandlers);
     })();
 
     return () => {
@@ -162,57 +214,17 @@
     };
   });
 
-  function handleStageMouseDown(e: any) {
-    // Only pan when clicking on stage background, not on elements
+  function handleStageClick(e: any) {
+    if (mode !== 'edit') return;
     if (e.target === e.target.getStage()) {
-      isDragging = true;
-      const pos = e.target.getPointerPosition();
-      dragStart = { x: pos.x - panX, y: pos.y - panY };
+      selectedId = null;
     }
-  }
-
-  function handleStageMouseMove(e: any) {
-    if (!isDragging) return;
-    const pos = e.target.getPointerPosition();
-    if (pos) {
-      panX = pos.x - dragStart.x;
-      panY = pos.y - dragStart.y;
-    }
-  }
-
-  function handleStageMouseUp() {
-    isDragging = false;
   }
 
   function resetView() {
     zoom = 1;
     panX = 0;
     panY = 0;
-  }
-
-  let touchStart = { x: 0, y: 0 };
-  function handleStageTouchStart(e: any) {
-    const touches = e.evt.touches;
-    if (touches.length === 1) {
-      isDragging = true;
-      touchStart = { x: touches[0].clientX - panX, y: touches[0].clientY - panY };
-    }
-  }
-  function handleStageTouchMove(e: any) {
-    const touches = e.evt.touches;
-    if (!isDragging || touches.length !== 1) return;
-    panX = touches[0].clientX - touchStart.x;
-    panY = touches[0].clientY - touchStart.y;
-  }
-  function handleStageTouchEnd() {
-    isDragging = false;
-  }
-
-  function handleStageClick(e: any) {
-    if (mode !== 'edit') return;
-    if (e.target === e.target.getStage()) {
-      selectedId = null;
-    }
   }
 
   // Grid snap: snap to nearest 2.5% increment
@@ -337,9 +349,7 @@
 
 <div
   bind:this={containerEl}
-  class="relative flex-1 overflow-hidden select-none min-h-[300px] {dark ? 'bg-gray-950' : 'bg-gray-50'}"
-  class:cursor-grab={!isDragging}
-  class:cursor-grabbing={isDragging}
+  class="relative flex-1 z-10 overflow-hidden select-none min-h-[300px] {dark ? 'bg-gray-950' : 'bg-gray-50'}"
   role="application"
   aria-label="Banquet hall seating map"
 >
@@ -359,7 +369,7 @@
 
   <!-- Legend (view mode only) -->
   {#if mode !== 'edit'}
-    <div class="absolute bottom-3 left-3 sm:bottom-4 sm:left-4 z-30 {dark ? 'bg-gray-800/90 border-gray-700' : 'bg-white/90 border-gray-200'} backdrop-blur-sm border rounded-xl px-3 sm:px-4 py-2 sm:py-3 text-[10px] sm:text-xs space-y-1 sm:space-y-1.5">
+    <div class="absolute top-3 left-3 sm:bottom-4 sm:left-4 z-30 {dark ? 'bg-gray-800/90 border-gray-700' : 'bg-white/90 border-gray-200'} backdrop-blur-sm border rounded-xl px-3 sm:px-4 py-2 sm:py-3 text-[10px] sm:text-xs space-y-1 sm:space-y-1.5">
       <div class="flex items-center gap-2"><span class="w-2.5 h-2.5 sm:w-3 sm:h-3 rounded-full border-2 {dark ? 'border-gray-600 bg-gray-700' : 'border-gray-200 bg-gray-100'}"></span> Empty</div>
       <div class="flex items-center gap-2"><span class="w-2.5 h-2.5 sm:w-3 sm:h-3 rounded-full border-2 border-red {dark ? 'bg-red-900/40' : 'bg-red-50'}"></span> Occupied</div>
       <div class="flex items-center gap-2"><span class="w-2.5 h-2.5 sm:w-3 sm:h-3 rounded-full border-2 border-emerald-500 {dark ? 'bg-emerald-900/40' : 'bg-emerald-50'}"></span> Checked In</div>
@@ -374,12 +384,6 @@
       x={panX}
       y={panY}
       onclick={handleStageClick}
-      onmousedown={handleStageMouseDown}
-      onmousemove={handleStageMouseMove}
-      onmouseup={handleStageMouseUp}
-      ontouchstart={handleStageTouchStart}
-      ontouchmove={handleStageTouchMove}
-      ontouchend={handleStageTouchEnd}
     >
       <KLayer>
         <KGroup x={offsetX} y={offsetY} scaleX={viewScale * zoom} scaleY={viewScale * zoom}>
