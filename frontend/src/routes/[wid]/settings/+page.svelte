@@ -3,10 +3,9 @@
   import { addToast } from '$lib/stores';
   import { weddingId } from '$lib/stores/weddingId';
   import { get } from 'svelte/store';
-  import { listWeddings, updateKioskSettings, type Wedding, type KioskSettings } from '$lib/api/weddings';
+  import { getWedding, updateKioskSettings, type Wedding, type KioskSettings } from '$lib/api/weddings';
   import { Monitor, Save, Loader2, ExternalLink, Copy, Image, Type, FileText, Upload } from 'lucide-svelte';
   import ImageEditor from '$lib/components/ui/ImageEditor.svelte';
-  import { encodeId } from '$lib/utils/encode';
   import { uploadFile } from '$lib/api/client';
 
   let wedding = $state<Wedding | null>(null);
@@ -25,12 +24,12 @@
   let kioskLogoPosX = $state('50%');
   let kioskLogoPosY = $state('50%');
   let kioskLogoBlur = $state(0);
+  let showSeatNumbers = $state(true);
 
   onMount(async () => {
     try {
       const wid = get(weddingId);
-      const weddings = await listWeddings();
-      wedding = weddings.find(w => w.id === wid) ?? null;
+      wedding = await getWedding(wid).catch(() => null);
       if (wedding) {
         kioskTitle = (wedding as any).kioskTitle ?? '';
         kioskDescription = (wedding as any).kioskDescription ?? '';
@@ -43,6 +42,7 @@
         if ((wedding as any).kioskLogoSize) kioskLogoSize = (wedding as any).kioskLogoSize;
         if ((wedding as any).kioskLogoPosX) kioskLogoPosX = (wedding as any).kioskLogoPosX;
         if ((wedding as any).kioskLogoPosY) kioskLogoPosY = (wedding as any).kioskLogoPosY;
+        showSeatNumbers = (wedding as any).showSeatNumbers ?? true;
       }
     } catch {
       addToast('Failed to load settings', 'error');
@@ -67,6 +67,7 @@
         kioskLogoSize,
         kioskLogoPosX,
         kioskLogoPosY,
+        showSeatNumbers,
       });
       addToast('Kiosk settings saved', 'success');
     } catch (e: any) {
@@ -78,7 +79,7 @@
 
   async function copyKioskLink() {
     if (!wedding) return;
-    const url = `${window.location.origin}/kiosk/${encodeId(wedding.id)}`;
+    const url = `${window.location.origin}/kiosk/${wedding.id}`;
     try {
       await navigator.clipboard.writeText(url);
       addToast('Kiosk link copied!', 'success');
@@ -121,7 +122,7 @@
             <button onclick={copyKioskLink} class="px-3 py-2 text-xs font-semibold bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-xl transition-colors flex items-center gap-1.5">
               <Copy class="w-3.5 h-3.5" /> Copy Link
             </button>
-            <a href="/kiosk/{wedding ? encodeId(wedding.id) : ''}" target="_blank"
+            <a href="/kiosk/{wedding ? wedding.id : ''}" target="_blank"
               class="px-3 py-2 text-xs font-semibold bg-red text-white rounded-xl hover:bg-red-light transition-colors flex items-center gap-1.5">
               <ExternalLink class="w-3.5 h-3.5" /> Preview
             </a>
@@ -182,7 +183,6 @@
               showBlur={true}
             />
           </div>
-
         </div>
 
         <!-- Save -->
@@ -194,6 +194,20 @@
             {:else}
               <Save class="w-4 h-4" /> Save Settings
             {/if}
+          </button>
+        </div>
+      </div>
+
+      <!-- Seat Numbers Toggle -->
+      <div class="bg-white border border-gray-200 rounded-2xl p-5">
+        <div class="flex items-center justify-between py-1">
+          <div>
+            <p class="text-sm font-semibold text-gray-900">Show Seat Numbers</p>
+            <p class="text-xs text-gray-500">Display individual seat numbers on the kiosk and check-in screens</p>
+          </div>
+          <button onclick={() => { showSeatNumbers = !showSeatNumbers; }}
+            class="relative inline-flex h-6 w-11 items-center rounded-full transition-colors {showSeatNumbers ? 'bg-deep-red' : 'bg-gray-200'}">
+            <span class="inline-block h-4 w-4 transform rounded-full bg-white transition-transform {showSeatNumbers ? 'translate-x-6' : 'translate-x-1'}" />
           </button>
         </div>
       </div>

@@ -3,11 +3,11 @@
   import { publicSearchGuests as searchGuests, publicListGuests as listGuests } from '$lib/api/public';
   import { getPublicLayout } from '$lib/api/layout';
   import { cn, getInitials } from '$lib/utils';
+  import { formatSeatRange } from '$lib/utils/seat';
   import { Maximize, Minimize, Monitor, Search, ArrowLeft, MapPin, Users, Star, X } from 'lucide-svelte';
   import { onMount, onDestroy } from 'svelte';
   import { page } from '$app/state';
   import { setWeddingId } from '$lib/stores/weddingId';
-  import { decodeId } from '$lib/utils/encode';
   import type { Guest, BanquetTable, HallElement } from '$lib/types';
 
   let query = $state('');
@@ -32,6 +32,7 @@
   let kioskBackgroundSize = $state('cover');
   let kioskBackgroundPosX = $state('center');
   let kioskBackgroundPosY = $state('center');
+  let showSeatNumbers = $state(true);
 
   let tableGuests = $derived.by(() => {
     const obj: Record<string, Guest[]> = {};
@@ -47,16 +48,6 @@
   let selectedTable = $derived(selectedGuest?.tableId ? tables.find(t => t.id === selectedGuest!.tableId) ?? null : null);
   let selectedTableName = $derived(selectedTable?.name ?? selectedGuest?.tableId ?? '—');
   let hasValidTable = $derived(selectedGuest?.tableId != null && selectedTable !== null);
-  let seatOccupants = $derived(
-    selectedGuest?.tableId
-      ? Array.from({ length: selectedTable?.capacity ?? 10 }, (_, i) => {
-          const seatNum = i + 1;
-          const guest = allGuests.find(g => g.tableId === selectedGuest!.tableId && g.seatNumber === seatNum) ?? null;
-          return { seatNum, guest };
-        })
-      : []
-  );
-
   $effect(() => {
     const q = query.trim();
     if (!q) { results = []; searching = false; return; }
@@ -73,7 +64,7 @@
 
   onMount(() => {
     // Set wedding ID from URL param
-    const wid = page.params.wid ? decodeId(page.params.wid) : '';
+    const wid = page.params.wid ?? '';
     if (wid) setWeddingId(wid);
     timer = setInterval(() => currentTime = new Date(), 1000);
     listGuests().then(g => allGuests = g).catch(() => {});
@@ -89,6 +80,7 @@
         if (data.kioskBackgroundSize) kioskBackgroundSize = data.kioskBackgroundSize;
         if (data.kioskBackgroundPosX) kioskBackgroundPosX = data.kioskBackgroundPosX;
         if (data.kioskBackgroundPosY) kioskBackgroundPosY = data.kioskBackgroundPosY;
+        if (data.showSeatNumbers !== undefined) showSeatNumbers = data.showSeatNumbers;
       }
     }).catch(() => {});
   });
@@ -126,7 +118,7 @@
 
 <svelte:head><title>Kiosk – WeddingDB</title></svelte:head>
 
-<div class="min-h-dvh bg-gray-50 text-gray-900 flex flex-col">
+<div class="h-dvh overflow-hidden bg-gray-50 text-gray-900 flex flex-col">
   <!-- Top Bar -->
   <div class="flex items-center justify-between px-4 sm:px-8 py-3 sm:py-4 bg-white border-b border-gray-200 z-20">
     <div class="flex-1 flex items-center gap-3">
@@ -135,15 +127,14 @@
           <ArrowLeft class="w-5 h-5" />
         </button>
         <span class="font-semibold text-gray-900">Table {selectedTableName}</span>
-      {/if}
-    </div>
-    <div class="flex-shrink-0 text-center">
-      {#if !selectedGuest}
-        <div class="flex items-center justify-center gap-2 mb-1">
+      {:else}
+        <div class="flex items-center gap-2">
           <Monitor class="w-5 h-5 text-gold" />
           <span class="font-semibold text-gray-600 text-sm sm:text-base">Find Your Seat</span>
         </div>
       {/if}
+    </div>
+    <div class="flex-shrink-0 text-center">
       <div class="text-lg sm:text-2xl font-bold text-red font-mono">{formatTime(currentTime)}</div>
       <div class="text-[10px] sm:text-xs text-gray-400 hidden sm:block">{formatDate(currentTime)}</div>
     </div>
@@ -171,16 +162,17 @@
         selectedTableId={selectedGuest.tableId}
         tableGuests={tableGuests}
         dark={false}
+        legendPosition="top-left"
       />
 
       <!-- Info Panel (floating overlay) -->
       {#if hasValidTable}
-        <div class="absolute bottom-4 left-4 right-4 sm:left-auto sm:right-4 sm:bottom-4 sm:w-[360px] z-30">
-          <div class="bg-white border border-gray-200 shadow-xl rounded-2xl shadow-2xl overflow-hidden">
+        <div class="absolute bottom-2 left-2 right-2 sm:bottom-4 sm:left-auto sm:right-4 sm:w-[360px] z-30 pointer-events-none">
+          <div class="bg-white border border-gray-200 shadow-xl rounded-xl sm:rounded-2xl shadow-2xl overflow-hidden pointer-events-auto max-h-[45vh] sm:max-h-none overflow-y-auto">
             <!-- Guest Header -->
-            <div class="flex items-center gap-3 p-4 border-b border-gray-100">
+            <div class="flex items-center gap-3 p-2.5 sm:p-4 border-b border-gray-100">
               <div class={cn(
-                "w-12 h-12 rounded-full flex items-center justify-center text-base font-bold flex-shrink-0",
+                "w-9 h-9 sm:w-12 sm:h-12 rounded-full flex items-center justify-center text-base font-bold flex-shrink-0",
                 selectedGuest.isVip ? "bg-gold-50 text-gold border-2 border-gold-200" :
                 "bg-red-50 text-red border-2 border-red-200"
               )}>
@@ -202,36 +194,23 @@
 
             <!-- Table & Seat Info -->
             <div class="p-4">
-              <div class="flex items-center justify-center gap-8 mb-4">
+              <div class="flex items-center justify-center gap-4 sm:gap-8 mb-2 sm:mb-4">
                 <div class="text-center">
                   <div class="text-[10px] text-gray-500 uppercase tracking-wider mb-1">Table</div>
-                  <div class="text-4xl font-extrabold text-red">{selectedTableName}</div>
+                  <div class="text-2xl sm:text-4xl font-extrabold text-red">{selectedTableName}</div>
                   {#if selectedTable?.isVip}
                     <span class="text-gold text-[10px] font-semibold">★ VIP</span>
                   {/if}
                 </div>
+                {#if showSeatNumbers}
                 <div class="w-px h-10 bg-gray-200"></div>
                 <div class="text-center">
                   <div class="text-[10px] text-gray-500 uppercase tracking-wider mb-1">Seats</div>
                   <div class="text-xl font-bold text-gray-900">
-                    {selectedGuest.seatNumber}–{(selectedGuest.seatNumber ?? 0) + selectedGuest.pax - 1}
+                    {formatSeatRange(selectedGuest.seatNumber, selectedGuest.pax)}
                   </div>
                 </div>
-              </div>
-
-              <!-- Mini Seat Map -->
-              <div class="grid grid-cols-5 gap-1.5">
-                {#each seatOccupants as { seatNum, guest }}
-                  {@const isOwn = seatNum >= (selectedGuest.seatNumber ?? 0) && seatNum < (selectedGuest.seatNumber ?? 0) + selectedGuest.pax}
-                  <div class={cn(
-                    "aspect-square rounded-md flex items-center justify-center text-[10px] font-bold border transition-colors",
-                    isOwn ? "bg-red text-white border-red shadow-md shadow-red/20" :
-                    guest ? "bg-gray-100 text-gray-500 border-gray-200" :
-                    "bg-gray-50 text-gray-400 border-gray-200"
-                  )}>
-                    {seatNum}
-                  </div>
-                {/each}
+                {/if}
               </div>
 
               <p class="text-center text-[11px] text-gray-400 mt-3">
@@ -243,8 +222,8 @@
         </div>
       {:else}
         <!-- No table assigned -->
-        <div class="absolute bottom-4 left-4 right-4 sm:left-auto sm:right-4 sm:bottom-4 sm:w-[360px] z-30">
-          <div class="bg-white border border-gray-200 shadow-xl rounded-2xl shadow-2xl p-6 text-center">
+        <div class="absolute bottom-2 left-2 right-2 sm:bottom-4 sm:left-auto sm:right-4 sm:w-[360px] z-30 pointer-events-none">
+          <div class="bg-white border border-gray-200 shadow-xl rounded-xl sm:rounded-2xl shadow-2xl p-6 text-center pointer-events-auto">
             <MapPin class="w-8 h-8 text-gray-400 mx-auto mb-3" />
             <h3 class="font-bold text-gray-900 mb-1">No Seat Assigned</h3>
             <p class="text-sm text-gray-500">Please see the reception desk for seating.</p>
@@ -312,7 +291,7 @@
                   <div class="flex items-center gap-3 text-sm text-gray-500 mt-0.5">
                     {#if guest.tableId}
                       <span class="flex items-center gap-1"><MapPin class="w-3.5 h-3.5" />Table {tables.find(t => t.id === guest.tableId)?.name ?? guest.tableId}</span>
-                      <span>Seat {guest.seatNumber}–{(guest.seatNumber ?? 0) + guest.pax - 1}</span>
+                      {#if showSeatNumbers}<span>{formatSeatRange(guest.seatNumber, guest.pax)}</span>{/if}
                     {:else}
                       <span class="text-gray-500">No seat assigned</span>
                     {/if}

@@ -56,7 +56,7 @@
       strokeW: d.strokeW,
       textFill: element.textColor || d.textFill,
       fillOpacity: element.opacity > 0 ? element.opacity : 1,
-      label: element.label || d.defaultLabel,
+      label: element.name || d.defaultLabel,
     };
   });
 

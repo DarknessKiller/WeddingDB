@@ -3,6 +3,7 @@ package handlers
 import (
 	"time"
 	"weddingdb/internal/services"
+	"weddingdb/internal/utils"
 
 	"github.com/go-fuego/fuego"
 )
@@ -27,7 +28,10 @@ func NewPublicGuestHandler(guestService *services.GuestService) *PublicGuestHand
 }
 
 func (h *PublicGuestHandler) List(c fuego.ContextWithBody[any]) (any, error) {
-	wid := DecodeWID(c)
+	wid, err := DecodeWID(c)
+	if err != nil {
+		return nil, fuego.BadRequestError{Title: "Invalid wedding ID"}
+	}
 	guests, _, err := h.guestService.List(wid, "", 1000)
 	if err != nil {
 		return nil, err
@@ -36,11 +40,11 @@ func (h *PublicGuestHandler) List(c fuego.ContextWithBody[any]) (any, error) {
 	for _, g := range guests {
 		var tid *string
 		if g.TableID != nil {
-			s := g.TableID.String()
+			s := utils.EncodeUUID(*g.TableID)
 			tid = &s
 		}
 		out = append(out, publicGuest{
-			ID:          g.ID.String(),
+			ID:          utils.EncodeUUID(g.ID),
 			Name:        g.Name,
 			Phone:       g.Phone,
 			TableID:     tid,
@@ -62,7 +66,10 @@ func NewPublicKioskHandler(weddingService *services.WeddingService) *PublicKiosk
 }
 
 func (h *PublicKioskHandler) GetKioskSettings(c fuego.ContextWithBody[any]) (any, error) {
-	wid := DecodeWID(c)
+	wid, err := DecodeWID(c)
+	if err != nil {
+		return nil, fuego.BadRequestError{Title: "Invalid wedding ID"}
+	}
 	w, err := h.weddingService.Get(wid)
 	if err != nil {
 		return nil, fuego.NotFoundError{Title: "Wedding not found"}
@@ -79,12 +86,16 @@ func (h *PublicKioskHandler) GetKioskSettings(c fuego.ContextWithBody[any]) (any
 		"kioskLogoSize":       w.KioskLogoSize,
 		"kioskLogoPosX":       w.KioskLogoPosX,
 		"kioskLogoPosY":       w.KioskLogoPosY,
+		"showSeatNumbers":     w.ShowSeatNumbers,
 		"name":                w.Name,
 	}, nil
 }
 
 func (h *PublicGuestHandler) Search(c fuego.ContextWithBody[any]) (any, error) {
-	wid := DecodeWID(c)
+	wid, err := DecodeWID(c)
+	if err != nil {
+		return nil, fuego.BadRequestError{Title: "Invalid wedding ID"}
+	}
 	query := c.QueryParam("q")
 	guests, err := h.guestService.Search(wid, query)
 	if err != nil {
@@ -94,11 +105,11 @@ func (h *PublicGuestHandler) Search(c fuego.ContextWithBody[any]) (any, error) {
 	for _, g := range guests {
 		var tid *string
 		if g.TableID != nil {
-			s := g.TableID.String()
+			s := utils.EncodeUUID(*g.TableID)
 			tid = &s
 		}
 		out = append(out, publicGuest{
-			ID:          g.ID.String(),
+			ID:          utils.EncodeUUID(g.ID),
 			Name:        g.Name,
 			Phone:       g.Phone,
 			TableID:     tid,

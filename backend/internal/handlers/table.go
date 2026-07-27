@@ -23,7 +23,10 @@ type TableRequest struct {
 }
 
 func (h *TableHandler) List(c fuego.ContextWithBody[any]) (any, error) {
-	wid := DecodeWID(c)
+	wid, err := DecodeWID(c)
+	if err != nil {
+		return nil, fuego.BadRequestError{Title: "Invalid wedding ID"}
+	}
 	tables, err := h.tableService.List(wid)
 	if err != nil {
 		return nil, err
@@ -36,7 +39,10 @@ func (h *TableHandler) Create(c fuego.ContextWithBody[TableRequest]) (any, error
 	if err != nil {
 		return nil, fuego.BadRequestError{Title: "Invalid request"}
 	}
-	wid := DecodeWID(c)
+	wid, err := DecodeWID(c)
+	if err != nil {
+		return nil, fuego.BadRequestError{Title: "Invalid wedding ID"}
+	}
 	table := &models.BanquetTable{
 		WeddingID: wid,
 		Name:      body.Name,
@@ -57,8 +63,14 @@ func (h *TableHandler) Update(c fuego.ContextWithBody[TableRequest]) (any, error
 	if err != nil {
 		return nil, fuego.BadRequestError{Title: "Invalid request"}
 	}
-	wid := DecodeWID(c)
-	id := DecodeID(c.PathParam("id"))
+	wid, err := DecodeWID(c)
+	if err != nil {
+		return nil, fuego.BadRequestError{Title: "Invalid wedding ID"}
+	}
+	id, err := DecodeID(c.PathParam("id"))
+	if err != nil {
+		return nil, fuego.BadRequestError{Title: "Invalid ID"}
+	}
 	table, err := h.tableService.Get(id, wid)
 	if err != nil {
 		return nil, fuego.NotFoundError{Title: "Table not found"}
@@ -76,8 +88,14 @@ func (h *TableHandler) Update(c fuego.ContextWithBody[TableRequest]) (any, error
 }
 
 func (h *TableHandler) Delete(c fuego.ContextWithBody[any]) (any, error) {
-	wid := DecodeWID(c)
-	id := DecodeID(c.PathParam("id"))
+	wid, err := DecodeWID(c)
+	if err != nil {
+		return nil, fuego.BadRequestError{Title: "Invalid wedding ID"}
+	}
+	id, err := DecodeID(c.PathParam("id"))
+	if err != nil {
+		return nil, fuego.BadRequestError{Title: "Invalid ID"}
+	}
 	if err := h.tableService.Delete(id, wid); err != nil {
 		return nil, err
 	}

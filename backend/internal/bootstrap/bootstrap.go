@@ -81,8 +81,9 @@ func Init(env config.Env) *App {
 	db.Exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_admin_users_email ON admin_users (email)")
 	db.Exec("CREATE INDEX IF NOT EXISTS idx_banquet_tables_wedding_name ON banquet_tables (wedding_id, name)")
 
-	// Sync element Name from Label (DB has NOT NULL name column)
-	db.Model(&models.HallElement{}).Where("name = '' OR name IS NULL").Update("name", gorm.Expr("label"))
+	if db.Migrator().HasColumn(&models.HallElement{}, "label") {
+		db.Migrator().DropColumn(&models.HallElement{}, "label")
+	}
 	// Seed default elements for weddings that have none
 	var allWeddings []uuid.UUID
 	db.Model(&models.WeddingEvent{}).Pluck("id", &allWeddings)

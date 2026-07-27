@@ -11,7 +11,6 @@
   import relativeTime from 'dayjs/plugin/relativeTime';
   import { onMount } from 'svelte';
   import type { DashboardStats, TableOccupancy, ActivityItem } from '$lib/types';
-  import { encodeId } from '$lib/utils/encode';
 
   dayjs.extend(relativeTime);
 
@@ -71,7 +70,7 @@
       <div class="flex items-center gap-2">
         <button
           onclick={() => {
-            const url = `${window.location.origin}/kiosk/${encodeId(get(weddingId))}`;
+            const url = `${window.location.origin}/kiosk/${get(weddingId)}`;
             const ta = document.createElement('textarea');
             ta.value = url;
             ta.style.position = 'fixed';
@@ -87,7 +86,7 @@
           <Copy class="w-3.5 h-3.5" /> Copy Link
         </button>
         <a
-          href="/kiosk/{encodeId(get(weddingId))}"
+          href="/kiosk/{get(weddingId)}"
           target="_blank"
           class="px-3 py-2 sm:px-4 sm:py-2.5 bg-red hover:bg-red-light text-white rounded-xl text-xs sm:text-sm font-semibold transition-colors flex items-center gap-1.5"
         >

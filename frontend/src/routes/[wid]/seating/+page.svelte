@@ -10,7 +10,7 @@
   import { cn } from '$lib/utils';
   import { page } from '$app/state';
   import { onMount } from 'svelte';
-  import { Users, Star, X, Search, AlertCircle, Plus, Map } from 'lucide-svelte';
+  import { Users, Star, X, Search, AlertCircle, Plus } from 'lucide-svelte';
   import { get } from 'svelte/store';
   import type { BanquetTable, Guest, RSVPStatus, TableOccupancy, HallElement } from '$lib/types';
 
@@ -243,6 +243,7 @@
     {hallWidth}
     {hallHeight}
     mode={editMode ? 'edit' : 'view'}
+    legendPosition="top-left"
     onTableClick={editMode ? undefined : handleTableClick}
     onSeatClick={editMode ? undefined : handleSeatClick}
     onSaveLayout={handleSaveLayout}
@@ -373,12 +374,9 @@
       {/if}
 
       <!-- Panel Footer -->
-      <div class="px-5 py-4 border-t border-gray-100 bg-gray-50/50 flex gap-2">
-        <button onclick={() => goto(`/${$weddingId}/tables`)} class="flex-1 py-2.5 border border-gray-200 bg-white rounded-xl text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors">
-          Edit Table
-        </button>
-        <button onclick={() => editMode = true} class="flex-1 py-2.5 bg-red text-white rounded-xl text-sm font-semibold hover:bg-red-light transition-colors flex items-center justify-center gap-1.5">
-          <Map class="w-3.5 h-3.5" /> Edit Layout
+      <div class="px-5 py-4 border-t border-gray-100 bg-gray-50/50">
+        <button onclick={() => goto(`/${$weddingId}/tables`)} class="w-full py-2.5 border border-gray-200 bg-white rounded-xl text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors">
+          Manage Tables
         </button>
       </div>
     </div>

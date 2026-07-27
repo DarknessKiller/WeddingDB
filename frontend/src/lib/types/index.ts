@@ -92,7 +92,7 @@ export interface HallElement {
 	degree: number;
 	width: number;
 	height: number;
-	label: string;
+	name: string;
 	color: string;
 	textColor: string;
 	strokeColor: string;

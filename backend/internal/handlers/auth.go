@@ -2,7 +2,9 @@ package handlers
 
 import (
 	"unicode"
+	"weddingdb/internal/middleware"
 	"weddingdb/internal/models"
+	"weddingdb/internal/utils"
 	"weddingdb/internal/repository"
 	"weddingdb/internal/services"
 
@@ -82,7 +84,7 @@ type RegisterRequest struct {
 func weddingInfos(weddings []models.WeddingEvent) []WeddingInfo {
 	out := make([]WeddingInfo, len(weddings))
 	for i, w := range weddings {
-		out[i] = WeddingInfo{ID: w.ID.String(), Name: w.Name, Date: w.Date.Format("2006-01-02")}
+		out[i] = WeddingInfo{ID: utils.EncodeUUID(w.ID), Name: w.Name, Date: w.Date.Format("2006-01-02")}
 	}
 	return out
 }
@@ -111,7 +113,7 @@ func (h *AuthHandler) SelectWedding(c fuego.ContextWithBody[SelectWeddingRequest
 	if err != nil {
 		return SelectWeddingResponse{}, fuego.BadRequestError{Title: "Invalid request"}
 	}
-	weddingID, err := uuid.Parse(body.WeddingID)
+	weddingID, err := middleware.DecodeWIDString(body.WeddingID)
 	if err != nil {
 		return SelectWeddingResponse{}, fuego.BadRequestError{Title: "Invalid wedding ID"}
 	}

@@ -1,11 +1,13 @@
 <script lang="ts">
   import { searchGuests, getGuest, listGuests, listTables, checkInGuest } from '$lib/api/search';
   import { getLayout } from '$lib/api/layout';
+  import { getWedding } from '$lib/api/weddings';
   import { addToast } from '$lib/stores';
   import { weddingId } from '$lib/stores/weddingId';
   import { get } from 'svelte/store';
   import Badge from '$lib/components/ui/Badge.svelte';
   import { getInitials, cn } from '$lib/utils';
+  import { formatSeatRange } from '$lib/utils/seat';
   import { goto } from '$app/navigation';
   import { Search, CheckCircle2, UserCheck, Phone, MapPin, Gift, Banknote, X, MapPinned, Loader2 } from 'lucide-svelte';
   import { onMount } from 'svelte';
@@ -31,6 +33,7 @@
   let hallWidth = $state(860);
   let hallHeight = $state(1000);
   let dataLoading = $state(true);
+  let showSeatNumbers = $state(true);
 
   // ponytail: load tables/guests on mount for seating map
   let initialized = $state(false);
@@ -55,6 +58,10 @@
         hallWidth = layout.hallWidth;
         hallHeight = layout.hallHeight;
       }
+      // Load showSeatNumbers from wedding data
+      const wid = get(weddingId);
+      const w = await getWedding(wid).catch(() => null) as any;
+      if (w?.showSeatNumbers !== undefined) showSeatNumbers = w.showSeatNumbers;
     } catch {
       addToast('Failed to load data', 'error');
     } finally {
@@ -322,6 +329,7 @@
           {hallWidth}
           {hallHeight}
           tableGuests={tableGuests}
+          legendPosition="top-left"
           onTableClick={handleTableClick}
           highlightedTableId={selectedGuest?.tableId ?? highlightTableId}
         />
@@ -357,15 +365,17 @@
 
         <!-- Guest Info -->
         <div class="px-5 py-4">
-          <div class="grid grid-cols-3 gap-3 text-sm mb-4">
+          <div class="grid grid-cols-{showSeatNumbers ? '3' : '2'} gap-3 text-sm mb-4">
             <div class="bg-gray-50 rounded-xl p-3 text-center">
               <div class="text-gray-500 text-xs">Table</div>
               <div class="font-bold text-gray-900 text-lg">{tables.find(t => selectedGuest && t.id === selectedGuest.tableId)?.name || (selectedGuest?.tableId ?? '—')}</div>
             </div>
+            {#if showSeatNumbers}
             <div class="bg-gray-50 rounded-xl p-3 text-center">
               <div class="text-gray-500 text-xs">Seat</div>
-              <div class="font-bold text-gray-900 text-lg">{selectedGuest.seatNumber ?? '—'}</div>
+              <div class="font-bold text-gray-900 text-lg">{formatSeatRange(selectedGuest.seatNumber, selectedGuest.pax)}</div>
             </div>
+            {/if}
             <div class="bg-gray-50 rounded-xl p-3 text-center">
               <div class="text-gray-500 text-xs">Pax</div>
               <div class="font-bold text-gray-900 text-lg">{selectedGuest.pax}</div>
@@ -444,24 +454,8 @@
                 <span class="text-gold font-semibold text-sm">★ VIP Table</span>
               {/if}
               <div class="text-sm text-gray-500 mt-1">
-                Seats {checkinGuest.seatNumber}–{(checkinGuest.seatNumber ?? 0) + checkinGuest.pax - 1}
-                · {checkinGuest.pax} pax
+                {#if showSeatNumbers}{formatSeatRange(checkinGuest.seatNumber, checkinGuest.pax)} · {/if}{checkinGuest.pax} pax
               </div>
-            </div>
-
-            {@const seats = getSeatOccupants(checkinGuest.tableId, table?.capacity ?? 10)}
-            <div class="grid grid-cols-5 gap-2">
-              {#each seats as { seatNum, guest }}
-                {@const isOwn = seatNum >= (checkinGuest.seatNumber ?? 0) && seatNum < (checkinGuest.seatNumber ?? 0) + checkinGuest.pax}
-                <div class={cn(
-                  "aspect-square rounded-lg flex items-center justify-center text-[11px] font-bold border-2 transition-colors",
-                  isOwn ? "bg-red text-white border-red" :
-                  guest ? "bg-gray-100 text-gray-500 border-gray-200" :
-                  "bg-gray-50 text-gray-300 border-gray-100"
-                )}>
-                  {seatNum}
-                </div>
-              {/each}
             </div>
 
             <button

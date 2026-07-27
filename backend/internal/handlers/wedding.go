@@ -43,7 +43,10 @@ func (h *WeddingHandler) List(c fuego.ContextWithBody[any]) (any, error) {
 }
 
 func (h *WeddingHandler) Get(c fuego.ContextWithBody[any]) (any, error) {
-	id := DecodeID(c.PathParam("id"))
+	id, err := DecodeID(c.PathParam("id"))
+	if err != nil {
+		return nil, fuego.BadRequestError{Title: "Invalid ID"}
+	}
 	if err := requireWeddingAccess(c.Context(), id); err != nil {
 		return nil, fuego.UnauthorizedError{Title: err.Error()}
 	}
@@ -75,7 +78,10 @@ func (h *WeddingHandler) Create(c fuego.ContextWithBody[WeddingRequest]) (any, e
 }
 
 func (h *WeddingHandler) Update(c fuego.ContextWithBody[WeddingRequest]) (any, error) {
-	id := DecodeID(c.PathParam("id"))
+	id, err := DecodeID(c.PathParam("id"))
+	if err != nil {
+		return nil, fuego.BadRequestError{Title: "Invalid ID"}
+	}
 	if err := requireWeddingAccess(c.Context(), id); err != nil {
 		return nil, fuego.UnauthorizedError{Title: err.Error()}
 	}
@@ -111,10 +117,14 @@ type KioskSettingsRequest struct {
 	KioskLogoSize       string `json:"kioskLogoSize"`
 	KioskLogoPosX       string `json:"kioskLogoPosX"`
 	KioskLogoPosY       string `json:"kioskLogoPosY"`
+	ShowSeatNumbers     *bool  `json:"showSeatNumbers"`
 }
 
 func (h *WeddingHandler) UpdateKioskSettings(c fuego.ContextWithBody[KioskSettingsRequest]) (any, error) {
-	id := DecodeID(c.PathParam("id"))
+	id, err := DecodeID(c.PathParam("id"))
+	if err != nil {
+		return nil, fuego.BadRequestError{Title: "Invalid ID"}
+	}
 	if err := requireWeddingAccess(c.Context(), id); err != nil {
 		return nil, fuego.UnauthorizedError{Title: err.Error()}
 	}
@@ -137,6 +147,9 @@ func (h *WeddingHandler) UpdateKioskSettings(c fuego.ContextWithBody[KioskSettin
 	w.KioskLogoSize = body.KioskLogoSize
 	w.KioskLogoPosX = body.KioskLogoPosX
 	w.KioskLogoPosY = body.KioskLogoPosY
+	if body.ShowSeatNumbers != nil {
+		w.ShowSeatNumbers = *body.ShowSeatNumbers
+	}
 	if err := h.weddingService.Update(w); err != nil {
 		return nil, fuego.InternalServerError{Title: "Failed to update kiosk settings"}
 	}
@@ -147,6 +160,9 @@ func (h *WeddingHandler) Delete(c fuego.ContextWithBody[any]) (any, error) {
 	if err := requireAdmin(c.Context()); err != nil {
 		return nil, fuego.UnauthorizedError{Title: err.Error()}
 	}
-	id := DecodeID(c.PathParam("id"))
+	id, err := DecodeID(c.PathParam("id"))
+	if err != nil {
+		return nil, fuego.BadRequestError{Title: "Invalid ID"}
+	}
 	return nil, h.weddingService.Delete(id)
 }

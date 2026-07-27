@@ -6,7 +6,6 @@
   import { listWeddings, createWedding, updateWedding, deleteWedding, type Wedding } from '$lib/api/weddings';
   import { Plus, Pencil, Trash2, X, Calendar, Check, ChevronRight } from 'lucide-svelte';
   import dayjs from 'dayjs';
-  import { encodeId } from '$lib/utils/encode';
   import { validateToken } from '$lib/utils/auth';
   import { apiFetch } from '$lib/api/client';
 
@@ -56,7 +55,7 @@
       setAuth(data.accessToken, current.refreshToken ?? '', current.role ?? '', current.name ?? '');
       setWeddingId(w.id);
       addToast(`Switched to ${w.name}`, 'success');
-      targetUrl = `/${encodeId(w.id)}/dashboard`;
+      targetUrl = `/${w.id}/dashboard`;
     } catch { addToast('Network error', 'error'); }
     finally {
       selecting = null;

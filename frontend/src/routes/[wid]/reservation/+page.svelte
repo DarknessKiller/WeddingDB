@@ -12,7 +12,6 @@
   import { onMount } from 'svelte';
   import type { BanquetTable, Guest, HallElement, RSVPStatus } from '$lib/types';
   import HallMap from '$lib/components/seating/HallMap.svelte';
-  import { encodeId } from '$lib/utils/encode';
 
   let apiTables = $state<BanquetTable[]>([]);
   let apiGuests = $state<Guest[]>([]);
@@ -232,7 +231,7 @@
       });
       
       addToast(`Reservation for ${form.name} saved successfully`, 'success');
-      goto(`/${encodeId(wid)}/guests`);
+      goto(`/${wid}/guests`);
     } catch (e) {
       addToast('Failed to save reservation', 'error');
     } finally {
@@ -449,7 +448,7 @@
               <CheckCircle2 class="w-4 h-4" /> Save Reservation
             {/if}
           </button>
-          <button type="button" onclick={() => goto(`/${encodeId($weddingId)}/guests`)} class="px-6 py-3 border border-gray-200 bg-white rounded-xl text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors">
+          <button type="button" onclick={() => goto(`/${$weddingId}/guests`)} class="px-6 py-3 border border-gray-200 bg-white rounded-xl text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors">
             Cancel
           </button>
         </div>

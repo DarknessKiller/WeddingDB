@@ -1,6 +1,8 @@
 package handlers
 
 import (
+	"log"
+	"weddingdb/internal/middleware"
 	"weddingdb/internal/models"
 	"weddingdb/internal/services"
 
@@ -33,7 +35,7 @@ type ElementInput struct {
 	Degree      float64 `json:"degree"`
 	Width       float64 `json:"width"`
 	Height      float64 `json:"height"`
-	Label       string  `json:"label"`
+	Name        string  `json:"name"`
 	Color       string  `json:"color"`
 	TextColor   string  `json:"textColor"`
 	StrokeColor string  `json:"strokeColor"`
@@ -56,7 +58,10 @@ type LayoutResponse struct {
 }
 
 func (h *LayoutHandler) Get(c fuego.ContextWithBody[any]) (any, error) {
-	wid := DecodeWID(c)
+	wid, err := DecodeWID(c)
+	if err != nil {
+		return nil, fuego.BadRequestError{Title: "Invalid wedding ID"}
+	}
 	tables, err := h.tableService.List(wid)
 	if err != nil {
 		return nil, err
@@ -80,7 +85,10 @@ func (h *LayoutHandler) Save(c fuego.ContextWithBody[LayoutRequest]) (any, error
 	if err != nil {
 		return nil, fuego.BadRequestError{Title: "Invalid request"}
 	}
-	wid := DecodeWID(c)
+	wid, err := DecodeWID(c)
+	if err != nil {
+		return nil, fuego.BadRequestError{Title: "Invalid wedding ID"}
+	}
 	if body.HallWidth <= 0 || body.HallHeight <= 0 {
 		return nil, fuego.BadRequestError{Title: "HallWidth and HallHeight must be > 0"}
 	}
@@ -94,7 +102,7 @@ func (h *LayoutHandler) Save(c fuego.ContextWithBody[LayoutRequest]) (any, error
 	}
 	tablePos := make(map[uuid.UUID][3]float64, len(body.Tables))
 	for _, t := range body.Tables {
-		id, err := uuid.Parse(t.ID)
+		id, err := middleware.DecodeWIDString(t.ID)
 		if err != nil {
 			return nil, fuego.BadRequestError{Title: "Invalid table id"}
 		}
@@ -110,13 +118,12 @@ func (h *LayoutHandler) Save(c fuego.ContextWithBody[LayoutRequest]) (any, error
 		}
 		el := models.HallElement{
 			Type: e.Type, X: e.X, Y: e.Y, Degree: e.Degree,
-			Width: e.Width, Height: e.Height, Label: e.Label,
+			Width: e.Width, Height: e.Height, Name: e.Name,
 			Color: e.Color, TextColor: e.TextColor, StrokeColor: e.StrokeColor,
 			Opacity: e.Opacity, ZIndex: e.ZIndex,
-			Name: e.Label,
 		}
 		if e.ID != "" {
-			id, err := uuid.Parse(e.ID)
+			id, err := middleware.DecodeWIDString(e.ID)
 			if err != nil {
 				return nil, fuego.BadRequestError{Title: "Invalid element id"}
 			}
@@ -125,7 +132,8 @@ func (h *LayoutHandler) Save(c fuego.ContextWithBody[LayoutRequest]) (any, error
 		elements = append(elements, el)
 	}
 	if err := h.layoutService.Save(wid, body.HallWidth, body.HallHeight, tablePos, elements); err != nil {
-		return nil, fuego.BadRequestError{Title: "Failed to save layout: " + err.Error()}
+		log.Printf("layout save error: %v", err)
+		return nil, fuego.InternalServerError{Title: "Failed to save layout"}
 	}
 	return nil, nil
 }

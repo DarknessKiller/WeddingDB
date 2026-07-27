@@ -4,6 +4,7 @@ export interface Wedding {
 	id: string;
 	name: string;
 	date: string;
+	showSeatNumbers: boolean;
 	createdAt: string;
 	updatedAt: string;
 }
@@ -65,6 +66,7 @@ export interface KioskSettings {
 	kioskLogoSize: string;
 	kioskLogoPosX: string;
 	kioskLogoPosY: string;
+	showSeatNumbers: boolean;
 }
 
 export async function updateKioskSettings(id: string, settings: KioskSettings): Promise<Wedding> {

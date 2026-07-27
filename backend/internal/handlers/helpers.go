@@ -25,14 +25,14 @@ func RoleFromContext(ctx context.Context) string {
 	return v
 }
 
-// DecodeWID parses a UUID from the path param "wid".
-func DecodeWID(c interface{ PathParam(string) string }) uuid.UUID {
-	return middleware.ParseUUID(c.PathParam("wid"))
+// DecodeWID parses a UUID from the path param "wid", supporting base64-encoded IDs.
+func DecodeWID(c interface{ PathParam(string) string }) (uuid.UUID, error) {
+	return middleware.DecodeWIDString(c.PathParam("wid"))
 }
 
-// DecodeID parses a UUID from a string.
-func DecodeID(s string) uuid.UUID {
-	return middleware.ParseUUID(s)
+// DecodeID parses a UUID from a base64-encoded string.
+func DecodeID(s string) (uuid.UUID, error) {
+	return middleware.DecodeWIDString(s)
 }
 
 // requireAdmin returns an error if the caller is not admin.
