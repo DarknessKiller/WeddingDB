@@ -12,4 +12,4 @@
 - Final review: DONE (be584ea fix, merge-ready)
 
 ## Branch Summary
-13 commits on `hall-map-editor` from base 8d7dc6d to HEAD be584ea.
+40 commits on `hall-map-editor` from base 8d7dc6d to HEAD 2f1ce44.
