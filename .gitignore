@@ -33,8 +33,9 @@ Thumbs.db
 npm-debug.log*
 backend/server
 
-# Ensure these are always tracked
-# (openapi.json and guest.csv are tracked directly, no negation needed)
+# Generated files
+openapi.json
+*.csv
 
 # CodeGraph
 .codegraph/
