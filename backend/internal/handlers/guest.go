@@ -60,7 +60,10 @@ func (h *GuestHandler) Get(c fuego.ContextWithBody[any]) (any, error) {
 	if err != nil {
 		return nil, fuego.BadRequestError{Title: "Invalid wedding ID"}
 	}
-	id := DecodeID(c.PathParam("id"))
+	id, err := DecodeID(c.PathParam("id"))
+	if err != nil {
+		return nil, fuego.BadRequestError{Title: "Invalid ID"}
+	}
 	guest, err := h.guestService.Get(id, wid)
 	if err != nil {
 		return nil, fuego.NotFoundError{Title: "Guest not found"}
@@ -135,7 +138,10 @@ func (h *GuestHandler) Update(c fuego.ContextWithBody[GuestCreateRequest]) (any,
 	if err != nil {
 		return nil, fuego.BadRequestError{Title: "Invalid wedding ID"}
 	}
-	id := DecodeID(c.PathParam("id"))
+	id, err := DecodeID(c.PathParam("id"))
+	if err != nil {
+		return nil, fuego.BadRequestError{Title: "Invalid ID"}
+	}
 	guest, err := h.guestService.Get(id, wid)
 	if err != nil {
 		return nil, fuego.NotFoundError{Title: "Guest not found"}
@@ -178,7 +184,10 @@ func (h *GuestHandler) Delete(c fuego.ContextWithBody[any]) (any, error) {
 	if err != nil {
 		return nil, fuego.BadRequestError{Title: "Invalid wedding ID"}
 	}
-	id := DecodeID(c.PathParam("id"))
+	id, err := DecodeID(c.PathParam("id"))
+	if err != nil {
+		return nil, fuego.BadRequestError{Title: "Invalid ID"}
+	}
 	if err := h.guestService.Delete(id, wid); err != nil {
 		return nil, err
 	}
@@ -196,7 +205,10 @@ func (h *GuestHandler) CheckIn(c fuego.ContextWithBody[CheckInRequest]) (any, er
 	if err != nil {
 		return nil, fuego.BadRequestError{Title: "Invalid wedding ID"}
 	}
-	id := DecodeID(c.PathParam("id"))
+	id, err := DecodeID(c.PathParam("id"))
+	if err != nil {
+		return nil, fuego.BadRequestError{Title: "Invalid ID"}
+	}
 	if body.AngbaoAmt != nil || body.GiftItem != nil {
 		guest, err := h.guestService.Get(id, wid)
 		if err != nil {
@@ -227,7 +239,10 @@ func (h *GuestHandler) CheckOut(c fuego.ContextWithBody[any]) (any, error) {
 	if err != nil {
 		return nil, fuego.BadRequestError{Title: "Invalid wedding ID"}
 	}
-	id := DecodeID(c.PathParam("id"))
+	id, err := DecodeID(c.PathParam("id"))
+	if err != nil {
+		return nil, fuego.BadRequestError{Title: "Invalid ID"}
+	}
 	if err := h.guestService.CheckOut(id, wid); err != nil {
 		return nil, err
 	}
@@ -292,8 +307,9 @@ func (h *GuestHandler) BulkImport(c fuego.ContextWithBody[BulkImportRequest]) (a
 			Dietary:   g.Dietary,
 		}
 		if g.TableID != nil {
-			tid := DecodeID(*g.TableID)
-			gr.TableID = &tid
+			if tid, err := DecodeID(*g.TableID); err == nil {
+				gr.TableID = &tid
+			}
 		}
 		if g.SeatNum != nil {
 			gr.SeatNum = g.SeatNum
@@ -321,8 +337,14 @@ func (h *GuestHandler) AssignSeat(c fuego.ContextWithBody[AssignSeatRequest]) (a
 	if err != nil {
 		return nil, fuego.BadRequestError{Title: "Invalid wedding ID"}
 	}
-	guestID := DecodeID(c.PathParam("id"))
-	tableID := DecodeID(body.TableID)
+	guestID, err := DecodeID(c.PathParam("id"))
+	if err != nil {
+		return nil, fuego.BadRequestError{Title: "Invalid ID"}
+	}
+	tableID, err := DecodeID(body.TableID)
+	if err != nil {
+		return nil, fuego.BadRequestError{Title: "Invalid table ID"}
+	}
 	if err := h.guestService.AssignSeat(guestID, wid, tableID, body.SeatNum); err != nil {
 		return nil, fuego.BadRequestError{Title: err.Error()}
 	}
