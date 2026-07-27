@@ -41,10 +41,16 @@ export async function publicSearchGuests(query: string): Promise<Guest[]> {
 
 export async function publicListGuests(): Promise<Guest[]> {
 	const wid = get(weddingId);
-	const res = await fetch(`/api/public/weddings/${wid}/guests`);
-	if (!res.ok) throw new Error('Failed to list guests');
-	const data: PublicGuest[] = await res.json();
-	return data.map(mapGuest);
+	const all: Guest[] = [];
+	let cursor: string | undefined;
+	do {
+		const res = await fetch(`/api/public/weddings/${wid}/guests?limit=100${cursor ? `&cursor=${cursor}` : ''}`);
+		if (!res.ok) throw new Error('Failed to list guests');
+		const data = await res.json();
+		all.push(...(data.guests ?? []).map(mapGuest));
+		cursor = data.nextCursor ?? undefined;
+	} while (cursor);
+	return all;
 }
 
 export async function publicListTables(): Promise<BanquetTable[]> {

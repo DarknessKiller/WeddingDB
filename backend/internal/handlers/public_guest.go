@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"strconv"
 	"time"
 	"weddingdb/internal/services"
 	"weddingdb/internal/utils"
@@ -32,9 +33,21 @@ func (h *PublicGuestHandler) List(c fuego.ContextNoBody) (any, error) {
 	if err != nil {
 		return nil, fuego.BadRequestError{Title: "Invalid wedding ID"}
 	}
-	guests, _, err := h.guestService.List(wid, "", 1000)
+	limit := 100
+	cursor := c.QueryParam("cursor")
+	if v := c.QueryParam("limit"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 {
+			limit = n
+		}
+	}
+	guests, _, err := h.guestService.List(wid, cursor, limit+1)
 	if err != nil {
 		return nil, err
+	}
+	var nextCursor string
+	if len(guests) > limit {
+		nextCursor = utils.EncodeUUID(guests[limit].ID)
+		guests = guests[:limit]
 	}
 	out := make([]publicGuest, 0, len(guests))
 	for _, g := range guests {
@@ -54,7 +67,7 @@ func (h *PublicGuestHandler) List(c fuego.ContextNoBody) (any, error) {
 			CheckedInAt: g.CheckedInAt,
 		})
 	}
-	return out, nil
+	return map[string]any{"guests": out, "nextCursor": nextCursor}, nil
 }
 
 type PublicKioskHandler struct {
