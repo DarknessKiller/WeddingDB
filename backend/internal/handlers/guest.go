@@ -317,7 +317,7 @@ func (h *GuestHandler) BulkImport(c fuego.ContextWithBody[BulkImportRequest]) (a
 	}
 	count, err := h.guestService.BulkCreate(guests)
 	if err != nil {
-		return nil, fuego.InternalServerError{Title: "Failed to import guests"}
+		return nil, fuego.BadRequestError{Title: err.Error()}
 	}
 	return map[string]any{"imported": count}, nil
 }

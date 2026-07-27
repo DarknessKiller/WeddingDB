@@ -2,6 +2,7 @@ package services
 
 import (
 	"errors"
+	"fmt"
 	"time"
 
 	"github.com/google/uuid"
@@ -97,8 +98,36 @@ func (s *GuestService) CheckOut(id, weddingID uuid.UUID) error {
 
 func (s *GuestService) BulkCreate(guests []models.GuestRecord) (int, error) {
 	created := 0
+	existing := make(map[uuid.UUID][]models.GuestRecord)
 	for i := range guests {
-		if err := s.guestRepo.Create(&guests[i]); err != nil {
+		g := &guests[i]
+		if g.TableID == nil || g.SeatNum == nil {
+			if err := s.guestRepo.Create(g); err != nil {
+				return created, err
+			}
+			created++
+			continue
+		}
+		tid := *g.TableID
+		if _, ok := existing[tid]; !ok {
+			rows, err := s.guestRepo.FindByTable(g.WeddingID, tid)
+			if err != nil {
+				return created, err
+			}
+			existing[tid] = rows
+		}
+		guestEnd := *g.SeatNum + g.Pax - 1
+		for _, e := range existing[tid] {
+			if e.SeatNum == nil {
+				continue
+			}
+			eEnd := *e.SeatNum + e.Pax - 1
+			if *g.SeatNum <= eEnd && *e.SeatNum <= guestEnd {
+				return created, fmt.Errorf("seat %d-%d on table overlaps with \"%s\" (seats %d-%d)", *g.SeatNum, guestEnd, e.Name, *e.SeatNum, eEnd)
+			}
+		}
+		existing[tid] = append(existing[tid], *g)
+		if err := s.guestRepo.Create(g); err != nil {
 			return created, err
 		}
 		created++
