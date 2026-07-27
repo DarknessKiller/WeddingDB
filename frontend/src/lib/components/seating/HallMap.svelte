@@ -208,7 +208,7 @@
           canvas.addEventListener('touchend', (e: TouchEvent) => {
             if (!isTouchPanning && e.changedTouches.length === 1) {
               const dt = Date.now() - touchStartTime;
-              if (dt < 300) {
+              if (dt < 150) {
                 // It was a tap — find what was under the finger
                 const rect = canvas.getBoundingClientRect();
                 const x = e.changedTouches[0].clientX - rect.left;
@@ -364,6 +364,7 @@
 <div
   bind:this={containerEl}
   class="relative flex-1 z-10 overflow-hidden select-none min-h-[300px] {dark ? 'bg-gray-950' : 'bg-gray-50'}"
+  style="touch-action: none;"
   role="application"
   aria-label="Banquet hall seating map"
 >
