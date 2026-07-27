@@ -1,20 +1,36 @@
 package repository
 
 import (
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"strings"
 
-	"github.com/google/uuid"
-	"gorm.io/gorm"
 	"weddingdb/internal/models"
 	"weddingdb/internal/utils"
+
+	"github.com/google/uuid"
+	"gorm.io/gorm"
 )
 
 type GuestRepo struct{ db *gorm.DB }
 
 func NewGuestRepo(db *gorm.DB) *GuestRepo {
 	return &GuestRepo{db: db}
+}
+
+func parseCursorID(s string) (uuid.UUID, error) {
+	if id, err := uuid.Parse(s); err == nil {
+		return id, nil
+	}
+	decoded, err := base64.RawURLEncoding.DecodeString(s)
+	if err != nil {
+		decoded, err = base64.URLEncoding.DecodeString(s)
+		if err != nil {
+			return uuid.Nil, err
+		}
+	}
+	return uuid.FromBytes(decoded)
 }
 
 func (r *GuestRepo) ListByWedding(weddingID uuid.UUID, cursor string, limit int) ([]models.GuestRecord, int64, error) {
