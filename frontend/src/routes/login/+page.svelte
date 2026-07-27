@@ -4,7 +4,6 @@
   import { weddingId, setWeddingId } from '$lib/stores/weddingId';
   import { get } from 'svelte/store';
   import { Eye, EyeOff, LogIn, Calendar, ChevronRight } from 'lucide-svelte';
-  import { encodeId } from '$lib/utils/encode';
 
   let email = $state('');
   let password = $state('');
@@ -123,7 +122,7 @@
       setAuth(data.accessToken, loginRefreshToken, loginRole, loginName);
       setWeddingId(weddingIdValue);
       addToast('Login successful', 'success');
-      goto(`/${encodeId(weddingIdValue)}/dashboard`, { replaceState: true });
+      goto(`/${weddingIdValue}/dashboard`, { replaceState: true });
     } catch (err) {
       addToast('Network error', 'error');
     } finally {

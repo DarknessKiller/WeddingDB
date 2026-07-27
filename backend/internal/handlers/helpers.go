@@ -30,9 +30,13 @@ func DecodeWID(c interface{ PathParam(string) string }) (uuid.UUID, error) {
 	return middleware.DecodeWIDString(c.PathParam("wid"))
 }
 
-// DecodeID parses a UUID from a string.
+// DecodeID parses a UUID from a base64-encoded string.
 func DecodeID(s string) uuid.UUID {
-	return middleware.ParseUUID(s)
+	id, err := middleware.DecodeWIDString(s)
+	if err != nil {
+		return uuid.Nil
+	}
+	return id
 }
 
 // requireAdmin returns an error if the caller is not admin.

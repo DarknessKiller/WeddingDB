@@ -7,14 +7,11 @@ import (
 	"github.com/google/uuid"
 )
 
-func TestDecodeWIDString_StandardUUID(t *testing.T) {
+func TestDecodeWIDString_PlainUUIDRejected(t *testing.T) {
 	orig := uuid.New()
-	got, err := DecodeWIDString(orig.String())
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if got != orig {
-		t.Errorf("got %v, want %v", got, orig)
+	_, err := DecodeWIDString(orig.String())
+	if err == nil {
+		t.Error("expected error for plain UUID, only base64 accepted")
 	}
 }
 

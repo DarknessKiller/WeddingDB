@@ -8,12 +8,9 @@ import (
 	"github.com/google/uuid"
 )
 
-// DecodeWIDString parses a UUID from a string, supporting both standard UUID
-// format and base64-encoded IDs (with URL-safe to standard encoding mapping).
+// DecodeWIDString parses a UUID from a base64-encoded string.
+// Only accepts base64 (URL-safe or standard), rejects plain UUIDs.
 func DecodeWIDString(s string) (uuid.UUID, error) {
-	if id, err := uuid.Parse(s); err == nil {
-		return id, nil
-	}
 	b64 := strings.ReplaceAll(s, "-", "+")
 	b64 = strings.ReplaceAll(b64, "_", "/")
 	switch len(b64) % 4 {

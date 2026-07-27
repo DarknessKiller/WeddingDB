@@ -1,12 +1,14 @@
 package repository
 
 import (
+	"encoding/json"
 	"fmt"
 	"strings"
 
 	"github.com/google/uuid"
 	"gorm.io/gorm"
 	"weddingdb/internal/models"
+	"weddingdb/internal/utils"
 )
 
 type GuestRepo struct{ db *gorm.DB }
@@ -83,4 +85,15 @@ func (r *GuestRepo) TableOccupancy(weddingID uuid.UUID) ([]TableOccupancy, error
 type TableOccupancy struct {
 	TableID uuid.UUID `json:"TableID"`
 	Pax     int       `json:"Pax"`
+}
+
+func (t TableOccupancy) MarshalJSON() ([]byte, error) {
+	type Alias TableOccupancy
+	return json.Marshal(&struct {
+		TableID string `json:"TableID"`
+		Alias
+	}{
+		TableID: utils.EncodeUUID(t.TableID),
+		Alias:   (Alias)(t),
+	})
 }

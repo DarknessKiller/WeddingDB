@@ -1,6 +1,5 @@
 <script lang="ts">
   import { cn } from '$lib/utils';
-  import { encodeId } from '$lib/utils/encode';
   import { sidebarCollapsed, getAuth, clearAuth } from '$lib/stores';
   import { setWeddingId } from '$lib/stores/weddingId';
   import { goto } from '$app/navigation';
@@ -22,29 +21,29 @@
     {
       label: 'Main',
       items: [
-        { href: `/${encodeId(wid)}/dashboard`, label: 'Dashboard', icon: LayoutDashboard },
-        { href: `/${encodeId(wid)}/guests`, label: 'Guests', icon: Users },
-        { href: `/${encodeId(wid)}/tables`, label: 'Tables', icon: Utensils },
+        { href: `/${wid}/dashboard`, label: 'Dashboard', icon: LayoutDashboard },
+        { href: `/${wid}/guests`, label: 'Guests', icon: Users },
+        { href: `/${wid}/tables`, label: 'Tables', icon: Utensils },
       ]
     },
     {
       label: 'Operations',
       items: [
-        { href: `/${encodeId(wid)}/seating`, label: 'Seating Map', icon: MapPin },
-        { href: `/${encodeId(wid)}/search`, label: 'Check In', icon: Search },
+        { href: `/${wid}/seating`, label: 'Seating Map', icon: MapPin },
+        { href: `/${wid}/search`, label: 'Check In', icon: Search },
       ]
     },
     {
       label: 'Management',
       items: [
         { href: '/weddings', label: 'Weddings', icon: Calendar },
-        ...(isAdmin ? [{ href: `/${encodeId(wid)}/users`, label: 'Users', icon: Shield }] : []),
+        ...(isAdmin ? [{ href: `/${wid}/users`, label: 'Users', icon: Shield }] : []),
       ]
     },
     {
       label: 'Other',
       items: [
-        { href: `/${encodeId(wid)}/settings`, label: 'Settings', icon: Settings },
+        { href: `/${wid}/settings`, label: 'Settings', icon: Settings },
       ]
     }
   ]);

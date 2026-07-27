@@ -6,7 +6,6 @@
   import Drawer from '$lib/components/ui/Drawer.svelte';
   import { selectedGuest, isDrawerOpen, drawerStartEditing, sidebarCollapsed } from '$lib/stores';
   import { weddingId, setWeddingId } from '$lib/stores/weddingId';
-  import { decodeId } from '$lib/utils/encode';
   import { validateToken } from '$lib/utils/auth';
   import { listGuests } from '$lib/api/guests';
   import { listTables } from '$lib/api/tables';
@@ -15,7 +14,7 @@
   let { children } = $props();
 
   let currentPath = $derived(page.url.pathname);
-  let wid = $derived(page.params.wid ? decodeId(page.params.wid) : '');
+  let wid = $derived(page.params.wid ?? '');
   let authChecked = $state(false);
   let guestCount = $state(0);
   let tables = $state<BanquetTable[]>([]);

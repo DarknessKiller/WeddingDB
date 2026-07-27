@@ -3,7 +3,6 @@
   import { goto } from '$app/navigation';
   import { weddingId } from '$lib/stores/weddingId';
   import { get } from 'svelte/store';
-  import { encodeId } from '$lib/utils/encode';
   import { validateToken } from '$lib/utils/auth';
 
   onMount(async () => {
@@ -12,7 +11,7 @@
     if (!wid) {
       goto('/login', { replaceState: true });
     } else {
-      goto(`/${encodeId(wid)}/dashboard`, { replaceState: true });
+      goto(`/${wid}/dashboard`, { replaceState: true });
     }
   });
 </script>

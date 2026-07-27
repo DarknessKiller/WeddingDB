@@ -1,9 +1,11 @@
 package models
 
 import (
+	"encoding/json"
 	"time"
 
 	"github.com/google/uuid"
+	"weddingdb/internal/utils"
 )
 
 type BanquetTable struct {
@@ -17,4 +19,17 @@ type BanquetTable struct {
 	IsVip     bool      `json:"isVip"`
 	CreatedAt time.Time `json:"createdAt"`
 	UpdatedAt time.Time `json:"updatedAt"`
+}
+
+func (t BanquetTable) MarshalJSON() ([]byte, error) {
+	type Alias BanquetTable
+	return json.Marshal(&struct {
+		ID        string `json:"id"`
+		WeddingID string `json:"weddingId"`
+		Alias
+	}{
+		ID:        utils.EncodeUUID(t.ID),
+		WeddingID: utils.EncodeUUID(t.WeddingID),
+		Alias:     (Alias)(t),
+	})
 }

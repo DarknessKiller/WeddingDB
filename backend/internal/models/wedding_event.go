@@ -1,9 +1,11 @@
 package models
 
 import (
+	"encoding/json"
 	"time"
 
 	"github.com/google/uuid"
+	"weddingdb/internal/utils"
 )
 
 type WeddingEvent struct {
@@ -26,4 +28,15 @@ type WeddingEvent struct {
 	HallHeight          int       `gorm:"not null;default:1000" json:"hallHeight"`
 	CreatedAt           time.Time `json:"createdAt"`
 	UpdatedAt           time.Time `json:"updatedAt"`
+}
+
+func (w WeddingEvent) MarshalJSON() ([]byte, error) {
+	type Alias WeddingEvent
+	return json.Marshal(&struct {
+		ID string `json:"id"`
+		Alias
+	}{
+		ID:    utils.EncodeUUID(w.ID),
+		Alias: (Alias)(w),
+	})
 }

@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"weddingdb/internal/utils"
 )
 
 // StringSlice stores a []string as JSON text in a text column.
@@ -53,4 +54,24 @@ type GuestRecord struct {
 	GiftItem    *string     `gorm:"size:255" json:"giftItem"`
 	CreatedAt   time.Time   `json:"createdAt"`
 	UpdatedAt   time.Time   `json:"updatedAt"`
+}
+
+func (g GuestRecord) MarshalJSON() ([]byte, error) {
+	type Alias GuestRecord
+	var tid *string
+	if g.TableID != nil {
+		s := utils.EncodeUUID(*g.TableID)
+		tid = &s
+	}
+	return json.Marshal(&struct {
+		ID        string  `json:"id"`
+		WeddingID string  `json:"weddingId"`
+		TableID   *string `json:"tableId"`
+		Alias
+	}{
+		ID:        utils.EncodeUUID(g.ID),
+		WeddingID: utils.EncodeUUID(g.WeddingID),
+		TableID:   tid,
+		Alias:     (Alias)(g),
+	})
 }

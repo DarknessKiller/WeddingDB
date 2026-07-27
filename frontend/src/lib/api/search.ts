@@ -1,5 +1,4 @@
 import { apiFetch } from './client';
-import { encodeId } from '$lib/utils/encode';
 import { weddingId } from '$lib/stores/weddingId';
 import { get } from 'svelte/store';
 import type { Guest, BanquetTable, RSVPStatus } from '$lib/types';
@@ -19,7 +18,7 @@ export async function searchGuests(query: string): Promise<Guest[]> {
 
 export async function getGuest(guestId: string): Promise<Guest | null> {
 	const wid = get(weddingId);
-	const res = await apiFetch(`/api/weddings/${wid}/guests/${encodeId(guestId)}`);
+	const res = await apiFetch(`/api/weddings/${wid}/guests/${guestId}`);
 	if (!res.ok) return null;
 	return mapGuest(await res.json());
 }
@@ -44,7 +43,7 @@ export async function checkInGuest(guestId: string, angbaoAmt?: number, giftItem
 	const body: Record<string, unknown> = {};
 	if (angbaoAmt !== undefined) body.angbaoAmt = angbaoAmt;
 	if (giftItem) body.giftItem = giftItem;
-	const res = await apiFetch(`/api/weddings/${wid}/guests/${encodeId(guestId)}/checkin`, {
+	const res = await apiFetch(`/api/weddings/${wid}/guests/${guestId}/checkin`, {
 		method: 'POST',
 		body: JSON.stringify(body)
 	});

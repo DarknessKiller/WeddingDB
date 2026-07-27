@@ -6,7 +6,6 @@
   import { getWedding, updateKioskSettings, type Wedding, type KioskSettings } from '$lib/api/weddings';
   import { Monitor, Save, Loader2, ExternalLink, Copy, Image, Type, FileText, Upload } from 'lucide-svelte';
   import ImageEditor from '$lib/components/ui/ImageEditor.svelte';
-  import { encodeId } from '$lib/utils/encode';
   import { uploadFile } from '$lib/api/client';
 
   let wedding = $state<Wedding | null>(null);
@@ -80,7 +79,7 @@
 
   async function copyKioskLink() {
     if (!wedding) return;
-    const url = `${window.location.origin}/kiosk/${encodeId(wedding.id)}`;
+    const url = `${window.location.origin}/kiosk/${wedding.id}`;
     try {
       await navigator.clipboard.writeText(url);
       addToast('Kiosk link copied!', 'success');
@@ -123,7 +122,7 @@
             <button onclick={copyKioskLink} class="px-3 py-2 text-xs font-semibold bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-xl transition-colors flex items-center gap-1.5">
               <Copy class="w-3.5 h-3.5" /> Copy Link
             </button>
-            <a href="/kiosk/{wedding ? encodeId(wedding.id) : ''}" target="_blank"
+            <a href="/kiosk/{wedding ? wedding.id : ''}" target="_blank"
               class="px-3 py-2 text-xs font-semibold bg-red text-white rounded-xl hover:bg-red-light transition-colors flex items-center gap-1.5">
               <ExternalLink class="w-3.5 h-3.5" /> Preview
             </a>

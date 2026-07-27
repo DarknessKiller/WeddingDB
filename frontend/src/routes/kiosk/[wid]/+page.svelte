@@ -8,7 +8,6 @@
   import { onMount, onDestroy } from 'svelte';
   import { page } from '$app/state';
   import { setWeddingId } from '$lib/stores/weddingId';
-  import { decodeId } from '$lib/utils/encode';
   import type { Guest, BanquetTable, HallElement } from '$lib/types';
 
   let query = $state('');
@@ -65,7 +64,7 @@
 
   onMount(() => {
     // Set wedding ID from URL param
-    const wid = page.params.wid ? decodeId(page.params.wid) : '';
+    const wid = page.params.wid ?? '';
     if (wid) setWeddingId(wid);
     timer = setInterval(() => currentTime = new Date(), 1000);
     listGuests().then(g => allGuests = g).catch(() => {});
