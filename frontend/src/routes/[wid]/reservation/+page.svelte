@@ -4,7 +4,7 @@
   import { cn } from '$lib/utils';
   import { z } from 'zod';
   import { CheckCircle2, AlertCircle } from 'lucide-svelte';
-  import { listGuests, createGuest, type GuestResponse } from '$lib/api/guests';
+  import { fetchAllGuests, createGuest, type GuestResponse } from '$lib/api/guests';
   import { listTables } from '$lib/api/tables';
   import { getLayout } from '$lib/api/layout';
   import { weddingId } from '$lib/stores/weddingId';
@@ -44,9 +44,9 @@
   onMount(async () => {
     const wid = get(weddingId);
     try {
-      const [tablesRes, guestsRes, layout] = await Promise.all([listTables(wid), listGuests(wid), getLayout(wid)]);
+      const [tablesRes, guestRows, layout] = await Promise.all([listTables(wid), fetchAllGuests(wid), getLayout(wid)]);
       apiTables = tablesRes;
-      apiGuests = guestsRes.guests.map(mapGuest);
+      apiGuests = guestRows.map(mapGuest);
       elements = layout.elements;
       hallWidth = layout.hallWidth;
       hallHeight = layout.hallHeight;

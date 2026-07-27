@@ -3,7 +3,7 @@
   import { selectedGuest, isDrawerOpen, addToast } from '$lib/stores';
   import { weddingId } from '$lib/stores/weddingId';
   import { goto } from '$app/navigation';
-  import { listGuests, assignSeat, type GuestResponse } from '$lib/api/guests';
+  import { fetchAllGuests, assignSeat, type GuestResponse } from '$lib/api/guests';
   import { getOccupancy, listTables } from '$lib/api/tables';
   import { getLayout, saveLayout } from '$lib/api/layout';
   import Badge from '$lib/components/ui/Badge.svelte';
@@ -64,12 +64,12 @@
 
   async function loadData() {
     const wid = get(weddingId);
-    const [guestRes, rawOcc, layout] = await Promise.all([
-      listGuests(wid).catch(() => ({ guests: [], total: 0 })),
+    const [guestRows, rawOcc, layout] = await Promise.all([
+      fetchAllGuests(wid).catch(() => []),
       getOccupancy(wid).catch(() => []),
       getLayout(wid).catch(() => null),
     ]);
-    allGuests = guestRes.guests.map(mapGuest);
+    allGuests = guestRows.map(mapGuest);
     unassignedGuests = allGuests.filter(g => g.tableId === null);
     if (layout) {
       allTables = layout.tables ?? [];

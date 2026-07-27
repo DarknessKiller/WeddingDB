@@ -62,6 +62,17 @@ export async function listGuests(weddingId: string, opts?: { limit?: number; cur
 	return res.json();
 }
 
+export async function fetchAllGuests(weddingId: string): Promise<GuestResponse[]> {
+	const all: GuestResponse[] = [];
+	let cursor: string | undefined;
+	do {
+		const page = await listGuests(weddingId, { limit: 100, cursor });
+		all.push(...page.guests);
+		cursor = page.nextCursor ?? undefined;
+	} while (cursor);
+	return all;
+}
+
 export async function getGuest(weddingId: string, guestId: string): Promise<GuestResponse> {
 	const res = await apiFetch(`/api/weddings/${weddingId}/guests/${guestId}`);
 	if (!res.ok) throw new Error(`Failed to get guest: ${res.status}`);
