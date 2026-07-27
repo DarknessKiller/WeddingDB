@@ -127,15 +127,14 @@
           <ArrowLeft class="w-5 h-5" />
         </button>
         <span class="font-semibold text-gray-900">Table {selectedTableName}</span>
-      {/if}
-    </div>
-    <div class="flex-shrink-0 text-center">
-      {#if !selectedGuest}
-        <div class="flex items-center justify-center gap-2 mb-1">
+      {:else}
+        <div class="flex items-center gap-2">
           <Monitor class="w-5 h-5 text-gold" />
           <span class="font-semibold text-gray-600 text-sm sm:text-base">Find Your Seat</span>
         </div>
       {/if}
+    </div>
+    <div class="flex-shrink-0 text-center">
       <div class="text-lg sm:text-2xl font-bold text-red font-mono">{formatTime(currentTime)}</div>
       <div class="text-[10px] sm:text-xs text-gray-400 hidden sm:block">{formatDate(currentTime)}</div>
     </div>

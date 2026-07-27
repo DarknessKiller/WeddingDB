@@ -160,7 +160,6 @@
         if (isMobile) {
           let touchStartX = 0;
           let touchStartY = 0;
-          let touchStartTime = 0;
           let isTouchPanning = false;
           let pinchStartDist = 0;
           let pinchStartZoom = 1;
@@ -169,7 +168,6 @@
             if (e.touches.length === 1) {
               touchStartX = e.touches[0].clientX;
               touchStartY = e.touches[0].clientY;
-              touchStartTime = Date.now();
               isTouchPanning = false;
             } else if (e.touches.length === 2) {
               isTouchPanning = false;
@@ -205,34 +203,7 @@
             }
           }, { passive: false });
 
-          canvas.addEventListener('touchend', (e: TouchEvent) => {
-            if (!isTouchPanning && e.changedTouches.length === 1) {
-              const dt = Date.now() - touchStartTime;
-              if (dt < 150) {
-                // It was a tap — find what was under the finger
-                const rect = canvas.getBoundingClientRect();
-                const x = e.changedTouches[0].clientX - rect.left;
-                const y = e.changedTouches[0].clientY - rect.top;
-                if (stageRef) {
-                  const konvaStage = stageRef.getNode?.() ?? stageRef;
-                  const shape = konvaStage.getIntersection({ x, y });
-                  if (shape) {
-                    let node = shape;
-                    while (node && node !== konvaStage) {
-                      if (node._tableId) {
-                        onTableClick?.(node._tableId);
-                        return;
-                      }
-                      if (node._seatIndex !== undefined && node._tableIdForSeat) {
-                        onSeatClick?.(node._tableIdForSeat, node._seatIndex, null);
-                        return;
-                      }
-                      node = node.getParent();
-                    }
-                  }
-                }
-              }
-            }
+          canvas.addEventListener('touchend', () => {
             pinchStartDist = 0;
           }, { passive: true });
         }
