@@ -336,7 +336,7 @@
     hallHeight={editHallHeight}
     {selectedId}
     {isTableSelected}
-    selectedItem={selectedItem()}
+    selectedItem={selectedItem}
     onSave={handleSave}
     onCancel={handleCancel}
     onDelete={handleDeleteSelected}
