@@ -53,6 +53,12 @@ func (r *GuestRepo) FindByID(id, weddingID uuid.UUID) (*models.GuestRecord, erro
 	return &g, err
 }
 
+func (r *GuestRepo) FindByTable(weddingID, tableID uuid.UUID) ([]models.GuestRecord, error) {
+	guests := make([]models.GuestRecord, 0)
+	err := r.db.Where("wedding_id = ? AND table_id = ?", weddingID, tableID).Find(&guests).Error
+	return guests, err
+}
+
 func (r *GuestRepo) SearchByWedding(weddingID uuid.UUID, query string) ([]models.GuestRecord, error) {
 	guests := make([]models.GuestRecord, 0)
 	escaped := strings.ReplaceAll(query, "%", "\\%")

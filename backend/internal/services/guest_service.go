@@ -54,6 +54,23 @@ func (s *GuestService) AssignSeat(guestID, weddingID, tableID uuid.UUID, seatNum
 	if seatNum < 1 || seatNum+guest.Pax-1 > table.Capacity {
 		return errors.New("seat range exceeds table capacity")
 	}
+	existing, err := s.guestRepo.FindByTable(weddingID, tableID)
+	if err != nil {
+		return err
+	}
+	guestEnd := seatNum + guest.Pax - 1
+	for _, e := range existing {
+		if e.ID == guestID {
+			continue
+		}
+		if e.SeatNum == nil {
+			continue
+		}
+		eEnd := *e.SeatNum + e.Pax - 1
+		if seatNum <= eEnd && *e.SeatNum <= guestEnd {
+			return errors.New("seat overlaps with another guest")
+		}
+	}
 	guest.TableID = &tableID
 	guest.SeatNum = &seatNum
 	return s.guestRepo.Update(guest)
