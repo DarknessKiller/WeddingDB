@@ -4,6 +4,7 @@ export interface Wedding {
 	id: string;
 	name: string;
 	date: string;
+	showSeatNumbers: boolean;
 	createdAt: string;
 	updatedAt: string;
 }

@@ -3,7 +3,7 @@
   import { addToast } from '$lib/stores';
   import { weddingId } from '$lib/stores/weddingId';
   import { get } from 'svelte/store';
-  import { listWeddings, updateKioskSettings, type Wedding, type KioskSettings } from '$lib/api/weddings';
+  import { getWedding, updateKioskSettings, type Wedding, type KioskSettings } from '$lib/api/weddings';
   import { Monitor, Save, Loader2, ExternalLink, Copy, Image, Type, FileText, Upload } from 'lucide-svelte';
   import ImageEditor from '$lib/components/ui/ImageEditor.svelte';
   import { encodeId } from '$lib/utils/encode';
@@ -30,8 +30,7 @@
   onMount(async () => {
     try {
       const wid = get(weddingId);
-      const weddings = await listWeddings();
-      wedding = weddings.find(w => w.id === wid) ?? null;
+      wedding = await getWedding(wid).catch(() => null);
       if (wedding) {
         kioskTitle = (wedding as any).kioskTitle ?? '';
         kioskDescription = (wedding as any).kioskDescription ?? '';

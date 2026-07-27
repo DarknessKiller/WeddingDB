@@ -49,8 +49,8 @@ func RowColToXY(ids []uuid.UUID, rows, cols []int) map[uuid.UUID][2]float64 {
 
 // DefaultElements returns a sensible default hall layout.
 func DefaultElements(weddingID uuid.UUID) []HallElement {
-	mk := func(typ string, x, y, w, h float64, label string, z int) HallElement {
-		return HallElement{WeddingID: weddingID, Type: typ, X: x, Y: y, Width: w, Height: h, Label: label, Name: label, ZIndex: z}
+	mk := func(typ string, x, y, w, h float64, name string, z int) HallElement {
+		return HallElement{WeddingID: weddingID, Type: typ, X: x, Y: y, Width: w, Height: h, Name: name, ZIndex: z}
 	}
 	return []HallElement{
 		mk("stage", 50, 3, 30, 6, "Stage", 10),
