@@ -14,8 +14,8 @@ func DecodeWIDString(s string) (uuid.UUID, error) {
 	if id, err := uuid.Parse(s); err == nil {
 		return id, nil
 	}
-	b64 := strings.ReplaceAll(s, "_", "+")
-	b64 = strings.ReplaceAll(b64, "-", "/")
+	b64 := strings.ReplaceAll(s, "-", "+")
+	b64 = strings.ReplaceAll(b64, "_", "/")
 	switch len(b64) % 4 {
 	case 2:
 		b64 += "=="
