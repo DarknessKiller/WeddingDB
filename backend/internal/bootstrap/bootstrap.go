@@ -137,6 +137,22 @@ func Init(env config.Env) *App {
 
 	handlers.RegisterRoutes(server, authService, guestService, tableService, weddingService, layoutService, adminRepo)
 
+	// Serve static frontend (SPA fallback to index.html)
+	staticDir := getEnv("STATIC_DIR", "./static")
+	server.Mux.HandleFunc("GET /{path...}", func(w http.ResponseWriter, r *http.Request) {
+		path := r.PathValue("path")
+		if path == "" {
+			path = "index.html"
+		}
+		filePath := filepath.Join(staticDir, path)
+		if info, err := os.Stat(filePath); err == nil && !info.IsDir() {
+			http.ServeFile(w, r, filePath)
+			return
+		}
+		// SPA fallback: serve index.html for client-side routing
+		http.ServeFile(w, r, filepath.Join(staticDir, "index.html"))
+	})
+
 	// Seed default admin if none exists
 	var count int64
 	db.Model(&models.AdminUser{}).Count(&count)
