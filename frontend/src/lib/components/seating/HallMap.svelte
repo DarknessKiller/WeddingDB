@@ -16,6 +16,7 @@
     selectedTableId = null,
     highlightedTableId = null,
     dark = false,
+    legendPosition = 'bottom-left',
     onTableClick,
     onSeatClick,
     onSaveLayout,
@@ -30,6 +31,7 @@
     selectedTableId?: string | null;
     highlightedTableId?: string | null;
     dark?: boolean;
+    legendPosition?: 'bottom-left' | 'top-left';
     onTableClick?: (id: string) => void;
     onSeatClick?: (tableId: string, seatNum: number, guest: Guest | null) => void;
     onSaveLayout?: (tables: BanquetTableType[], elements: HallElement[], hallWidth: number, hallHeight: number) => Promise<void>;
@@ -52,6 +54,7 @@
   let KGroup: any = $state(null);
   let KLine: any = $state(null);
   let konvaLoaded = $state(false);
+  let stageRef = $state<any>(null);
 
   // Edit state
   let editTables = $state<BanquetTableType[]>([]);
@@ -143,68 +146,56 @@
         const canvas = containerEl?.querySelector('canvas');
         if (!canvas) { requestAnimationFrame(attachHandlers); return; }
 
+        // Wheel zoom
         canvas.addEventListener('wheel', (e: WheelEvent) => {
           e.preventDefault();
           const delta = e.deltaY > 0 ? -0.08 : 0.08;
           zoom = Math.max(0.3, Math.min(3, zoom + delta));
         }, { passive: false });
 
-        let isPanning = false;
-        let startX = 0;
-        let startY = 0;
+        // Mobile: detect taps on tables (Konva's drag blocks click events on touch)
+        const isMobile = 'ontouchstart' in window;
+        if (isMobile && mode !== 'edit') {
+          let touchStartX = 0;
+          let touchStartY = 0;
+          let touchStartTime = 0;
 
-        canvas.addEventListener('mousedown', (e: MouseEvent) => {
-          isPanning = true;
-          startX = e.clientX - panX;
-          startY = e.clientY - panY;
-          canvas.style.cursor = 'grabbing';
-        });
-        canvas.addEventListener('mousemove', (e: MouseEvent) => {
-          if (!isPanning) return;
-          panX = e.clientX - startX;
-          panY = e.clientY - startY;
-        });
-        canvas.addEventListener('mouseup', () => { isPanning = false; canvas.style.cursor = 'grab'; });
-        canvas.addEventListener('mouseleave', () => { isPanning = false; canvas.style.cursor = 'grab'; });
+          canvas.addEventListener('touchstart', (e: TouchEvent) => {
+            if (e.touches.length !== 1) return;
+            touchStartX = e.touches[0].clientX;
+            touchStartY = e.touches[0].clientY;
+            touchStartTime = Date.now();
+          }, { passive: true });
 
-        let lastTouchDist = 0;
-        let lastTouchMid = { x: 0, y: 0 };
-
-        canvas.addEventListener('touchstart', (e: TouchEvent) => {
-          if (e.touches.length === 1) {
-            isPanning = true;
-            startX = e.touches[0].clientX - panX;
-            startY = e.touches[0].clientY - panY;
-          } else if (e.touches.length === 2) {
-            isPanning = false;
-            const dx = e.touches[0].clientX - e.touches[1].clientX;
-            const dy = e.touches[0].clientY - e.touches[1].clientY;
-            lastTouchDist = Math.sqrt(dx * dx + dy * dy);
-            lastTouchMid = {
-              x: (e.touches[0].clientX + e.touches[1].clientX) / 2,
-              y: (e.touches[0].clientY + e.touches[1].clientY) / 2,
-            };
-          }
-        }, { passive: true });
-
-        canvas.addEventListener('touchmove', (e: TouchEvent) => {
-          if (e.touches.length === 1 && isPanning) {
-            panX = e.touches[0].clientX - startX;
-            panY = e.touches[0].clientY - startY;
-          } else if (e.touches.length === 2) {
-            e.preventDefault();
-            const dx = e.touches[0].clientX - e.touches[1].clientX;
-            const dy = e.touches[0].clientY - e.touches[1].clientY;
-            const dist = Math.sqrt(dx * dx + dy * dy);
-            const scale = dist / lastTouchDist;
-            zoom = Math.max(0.3, Math.min(3, zoom * scale));
-            lastTouchDist = dist;
-          }
-        }, { passive: false });
-
-        canvas.addEventListener('touchend', () => { isPanning = false; });
-
-        canvas.style.cursor = 'grab';
+          canvas.addEventListener('touchend', (e: TouchEvent) => {
+            if (e.changedTouches.length !== 1) return;
+            const dx = e.changedTouches[0].clientX - touchStartX;
+            const dy = e.changedTouches[0].clientY - touchStartY;
+            const dt = Date.now() - touchStartTime;
+            // Tap = short duration + small movement
+            if (dt < 300 && Math.abs(dx) < 10 && Math.abs(dy) < 10) {
+              const rect = canvas.getBoundingClientRect();
+              const x = e.changedTouches[0].clientX - rect.left;
+              const y = e.changedTouches[0].clientY - rect.top;
+              // Find Konva shape at this point
+              if (stageRef) {
+                const konvaStage = stageRef.getNode?.() ?? stageRef;
+                const shape = konvaStage.getIntersection({ x, y });
+                if (shape) {
+                  // Walk up to find the table group
+                  let node = shape;
+                  while (node && node !== konvaStage) {
+                    if (node._tableId) {
+                      onTableClick?.(node._tableId);
+                      return;
+                    }
+                    node = node.getParent();
+                  }
+                }
+              }
+            }
+          }, { passive: true });
+        }
       };
       requestAnimationFrame(attachHandlers);
     })();
@@ -330,23 +321,6 @@
   />
 {/if}
 
-{#if mode === 'edit'}
-  <EditToolbar
-    hallWidth={editHallWidth}
-    hallHeight={editHallHeight}
-    {selectedId}
-    {isTableSelected}
-    selectedItem={selectedItem}
-    onSave={handleSave}
-    onCancel={handleCancel}
-    onDelete={handleDeleteSelected}
-    onAddElement={handleAddElement}
-    onUpdateSelected={handleUpdateSelected}
-    onWidthChange={(w) => editHallWidth = w}
-    onHeightChange={(h) => editHallHeight = h}
-  />
-{/if}
-
 <div
   bind:this={containerEl}
   class="relative flex-1 z-10 overflow-hidden select-none min-h-[300px] {dark ? 'bg-gray-950' : 'bg-gray-50'}"
@@ -369,20 +343,23 @@
 
   <!-- Legend (view mode only) -->
   {#if mode !== 'edit'}
-    <div class="absolute top-3 left-3 sm:bottom-4 sm:left-4 z-30 {dark ? 'bg-gray-800/90 border-gray-700' : 'bg-white/90 border-gray-200'} backdrop-blur-sm border rounded-xl px-3 sm:px-4 py-2 sm:py-3 text-[10px] sm:text-xs space-y-1 sm:space-y-1.5">
-      <div class="flex items-center gap-2"><span class="w-2.5 h-2.5 sm:w-3 sm:h-3 rounded-full border-2 {dark ? 'border-gray-600 bg-gray-700' : 'border-gray-200 bg-gray-100'}"></span> Empty</div>
-      <div class="flex items-center gap-2"><span class="w-2.5 h-2.5 sm:w-3 sm:h-3 rounded-full border-2 border-red {dark ? 'bg-red-900/40' : 'bg-red-50'}"></span> Occupied</div>
-      <div class="flex items-center gap-2"><span class="w-2.5 h-2.5 sm:w-3 sm:h-3 rounded-full border-2 border-emerald-500 {dark ? 'bg-emerald-900/40' : 'bg-emerald-50'}"></span> Checked In</div>
-      <div class="flex items-center gap-2"><span class="w-2.5 h-2.5 sm:w-3 sm:h-3 rounded-full border-2 border-gold {dark ? 'bg-gold/20' : 'bg-gold-50'}"></span> VIP</div>
+    <div class="absolute {legendPosition === 'top-left' ? 'top-3 left-3' : 'bottom-3 left-3'} z-30 {dark ? 'bg-gray-800/90 border-gray-700' : 'bg-white/90 border-gray-200'} backdrop-blur-sm border rounded-lg px-2 py-1.5 text-[9px] sm:text-[10px] flex flex-wrap gap-x-3 gap-y-0.5">
+      <span class="inline-flex items-center gap-1"><span class="w-2 h-2 rounded-full border {dark ? 'border-gray-600 bg-gray-700' : 'border-gray-200 bg-gray-100'}"></span>Empty</span>
+      <span class="inline-flex items-center gap-1"><span class="w-2 h-2 rounded-full border border-red {dark ? 'bg-red-900/40' : 'bg-red-50'}"></span>Occupied</span>
+      <span class="inline-flex items-center gap-1"><span class="w-2 h-2 rounded-full border border-emerald-500 {dark ? 'bg-emerald-900/40' : 'bg-emerald-50'}"></span>Checked In</span>
+      <span class="inline-flex items-center gap-1"><span class="w-2 h-2 rounded-full border border-gold {dark ? 'bg-gold/20' : 'bg-gold-50'}"></span>VIP</span>
     </div>
   {/if}
 
   {#if KonvaStage && KLayer && KRect}
     <KonvaStage
+      bind:this={stageRef}
       width={stageW}
       height={stageH}
       x={panX}
       y={panY}
+      draggable={mode !== 'edit'}
+      onDragEnd={(e: any) => { if (mode !== 'edit') { panX = e.target.x(); panY = e.target.y(); } }}
       onclick={handleStageClick}
     >
       <KLayer>

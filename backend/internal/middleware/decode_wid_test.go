@@ -7,17 +7,20 @@ import (
 	"github.com/google/uuid"
 )
 
-func TestDecodeWIDString_PlainUUIDRejected(t *testing.T) {
+func TestDecodeWIDString_PlainUUIDAccepted(t *testing.T) {
 	orig := uuid.New()
-	_, err := DecodeWIDString(orig.String())
-	if err == nil {
-		t.Error("expected error for plain UUID, only base64 accepted")
+	got, err := DecodeWIDString(orig.String())
+	if err != nil {
+		t.Fatalf("unexpected error for plain UUID: %v", err)
+	}
+	if got != orig {
+		t.Errorf("got %v, want %v", got, orig)
 	}
 }
 
-func TestDecodeWIDString_Base64Encoded(t *testing.T) {
+func TestDecodeWIDString_RawURLEncoding(t *testing.T) {
 	orig := uuid.New()
-	b64 := base64.StdEncoding.EncodeToString(orig[:])
+	b64 := base64.RawURLEncoding.EncodeToString(orig[:])
 	got, err := DecodeWIDString(b64)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -27,21 +30,9 @@ func TestDecodeWIDString_Base64Encoded(t *testing.T) {
 	}
 }
 
-func TestDecodeWIDString_URLSafeBase64(t *testing.T) {
+func TestDecodeWIDString_URLSafePadded(t *testing.T) {
 	orig := uuid.New()
 	b64 := base64.URLEncoding.EncodeToString(orig[:])
-	got, err := DecodeWIDString(b64)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if got != orig {
-		t.Errorf("got %v, want %v", got, orig)
-	}
-}
-
-func TestDecodeWIDString_PaddedBase64(t *testing.T) {
-	orig := uuid.New()
-	b64 := base64.RawStdEncoding.EncodeToString(orig[:])
 	got, err := DecodeWIDString(b64)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)

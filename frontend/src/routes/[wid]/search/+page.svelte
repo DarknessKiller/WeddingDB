@@ -329,6 +329,7 @@
           {hallWidth}
           {hallHeight}
           tableGuests={tableGuests}
+          legendPosition="top-left"
           onTableClick={handleTableClick}
           highlightedTableId={selectedGuest?.tableId ?? highlightTableId}
         />

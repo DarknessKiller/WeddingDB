@@ -523,16 +523,16 @@
 <!-- svelte-ignore a11y_no_static_element_interactions -->
 <div class="p-4 sm:p-7 max-w-[1400px]" onclick={() => contextMenu = null}>
   <!-- Toolbar -->
-  <div class="flex items-center justify-between gap-4 mb-5 flex-wrap">
-    <div class="relative flex-1 min-w-[200px] max-w-md">
-      <Search class="absolute left-3.5 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400 pointer-events-none" />
+  <div class="flex items-center justify-between gap-2 sm:gap-4 mb-5 flex-wrap">
+    <div class="relative flex-1 min-w-[160px] sm:min-w-[200px] max-w-md">
+      <Search class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 sm:w-5 sm:h-5 text-gray-400 pointer-events-none" />
       <input
         type="text" placeholder="Search guests..." bind:value={searchQuery}
-        class="w-full pl-11 pr-4 py-2.5 border border-gray-200 rounded-xl text-sm bg-white focus:border-gold focus:ring-2 focus:ring-gold/15 outline-none transition-all"
+        class="w-full pl-9 sm:pl-11 pr-3 sm:pr-4 py-2 sm:py-2.5 border border-gray-200 rounded-xl text-sm bg-white focus:border-gold focus:ring-2 focus:ring-gold/15 outline-none transition-all"
       />
     </div>
-    <div class="flex items-center gap-2">
-      <select bind:value={rsvpFilter} class="px-3 py-2 border border-gray-200 rounded-xl text-sm bg-white focus:border-gold outline-none">
+    <div class="flex items-center gap-1 sm:gap-2 flex-wrap">
+      <select bind:value={rsvpFilter} class="px-2 sm:px-3 py-1.5 sm:py-2 border border-gray-200 rounded-xl text-xs sm:text-sm bg-white focus:border-gold outline-none">
         <option value="all">All Status</option>
         <option value="confirmed">Confirmed</option>
         <option value="pending">Pending</option>
@@ -540,14 +540,14 @@
         <option value="no_response">No Response</option>
       </select>
       <button onclick={() => { showImportModal = true; importPreview = []; importFile = null; importError = ''; }}
-        class="px-3 py-2.5 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-xl text-sm font-semibold transition-colors flex items-center gap-1.5">
-        <Upload class="w-4 h-4" /> Import CSV
+        class="px-2 sm:px-3 py-1.5 sm:py-2.5 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-xl text-xs sm:text-sm font-semibold transition-colors flex items-center gap-1 sm:gap-1.5">
+        <Upload class="w-3.5 h-3.5 sm:w-4 sm:h-4" /> <span class="hidden sm:inline">Import CSV</span><span class="sm:hidden">Import</span>
       </button>
-      <button onclick={exportCSV} class="px-3 py-2.5 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-xl text-sm font-semibold transition-colors flex items-center gap-1.5">
-        <Download class="w-4 h-4" /> Export CSV
+      <button onclick={exportCSV} class="px-2 sm:px-3 py-1.5 sm:py-2.5 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-xl text-xs sm:text-sm font-semibold transition-colors flex items-center gap-1 sm:gap-1.5">
+        <Download class="w-3.5 h-3.5 sm:w-4 sm:h-4" /> <span class="hidden sm:inline">Export CSV</span><span class="sm:hidden">Export</span>
       </button>
-      <button onclick={() => goto(`/${$weddingId}/reservation`)} class="flex items-center gap-2 px-4 py-2.5 bg-red text-white rounded-xl text-sm font-semibold hover:bg-red-light transition-colors">
-        <Plus class="w-4 h-4" /> Add Guest
+      <button onclick={() => goto(`/${$weddingId}/reservation`)} class="flex items-center gap-1 sm:gap-2 px-2.5 sm:px-4 py-1.5 sm:py-2.5 bg-red text-white rounded-xl text-xs sm:text-sm font-semibold hover:bg-red-light transition-colors">
+        <Plus class="w-3.5 h-3.5 sm:w-4 sm:h-4" /> <span class="hidden sm:inline">Add Guest</span><span class="sm:hidden">Add</span>
       </button>
     </div>
   </div>

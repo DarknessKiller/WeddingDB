@@ -3,6 +3,7 @@ package handlers
 import (
 	"time"
 	"weddingdb/internal/services"
+	"weddingdb/internal/utils"
 
 	"github.com/go-fuego/fuego"
 )
@@ -39,11 +40,11 @@ func (h *PublicGuestHandler) List(c fuego.ContextWithBody[any]) (any, error) {
 	for _, g := range guests {
 		var tid *string
 		if g.TableID != nil {
-			s := g.TableID.String()
+			s := utils.EncodeUUID(*g.TableID)
 			tid = &s
 		}
 		out = append(out, publicGuest{
-			ID:          g.ID.String(),
+			ID:          utils.EncodeUUID(g.ID),
 			Name:        g.Name,
 			Phone:       g.Phone,
 			TableID:     tid,
@@ -104,11 +105,11 @@ func (h *PublicGuestHandler) Search(c fuego.ContextWithBody[any]) (any, error) {
 	for _, g := range guests {
 		var tid *string
 		if g.TableID != nil {
-			s := g.TableID.String()
+			s := utils.EncodeUUID(*g.TableID)
 			tid = &s
 		}
 		out = append(out, publicGuest{
-			ID:          g.ID.String(),
+			ID:          utils.EncodeUUID(g.ID),
 			Name:        g.Name,
 			Phone:       g.Phone,
 			TableID:     tid,

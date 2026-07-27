@@ -373,11 +373,8 @@
       {/if}
 
       <!-- Panel Footer -->
-      <div class="px-5 py-4 border-t border-gray-100 bg-gray-50/50 flex gap-2">
-        <button onclick={() => goto(`/${$weddingId}/tables`)} class="flex-1 py-2.5 border border-gray-200 bg-white rounded-xl text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors">
-          Edit Table
-        </button>
-        <button onclick={() => editMode = true} class="flex-1 py-2.5 bg-red text-white rounded-xl text-sm font-semibold hover:bg-red-light transition-colors flex items-center justify-center gap-1.5">
+      <div class="px-5 py-4 border-t border-gray-100 bg-gray-50/50">
+        <button onclick={() => editMode = true} class="w-full py-2.5 bg-red text-white rounded-xl text-sm font-semibold hover:bg-red-light transition-colors flex items-center justify-center gap-1.5">
           <Map class="w-3.5 h-3.5" /> Edit Layout
         </button>
       </div>

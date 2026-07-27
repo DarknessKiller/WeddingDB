@@ -7,7 +7,6 @@ import (
 	"weddingdb/internal/services"
 
 	"github.com/go-fuego/fuego"
-	"github.com/google/uuid"
 )
 
 type GuestHandler struct{ guestService *services.GuestService }
@@ -105,7 +104,7 @@ func (h *GuestHandler) Create(c fuego.ContextWithBody[GuestCreateRequest]) (any,
 		return nil, err
 	}
 	if body.TableID != nil && *body.TableID != "" {
-		if tid, err := uuid.Parse(*body.TableID); err == nil {
+		if tid, err := DecodeID(*body.TableID); err == nil {
 			seatNum := 1
 			if body.SeatNum != nil {
 				seatNum = *body.SeatNum
@@ -161,7 +160,7 @@ func (h *GuestHandler) Update(c fuego.ContextWithBody[GuestCreateRequest]) (any,
 			// Explicitly clearing seat
 			guest.TableID = nil
 			guest.SeatNum = nil
-		} else if tid, err := uuid.Parse(*body.TableID); err == nil {
+		} else if tid, err := DecodeID(*body.TableID); err == nil {
 			seatNum := 1
 			if body.SeatNum != nil {
 				seatNum = *body.SeatNum

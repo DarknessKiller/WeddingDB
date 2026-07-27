@@ -57,7 +57,10 @@
 
   // Register Konva node with parent for transformer
   $effect(() => {
-    if (groupEl) onrefready?.(groupEl);
+    if (groupEl) {
+      groupEl._tableId = table.id;
+      onrefready?.(groupEl);
+    }
   });
 
   onMount(async () => {

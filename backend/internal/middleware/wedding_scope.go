@@ -3,25 +3,24 @@ package middleware
 import (
 	"encoding/base64"
 	"net/http"
-	"strings"
 
 	"github.com/google/uuid"
 )
 
-// DecodeWIDString parses a UUID from a base64-encoded string.
-// Only accepts base64 (URL-safe or standard), rejects plain UUIDs.
+// DecodeWIDString parses a UUID from a base64 URL-safe string or a plain UUID string.
 func DecodeWIDString(s string) (uuid.UUID, error) {
-	b64 := strings.ReplaceAll(s, "-", "+")
-	b64 = strings.ReplaceAll(b64, "_", "/")
-	switch len(b64) % 4 {
-	case 2:
-		b64 += "=="
-	case 3:
-		b64 += "="
+	// Try plain UUID first (e.g. "550e8400-e29b-41d4-a716-446655440000")
+	if id, err := uuid.Parse(s); err == nil {
+		return id, nil
 	}
-	decoded, err := base64.StdEncoding.DecodeString(b64)
+	// Try base64 URL-safe (with or without padding)
+	decoded, err := base64.RawURLEncoding.DecodeString(s)
 	if err != nil {
-		return uuid.Nil, err
+		// Try with standard padding
+		decoded, err = base64.URLEncoding.DecodeString(s)
+		if err != nil {
+			return uuid.Nil, err
+		}
 	}
 	return uuid.FromBytes(decoded)
 }

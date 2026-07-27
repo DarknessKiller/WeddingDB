@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"log"
+	"weddingdb/internal/middleware"
 	"weddingdb/internal/models"
 	"weddingdb/internal/services"
 
@@ -101,7 +102,7 @@ func (h *LayoutHandler) Save(c fuego.ContextWithBody[LayoutRequest]) (any, error
 	}
 	tablePos := make(map[uuid.UUID][3]float64, len(body.Tables))
 	for _, t := range body.Tables {
-		id, err := uuid.Parse(t.ID)
+		id, err := middleware.DecodeWIDString(t.ID)
 		if err != nil {
 			return nil, fuego.BadRequestError{Title: "Invalid table id"}
 		}
@@ -122,7 +123,7 @@ func (h *LayoutHandler) Save(c fuego.ContextWithBody[LayoutRequest]) (any, error
 			Opacity: e.Opacity, ZIndex: e.ZIndex,
 		}
 		if e.ID != "" {
-			id, err := uuid.Parse(e.ID)
+			id, err := middleware.DecodeWIDString(e.ID)
 			if err != nil {
 				return nil, fuego.BadRequestError{Title: "Invalid element id"}
 			}

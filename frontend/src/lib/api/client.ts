@@ -10,10 +10,11 @@ export function getAccessToken(): string {
 
 export async function apiFetch(path: string, opts: RequestInit = {}): Promise<Response> {
 	const { accessToken } = getAuth();
+	const isDelete = opts.method === 'DELETE';
 	let res = await fetch(`${BASE}${path}`, {
 		...opts,
 		headers: {
-			'Content-Type': 'application/json',
+			...(!isDelete ? { 'Content-Type': 'application/json' } : {}),
 			...opts.headers,
 			...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {})
 		}

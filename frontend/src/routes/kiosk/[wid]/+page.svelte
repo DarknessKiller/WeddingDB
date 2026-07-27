@@ -163,6 +163,7 @@
         selectedTableId={selectedGuest.tableId}
         tableGuests={tableGuests}
         dark={false}
+        legendPosition="top-left"
       />
 
       <!-- Info Panel (floating overlay) -->
