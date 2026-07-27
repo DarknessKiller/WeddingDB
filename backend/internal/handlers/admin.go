@@ -23,7 +23,7 @@ type AdminRequest struct {
 	Weddings []string `json:"weddings,omitempty"`
 }
 
-func (h *AdminHandler) List(c fuego.ContextWithBody[any]) (any, error) {
+func (h *AdminHandler) List(c fuego.ContextNoBody) (any, error) {
 	if err := requireAdmin(c.Context()); err != nil {
 		return nil, fuego.UnauthorizedError{Title: err.Error()}
 	}
@@ -119,7 +119,7 @@ func (h *AdminHandler) AssignWeddings(c fuego.ContextWithBody[AssignWeddingsRequ
 	return admin, nil
 }
 
-func (h *AdminHandler) GetUserWeddings(c fuego.ContextWithBody[any]) (any, error) {
+func (h *AdminHandler) GetUserWeddings(c fuego.ContextNoBody) (any, error) {
 	if err := requireAdmin(c.Context()); err != nil {
 		return nil, fuego.UnauthorizedError{Title: err.Error()}
 	}

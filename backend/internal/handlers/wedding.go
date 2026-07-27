@@ -24,7 +24,7 @@ type WeddingRequest struct {
 	Date string `json:"date"`
 }
 
-func (h *WeddingHandler) List(c fuego.ContextWithBody[any]) (any, error) {
+func (h *WeddingHandler) List(c fuego.ContextNoBody) (any, error) {
 	ctx := c.Context()
 	role := RoleFromContext(ctx)
 	if role == "admin" {
@@ -42,7 +42,7 @@ func (h *WeddingHandler) List(c fuego.ContextWithBody[any]) (any, error) {
 	return []models.WeddingEvent{*w}, nil
 }
 
-func (h *WeddingHandler) Get(c fuego.ContextWithBody[any]) (any, error) {
+func (h *WeddingHandler) Get(c fuego.ContextNoBody) (any, error) {
 	id, err := DecodeID(c.PathParam("id"))
 	if err != nil {
 		return nil, fuego.BadRequestError{Title: "Invalid ID"}

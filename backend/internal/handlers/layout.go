@@ -57,7 +57,7 @@ type LayoutResponse struct {
 	Elements   []models.HallElement  `json:"elements"`
 }
 
-func (h *LayoutHandler) Get(c fuego.ContextWithBody[any]) (any, error) {
+func (h *LayoutHandler) Get(c fuego.ContextNoBody) (any, error) {
 	wid, err := DecodeWID(c)
 	if err != nil {
 		return nil, fuego.BadRequestError{Title: "Invalid wedding ID"}

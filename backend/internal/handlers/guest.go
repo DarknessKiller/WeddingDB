@@ -30,7 +30,7 @@ type GuestCreateRequest struct {
 	GiftItem  *string  `json:"giftItem"`
 }
 
-func (h *GuestHandler) List(c fuego.ContextWithBody[any]) (any, error) {
+func (h *GuestHandler) List(c fuego.ContextNoBody) (any, error) {
 	wid, err := DecodeWID(c)
 	if err != nil {
 		return nil, fuego.BadRequestError{Title: "Invalid wedding ID"}
@@ -54,7 +54,7 @@ func (h *GuestHandler) List(c fuego.ContextWithBody[any]) (any, error) {
 	return map[string]any{"guests": guests, "total": total, "nextCursor": nextCursor}, nil
 }
 
-func (h *GuestHandler) Get(c fuego.ContextWithBody[any]) (any, error) {
+func (h *GuestHandler) Get(c fuego.ContextNoBody) (any, error) {
 	wid, err := DecodeWID(c)
 	if err != nil {
 		return nil, fuego.BadRequestError{Title: "Invalid wedding ID"}
@@ -248,7 +248,7 @@ func (h *GuestHandler) CheckOut(c fuego.ContextWithBody[any]) (any, error) {
 	return nil, nil
 }
 
-func (h *GuestHandler) Search(c fuego.ContextWithBody[any]) (any, error) {
+func (h *GuestHandler) Search(c fuego.ContextNoBody) (any, error) {
 	wid, err := DecodeWID(c)
 	if err != nil {
 		return nil, fuego.BadRequestError{Title: "Invalid wedding ID"}
@@ -261,7 +261,7 @@ func (h *GuestHandler) Search(c fuego.ContextWithBody[any]) (any, error) {
 	return guests, nil
 }
 
-func (h *GuestHandler) Occupancy(c fuego.ContextWithBody[any]) (any, error) {
+func (h *GuestHandler) Occupancy(c fuego.ContextNoBody) (any, error) {
 	wid, err := DecodeWID(c)
 	if err != nil {
 		return nil, fuego.BadRequestError{Title: "Invalid wedding ID"}

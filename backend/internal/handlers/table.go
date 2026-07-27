@@ -22,7 +22,7 @@ type TableRequest struct {
 	IsVip    bool    `json:"isVip"`
 }
 
-func (h *TableHandler) List(c fuego.ContextWithBody[any]) (any, error) {
+func (h *TableHandler) List(c fuego.ContextNoBody) (any, error) {
 	wid, err := DecodeWID(c)
 	if err != nil {
 		return nil, fuego.BadRequestError{Title: "Invalid wedding ID"}
