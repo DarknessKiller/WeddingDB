@@ -57,7 +57,11 @@
     if (prevDrawerOpen && !isOpen) {
       currentPage = 0;
       cursors = [];
-      loadGuests();
+      if (searchQuery.trim()) {
+        handleSearch();
+      } else {
+        loadGuests();
+      }
     }
     prevDrawerOpen = isOpen;
   });
