@@ -162,7 +162,8 @@
           let touchStartY = 0;
           let touchStartTime = 0;
           let isTouchPanning = false;
-          let lastPinchDist = 0;
+          let pinchStartDist = 0;
+          let pinchStartZoom = 1;
 
           canvas.addEventListener('touchstart', (e: TouchEvent) => {
             if (e.touches.length === 1) {
@@ -174,7 +175,8 @@
               isTouchPanning = false;
               const dx = e.touches[0].clientX - e.touches[1].clientX;
               const dy = e.touches[0].clientY - e.touches[1].clientY;
-              lastPinchDist = Math.sqrt(dx * dx + dy * dy);
+              pinchStartDist = Math.sqrt(dx * dx + dy * dy);
+              pinchStartZoom = zoom;
             }
           }, { passive: true });
 
@@ -184,11 +186,9 @@
               const dx = e.touches[0].clientX - e.touches[1].clientX;
               const dy = e.touches[0].clientY - e.touches[1].clientY;
               const dist = Math.sqrt(dx * dx + dy * dy);
-              if (lastPinchDist > 0) {
-                const scale = dist / lastPinchDist;
-                zoom = Math.max(0.3, Math.min(3, zoom * scale));
+              if (pinchStartDist > 0) {
+                zoom = Math.max(0.3, Math.min(3, pinchStartZoom * (dist / pinchStartDist)));
               }
-              lastPinchDist = dist;
             } else if (e.touches.length === 1) {
               const dx = e.touches[0].clientX - touchStartX;
               const dy = e.touches[0].clientY - touchStartY;
@@ -233,7 +233,7 @@
                 }
               }
             }
-            lastPinchDist = 0;
+            pinchStartDist = 0;
           }, { passive: true });
         }
       };
