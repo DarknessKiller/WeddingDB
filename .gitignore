@@ -33,6 +33,11 @@ Thumbs.db
 npm-debug.log*
 backend/server
 
+# Ensure these are always tracked
+!backend/doc/openapi.json
+!doc/openapi.json
+!**/guest.csv
+
 # CodeGraph
 .codegraph/
 
