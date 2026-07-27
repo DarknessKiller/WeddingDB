@@ -34,7 +34,7 @@ type ElementInput struct {
 	Degree      float64 `json:"degree"`
 	Width       float64 `json:"width"`
 	Height      float64 `json:"height"`
-	Label       string  `json:"label"`
+	Name        string  `json:"name"`
 	Color       string  `json:"color"`
 	TextColor   string  `json:"textColor"`
 	StrokeColor string  `json:"strokeColor"`
@@ -117,10 +117,9 @@ func (h *LayoutHandler) Save(c fuego.ContextWithBody[LayoutRequest]) (any, error
 		}
 		el := models.HallElement{
 			Type: e.Type, X: e.X, Y: e.Y, Degree: e.Degree,
-			Width: e.Width, Height: e.Height, Label: e.Label,
+			Width: e.Width, Height: e.Height, Name: e.Name,
 			Color: e.Color, TextColor: e.TextColor, StrokeColor: e.StrokeColor,
 			Opacity: e.Opacity, ZIndex: e.ZIndex,
-			Name: e.Label,
 		}
 		if e.ID != "" {
 			id, err := uuid.Parse(e.ID)

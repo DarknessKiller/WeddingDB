@@ -30,13 +30,13 @@
     onHeightChange: (h: number) => void;
   } = $props();
 
-  const defaults: Record<ElementType, { w: number; h: number; label: string }> = {
-    stage: { w: 55, h: 6, label: 'Stage' },
-    dj_counter: { w: 12, h: 5, label: 'DJ' },
-    entrance: { w: 14, h: 4, label: 'Entrance' },
-    tv: { w: 5, h: 3, label: 'TV' },
-    walkway: { w: 2, h: 50, label: '' },
-    box: { w: 25, h: 30, label: '' },
+  const defaults: Record<ElementType, { w: number; h: number; name: string }> = {
+    stage: { w: 55, h: 6, name: 'Stage' },
+    dj_counter: { w: 12, h: 5, name: 'DJ' },
+    entrance: { w: 14, h: 4, name: 'Entrance' },
+    tv: { w: 5, h: 3, name: 'TV' },
+    walkway: { w: 2, h: 50, name: '' },
+    box: { w: 25, h: 30, name: '' },
   };
 
   function addElement(type: ElementType) {
@@ -49,7 +49,7 @@
       degree: 0,
       width: d.w,
       height: d.h,
-      label: d.label,
+      name: d.name,
       color: '',
       textColor: '',
       strokeColor: '',
@@ -178,12 +178,12 @@
       </div>
       <!-- Label -->
       <div class="flex items-center gap-1">
-        <label for="sel-label" class="text-gray-500">Label</label>
+        <label for="sel-name" class="text-gray-500">Name</label>
         <input
-          id="sel-label"
+          id="sel-name"
           type="text"
-          value={selectedItem.label ?? ''}
-          oninput={(e) => onUpdateSelected({ label: e.currentTarget.value })}
+          value={selectedItem.name ?? ''}
+          oninput={(e) => onUpdateSelected({ name: e.currentTarget.value })}
           class="w-24 px-1.5 py-1 border border-gray-200 rounded-lg"
         />
       </div>
