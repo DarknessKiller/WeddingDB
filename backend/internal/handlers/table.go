@@ -67,7 +67,10 @@ func (h *TableHandler) Update(c fuego.ContextWithBody[TableRequest]) (any, error
 	if err != nil {
 		return nil, fuego.BadRequestError{Title: "Invalid wedding ID"}
 	}
-	id := DecodeID(c.PathParam("id"))
+	id, err := DecodeID(c.PathParam("id"))
+	if err != nil {
+		return nil, fuego.BadRequestError{Title: "Invalid table ID"}
+	}
 	table, err := h.tableService.Get(id, wid)
 	if err != nil {
 		return nil, fuego.NotFoundError{Title: "Table not found"}
@@ -89,7 +92,10 @@ func (h *TableHandler) Delete(c fuego.ContextWithBody[any]) (any, error) {
 	if err != nil {
 		return nil, fuego.BadRequestError{Title: "Invalid wedding ID"}
 	}
-	id := DecodeID(c.PathParam("id"))
+	id, err := DecodeID(c.PathParam("id"))
+	if err != nil {
+		return nil, fuego.BadRequestError{Title: "Invalid table ID"}
+	}
 	if err := h.tableService.Delete(id, wid); err != nil {
 		return nil, err
 	}

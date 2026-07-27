@@ -74,7 +74,10 @@ func (h *AdminHandler) Delete(c fuego.ContextWithBody[any]) (any, error) {
 		return nil, fuego.UnauthorizedError{Title: err.Error()}
 	}
 	adminID := AdminIDFromContext(c.Context())
-	id := DecodeID(c.PathParam("id"))
+	id, err := DecodeID(c.PathParam("id"))
+	if err != nil {
+		return nil, fuego.BadRequestError{Title: "Invalid admin ID"}
+	}
 	if id == adminID {
 		return nil, fuego.BadRequestError{Title: "Cannot delete your own account"}
 	}
@@ -96,7 +99,10 @@ func (h *AdminHandler) AssignWeddings(c fuego.ContextWithBody[AssignWeddingsRequ
 	if err != nil {
 		return nil, fuego.BadRequestError{Title: "Invalid request"}
 	}
-	id := DecodeID(c.PathParam("id"))
+	id, err := DecodeID(c.PathParam("id"))
+	if err != nil {
+		return nil, fuego.BadRequestError{Title: "Invalid admin ID"}
+	}
 	admin, err := h.adminRepo.FindByID(id)
 	if err != nil {
 		return nil, fuego.NotFoundError{Title: "Admin not found"}
@@ -117,7 +123,10 @@ func (h *AdminHandler) GetUserWeddings(c fuego.ContextWithBody[any]) (any, error
 	if err := requireAdmin(c.Context()); err != nil {
 		return nil, fuego.UnauthorizedError{Title: err.Error()}
 	}
-	id := DecodeID(c.PathParam("id"))
+	id, err := DecodeID(c.PathParam("id"))
+	if err != nil {
+		return nil, fuego.BadRequestError{Title: "Invalid admin ID"}
+	}
 	weddings, err := h.adminRepo.GetUserWeddings(id)
 	if err != nil {
 		return nil, err
@@ -140,7 +149,10 @@ func (h *AdminHandler) ResetPassword(c fuego.ContextWithBody[ResetPasswordReques
 	if err := validatePassword(body.Password); err != nil {
 		return nil, err
 	}
-	id := DecodeID(c.PathParam("id"))
+	id, err := DecodeID(c.PathParam("id"))
+	if err != nil {
+		return nil, fuego.BadRequestError{Title: "Invalid admin ID"}
+	}
 	admin, err := h.adminRepo.FindByID(id)
 	if err != nil {
 		return nil, fuego.NotFoundError{Title: "User not found"}

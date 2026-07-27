@@ -43,7 +43,10 @@ func (h *WeddingHandler) List(c fuego.ContextWithBody[any]) (any, error) {
 }
 
 func (h *WeddingHandler) Get(c fuego.ContextWithBody[any]) (any, error) {
-	id := DecodeID(c.PathParam("id"))
+	id, err := DecodeID(c.PathParam("id"))
+	if err != nil {
+		return nil, fuego.BadRequestError{Title: "Invalid wedding ID"}
+	}
 	if err := requireWeddingAccess(c.Context(), id); err != nil {
 		return nil, fuego.UnauthorizedError{Title: err.Error()}
 	}
@@ -75,7 +78,10 @@ func (h *WeddingHandler) Create(c fuego.ContextWithBody[WeddingRequest]) (any, e
 }
 
 func (h *WeddingHandler) Update(c fuego.ContextWithBody[WeddingRequest]) (any, error) {
-	id := DecodeID(c.PathParam("id"))
+	id, err := DecodeID(c.PathParam("id"))
+	if err != nil {
+		return nil, fuego.BadRequestError{Title: "Invalid wedding ID"}
+	}
 	if err := requireWeddingAccess(c.Context(), id); err != nil {
 		return nil, fuego.UnauthorizedError{Title: err.Error()}
 	}
@@ -115,7 +121,10 @@ type KioskSettingsRequest struct {
 }
 
 func (h *WeddingHandler) UpdateKioskSettings(c fuego.ContextWithBody[KioskSettingsRequest]) (any, error) {
-	id := DecodeID(c.PathParam("id"))
+	id, err := DecodeID(c.PathParam("id"))
+	if err != nil {
+		return nil, fuego.BadRequestError{Title: "Invalid wedding ID"}
+	}
 	if err := requireWeddingAccess(c.Context(), id); err != nil {
 		return nil, fuego.UnauthorizedError{Title: err.Error()}
 	}
@@ -151,6 +160,9 @@ func (h *WeddingHandler) Delete(c fuego.ContextWithBody[any]) (any, error) {
 	if err := requireAdmin(c.Context()); err != nil {
 		return nil, fuego.UnauthorizedError{Title: err.Error()}
 	}
-	id := DecodeID(c.PathParam("id"))
+	id, err := DecodeID(c.PathParam("id"))
+	if err != nil {
+		return nil, fuego.BadRequestError{Title: "Invalid wedding ID"}
+	}
 	return nil, h.weddingService.Delete(id)
 }
