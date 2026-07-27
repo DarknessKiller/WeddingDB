@@ -43,8 +43,20 @@ func (r *GuestRepo) SearchByWedding(weddingID uuid.UUID, query string) ([]models
 	escaped = strings.ReplaceAll(escaped, "_", "\\_")
 	q := fmt.Sprintf("%%%s%%", escaped)
 	pinyinQ := fmt.Sprintf("%%%s%%", strings.ToLower(models.GenerateNamePinyin(query)))
+	lowerQ := strings.ToLower(query)
 	err := r.db.Where("wedding_id = ? AND (name ILIKE ? OR name_pinyin ILIKE ? OR phone ILIKE ? OR email ILIKE ?)",
-		weddingID, q, pinyinQ, q, q).Limit(20).Find(&guests).Error
+		weddingID, q, pinyinQ, q, q).
+		Order(fmt.Sprintf(`
+			CASE
+				WHEN LOWER(name) = %s THEN 0
+				WHEN LOWER(name) LIKE %s THEN 1
+				WHEN LOWER(name) LIKE %s THEN 2
+				ELSE 3
+			END, name`,
+			fmt.Sprintf("'%s'", strings.ReplaceAll(lowerQ, "'", "''")),
+			fmt.Sprintf("'%s%%'", strings.ReplaceAll(lowerQ, "'", "''")),
+			fmt.Sprintf("'%%%s%%'", strings.ReplaceAll(lowerQ, "'", "''")))).
+		Limit(20).Find(&guests).Error
 	return guests, err
 }
 
