@@ -1,7 +1,7 @@
 <script lang="ts">
   import { searchGuests, getGuest, listGuests, listTables, checkInGuest } from '$lib/api/search';
   import { getLayout } from '$lib/api/layout';
-  import { listWeddings } from '$lib/api/weddings';
+  import { getWedding } from '$lib/api/weddings';
   import { addToast } from '$lib/stores';
   import { weddingId } from '$lib/stores/weddingId';
   import { get } from 'svelte/store';
@@ -59,9 +59,8 @@
         hallHeight = layout.hallHeight;
       }
       // Load showSeatNumbers from wedding data
-      const weddings = await listWeddings().catch(() => []);
       const wid = get(weddingId);
-      const w = weddings.find(x => x.id === wid) as any;
+      const w = await getWedding(wid).catch(() => null) as any;
       if (w?.showSeatNumbers !== undefined) showSeatNumbers = w.showSeatNumbers;
     } catch {
       addToast('Failed to load data', 'error');

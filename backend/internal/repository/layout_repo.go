@@ -49,7 +49,7 @@ func (r *LayoutRepo) SaveLayout(
 		for i := range toUpdate {
 			res := tx.Model(&models.HallElement{}).Where("id = ? AND wedding_id = ?", toUpdate[i].ID, weddingID).
 				Updates(map[string]any{
-					"type": toUpdate[i].Type, "x": toUpdate[i].X, "y": toUpdate[i].Y,
+					"name": toUpdate[i].Name, "type": toUpdate[i].Type, "x": toUpdate[i].X, "y": toUpdate[i].Y,
 					"degree": toUpdate[i].Degree, "width": toUpdate[i].Width, "height": toUpdate[i].Height,
 					"label": toUpdate[i].Label, "color": toUpdate[i].Color,
 					"text_color": toUpdate[i].TextColor, "stroke_color": toUpdate[i].StrokeColor,
