@@ -34,9 +34,7 @@ npm-debug.log*
 backend/server
 
 # Ensure these are always tracked
-!backend/doc/openapi.json
-!doc/openapi.json
-!**/guest.csv
+# (openapi.json and guest.csv are tracked directly, no negation needed)
 
 # CodeGraph
 .codegraph/
