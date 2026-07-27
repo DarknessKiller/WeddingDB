@@ -153,6 +153,29 @@
           zoom = Math.max(0.3, Math.min(3, zoom + delta));
         }, { passive: false });
 
+        // Desktop mouse pan (only in view mode — edit mode uses Konva draggable on individual nodes)
+        if (mode !== 'edit') {
+          let isMousePanning = false;
+          let mouseStartX = 0;
+          let mouseStartY = 0;
+
+          canvas.addEventListener('mousedown', (e: MouseEvent) => {
+            if (e.button !== 0) return;
+            isMousePanning = true;
+            mouseStartX = e.clientX - panX;
+            mouseStartY = e.clientY - panY;
+            canvas.style.cursor = 'grabbing';
+          });
+          canvas.addEventListener('mousemove', (e: MouseEvent) => {
+            if (!isMousePanning) return;
+            panX = e.clientX - mouseStartX;
+            panY = e.clientY - mouseStartY;
+          });
+          canvas.addEventListener('mouseup', () => { isMousePanning = false; canvas.style.cursor = 'grab'; });
+          canvas.addEventListener('mouseleave', () => { isMousePanning = false; canvas.style.cursor = 'grab'; });
+          canvas.style.cursor = 'grab';
+        }
+
         // Mobile: touch-based pan + tap detection + pinch zoom
         // These handlers fire BEFORE Konva's internal handlers and take over
         // touch processing entirely on mobile, so we must handle everything.
@@ -211,11 +234,14 @@
               if (dt < 150) {
                 // It was a tap — find what was under the finger
                 const rect = canvas.getBoundingClientRect();
-                const x = e.changedTouches[0].clientX - rect.left;
-                const y = e.changedTouches[0].clientY - rect.top;
+                const canvasX = e.changedTouches[0].clientX - rect.left;
+                const canvasY = e.changedTouches[0].clientY - rect.top;
+                // Convert to stage-relative coordinates (subtract stage x/y offset)
+                const stageX = canvasX - panX;
+                const stageY = canvasY - panY;
                 if (stageRef) {
                   const konvaStage = stageRef.getNode?.() ?? stageRef;
-                  const shape = konvaStage.getIntersection({ x, y });
+                  const shape = konvaStage.getIntersection({ x: stageX, y: stageY });
                   if (shape) {
                     let node = shape;
                     while (node && node !== konvaStage) {
@@ -399,7 +425,7 @@
       height={stageH}
       x={panX}
       y={panY}
-      draggable={mode !== 'edit'}
+      draggable={false}
       onDragEnd={(e: any) => { if (mode !== 'edit') { panX = e.target.x(); panY = e.target.y(); } }}
       onclick={handleStageClick}
     >
