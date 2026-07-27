@@ -243,6 +243,7 @@
     {hallWidth}
     {hallHeight}
     mode={editMode ? 'edit' : 'view'}
+    legendPosition="top-left"
     onTableClick={editMode ? undefined : handleTableClick}
     onSeatClick={editMode ? undefined : handleSeatClick}
     onSaveLayout={handleSaveLayout}

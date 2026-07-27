@@ -146,54 +146,94 @@
         const canvas = containerEl?.querySelector('canvas');
         if (!canvas) { requestAnimationFrame(attachHandlers); return; }
 
-        // Wheel zoom
+        // Wheel zoom (desktop)
         canvas.addEventListener('wheel', (e: WheelEvent) => {
           e.preventDefault();
           const delta = e.deltaY > 0 ? -0.08 : 0.08;
           zoom = Math.max(0.3, Math.min(3, zoom + delta));
         }, { passive: false });
 
-        // Mobile: detect taps on tables (Konva's drag blocks click events on touch)
+        // Mobile: touch-based pan + tap detection + pinch zoom
+        // These handlers fire BEFORE Konva's internal handlers and take over
+        // touch processing entirely on mobile, so we must handle everything.
         const isMobile = 'ontouchstart' in window;
-        if (isMobile && mode !== 'edit') {
+        if (isMobile) {
           let touchStartX = 0;
           let touchStartY = 0;
           let touchStartTime = 0;
+          let isTouchPanning = false;
+          let lastPinchDist = 0;
 
           canvas.addEventListener('touchstart', (e: TouchEvent) => {
-            if (e.touches.length !== 1) return;
-            touchStartX = e.touches[0].clientX;
-            touchStartY = e.touches[0].clientY;
-            touchStartTime = Date.now();
+            if (e.touches.length === 1) {
+              touchStartX = e.touches[0].clientX;
+              touchStartY = e.touches[0].clientY;
+              touchStartTime = Date.now();
+              isTouchPanning = false;
+            } else if (e.touches.length === 2) {
+              isTouchPanning = false;
+              const dx = e.touches[0].clientX - e.touches[1].clientX;
+              const dy = e.touches[0].clientY - e.touches[1].clientY;
+              lastPinchDist = Math.sqrt(dx * dx + dy * dy);
+            }
           }, { passive: true });
 
+          canvas.addEventListener('touchmove', (e: TouchEvent) => {
+            if (e.touches.length === 2) {
+              e.preventDefault();
+              const dx = e.touches[0].clientX - e.touches[1].clientX;
+              const dy = e.touches[0].clientY - e.touches[1].clientY;
+              const dist = Math.sqrt(dx * dx + dy * dy);
+              if (lastPinchDist > 0) {
+                const scale = dist / lastPinchDist;
+                zoom = Math.max(0.3, Math.min(3, zoom * scale));
+              }
+              lastPinchDist = dist;
+            } else if (e.touches.length === 1) {
+              const dx = e.touches[0].clientX - touchStartX;
+              const dy = e.touches[0].clientY - touchStartY;
+              if (!isTouchPanning && (Math.abs(dx) > 8 || Math.abs(dy) > 8)) {
+                isTouchPanning = true;
+              }
+              if (isTouchPanning) {
+                e.preventDefault();
+                panX += dx;
+                panY += dy;
+                touchStartX = e.touches[0].clientX;
+                touchStartY = e.touches[0].clientY;
+              }
+            }
+          }, { passive: false });
+
           canvas.addEventListener('touchend', (e: TouchEvent) => {
-            if (e.changedTouches.length !== 1) return;
-            const dx = e.changedTouches[0].clientX - touchStartX;
-            const dy = e.changedTouches[0].clientY - touchStartY;
-            const dt = Date.now() - touchStartTime;
-            // Tap = short duration + small movement
-            if (dt < 300 && Math.abs(dx) < 10 && Math.abs(dy) < 10) {
-              const rect = canvas.getBoundingClientRect();
-              const x = e.changedTouches[0].clientX - rect.left;
-              const y = e.changedTouches[0].clientY - rect.top;
-              // Find Konva shape at this point
-              if (stageRef) {
-                const konvaStage = stageRef.getNode?.() ?? stageRef;
-                const shape = konvaStage.getIntersection({ x, y });
-                if (shape) {
-                  // Walk up to find the table group
-                  let node = shape;
-                  while (node && node !== konvaStage) {
-                    if (node._tableId) {
-                      onTableClick?.(node._tableId);
-                      return;
+            if (!isTouchPanning && e.changedTouches.length === 1) {
+              const dt = Date.now() - touchStartTime;
+              if (dt < 300) {
+                // It was a tap — find what was under the finger
+                const rect = canvas.getBoundingClientRect();
+                const x = e.changedTouches[0].clientX - rect.left;
+                const y = e.changedTouches[0].clientY - rect.top;
+                if (stageRef) {
+                  const konvaStage = stageRef.getNode?.() ?? stageRef;
+                  const shape = konvaStage.getIntersection({ x, y });
+                  if (shape) {
+                    let node = shape;
+                    while (node && node !== konvaStage) {
+                      if (node._tableId) {
+                        onTableClick?.(node._tableId);
+                        return;
+                      }
+                      if (node._seatIndex !== undefined && node._tableIdForSeat) {
+                        onSeatClick?.(node._tableIdForSeat, node._seatIndex, null);
+                        return;
+                      }
+                      node = node.getParent();
                     }
-                    node = node.getParent();
                   }
                 }
               }
             }
+            lastPinchDist = 0;
           }, { passive: true });
         }
       };

@@ -63,6 +63,20 @@
     }
   });
 
+  // Tag seat nodes for mobile tap detection
+  let seatRefs: Record<number, any> = {};
+  function seatRefReady(i: number, node: any) {
+    if (node) {
+      seatRefs[i] = node;
+    }
+  }
+  $effect(() => {
+    for (const [i, node] of Object.entries(seatRefs)) {
+      node._seatIndex = Number(i) + 1;
+      node._tableIdForSeat = table.id;
+    }
+  });
+
   onMount(async () => {
     const mod = await import('svelte-konva');
     Group = mod.Group;
@@ -192,9 +206,11 @@
       {@const pos = seatPos(i)}
       {@const guest = guests.find(g => g.seatNumber !== null && (i + 1) >= g.seatNumber && (i + 1) < g.seatNumber + g.pax) ?? null}
       {@const sc = seatColor(guest)}
+      <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
       <Group
         x={pos.x}
         y={pos.y}
+        bind:this={seatRefs[i]}
         onclick={(e: any) => { e.cancelBubble = true; onSeatClick?.(i + 1, guest ?? null); }}
       >
         <!-- Hit area -->
