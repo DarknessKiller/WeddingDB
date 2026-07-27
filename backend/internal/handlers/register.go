@@ -39,7 +39,9 @@ func RegisterRoutes(
 	pubKioskHandler := NewPublicKioskHandler(weddingService)
 	pubScoped := fuego.Group(pubApi, "/weddings/{wid}")
 	fuego.Get(pubScoped, "/guests", pubGuestHandler.List)
-	fuego.Get(pubScoped, "/guests/search", pubGuestHandler.Search)
+	fuego.Get(pubScoped, "/guests/search", pubGuestHandler.Search,
+		fuego.OptionQuery("q", "Search query"),
+	)
 	fuego.Get(pubScoped, "/tables", tableHandler.List)
 	fuego.Get(pubScoped, "/layout", layoutHandler.Get)
 	fuego.Get(pubScoped, "/kiosk", pubKioskHandler.GetKioskSettings)
@@ -82,7 +84,10 @@ func RegisterRoutes(
 	fuego.Delete(scoped, "/tables/{id}", tableHandler.Delete)
 
 	// Guests
-	fuego.Get(scoped, "/guests", guestHandler.List)
+	fuego.Get(scoped, "/guests", guestHandler.List,
+		fuego.OptionQuery("cursor", "Pagination cursor"),
+		fuego.OptionQueryInt("limit", "Number of items per page"),
+	)
 	fuego.Post(scoped, "/guests", guestHandler.Create)
 	fuego.Get(scoped, "/guests/{id}", guestHandler.Get)
 	fuego.Put(scoped, "/guests/{id}", guestHandler.Update)
@@ -90,7 +95,9 @@ func RegisterRoutes(
 	fuego.Post(scoped, "/guests/{id}/checkin", guestHandler.CheckIn)
 	fuego.Post(scoped, "/guests/{id}/checkout", guestHandler.CheckOut)
 	fuego.Post(scoped, "/guests/{id}/seat", guestHandler.AssignSeat)
-	fuego.Get(scoped, "/guests/search", guestHandler.Search)
+	fuego.Get(scoped, "/guests/search", guestHandler.Search,
+		fuego.OptionQuery("q", "Search query"),
+	)
 	fuego.Post(scoped, "/guests/import", guestHandler.BulkImport)
 	fuego.Get(scoped, "/occupancy", guestHandler.Occupancy)
 
