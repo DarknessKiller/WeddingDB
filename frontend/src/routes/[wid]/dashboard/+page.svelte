@@ -81,14 +81,14 @@
             document.body.removeChild(ta);
             addToast('Kiosk link copied!', 'success');
           }}
-          class="px-3 py-2 sm:px-4 sm:py-2.5 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-xl text-xs sm:text-sm font-semibold transition-colors flex items-center gap-1.5"
+          class="px-3 py-2 sm:px-4 sm:py-2.5 bg-white/90 border border-black/[0.06] hover:bg-gray-50 text-gray-700 rounded-xl text-xs sm:text-sm font-semibold transition-colors flex items-center gap-1.5 min-h-[44px]"
         >
           <Copy class="w-3.5 h-3.5" /> Copy Link
         </button>
         <a
           href="/kiosk/{get(weddingId)}"
           target="_blank"
-          class="px-3 py-2 sm:px-4 sm:py-2.5 bg-red hover:bg-red-light text-white rounded-xl text-xs sm:text-sm font-semibold transition-colors flex items-center gap-1.5"
+          class="px-3 py-2 sm:px-4 sm:py-2.5 bg-red hover:bg-red-light text-white rounded-xl text-xs sm:text-sm font-semibold transition-colors flex items-center gap-1.5 min-h-[44px]"
         >
           <ExternalLink class="w-3.5 h-3.5" /> Open Kiosk
         </a>

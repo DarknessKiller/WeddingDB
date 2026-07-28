@@ -439,13 +439,13 @@
   {#if selectedTable && showMobilePanel && !editMode}
     <!-- svelte-ignore a11y_no_static_element_interactions -->
     <div class="md:hidden fixed inset-x-0 bottom-0 z-40 bg-white/95 backdrop-blur-xl border-t border-black/[0.06] rounded-t-2xl shadow-2xl animate-slide-up" style="max-height: 60vh;">
-      <!-- Drag handle -->
-      <div class="flex justify-center py-2">
+      <!-- Pill dismiss (acts as drag handle) -->
+      <div class="flex justify-center py-2 cursor-pointer" onclick={closePanel} role="presentation">
         <div class="w-10 h-1 bg-gray-300 rounded-full"></div>
       </div>
 
       <!-- Panel Header -->
-      <div class="flex items-center justify-between px-4 py-3 border-b border-gray-100">
+      <div class="flex items-center px-4 py-3 border-b border-gray-100">
         <div class="flex items-center gap-3">
           <div class="w-9 h-9 rounded-xl bg-red-50 border border-red-100 flex items-center justify-center text-red font-bold text-sm">
             {selectedTable.name || selectedTable.id}
@@ -458,9 +458,6 @@
             </div>
           </div>
         </div>
-        <button onclick={closePanel} class="p-2 rounded-lg hover:bg-gray-100" aria-label="Close">
-          <X class="w-5 h-5 text-gray-400" />
-        </button>
       </div>
 
       <!-- Occupancy -->
@@ -534,20 +531,22 @@
       </div>
       <div class="flex items-center justify-between p-5 border-b border-gray-100">
         <h3 class="font-bold text-gray-900">Check In {checkinGuest.name}</h3>
-        <button onclick={() => showCheckinModal = false} class="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-gray-100 transition-colors">
+        <button onclick={() => showCheckinModal = false} class="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-gray-100 transition-colors hidden sm:flex">
           <X class="w-4 h-4 text-gray-400" />
         </button>
       </div>
       <div class="p-5 space-y-4">
-        <div>
+        <div class="relative">
+          <Banknote class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
           <label class="text-sm font-semibold text-gray-700 mb-1.5 block">Angbao Amount (RM)</label>
           <input type="number" min="0" bind:value={angbaoAmount} placeholder="0"
-            class="w-full px-4 py-3 border border-black/[0.08] rounded-xl text-sm bg-white/80 focus:border-red focus:ring-2 focus:ring-red/10 outline-none transition-all min-h-[48px]" />
+            class="w-full pl-10 pr-4 py-3 border border-black/[0.08] rounded-xl text-sm bg-white/80 focus:border-red focus:ring-2 focus:ring-red/10 outline-none transition-all min-h-[48px]" />
         </div>
-        <div>
+        <div class="relative">
+          <Gift class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
           <label class="text-sm font-semibold text-gray-700 mb-1.5 block">Gift Item</label>
           <input bind:value={giftItem} placeholder="Optional"
-            class="w-full px-4 py-3 border border-black/[0.08] rounded-xl text-sm bg-white/80 focus:border-red focus:ring-2 focus:ring-red/10 outline-none transition-all min-h-[48px]" />
+            class="w-full pl-10 pr-4 py-3 border border-black/[0.08] rounded-xl text-sm bg-white/80 focus:border-red focus:ring-2 focus:ring-red/10 outline-none transition-all min-h-[48px]" />
         </div>
       </div>
       <div class="flex gap-3 p-5 pt-0">

@@ -339,6 +339,10 @@
     <!-- Side Panel (bottom sheet on mobile, right sidebar on desktop) -->
     {#if selectedGuest}
       <div data-panel-area class="fixed bottom-0 left-0 right-0 md:static md:w-[340px] bg-white/90 backdrop-blur-xl border-t md:border-t-0 md:border-l border-black/[0.06] shadow-2xl flex flex-col overflow-y-auto z-30 max-h-[60vh] md:max-h-none">
+        <!-- Pill dismiss (mobile only) -->
+        <div class="flex justify-center py-2 cursor-pointer md:hidden" onclick={deselectGuest} role="presentation">
+          <div class="w-10 h-1 bg-gray-300 rounded-full"></div>
+        </div>
         <!-- Panel Header -->
         <div class="flex items-center justify-between px-5 py-4 border-b border-gray-100">
           <div class="flex items-center gap-3">
@@ -358,7 +362,7 @@
               <p class="text-xs text-gray-500">{selectedGuest.phone}</p>
             </div>
           </div>
-          <button onclick={deselectGuest} class="p-2 rounded-lg hover:bg-gray-100 transition-colors" aria-label="Close panel">
+          <button onclick={deselectGuest} class="p-2 rounded-lg hover:bg-gray-100 transition-colors hidden md:flex" aria-label="Close panel">
             <X class="w-5 h-5 text-gray-500" />
           </button>
         </div>

@@ -18,6 +18,32 @@
   let angbaoAmount = $state('');
   let giftItem = $state('');
 
+  // Touch drag state for mobile dismiss
+  let dragY = $state(0);
+  let dragging = $state(false);
+  let startY = $state(0);
+
+  function onTouchStart(e: TouchEvent) {
+    if (window.innerWidth >= 640) return; // desktop only
+    startY = e.touches[0].clientY;
+    dragging = true;
+  }
+
+  function onTouchMove(e: TouchEvent) {
+    if (!dragging) return;
+    const delta = e.touches[0].clientY - startY;
+    if (delta > 0) dragY = delta;
+  }
+
+  function onTouchEnd() {
+    if (!dragging) return;
+    dragging = false;
+    if (dragY > 100) {
+      onClose();
+    }
+    dragY = 0;
+  }
+
   $effect(() => { editing = startEditing; });
   let form = $state({
     name: guest.name,
@@ -131,7 +157,16 @@
 <div class="drawer-overlay" onclick={onClose}>
   <div class="drawer-backdrop"></div>
   <!-- svelte-ignore a11y_no_static_element_interactions -->
-  <div class="drawer-panel" onclick={(e) => e.stopPropagation()}>
+  <div class="drawer-panel" onclick={(e) => e.stopPropagation()}
+    ontouchstart={onTouchStart}
+    ontouchmove={onTouchMove}
+    ontouchend={onTouchEnd}
+    style="transform: translateY({dragY}px); transition: {dragging ? 'none' : 'transform 300ms cubic-bezier(0.2, 0.8, 0.2, 1)'}"
+  >
+    <!-- Pill dismiss (mobile only) -->
+    <div class="drawer-pill sm:hidden" onclick={onClose} role="presentation">
+      <div class="drawer-pill-bar"></div>
+    </div>
     <div class="drawer-header">
       <h2 class="drawer-title">{editing ? 'Edit Guest' : 'Guest Details'}</h2>
       <div class="drawer-actions">
@@ -145,13 +180,11 @@
           <button onclick={() => editing = true} class="drawer-icon-btn" aria-label="Edit">
             <Pencil class="w-5 h-5" />
           </button>
+          <button onclick={onClose} class="drawer-icon-btn hidden sm:flex" aria-label="Close">
+            <X class="w-5 h-5" />
+          </button>
         {/if}
       </div>
-    </div>
-
-    <!-- Pill dismiss (mobile) -->
-    <div class="drawer-pill" onclick={onClose} role="presentation">
-      <div class="drawer-pill-bar"></div>
     </div>
 
     <div class="drawer-body">
@@ -344,20 +377,22 @@
       </div>
       <div class="flex items-center justify-between p-5 border-b border-gray-100">
         <h3 class="font-bold text-gray-900">Check In {guest.name}</h3>
-        <button onclick={() => showCheckinModal = false} class="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-gray-100 transition-colors">
+        <button onclick={() => showCheckinModal = false} class="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-gray-100 transition-colors hidden sm:flex">
           <X class="w-4 h-4 text-gray-400" />
         </button>
       </div>
       <div class="p-5 space-y-4">
-        <div>
+        <div class="relative">
+          <Banknote class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
           <label class="text-sm font-semibold text-gray-700 mb-1.5 block">Angbao Amount (RM)</label>
           <input type="number" min="0" bind:value={angbaoAmount} placeholder="0"
-            class="w-full px-4 py-3 border border-black/[0.08] rounded-xl text-sm bg-white/80 focus:border-red focus:ring-2 focus:ring-red/10 outline-none transition-all min-h-[48px]" />
+            class="w-full pl-10 pr-4 py-3 border border-black/[0.08] rounded-xl text-sm bg-white/80 focus:border-red focus:ring-2 focus:ring-red/10 outline-none transition-all min-h-[48px]" />
         </div>
-        <div>
+        <div class="relative">
+          <Gift class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
           <label class="text-sm font-semibold text-gray-700 mb-1.5 block">Gift Item</label>
           <input bind:value={giftItem} placeholder="Optional"
-            class="w-full px-4 py-3 border border-black/[0.08] rounded-xl text-sm bg-white/80 focus:border-red focus:ring-2 focus:ring-red/10 outline-none transition-all min-h-[48px]" />
+            class="w-full pl-10 pr-4 py-3 border border-black/[0.08] rounded-xl text-sm bg-white/80 focus:border-red focus:ring-2 focus:ring-red/10 outline-none transition-all min-h-[48px]" />
         </div>
       </div>
       <div class="flex gap-3 p-5 pt-0">

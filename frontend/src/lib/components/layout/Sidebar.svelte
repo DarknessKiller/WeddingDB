@@ -141,7 +141,7 @@
   .sidebar-nav {
     flex: 1;
     overflow-y: auto;
-    padding: 1rem 0.75rem;
+    padding: 1.5rem 0.75rem 1rem;
   }
 
   .nav-section-label {
