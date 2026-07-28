@@ -373,20 +373,8 @@
             type="text"
             bind:value={formName}
             placeholder="e.g. Table 1, VIP A, 圆桌"
-            class="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm bg-white focus:border-gold focus:ring-2 focus:ring-gold/15 outline-none transition-all"
+            class="w-full px-4 py-3 border border-black/[0.08] rounded-xl text-sm bg-white/80 focus:border-red focus:ring-2 focus:ring-red/10 outline-none transition-all min-h-[48px]"
           />
-        </div>
-
-        <!-- Mini Map Preview -->
-        <div>
-          <label class="text-sm font-semibold text-gray-700 mb-1.5 block">Position Preview</label>
-          <div class="h-[200px] rounded-xl overflow-hidden border border-gray-200 bg-gray-50">
-            <HallMap
-              tables={[previewTable, ...(tables ?? []).filter(t => editingTable ? t.id !== editingTable.id : true)]}
-              tableGuests={{}}
-              selectedTableId={null}
-            />
-          </div>
         </div>
 
         <div>
@@ -396,11 +384,11 @@
             type="number"
             min="1"
             bind:value={formCapacity}
-            class="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm bg-white focus:border-gold focus:ring-2 focus:ring-gold/15 outline-none transition-all"
+            class="w-full px-4 py-3 border border-black/[0.08] rounded-xl text-sm bg-white/80 focus:border-red focus:ring-2 focus:ring-red/10 outline-none transition-all min-h-[48px]"
           />
         </div>
 
-        <label class="flex items-center gap-2 cursor-pointer">
+        <label class="flex items-center gap-2 cursor-pointer p-3 rounded-xl hover:bg-gray-50 transition-colors">
           <input type="checkbox" bind:checked={formVip} class="rounded" />
           <span class="text-sm font-semibold text-gray-700">VIP Table</span>
         </label>

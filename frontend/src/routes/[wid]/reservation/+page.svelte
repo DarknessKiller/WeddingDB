@@ -429,7 +429,7 @@
             id="notes"
             bind:value={form.notes}
             rows="3"
-            class="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm bg-white focus:border-gold focus:ring-2 focus:ring-gold/15 outline-none transition-all resize-none"
+            class="w-full px-4 py-3 border border-black/[0.08] rounded-xl text-sm bg-white/80 focus:border-red focus:ring-2 focus:ring-red/10 outline-none transition-all resize-none min-h-[80px]"
             placeholder="Any special requirements or notes..."
           ></textarea>
         </div>

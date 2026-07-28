@@ -111,14 +111,22 @@
     flex: 1;
     display: flex;
     flex-direction: column;
-    overflow: hidden;
     min-width: 0;
+    position: relative;
+    overflow: hidden;
   }
 
   .main-content {
     flex: 1;
     overflow-y: auto;
     background: white;
+    padding-top: 3.5rem;
+  }
+
+  @media (min-width: 640px) {
+    .main-content {
+      padding-top: 4rem;
+    }
   }
 
   @keyframes spin {

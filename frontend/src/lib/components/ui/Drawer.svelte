@@ -1,14 +1,14 @@
 <script lang="ts">
   import type { Guest, BanquetTable, RSVPStatus } from '$lib/types';
-  import { X, Phone, Mail, Utensils, StickyNote, Banknote, Gift, Pencil, Check } from 'lucide-svelte';
+  import { X, Phone, Mail, Utensils, StickyNote, Banknote, Gift, Pencil, Check, UserCheck, CheckCircle2 } from 'lucide-svelte';
   import Badge from './Badge.svelte';
   import { getInitials, cn } from '$lib/utils';
   import { formatSeatRange } from '$lib/utils/seat';
   import { addToast } from '$lib/stores';
   import { weddingId } from '$lib/stores/weddingId';
-  import { updateGuest } from '$lib/api/guests';
+  import { updateGuest, checkInGuest, checkOutGuest } from '$lib/api/guests';
   import { get } from 'svelte/store';
-  let { guest, tables = [], onClose, startEditing = false }: { guest: Guest; tables?: BanquetTable[]; onClose: () => void; startEditing?: boolean } = $props();
+  let { guest, tables = [], onClose, startEditing = false, onCheckIn, onCheckOut }: { guest: Guest; tables?: BanquetTable[]; onClose: () => void; startEditing?: boolean; onCheckIn?: (g: Guest) => void; onCheckOut?: (g: Guest) => void } = $props();
 
   let tableName = $derived(tables.find(t => t.id === guest.tableId)?.name ?? guest.tableId ?? '—');
 
@@ -87,6 +87,32 @@
     editing = false;
     onClose();
   }
+
+  async function handleCheckIn() {
+    const wid = get(weddingId);
+    try {
+      await checkInGuest(wid, guest.id);
+      guest.checkedIn = true;
+      guest.checkedInAt = new Date();
+      onCheckIn?.(guest);
+      addToast(`${guest.name} checked in`, 'success');
+    } catch (e: any) {
+      addToast(e.message ?? 'Check-in failed', 'error');
+    }
+  }
+
+  async function handleCheckOut() {
+    const wid = get(weddingId);
+    try {
+      await checkOutGuest(wid, guest.id);
+      guest.checkedIn = false;
+      guest.checkedInAt = undefined;
+      onCheckOut?.(guest);
+      addToast(`${guest.name} checked out`, 'success');
+    } catch (e: any) {
+      addToast(e.message ?? 'Check-out failed', 'error');
+    }
+  }
 </script>
 
 <!-- svelte-ignore a11y_no_static_element_interactions -->
@@ -111,11 +137,13 @@
           <button onclick={() => editing = true} class="drawer-icon-btn" aria-label="Edit">
             <Pencil class="w-5 h-5" />
           </button>
-          <button onclick={onClose} class="drawer-icon-btn" aria-label="Close">
-            <X class="w-5 h-5" />
-          </button>
         {/if}
       </div>
+    </div>
+
+    <!-- Pill dismiss (mobile) -->
+    <div class="drawer-pill sm:hidden" onclick={onClose} role="presentation">
+      <div class="drawer-pill-bar"></div>
     </div>
 
     <div class="drawer-body">
@@ -279,6 +307,19 @@
             </div>
           </div>
         {/if}
+
+        <!-- Check-in Action -->
+        <div class="pt-2 pb-4">
+          {#if guest.checkedIn}
+            <button onclick={handleCheckOut} class="w-full py-3 bg-emerald-50 text-emerald-700 rounded-xl text-sm font-semibold border border-emerald-200 hover:bg-emerald-100 transition-colors flex items-center justify-center gap-2">
+              <CheckCircle2 class="w-4 h-4" /> Checked In — Tap to Check Out
+            </button>
+          {:else}
+            <button onclick={handleCheckIn} class="w-full py-3 bg-red text-white rounded-xl text-sm font-semibold hover:bg-red-light transition-colors flex items-center justify-center gap-2">
+              <UserCheck class="w-4 h-4" /> Check In
+            </button>
+          {/if}
+        </div>
       {/if}
     </div>
   </div>
@@ -343,6 +384,25 @@
     height: 0.25rem;
     background: rgba(0, 0, 0, 0.15);
     border-radius: 9999px;
+  }
+
+  .drawer-pill {
+    display: flex;
+    justify-content: center;
+    padding: 0.5rem 0 0.75rem;
+    cursor: pointer;
+  }
+
+  .drawer-pill-bar {
+    width: 2.5rem;
+    height: 0.25rem;
+    background: rgba(0, 0, 0, 0.15);
+    border-radius: 9999px;
+    transition: background 150ms ease;
+  }
+
+  .drawer-pill:active .drawer-pill-bar {
+    background: rgba(0, 0, 0, 0.25);
   }
 
   .drawer-header {

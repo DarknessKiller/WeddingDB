@@ -129,7 +129,7 @@
 <div class="p-4 sm:p-7 max-w-[1200px]">
   <div class="flex items-center justify-between mb-6">
     <div>
-      <h1 class="text-xl font-bold text-gray-900">User Management</h1>
+      <h1 class="text-xl font-bold text-gray-900" style="letter-spacing: -0.02em;">User Management</h1>
       <p class="text-sm text-gray-500 mt-0.5">{admins.length} user(s)</p>
     </div>
     <button onclick={() => showCreate = true} class="px-4 py-2.5 bg-red text-white rounded-xl text-sm font-semibold hover:bg-red-light transition-colors flex items-center gap-2">

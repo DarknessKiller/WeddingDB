@@ -218,7 +218,7 @@
         placeholder="Search by name or phone number..."
         bind:value={query}
         onfocus={() => { if (query.trim()) showResults = true; }}
-        class="w-full pl-12 pr-11 py-3 bg-gray-50 rounded-xl text-base border border-gray-200 focus:border-red focus:ring-2 focus:ring-red/15 outline-none transition-all placeholder-gray-400"
+        class="w-full pl-12 pr-11 py-3.5 bg-white/80 rounded-2xl text-base border border-black/[0.06] focus:border-red focus:ring-2 focus:ring-red/10 outline-none transition-all placeholder-gray-400 min-h-[48px] shadow-sm"
         autofocus
       />
       {#if loading}
