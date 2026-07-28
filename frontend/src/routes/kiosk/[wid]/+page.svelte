@@ -504,10 +504,10 @@
 </div>
 
 <style>
-  /* ---------- Root & Safe Areas ---------- */
+  /* ---------- Root ---------- */
   .kiosk-root {
-    height: 100dvh;
     height: 100vh;
+    height: 100dvh;
     overflow: hidden;
     background: #faf7f2;
     color: #111827;
@@ -516,9 +516,6 @@
     font-family: 'Inter', -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
     -webkit-font-smoothing: antialiased;
     -webkit-tap-highlight-color: transparent;
-    /* Safe areas for notch devices */
-    padding-top: env(safe-area-inset-top);
-    padding-bottom: env(safe-area-inset-bottom);
   }
 
   /* ---------- Reduced Motion ---------- */
@@ -528,18 +525,14 @@
     transition-duration: 0.15s !important;
   }
 
-  /* ---------- Top Bar — Translucent Material ---------- */
+  /* ---------- Top Bar ---------- */
   .top-bar {
     position: relative;
     z-index: 20;
-    /* Apple translucent material */
-    background: rgba(255, 255, 255, 0.72);
-    backdrop-filter: blur(20px) saturate(180%);
-    -webkit-backdrop-filter: blur(20px) saturate(180%);
-    border-bottom: 1px solid rgba(0, 0, 0, 0.06);
-    /* Subtle inner glow — light catching the material */
-    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.8);
+    background: white;
+    border-bottom: 1px solid #e5e7eb;
     flex-shrink: 0;
+    padding-top: env(safe-area-inset-top, 0px);
   }
 
   .top-bar-inner {

@@ -364,13 +364,13 @@
 
 <div
   bind:this={containerEl}
-  class="relative flex-1 z-10 overflow-hidden select-none min-h-[300px] {dark ? 'bg-gray-950' : 'bg-gray-50'}"
+  class="relative flex-1 z-10 overflow-hidden select-none {dark ? 'bg-gray-950' : 'bg-gray-50'}"
   style="touch-action: none;"
   role="application"
   aria-label="Banquet hall seating map"
 >
   <!-- Zoom controls -->
-  <div class="absolute top-3 right-3 sm:top-4 sm:right-4 z-40 flex flex-col gap-1.5">
+  <div class="absolute top-3 right-3 sm:top-4 sm:right-4 z-40 flex flex-col gap-1.5" style="position: absolute !important;">
     <button onclick={() => zoom = Math.min(3, zoom + 0.15)} class="w-8 h-8 sm:w-9 sm:h-9 {dark ? 'bg-gray-800 border-gray-700 hover:bg-gray-700 text-gray-300' : 'bg-white border-gray-200 hover:bg-gray-50 text-gray-600'} border rounded-lg shadow-sm flex items-center justify-center transition-colors" aria-label="Zoom in">
       <ZoomIn class="w-4 h-4" />
     </button>
