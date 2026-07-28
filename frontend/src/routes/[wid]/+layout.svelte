@@ -71,7 +71,7 @@
 
 {#if $isDrawerOpen && ($selectedGuest || $drawerCreateMode)}
   {#key `${$drawerStartEditing}-${$drawerCreateMode}-${$drawerReadonly}`}
-    <Drawer guest={$selectedGuest} tables={tables} startEditing={$drawerStartEditing} createMode={$drawerCreateMode} readonly={$drawerReadonly} onClose={() => { $isDrawerOpen = false; $selectedGuest = null; $drawerStartEditing = false; $drawerCreateMode = false; $drawerReadonly = false; }} />
+    <Drawer guest={$selectedGuest ?? undefined} tables={tables} startEditing={$drawerStartEditing} createMode={$drawerCreateMode} readonly={$drawerReadonly} onClose={() => { $isDrawerOpen = false; $selectedGuest = null; $drawerStartEditing = false; $drawerCreateMode = false; $drawerReadonly = false; }} />
   {/key}
 {/if}
 

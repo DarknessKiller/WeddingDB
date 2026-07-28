@@ -311,7 +311,7 @@
             <input bind:value={form.giftItem} placeholder="e.g. Kitchenware set" class="form-input" />
           </div>
         </div>
-      {:else}
+      {:else if localGuest}
         <!-- View Mode -->
         <div class="guest-hero">
           <div class={cn(
@@ -441,7 +441,7 @@
 </div>
 
 <!-- Check-in Modal -->
-{#if showCheckinModal}
+{#if showCheckinModal && guest}
   <CheckInModal
     guestName={guest.name}
     bind:angbaoAmount
@@ -623,14 +623,6 @@
     border-top: 1px solid rgba(0, 0, 0, 0.05);
     align-items: center;
     gap: 0.75rem;
-  }
-
-  .drawer-footer .drawer-btn-secondary {
-    flex-shrink: 0;
-  }
-
-  .drawer-footer .drawer-btn-primary {
-    flex: 1;
   }
 
   /* View mode */
