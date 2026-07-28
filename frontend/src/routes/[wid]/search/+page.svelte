@@ -1,15 +1,13 @@
 <script lang="ts">
-  import { searchGuests, getGuest, listGuests, listTables, checkInGuest } from '$lib/api/search';
+  import { searchGuests, listGuests, listTables } from '$lib/api/search';
   import { getLayout } from '$lib/api/layout';
   import { getWedding } from '$lib/api/weddings';
-  import { addToast } from '$lib/stores';
+  import { addToast, selectedGuest, isDrawerOpen } from '$lib/stores';
   import { weddingId } from '$lib/stores/weddingId';
   import { get } from 'svelte/store';
   import Badge from '$lib/components/ui/Badge.svelte';
   import { getInitials, cn } from '$lib/utils';
-  import { formatSeatRange } from '$lib/utils/seat';
-  import { goto } from '$app/navigation';
-  import { Search, CheckCircle2, UserCheck, Phone, MapPin, Gift, Banknote, X, MapPinned, Loader2 } from 'lucide-svelte';
+  import { Search, CheckCircle2, Phone } from 'lucide-svelte';
   import { onMount } from 'svelte';
   import type { Guest, BanquetTable, HallElement } from '$lib/types';
   import HallMap from '$lib/components/seating/HallMap.svelte';
@@ -18,15 +16,6 @@
   let results = $state<Guest[]>([]);
   let loading = $state(false);
 
-
-  let showCheckinModal = $state(false);
-  let showSeatView = $state(false);
-  let checkinGuest = $state<Guest | null>(null);
-  let selectedGuest = $state<Guest | null>(null);
-  let angbaoAmount = $state('');
-  let giftItem = $state('');
-  let checkingIn = $state(false);
-
   let tables = $state<BanquetTable[]>([]);
   let allGuests = $state<Guest[]>([]);
   let elements = $state<HallElement[]>([]);
@@ -34,8 +23,30 @@
   let hallHeight = $state(1000);
   let dataLoading = $state(true);
   let showSeatNumbers = $state(true);
+  let highlightTableId = $state<string | null>(null);
+  let showResults = $state(false);
 
-  // ponytail: load tables/guests on mount for seating map
+  // Track drawer open/close to refresh data
+  let prevDrawerOpen = $state(false);
+  $effect(() => {
+    const isOpen = $isDrawerOpen;
+    if (prevDrawerOpen && !isOpen) {
+      // Drawer just closed — refresh guest data
+      refreshGuests();
+    }
+    prevDrawerOpen = isOpen;
+  });
+
+  async function refreshGuests() {
+    const g = await listGuests().catch(() => [] as Guest[]);
+    allGuests = g;
+    // Also update the store guest if it's still selected
+    if ($selectedGuest) {
+      const updated = allGuests.find(g => g.id === $selectedGuest!.id);
+      if (updated) $selectedGuest = updated;
+    }
+  }
+
   let initialized = $state(false);
 
   onMount(() => {
@@ -58,7 +69,6 @@
         hallWidth = layout.hallWidth;
         hallHeight = layout.hallHeight;
       }
-      // Load showSeatNumbers from wedding data
       const wid = get(weddingId);
       const w = await getWedding(wid).catch(() => null) as any;
       if (w?.showSeatNumbers !== undefined) showSeatNumbers = w.showSeatNumbers;
@@ -97,54 +107,18 @@
     return () => clearTimeout(timer);
   });
 
-  function selectGuest(guest: Guest) {
-    selectedGuest = guest;
+  function openGuest(guest: Guest) {
+    $selectedGuest = guest;
+    $isDrawerOpen = true;
     highlightTableId = guest.tableId;
+    showResults = false;
   }
 
-  function openCheckinModal(guestId: string) {
-    const guest = results.find(g => g.id === guestId) ?? allGuests.find(g => g.id === guestId);
-    if (guest) {
-      checkinGuest = guest;
-      angbaoAmount = guest.angbaoAmount?.toString() ?? '';
-      giftItem = guest.giftItem ?? '';
-      showSeatView = false;
-      showCheckinModal = true;
-    }
+  function handleTableClick(id: string) {
+    highlightTableId = highlightTableId === id ? null : id;
   }
 
-  async function handleCheckIn() {
-    if (!checkinGuest || checkingIn) return;
-    checkingIn = true;
-    try {
-      const amt = angbaoAmount ? parseFloat(angbaoAmount) : undefined;
-      const updated = await checkInGuest(checkinGuest.id, amt, giftItem || undefined);
-      checkinGuest = updated;
-      if (selectedGuest?.id === updated.id) selectedGuest = updated;
-      results = results.map(g => g.id === updated.id ? updated : g);
-      addToast(`${updated.name} checked in successfully`, 'success');
-      showSeatView = true;
-    } catch {
-      addToast('Check-in failed', 'error');
-    } finally {
-      checkingIn = false;
-    }
-  }
-
-  function closeModal() {
-    showCheckinModal = false;
-    showSeatView = false;
-    checkinGuest = null;
-  }
-
-  function viewOnMap() {
-    if (!checkinGuest?.tableId) return;
-    const tableId = checkinGuest.tableId;
-    closeModal();
-    goto(`/${$weddingId}/seating?table=${tableId}`);
-  }
-
-  // ponytail: build tableGuests object for HallMap
+  // Build tableGuests for HallMap
   let tableGuests = $derived.by(() => {
     const obj: Record<string, Guest[]> = {};
     for (const g of allGuests) {
@@ -156,42 +130,14 @@
     return obj;
   });
 
-  let highlightTableId = $state<string | null>(null);
-
-  let showResults = $state(false);
-
-  function selectGuestAndClose(guest: Guest) {
-    selectGuest(guest);
-    showResults = false;
-  }
-
-  function deselectGuest() {
-    selectedGuest = null;
-    highlightTableId = null;
-  }
-
-  function handleTableClick(id: string) {
-    highlightTableId = highlightTableId === id ? null : id;
-  }
-
-  function getSeatOccupants(tableId: string, capacity: number) {
-    return Array.from({ length: capacity }, (_, i) => {
-      const seatNum = i + 1;
-      const guest = allGuests.find(g =>
-        g.tableId === tableId &&
-        g.seatNumber !== null &&
-        seatNum >= g.seatNumber &&
-        seatNum < g.seatNumber + g.pax
-      );
-      return { seatNum, guest };
-    });
-  }
+  // Use store guest for map highlighting, fallback to local highlightTableId
+  let highlightedTableId = $derived($selectedGuest?.tableId ?? highlightTableId);
 </script>
 
 <svelte:head><title>Check In – WeddingDB</title></svelte:head>
 
 {#if dataLoading}
-  <div class="flex items-center justify-center h-[calc(100dvh-56px)] sm:h-[calc(100dvh-64px)]">
+  <div class="flex items-center justify-center h-full">
     <div class="text-center text-gray-400">
       <div class="w-8 h-8 border-2 border-red/30 border-t-red rounded-full animate-spin mx-auto mb-3"></div>
       <p class="text-sm">Loading check-in data...</p>
@@ -200,10 +146,10 @@
 {:else}
 <!-- svelte-ignore a11y_no_static_element_interactions -->
 <div
-  class="flex flex-col h-[calc(100dvh-56px)] sm:h-[calc(100dvh-64px)]"
+  class="flex flex-col h-full"
   onclick={(e) => {
     const target = e.target as HTMLElement;
-    if (!target.closest('[data-search-area]') && !target.closest('[data-panel-area]')) {
+    if (!target.closest('[data-search-area]')) {
       showResults = false;
     }
   }}
@@ -222,7 +168,7 @@
         autofocus
       />
       {#if loading}
-        <Loader2 class="absolute right-4 top-1/2 -translate-y-1/2 w-5 h-5 text-red animate-spin" />
+        <div class="absolute right-4 top-1/2 -translate-y-1/2 w-5 h-5 border-2 border-red/30 border-t-red rounded-full animate-spin"></div>
       {/if}
     </div>
 
@@ -233,7 +179,7 @@
           {#each results.slice(0, 10) as guest (guest.id)}
             <button
               class="w-full flex items-center gap-3 px-4 py-3 hover:bg-gray-50 transition-colors text-left border-b border-gray-100 last:border-0"
-              onclick={() => selectGuestAndClose(guest)}
+              onclick={() => openGuest(guest)}
             >
               <div class={cn(
                 "w-10 h-10 rounded-full flex items-center justify-center text-sm font-bold flex-shrink-0",
@@ -274,10 +220,10 @@
     {/if}
   </div>
 
-  <!-- Content Area: Guest List | Map | Side Panel -->
+  <!-- Content Area: Guest List + Map -->
   <div class="flex-1 flex flex-col md:flex-row min-h-0">
     <!-- Guest List (top on mobile, left sidebar on desktop) -->
-    {#if !selectedGuest && (!showResults || !query.trim())}
+    {#if !$isDrawerOpen && (!showResults || !query.trim())}
       <div class="md:w-80 lg:w-96 md:border-r border-gray-200 bg-white overflow-y-auto flex-shrink-0 max-h-[35vh] md:max-h-none">
         {#if allGuests.length === 0}
           <div class="p-8 text-center text-gray-400">
@@ -288,7 +234,7 @@
             {#each allGuests as guest (guest.id)}
               <button
                 class="w-full flex items-center gap-3 px-4 py-3 hover:bg-gray-50 transition-colors text-left"
-                onclick={() => selectGuest(guest)}
+                onclick={() => openGuest(guest)}
               >
                 <div class={cn(
                   "w-10 h-10 rounded-full flex items-center justify-center text-sm font-bold flex-shrink-0",
@@ -331,239 +277,10 @@
           tableGuests={tableGuests}
           legendPosition="top-left"
           onTableClick={handleTableClick}
-          highlightedTableId={selectedGuest?.tableId ?? highlightTableId}
+          {highlightedTableId}
         />
       {/if}
     </div>
-
-    <!-- Side Panel (bottom sheet on mobile, right sidebar on desktop) -->
-    {#if selectedGuest}
-      <div data-panel-area class="fixed bottom-0 left-0 right-0 md:static md:w-[340px] bg-white/90 backdrop-blur-xl border-t md:border-t-0 md:border-l border-black/[0.06] shadow-2xl flex flex-col overflow-y-auto z-30 max-h-[60vh] md:max-h-none">
-        <!-- Pill dismiss (mobile only) -->
-        <div class="flex justify-center py-2 cursor-pointer md:hidden" onclick={deselectGuest} role="presentation">
-          <div class="w-10 h-1 bg-gray-300 rounded-full"></div>
-        </div>
-        <!-- Panel Header -->
-        <div class="flex items-center justify-between px-5 py-4 border-b border-gray-100">
-          <div class="flex items-center gap-3">
-            <div class={cn(
-              "w-11 h-11 rounded-full flex items-center justify-center text-sm font-bold",
-              selectedGuest.checkedIn ? "bg-emerald-50 text-emerald-700 border-2 border-emerald-300" :
-              selectedGuest.isVip ? "bg-gold-50 text-gold border-2 border-gold-300" :
-              "bg-red-50 text-red border-2 border-red-200"
-            )}>
-              {getInitials(selectedGuest.name)}
-            </div>
-            <div>
-              <h3 class="font-bold text-gray-900 flex items-center gap-1.5">
-                {#if selectedGuest.isVip}<span class="text-gold">★</span>{/if}
-                {selectedGuest.name}
-              </h3>
-              <p class="text-xs text-gray-500">{selectedGuest.phone}</p>
-            </div>
-          </div>
-          <button onclick={deselectGuest} class="p-2 rounded-lg hover:bg-gray-100 transition-colors hidden md:flex" aria-label="Close panel">
-            <X class="w-5 h-5 text-gray-500" />
-          </button>
-        </div>
-
-        <!-- Guest Info -->
-        <div class="px-5 py-4">
-          <div class="grid grid-cols-{showSeatNumbers ? '3' : '2'} gap-3 text-sm mb-4">
-            <div class="bg-gray-50 rounded-xl p-3 text-center">
-              <div class="text-gray-500 text-xs">Table</div>
-              <div class="font-bold text-gray-900 text-lg">{tables.find(t => selectedGuest && t.id === selectedGuest.tableId)?.name || (selectedGuest?.tableId ?? '—')}</div>
-            </div>
-            {#if showSeatNumbers}
-            <div class="bg-gray-50 rounded-xl p-3 text-center">
-              <div class="text-gray-500 text-xs">Seat</div>
-              <div class="font-bold text-gray-900 text-lg">{formatSeatRange(selectedGuest.seatNumber, selectedGuest.pax)}</div>
-            </div>
-            {/if}
-            <div class="bg-gray-50 rounded-xl p-3 text-center">
-              <div class="text-gray-500 text-xs">Pax</div>
-              <div class="font-bold text-gray-900 text-lg">{selectedGuest.pax}</div>
-            </div>
-          </div>
-
-          <div class="flex items-center gap-2">
-            <Badge status={selectedGuest.rsvp} />
-            {#if selectedGuest.checkedIn}
-              <span class="inline-flex items-center gap-1 px-2.5 py-1 bg-emerald-50 text-emerald-700 rounded-full text-xs font-semibold border border-emerald-200">
-                <CheckCircle2 class="w-3 h-3" /> Checked In
-              </span>
-            {/if}
-          </div>
-
-          {#if selectedGuest.checkedIn && selectedGuest.angbaoAmount}
-            <div class="flex items-center gap-1.5 text-sm text-emerald-600 mt-3">
-              <Banknote class="w-4 h-4" />RM {selectedGuest.angbaoAmount}
-            </div>
-          {/if}
-          {#if selectedGuest.checkedIn && selectedGuest.giftItem}
-            <div class="flex items-center gap-1.5 text-sm text-gold mt-1">
-              <Gift class="w-4 h-4" />{selectedGuest.giftItem}
-            </div>
-          {/if}
-        </div>
-
-        <!-- Panel Footer -->
-        <div class="mt-auto px-5 py-4 border-t border-gray-100 bg-gray-50/50">
-          {#if selectedGuest.checkedIn}
-            <span class="w-full flex items-center justify-center gap-1.5 px-4 py-2.5 bg-emerald-50 text-emerald-700 rounded-xl text-sm font-semibold border border-emerald-200">
-              <CheckCircle2 class="w-4 h-4" /> Already Checked In
-            </span>
-          {:else}
-            <button
-              onclick={() => openCheckinModal(selectedGuest!.id)}
-              class="w-full flex items-center justify-center gap-1.5 px-4 py-3 md:py-2.5 bg-red text-white rounded-xl text-sm font-semibold hover:bg-red-light transition-colors"
-            >
-              <UserCheck class="w-4 h-4" /> Check In
-            </button>
-          {/if}
-        </div>
-      </div>
-    {/if}
   </div>
 </div>
-
-{#if showCheckinModal && checkinGuest}
-  {@const table = tables.find(t => t.id === checkinGuest!.tableId)}
-  <div class="fixed inset-0 z-50 flex items-center justify-center p-4">
-    <div class="absolute inset-0 bg-black/30 backdrop-blur-md" onclick={closeModal} role="presentation"></div>
-
-    <div class="relative bg-white/95 backdrop-blur-xl rounded-2xl shadow-2xl w-full max-w-md overflow-hidden">
-      {#if showSeatView}
-        <div class="flex items-center justify-between p-5 border-b border-gray-100">
-          <div class="flex items-center gap-3">
-            <div class="w-11 h-11 rounded-full bg-emerald-50 border-2 border-emerald-300 flex items-center justify-center">
-              <CheckCircle2 class="w-5 h-5 text-emerald-600" />
-            </div>
-            <div>
-              <h3 class="font-bold text-gray-900">{checkinGuest.name}</h3>
-              <p class="text-sm text-emerald-600 font-medium">Checked In Successfully</p>
-            </div>
-          </div>
-          <button onclick={closeModal} class="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-gray-100 transition-colors">
-            <X class="w-4 h-4 text-gray-400" />
-          </button>
-        </div>
-
-        <div class="p-5 space-y-4">
-          {#if checkinGuest.tableId}
-            <div class="text-center">
-              <div class="text-sm text-gray-500 mb-1">Your Table</div>
-              <div class="text-4xl font-extrabold text-red">{table?.name || checkinGuest.tableId}</div>
-              {#if table?.isVip}
-                <span class="text-gold font-semibold text-sm">★ VIP Table</span>
-              {/if}
-              <div class="text-sm text-gray-500 mt-1">
-                {#if showSeatNumbers}{formatSeatRange(checkinGuest.seatNumber, checkinGuest.pax)} · {/if}{checkinGuest.pax} pax
-              </div>
-            </div>
-
-            <button
-              onclick={viewOnMap}
-              class="w-full py-3 bg-red text-white rounded-xl text-sm font-semibold hover:bg-red-light transition-colors flex items-center justify-center gap-2"
-            >
-              <MapPinned class="w-4 h-4" /> View on Seating Map
-            </button>
-          {:else}
-            <div class="text-center py-4 text-gray-500">
-              <p class="font-medium">No table assigned yet</p>
-              <p class="text-sm mt-1">Please see the reception desk for seating.</p>
-            </div>
-          {/if}
-        </div>
-
-        <div class="p-5 pt-0">
-          <button
-            onclick={closeModal}
-            class="w-full py-2.5 border border-black/[0.06] bg-white/90 rounded-xl text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors"
-          >
-            Close
-          </button>
-        </div>
-
-      {:else}
-        <div class="flex items-center justify-between p-5 border-b border-gray-100">
-          <div class="flex items-center gap-3">
-            <div class={cn(
-              "w-11 h-11 rounded-full flex items-center justify-center text-sm font-bold",
-              checkinGuest.isVip ? "bg-gold-50 text-gold border-2 border-gold-300" : "bg-red-50 text-red border-2 border-red-200"
-            )}>
-              {getInitials(checkinGuest.name)}
-            </div>
-            <div>
-              <h3 class="font-bold text-gray-900">{checkinGuest.name}</h3>
-               <p class="text-sm text-gray-500">{table?.name || `Table ${checkinGuest.tableId}`} · {checkinGuest.pax} pax</p>
-            </div>
-          </div>
-          <button onclick={closeModal} class="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-gray-100 transition-colors">
-            <X class="w-4 h-4 text-gray-400" />
-          </button>
-        </div>
-
-        <div class="p-5 space-y-4">
-          <p class="text-sm text-gray-600">Record gift details for this guest's check-in.</p>
-
-          <div>
-            <label for="angbao" class="flex items-center gap-1.5 text-sm font-semibold text-gray-700 mb-1.5">
-              <Banknote class="w-4 h-4 text-emerald-600" /> Angbao Amount (RM)
-            </label>
-            <input
-              id="angbao"
-              type="number"
-              min="0"
-              step="10"
-              bind:value={angbaoAmount}
-              placeholder="e.g. 200"
-              class="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm bg-white focus:border-gold focus:ring-2 focus:ring-gold/15 outline-none transition-all"
-            />
-          </div>
-
-          <div>
-            <label for="gift" class="flex items-center gap-1.5 text-sm font-semibold text-gray-700 mb-1.5">
-              <Gift class="w-4 h-4 text-gold" /> Gift Item
-            </label>
-            <input
-              id="gift"
-              type="text"
-              bind:value={giftItem}
-              placeholder="e.g. Gold bracelet, Red packet, etc."
-              class="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm bg-white focus:border-gold focus:ring-2 focus:ring-gold/15 outline-none transition-all"
-            />
-          </div>
-        </div>
-
-        <div class="flex gap-3 p-5 pt-0">
-          <button
-            onclick={handleCheckIn}
-            disabled={checkingIn}
-            class="flex-1 py-2.5 bg-red text-white rounded-xl text-sm font-semibold hover:bg-red-light transition-colors flex items-center justify-center gap-2 disabled:opacity-50"
-          >
-            {#if checkingIn}
-              <Loader2 class="w-4 h-4 text-white animate-spin" /> Processing...
-            {:else}
-              <CheckCircle2 class="w-4 h-4" /> Confirm Check-In
-            {/if}
-          </button>
-          <button
-            onclick={closeModal}
-            class="px-5 py-2.5 border border-black/[0.06] bg-white/90 rounded-xl text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors"
-          >
-            Cancel
-          </button>
-        </div>
-      {/if}
-    </div>
-  </div>
 {/if}
-{/if}
-
-<style>
-  @keyframes slideIn {
-    from { transform: translateX(100%); opacity: 0; }
-    to { transform: translateX(0); opacity: 1; }
-  }
-</style>
