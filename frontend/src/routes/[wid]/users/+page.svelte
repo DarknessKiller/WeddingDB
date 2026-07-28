@@ -232,19 +232,19 @@
       <div class="p-5 space-y-4">
         <div>
           <label class="text-sm font-semibold text-gray-700 mb-1.5 block">Name</label>
-          <input bind:value={formName} class="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm bg-white focus:border-gold focus:ring-2 focus:ring-gold/15 outline-none transition-all" placeholder="Full name" />
+          <input bind:value={formName} class="w-full px-4 py-2.5 border border-black/[0.08] rounded-xl text-sm bg-white/80 focus:border-red focus:ring-2 focus:ring-red/10 outline-none transition-all min-h-[44px]" placeholder="Full name" />
         </div>
         <div>
           <label class="text-sm font-semibold text-gray-700 mb-1.5 block">Email</label>
-          <input type="email" bind:value={formEmail} class="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm bg-white focus:border-gold focus:ring-2 focus:ring-gold/15 outline-none transition-all" placeholder="email@example.com" />
+          <input type="email" bind:value={formEmail} class="w-full px-4 py-2.5 border border-black/[0.08] rounded-xl text-sm bg-white/80 focus:border-red focus:ring-2 focus:ring-red/10 outline-none transition-all min-h-[44px]" placeholder="email@example.com" />
         </div>
         <div>
           <label class="text-sm font-semibold text-gray-700 mb-1.5 block">Password</label>
-          <input type="password" bind:value={formPassword} minlength="6" class="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm bg-white focus:border-gold focus:ring-2 focus:ring-gold/15 outline-none transition-all" placeholder="Min 6 characters" />
+          <input type="password" bind:value={formPassword} minlength="6" class="w-full px-4 py-2.5 border border-black/[0.08] rounded-xl text-sm bg-white/80 focus:border-red focus:ring-2 focus:ring-red/10 outline-none transition-all min-h-[44px]" placeholder="Min 6 characters" />
         </div>
         <div>
           <label class="text-sm font-semibold text-gray-700 mb-1.5 block">Role</label>
-          <select bind:value={formRole} class="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm bg-white focus:border-gold outline-none">
+          <select bind:value={formRole} class="w-full px-4 py-2.5 border border-black/[0.08] rounded-xl text-sm bg-white/80 focus:border-red focus:ring-2 focus:ring-red/10 outline-none transition-all min-h-[44px]">
             <option value="user">User</option>
             <option value="admin">Admin</option>
           </select>
@@ -318,7 +318,7 @@
         <div>
           <label class="text-sm font-semibold text-gray-700 mb-1.5 block">New Password</label>
           <input type="password" bind:value={resetPassword_} minlength="6"
-            class="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm bg-white focus:border-gold focus:ring-2 focus:ring-gold/15 outline-none transition-all"
+            class="w-full px-4 py-2.5 border border-black/[0.08] rounded-xl text-sm bg-white/80 focus:border-red focus:ring-2 focus:ring-red/10 outline-none transition-all min-h-[44px]"
             placeholder="Min 6 characters" />
         </div>
       </div>

@@ -3,14 +3,14 @@
   import { selectedGuest, isDrawerOpen, addToast } from '$lib/stores';
   import { weddingId } from '$lib/stores/weddingId';
   import { goto } from '$app/navigation';
-  import { fetchAllGuests, assignSeat, type GuestResponse } from '$lib/api/guests';
+  import { fetchAllGuests, assignSeat, checkInGuest, checkOutGuest, type GuestResponse } from '$lib/api/guests';
   import { getOccupancy, listTables } from '$lib/api/tables';
   import { getLayout, saveLayout } from '$lib/api/layout';
   import Badge from '$lib/components/ui/Badge.svelte';
   import { cn } from '$lib/utils';
   import { page } from '$app/state';
   import { onMount } from 'svelte';
-  import { Users, Star, X, Search, AlertCircle, Plus } from 'lucide-svelte';
+  import { Users, Star, X, Search, AlertCircle, Plus, UserCheck, CheckCircle2, Banknote, Gift } from 'lucide-svelte';
   import { get } from 'svelte/store';
   import type { BanquetTable, Guest, RSVPStatus, TableOccupancy, HallElement } from '$lib/types';
 
@@ -174,6 +174,28 @@
     }
   }
 
+  async function handleCheckIn(guest: Guest) {
+    const wid = get(weddingId);
+    try {
+      await checkInGuest(wid, guest.id);
+      allGuests = allGuests.map(g => g.id === guest.id ? { ...g, checkedIn: true, checkedInAt: new Date() } : g);
+      addToast(`${guest.name} checked in`, 'success');
+    } catch (e: any) {
+      addToast(e.message ?? 'Check-in failed', 'error');
+    }
+  }
+
+  async function handleCheckOut(guest: Guest) {
+    const wid = get(weddingId);
+    try {
+      await checkOutGuest(wid, guest.id);
+      allGuests = allGuests.map(g => g.id === guest.id ? { ...g, checkedIn: false, checkedInAt: undefined } : g);
+      addToast(`${guest.name} checked out`, 'success');
+    } catch (e: any) {
+      addToast(e.message ?? 'Check-out failed', 'error');
+    }
+  }
+
   async function handleSaveLayout(editTables: BanquetTable[], editElements: HallElement[], hw: number, hh: number) {
     const wid = get(weddingId);
     try {
@@ -328,7 +350,14 @@
                   <span>{guest.pax} pax</span>
                 </div>
               </div>
-              <Badge status={guest.rsvp} />
+              <div class="flex items-center gap-1.5">
+                <Badge status={guest.rsvp} />
+                {#if guest.checkedIn}
+                  <span class="inline-flex items-center gap-0.5 px-1.5 py-0.5 bg-emerald-50 text-emerald-700 rounded-full text-[10px] font-semibold border border-emerald-200">
+                    <CheckCircle2 class="w-2.5 h-2.5" /> In
+                  </span>
+                {/if}
+              </div>
             {:else}
               <span class="text-xs text-gray-400 italic">{assigningSeat === seatNum ? 'Select a guest below...' : 'Click to assign'}</span>
             {/if}
@@ -374,7 +403,18 @@
       {/if}
 
       <!-- Panel Footer -->
-      <div class="px-5 py-4 border-t border-gray-100 bg-gray-50/50">
+      <div class="px-5 py-4 border-t border-gray-100 bg-gray-50/50 space-y-2">
+        {#if $selectedGuest && $selectedGuest.tableId === selectedTableId}
+          {#if $selectedGuest.checkedIn}
+            <button onclick={() => $selectedGuest && handleCheckOut($selectedGuest)} class="w-full py-2.5 bg-emerald-50 text-emerald-700 rounded-xl text-sm font-semibold border border-emerald-200 hover:bg-emerald-100 transition-colors flex items-center justify-center gap-1.5">
+              <CheckCircle2 class="w-4 h-4" /> Checked In — Tap to Check Out
+            </button>
+          {:else}
+            <button onclick={() => $selectedGuest && handleCheckIn($selectedGuest)} class="w-full py-2.5 bg-red text-white rounded-xl text-sm font-semibold hover:bg-red-light transition-colors flex items-center justify-center gap-1.5">
+              <UserCheck class="w-4 h-4" /> Check In
+            </button>
+          {/if}
+        {/if}
         <button onclick={() => goto(`/${$weddingId}/tables`)} class="w-full py-2.5 border border-black/[0.06] bg-white/90 rounded-xl text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors">
           Manage Tables
         </button>
