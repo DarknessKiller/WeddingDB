@@ -104,6 +104,7 @@
 <style>
   .sidebar-root {
     height: 100svh;
+    height: calc(100svh - env(safe-area-inset-bottom));
     background: white;
     border-right: 1px solid rgba(0, 0, 0, 0.08);
     display: flex;
