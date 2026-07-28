@@ -57,12 +57,16 @@
 
   function onTouchStart(e: TouchEvent) {
     if (window.innerWidth >= 640) return; // desktop only
+    const panel = e.currentTarget;
+    if (panel instanceof HTMLElement && panel.scrollTop > 0) { dragging = false; return; }
     startY = e.touches[0].clientY;
     dragging = true;
   }
 
   function onTouchMove(e: TouchEvent) {
     if (!dragging) return;
+    const panel = e.currentTarget;
+    if (panel instanceof HTMLElement && panel.scrollTop > 0) return;
     const delta = e.touches[0].clientY - startY;
     if (delta > 0) dragY = delta;
   }
@@ -178,7 +182,10 @@
     if (!guest) return;
     const wid = get(weddingId);
     try {
-      await checkInGuest(wid, guest.id);
+      const body: { angbaoAmt?: number; giftItem?: string } = {};
+      if (angbaoAmount) body.angbaoAmt = Number(angbaoAmount);
+      if (giftItem) body.giftItem = giftItem;
+      await checkInGuest(wid, guest.id, Object.keys(body).length ? body : undefined);
       guest.checkedIn = true;
       guest.checkedInAt = new Date();
       if (angbaoAmount) guest.angbaoAmount = Number(angbaoAmount);

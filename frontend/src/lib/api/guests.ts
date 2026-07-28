@@ -104,9 +104,10 @@ export async function deleteGuest(weddingId: string, guestId: string): Promise<v
 	if (!res.ok) throw new Error(`Failed to delete guest: ${res.status}`);
 }
 
-export async function checkInGuest(weddingId: string, guestId: string): Promise<void> {
+export async function checkInGuest(weddingId: string, guestId: string, body?: { angbaoAmt?: number; giftItem?: string }): Promise<void> {
 	const res = await apiFetch(`/api/weddings/${weddingId}/guests/${guestId}/checkin`, {
 		method: 'POST',
+		body: body ? JSON.stringify(body) : undefined,
 	});
 	if (!res.ok) throw new Error(`Failed to check in guest: ${res.status}`);
 }

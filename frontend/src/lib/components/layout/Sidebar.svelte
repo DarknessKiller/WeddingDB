@@ -104,7 +104,6 @@
 <style>
   .sidebar-root {
     height: 100svh;
-    height: calc(100svh - env(safe-area-inset-bottom));
     background: white;
     border-right: 1px solid rgba(0, 0, 0, 0.08);
     display: flex;
@@ -224,6 +223,7 @@
   .sidebar-footer {
     border-top: 1px solid rgba(0, 0, 0, 0.04);
     padding: 1rem;
+    padding-bottom: calc(1rem + env(safe-area-inset-bottom));
   }
 
   .sidebar-collapsed .sidebar-footer {

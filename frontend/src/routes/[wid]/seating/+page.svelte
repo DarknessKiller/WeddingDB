@@ -214,7 +214,10 @@
     if (!checkinGuest) return;
     const wid = get(weddingId);
     try {
-      await checkInGuest(wid, checkinGuest.id);
+      const body: { angbaoAmt?: number; giftItem?: string } = {};
+      if (angbaoAmount) body.angbaoAmt = Number(angbaoAmount);
+      if (giftItem) body.giftItem = giftItem;
+      await checkInGuest(wid, checkinGuest.id, Object.keys(body).length ? body : undefined);
       allGuests = allGuests.map(g => g.id === checkinGuest!.id ? { ...g, checkedIn: true, checkedInAt: new Date(), angbaoAmount: angbaoAmount ? Number(angbaoAmount) : g.angbaoAmount, giftItem: giftItem || g.giftItem } : g);
       showCheckinModal = false;
       addToast(`${checkinGuest.name} checked in`, 'success');

@@ -47,11 +47,6 @@
 
   // Sheet collapsed state (peek mode)
   let sheetCollapsed = $state(false);
-  const SHEET_COLLAPSED_PEEK = 72; // px — shows handle + name + table
-
-  // Transition state
-  let viewTransition = $state<'search' | 'map'>('search');
-  let transitionProgress = $state(0);
 
   let tableGuests = $derived.by(() => {
     const obj: Record<string, Guest[]> = {};
@@ -134,7 +129,6 @@
   function selectGuest(guest: Guest) {
     selectedGuest = guest;
     query = '';
-    viewTransition = 'map';
     sheetCollapsed = false;
     sheetY = 0;
     sheetVelocity = 0;
@@ -143,7 +137,6 @@
   function backToSearch() {
     selectedGuest = null;
     query = '';
-    viewTransition = 'search';
     sheetCollapsed = false;
     sheetY = 0;
   }
@@ -159,7 +152,6 @@
   // Spring-like cubic bezier for fluid motion
   // Apple's default: damping 1.0, response 0.3-0.4
   const SPRING_EASE = 'cubic-bezier(0.2, 0.8, 0.2, 1)';
-  const SPRING_BOUNCE = 'cubic-bezier(0.34, 1.56, 0.64, 1)';
 
   // Bottom sheet drag handlers (Apple-style interruptible gesture)
   function onSheetPointerDown(e: PointerEvent) {
@@ -221,6 +213,7 @@
   }
 
   function animateSheetTo(target: number) {
+    if (sheetAnimFrame) cancelAnimationFrame(sheetAnimFrame);
     const start = sheetY;
     const startTime = performance.now();
     const duration = prefersReducedMotion ? 100 : 350;
@@ -725,7 +718,7 @@
   }
 
   .sheet-content {
-    padding: 0.25rem 1.25rem 1.25rem;
+    padding: 0.25rem 1.25rem calc(1.25rem + env(safe-area-inset-bottom));
   }
 
   .sheet-empty {
