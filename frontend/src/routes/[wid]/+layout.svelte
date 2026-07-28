@@ -52,6 +52,9 @@
       <div
         class="sidebar-backdrop lg:hidden"
         onclick={() => $sidebarCollapsed = true}
+        onkeydown={(e) => { if (e.key === 'Enter' || e.key === ' ') $sidebarCollapsed = true; }}
+        role="button"
+        tabindex="-1"
       ></div>
     {/if}
 

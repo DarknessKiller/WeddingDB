@@ -605,6 +605,7 @@
 
   .drawer-body {
     padding: 1.5rem;
+    padding-bottom: calc(1.5rem + 5rem);
     display: flex;
     flex-direction: column;
     gap: 1.5rem;

@@ -237,12 +237,10 @@
   // Swipe back gesture on map view (velocity-based dismissal)
   let swipeStartX = $state(0);
   let swipeStartYMap = $state(0);
-  let swipeActive = $state(false);
 
   function onMapPointerDown(e: PointerEvent) {
     swipeStartX = e.clientX;
     swipeStartYMap = e.clientY;
-    swipeActive = false;
   }
 
   function onMapPointerUp(e: PointerEvent) {
@@ -252,7 +250,6 @@
     if (dx > 80 && Math.abs(dy) < 60 && swipeStartX < 60) {
       backToSearch();
     }
-    swipeActive = false;
   }
 </script>
 
