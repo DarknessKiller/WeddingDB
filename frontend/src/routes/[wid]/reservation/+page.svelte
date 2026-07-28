@@ -242,7 +242,7 @@
 
 <svelte:head><title>New Reservation – WeddingDB</title></svelte:head>
 
-<div class="flex flex-col sm:flex-row h-[calc(100dvh-56px)] sm:h-[calc(100dvh-64px)]">
+<div class="flex flex-col sm:flex-row h-full">
   <!-- Left: Hall Map (hidden on mobile, shown on desktop) -->
   <div class="hidden sm:flex flex-1 flex-col relative">
     {#if apiTables.length > 0}
