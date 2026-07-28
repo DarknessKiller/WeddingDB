@@ -260,7 +260,7 @@
   </div>
 
   <!-- Right: Form -->
-  <div class="w-full max-w-lg bg-white border-l border-gray-200 overflow-y-auto">
+  <div class="w-full max-w-lg bg-white/90 backdrop-blur-xl border-l border-black/[0.06] overflow-y-auto">
     <div class="p-6">
       <div class="mb-6">
         <h1 class="text-xl font-bold text-gray-900">New Reservation</h1>
@@ -448,7 +448,7 @@
               <CheckCircle2 class="w-4 h-4" /> Save Reservation
             {/if}
           </button>
-          <button type="button" onclick={() => goto(`/${$weddingId}/guests`)} class="px-6 py-3 border border-gray-200 bg-white rounded-xl text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors">
+          <button type="button" onclick={() => goto(`/${$weddingId}/guests`)} class="px-6 py-3 border border-black/[0.06] bg-white/90 rounded-xl text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors">
             Cancel
           </button>
         </div>

@@ -252,7 +252,7 @@
 
   <!-- Desktop Side Panel -->
   {#if selectedTable && !editMode}
-    <div class="hidden md:flex w-[340px] bg-white border-l border-gray-200 flex-col overflow-hidden animate-in">
+    <div class="hidden md:flex w-[340px] bg-white/90 backdrop-blur-xl border-l border-black/[0.06] flex-col overflow-hidden animate-in">
       <!-- Panel Header -->
       <div class="flex items-center justify-between px-5 py-4 border-b border-gray-100">
         <div class="flex items-center gap-3">
@@ -375,7 +375,7 @@
 
       <!-- Panel Footer -->
       <div class="px-5 py-4 border-t border-gray-100 bg-gray-50/50">
-        <button onclick={() => goto(`/${$weddingId}/tables`)} class="w-full py-2.5 border border-gray-200 bg-white rounded-xl text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors">
+        <button onclick={() => goto(`/${$weddingId}/tables`)} class="w-full py-2.5 border border-black/[0.06] bg-white/90 rounded-xl text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors">
           Manage Tables
         </button>
       </div>
@@ -385,7 +385,7 @@
   <!-- Mobile Bottom Panel -->
   {#if selectedTable && showMobilePanel && !editMode}
     <!-- svelte-ignore a11y_no_static_element_interactions -->
-    <div class="md:hidden fixed inset-x-0 bottom-0 z-40 bg-white border-t border-gray-200 rounded-t-2xl shadow-2xl animate-slide-up" style="max-height: 60vh;">
+    <div class="md:hidden fixed inset-x-0 bottom-0 z-40 bg-white/95 backdrop-blur-xl border-t border-black/[0.06] rounded-t-2xl shadow-2xl animate-slide-up" style="max-height: 60vh;">
       <!-- Drag handle -->
       <div class="flex justify-center py-2">
         <div class="w-10 h-1 bg-gray-300 rounded-full"></div>

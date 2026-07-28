@@ -121,7 +121,7 @@
       <p class="text-sm text-gray-500 mt-1">Select a wedding to manage</p>
     </div>
 
-    <div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
+    <div class="bg-white/90 backdrop-blur-xl rounded-2xl shadow-sm border border-black/[0.06] p-6">
       {#if loading}
         <div class="space-y-3">
           {#each Array(3) as _}
@@ -195,7 +195,7 @@
 {#if showModal}
   <div class="fixed inset-0 z-50 flex items-center justify-center p-4">
     <div class="absolute inset-0 bg-black/30 backdrop-blur-md" onclick={closeModal} role="presentation"></div>
-    <div class="relative bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden">
+    <div class="relative bg-white/95 backdrop-blur-xl rounded-2xl shadow-2xl w-full max-w-md overflow-hidden">
       <div class="flex items-center justify-between p-5 border-b border-gray-100">
         <h3 class="font-bold text-gray-900">{editingWedding ? 'Edit Wedding' : 'New Wedding'}</h3>
         <button onclick={closeModal} class="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-gray-100 transition-colors">
@@ -219,7 +219,7 @@
           class="flex-1 py-2.5 bg-red text-white rounded-xl text-sm font-semibold hover:bg-red-light transition-colors disabled:opacity-50">
           {saving ? 'Saving...' : editingWedding ? 'Save Changes' : 'Create Wedding'}
         </button>
-        <button onclick={closeModal} class="px-5 py-2.5 border border-gray-200 bg-white rounded-xl text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors">
+        <button onclick={closeModal} class="px-5 py-2.5 border border-black/[0.06] bg-white/90 rounded-xl text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors">
           Cancel
         </button>
       </div>

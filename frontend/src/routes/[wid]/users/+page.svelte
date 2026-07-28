@@ -143,7 +143,7 @@
     <div class="text-center py-20 text-gray-400">No users found</div>
   {:else}
     <!-- Desktop table -->
-    <div class="hidden sm:block bg-white border border-gray-200 rounded-2xl overflow-hidden">
+    <div class="hidden sm:block bg-white/90 backdrop-blur-xl border border-black/[0.06] rounded-2xl overflow-hidden">
       <table class="w-full text-sm">
         <thead>
           <tr class="bg-gray-50 border-b border-gray-200">
@@ -189,7 +189,7 @@
     <!-- Mobile cards -->
     <div class="sm:hidden space-y-3">
       {#each admins as user (user.id)}
-        <div class="bg-white border border-gray-200 rounded-2xl p-4">
+        <div class="bg-white/90 backdrop-blur-xl border border-black/[0.06] rounded-2xl p-4">
           <div class="flex items-start justify-between gap-3">
             <div class="min-w-0">
               <div class="font-semibold text-gray-900">{user.name}</div>
@@ -222,7 +222,7 @@
 {#if showCreate}
   <div class="fixed inset-0 z-50 flex items-center justify-center p-4">
     <div class="absolute inset-0 bg-black/30 backdrop-blur-md" onclick={() => showCreate = false} role="presentation"></div>
-    <div class="relative bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden">
+    <div class="relative bg-white/95 backdrop-blur-xl rounded-2xl shadow-2xl w-full max-w-md overflow-hidden">
       <div class="flex items-center justify-between p-5 border-b border-gray-100">
         <h3 class="font-bold text-gray-900">Add User</h3>
         <button onclick={() => showCreate = false} class="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-gray-100 transition-colors">
@@ -255,7 +255,7 @@
           class="flex-1 py-2.5 bg-red text-white rounded-xl text-sm font-semibold hover:bg-red-light transition-colors disabled:opacity-50">
           {saving ? 'Creating...' : 'Create User'}
         </button>
-        <button onclick={() => showCreate = false} class="px-5 py-2.5 border border-gray-200 bg-white rounded-xl text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors">
+        <button onclick={() => showCreate = false} class="px-5 py-2.5 border border-black/[0.06] bg-white/90 rounded-xl text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors">
           Cancel
         </button>
       </div>
@@ -267,7 +267,7 @@
 {#if assignTarget}
   <div class="fixed inset-0 z-50 flex items-center justify-center p-4">
     <div class="absolute inset-0 bg-black/30 backdrop-blur-md" onclick={() => assignTarget = null} role="presentation"></div>
-    <div class="relative bg-white rounded-2xl shadow-2xl w-full max-w-sm overflow-hidden">
+    <div class="relative bg-white/95 backdrop-blur-xl rounded-2xl shadow-2xl w-full max-w-sm overflow-hidden">
       <div class="flex items-center justify-between p-5 border-b border-gray-100">
         <h3 class="font-bold text-gray-900">Assign Weddings</h3>
         <button onclick={() => assignTarget = null} class="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-gray-100 transition-colors">
@@ -294,7 +294,7 @@
           class="flex-1 py-2.5 bg-red text-white rounded-xl text-sm font-semibold hover:bg-red-light transition-colors disabled:opacity-50">
           {assignSaving ? 'Saving...' : 'Save'}
         </button>
-        <button onclick={() => assignTarget = null} class="px-5 py-2.5 border border-gray-200 bg-white rounded-xl text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors">
+        <button onclick={() => assignTarget = null} class="px-5 py-2.5 border border-black/[0.06] bg-white/90 rounded-xl text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors">
           Cancel
         </button>
       </div>
@@ -306,7 +306,7 @@
 {#if resetTarget}
   <div class="fixed inset-0 z-50 flex items-center justify-center p-4">
     <div class="absolute inset-0 bg-black/30 backdrop-blur-md" onclick={() => resetTarget = null} role="presentation"></div>
-    <div class="relative bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden">
+    <div class="relative bg-white/95 backdrop-blur-xl rounded-2xl shadow-2xl w-full max-w-md overflow-hidden">
       <div class="flex items-center justify-between p-5 border-b border-gray-100">
         <h3 class="font-bold text-gray-900">Reset Password</h3>
         <button onclick={() => resetTarget = null} class="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-gray-100 transition-colors">
@@ -327,7 +327,7 @@
           class="flex-1 py-2.5 bg-red text-white rounded-xl text-sm font-semibold hover:bg-red-light transition-colors disabled:opacity-50">
           {resetSaving ? 'Updating...' : 'Update Password'}
         </button>
-        <button onclick={() => resetTarget = null} class="px-5 py-2.5 border border-gray-200 bg-white rounded-xl text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors">
+        <button onclick={() => resetTarget = null} class="px-5 py-2.5 border border-black/[0.06] bg-white/90 rounded-xl text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors">
           Cancel
         </button>
       </div>

@@ -559,7 +559,7 @@
   {#if selectedIds.size > 0}
     <div class="mb-4 px-4 py-3 bg-red-50 border border-red-100 rounded-xl flex items-center gap-3 text-sm">
       <span class="font-semibold text-red">{selectedIds.size} selected</span>
-      <button onclick={openBulkMove} class="px-3 py-1.5 bg-white border border-gray-200 rounded-lg text-xs font-medium hover:bg-gray-50">Move Table</button>
+      <button onclick={openBulkMove} class="px-3 py-1.5 bg-white/90 border border-black/[0.06] rounded-lg text-xs font-medium hover:bg-gray-50">Move Table</button>
       <button onclick={bulkDelete} class="px-3 py-1.5 bg-white border border-red-200 rounded-lg text-xs font-medium text-red hover:bg-red-50">Delete</button>
     </div>
   {/if}
@@ -590,7 +590,7 @@
     </div>
   {:else}
     <!-- Table -->
-    <div class="bg-white border border-gray-200 rounded-2xl overflow-hidden">
+    <div class="bg-white/90 backdrop-blur-xl border border-black/[0.06] rounded-2xl overflow-hidden">
       <div class="overflow-x-auto">
         <table class="w-full text-sm">
           <thead>
@@ -676,7 +676,7 @@
 <!-- Bulk Move Table Modal -->
 {#if showBulkMoveModal}
   <div class="fixed inset-0 z-[700] flex items-center justify-center bg-black/30 backdrop-blur-md" onclick={() => showBulkMoveModal = false}>
-    <div class="bg-white rounded-2xl shadow-2xl w-full max-w-md p-6" onclick={(e) => e.stopPropagation()}>
+    <div class="bg-white/95 backdrop-blur-xl rounded-2xl shadow-2xl w-full max-w-md p-6" onclick={(e) => e.stopPropagation()}>
       <h3 class="text-lg font-semibold text-gray-900 mb-4">Move {selectedIds.size} Guests</h3>
       <div class="space-y-3 mb-6">
         <div>
@@ -713,7 +713,7 @@
 <!-- Context Menu -->
 {#if contextMenu}
   <!-- svelte-ignore a11y_no_static_element_interactions -->
-  <div class="fixed z-[600] bg-white border border-gray-200 rounded-xl shadow-xl py-1.5 min-w-[180px]"
+  <div class="fixed z-[600] bg-white/95 backdrop-blur-xl border border-black/[0.06] rounded-xl shadow-xl py-1.5 min-w-[180px]"
     style={getMenuStyle(contextMenu.x, contextMenu.y)} onclick={(e) => e.stopPropagation()}>
     <button class="w-full flex items-center gap-2.5 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50" onclick={() => toggleCheckIn(contextMenu!.guest)}>
       {#if contextMenu!.guest.checkedInAt}
@@ -738,7 +738,7 @@
 <!-- Move Table Modal -->
 {#if showMoveModal && moveGuest}
   <div class="fixed inset-0 z-[700] flex items-center justify-center bg-black/30 backdrop-blur-md" onclick={() => showMoveModal = false}>
-    <div class="bg-white rounded-2xl shadow-2xl w-full max-w-md p-6" onclick={(e) => e.stopPropagation()}>
+    <div class="bg-white/95 backdrop-blur-xl rounded-2xl shadow-2xl w-full max-w-md p-6" onclick={(e) => e.stopPropagation()}>
       <h3 class="text-lg font-semibold text-gray-900 mb-4">Move Table</h3>
       <div class="space-y-3 mb-6">
         <div>
@@ -791,7 +791,7 @@
 {#if showImportModal}
   <div class="fixed inset-0 z-50 flex items-center justify-center p-4">
     <div class="absolute inset-0 bg-black/30 backdrop-blur-md" onclick={() => showImportModal = false} role="presentation"></div>
-    <div class="relative bg-white rounded-2xl shadow-2xl w-full max-w-lg overflow-hidden">
+    <div class="relative bg-white/95 backdrop-blur-xl rounded-2xl shadow-2xl w-full max-w-lg overflow-hidden">
       <div class="flex items-center justify-between p-5 border-b border-gray-100">
         <h3 class="font-bold text-gray-900">Import Guests from CSV</h3>
         <button onclick={() => showImportModal = false} class="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-gray-100 transition-colors">
@@ -868,7 +868,7 @@
           {/if}
         </button>
         <button onclick={() => showImportModal = false}
-          class="px-5 py-2.5 border border-gray-200 bg-white rounded-xl text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors">
+          class="px-5 py-2.5 border border-black/[0.06] bg-white/90 rounded-xl text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors">
           Cancel
         </button>
       </div>

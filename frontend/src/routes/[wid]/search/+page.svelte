@@ -210,7 +210,7 @@
 >
   <!-- Search Toolbar -->
   <!-- svelte-ignore a11y_no_static_element_interactions -->
-  <div data-search-area class="relative bg-white border-b border-gray-200 px-4 py-3 z-30 flex-shrink-0" onclick={(e) => e.stopPropagation()}>
+  <div data-search-area class="relative bg-white/90 backdrop-blur-xl border-b border-black/[0.06] px-4 py-3 z-30 flex-shrink-0" onclick={(e) => e.stopPropagation()}>
     <div class="relative max-w-xl mx-auto">
       <Search class="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400 pointer-events-none" />
       <input
@@ -228,7 +228,7 @@
 
     <!-- Search Results Dropdown -->
     {#if showResults && query.trim().length > 0}
-      <div class="absolute top-full left-0 right-0 mt-2 max-w-xl mx-auto bg-white rounded-xl shadow-xl border border-gray-200 overflow-hidden max-h-[60vh] overflow-y-auto z-50">
+      <div class="absolute top-full left-0 right-0 mt-2 max-w-xl mx-auto bg-white/95 backdrop-blur-xl rounded-xl shadow-xl border border-black/[0.06] overflow-hidden max-h-[60vh] overflow-y-auto z-50">
         {#if results.length > 0}
           {#each results.slice(0, 10) as guest (guest.id)}
             <button
@@ -338,7 +338,7 @@
 
     <!-- Side Panel (bottom sheet on mobile, right sidebar on desktop) -->
     {#if selectedGuest}
-      <div data-panel-area class="fixed bottom-0 left-0 right-0 md:static md:w-[340px] bg-white border-t md:border-t-0 md:border-l border-gray-200 shadow-2xl flex flex-col overflow-y-auto z-30 max-h-[60vh] md:max-h-none">
+      <div data-panel-area class="fixed bottom-0 left-0 right-0 md:static md:w-[340px] bg-white/90 backdrop-blur-xl border-t md:border-t-0 md:border-l border-black/[0.06] shadow-2xl flex flex-col overflow-y-auto z-30 max-h-[60vh] md:max-h-none">
         <!-- Panel Header -->
         <div class="flex items-center justify-between px-5 py-4 border-b border-gray-100">
           <div class="flex items-center gap-3">
@@ -428,7 +428,7 @@
   <div class="fixed inset-0 z-50 flex items-center justify-center p-4">
     <div class="absolute inset-0 bg-black/30 backdrop-blur-md" onclick={closeModal} role="presentation"></div>
 
-    <div class="relative bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden">
+    <div class="relative bg-white/95 backdrop-blur-xl rounded-2xl shadow-2xl w-full max-w-md overflow-hidden">
       {#if showSeatView}
         <div class="flex items-center justify-between p-5 border-b border-gray-100">
           <div class="flex items-center gap-3">
@@ -475,7 +475,7 @@
         <div class="p-5 pt-0">
           <button
             onclick={closeModal}
-            class="w-full py-2.5 border border-gray-200 bg-white rounded-xl text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors"
+            class="w-full py-2.5 border border-black/[0.06] bg-white/90 rounded-xl text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors"
           >
             Close
           </button>
@@ -546,7 +546,7 @@
           </button>
           <button
             onclick={closeModal}
-            class="px-5 py-2.5 border border-gray-200 bg-white rounded-xl text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors"
+            class="px-5 py-2.5 border border-black/[0.06] bg-white/90 rounded-xl text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors"
           >
             Cancel
           </button>

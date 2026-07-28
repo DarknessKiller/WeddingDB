@@ -97,7 +97,7 @@
   {#if loading}
     <div class="space-y-4">
       {#each Array(2) as _}
-        <div class="bg-white border border-gray-200 rounded-2xl p-6 animate-pulse">
+        <div class="bg-white/90 backdrop-blur-xl border border-black/[0.06] rounded-2xl p-6 animate-pulse">
           <div class="h-5 bg-gray-100 rounded w-40 mb-4"></div>
           <div class="space-y-3">
             <div class="h-10 bg-gray-100 rounded-xl"></div>
