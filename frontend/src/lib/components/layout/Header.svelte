@@ -79,12 +79,8 @@
     left: 0;
     right: 0;
     z-index: 50;
-    /* Apple translucent material */
-    background: rgba(255, 255, 255, 0.72);
-    backdrop-filter: blur(20px) saturate(180%);
-    -webkit-backdrop-filter: blur(20px) saturate(180%);
-    border-bottom: 1px solid rgba(0, 0, 0, 0.06);
-    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.8);
+    background: white;
+    border-bottom: 1px solid #e5e7eb;
   }
 
   @media (min-width: 640px) {
