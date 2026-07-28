@@ -30,6 +30,10 @@
   let guestSearch = $state('');
   let unassignedGuests = $state<Guest[]>([]);
   let assigningSeat = $state<number | null>(null);
+  let showCheckinModal = $state(false);
+  let checkinGuest = $state<Guest | null>(null);
+  let angbaoAmount = $state('');
+  let giftItem = $state('');
 
   function mapGuest(r: GuestResponse): Guest {
     return {
@@ -174,12 +178,21 @@
     }
   }
 
-  async function handleCheckIn(guest: Guest) {
+  function openCheckinModal(guest: Guest) {
+    checkinGuest = guest;
+    angbaoAmount = guest.angbaoAmount != null ? String(guest.angbaoAmount) : '';
+    giftItem = guest.giftItem ?? '';
+    showCheckinModal = true;
+  }
+
+  async function confirmCheckIn() {
+    if (!checkinGuest) return;
     const wid = get(weddingId);
     try {
-      await checkInGuest(wid, guest.id);
-      allGuests = allGuests.map(g => g.id === guest.id ? { ...g, checkedIn: true, checkedInAt: new Date() } : g);
-      addToast(`${guest.name} checked in`, 'success');
+      await checkInGuest(wid, checkinGuest.id);
+      allGuests = allGuests.map(g => g.id === checkinGuest!.id ? { ...g, checkedIn: true, checkedInAt: new Date(), angbaoAmount: angbaoAmount ? Number(angbaoAmount) : g.angbaoAmount, giftItem: giftItem || g.giftItem } : g);
+      showCheckinModal = false;
+      addToast(`${checkinGuest.name} checked in`, 'success');
     } catch (e: any) {
       addToast(e.message ?? 'Check-in failed', 'error');
     }
@@ -410,7 +423,7 @@
               <CheckCircle2 class="w-4 h-4" /> Checked In — Tap to Check Out
             </button>
           {:else}
-            <button onclick={() => $selectedGuest && handleCheckIn($selectedGuest)} class="w-full py-2.5 bg-red text-white rounded-xl text-sm font-semibold hover:bg-red-light transition-colors flex items-center justify-center gap-1.5">
+            <button onclick={() => $selectedGuest && openCheckinModal($selectedGuest)} class="w-full py-2.5 bg-red text-white rounded-xl text-sm font-semibold hover:bg-red-light transition-colors flex items-center justify-center gap-1.5">
               <UserCheck class="w-4 h-4" /> Check In
             </button>
           {/if}
@@ -509,3 +522,44 @@
     animation: slideUp 0.25s ease-out;
   }
 </style>
+
+<!-- Check-in Modal -->
+{#if showCheckinModal && checkinGuest}
+  <div class="fixed inset-0 z-[60] flex items-end sm:items-center justify-center p-0 sm:p-4">
+    <div class="absolute inset-0 bg-black/30 backdrop-blur-md" onclick={() => showCheckinModal = false} role="presentation"></div>
+    <div class="relative bg-white/95 backdrop-blur-xl rounded-t-2xl sm:rounded-2xl shadow-2xl w-full sm:max-w-md overflow-hidden">
+      <!-- Pill dismiss -->
+      <div class="flex justify-center pt-3 sm:hidden" onclick={() => showCheckinModal = false} role="presentation">
+        <div class="w-10 h-1 bg-gray-300 rounded-full"></div>
+      </div>
+      <div class="flex items-center justify-between p-5 border-b border-gray-100">
+        <h3 class="font-bold text-gray-900">Check In {checkinGuest.name}</h3>
+        <button onclick={() => showCheckinModal = false} class="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-gray-100 transition-colors">
+          <X class="w-4 h-4 text-gray-400" />
+        </button>
+      </div>
+      <div class="p-5 space-y-4">
+        <div>
+          <label class="text-sm font-semibold text-gray-700 mb-1.5 block">Angbao Amount (RM)</label>
+          <input type="number" min="0" bind:value={angbaoAmount} placeholder="0"
+            class="w-full px-4 py-3 border border-black/[0.08] rounded-xl text-sm bg-white/80 focus:border-red focus:ring-2 focus:ring-red/10 outline-none transition-all min-h-[48px]" />
+        </div>
+        <div>
+          <label class="text-sm font-semibold text-gray-700 mb-1.5 block">Gift Item</label>
+          <input bind:value={giftItem} placeholder="Optional"
+            class="w-full px-4 py-3 border border-black/[0.08] rounded-xl text-sm bg-white/80 focus:border-red focus:ring-2 focus:ring-red/10 outline-none transition-all min-h-[48px]" />
+        </div>
+      </div>
+      <div class="flex gap-3 p-5 pt-0">
+        <button onclick={confirmCheckIn}
+          class="flex-1 py-3 bg-red text-white rounded-xl text-sm font-semibold hover:bg-red-light transition-colors flex items-center justify-center gap-2">
+          <UserCheck class="w-4 h-4" /> Confirm Check In
+        </button>
+        <button onclick={() => showCheckinModal = false}
+          class="px-6 py-3 border border-black/[0.06] bg-white/90 rounded-xl text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors">
+          Cancel
+        </button>
+      </div>
+    </div>
+  </div>
+{/if}

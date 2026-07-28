@@ -34,6 +34,19 @@
     return 'grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5';
   });
 
+  // Sort tables by position to match hallmap layout (top-to-bottom, left-to-right)
+  let sortedTables = $derived(
+    [...tables].sort((a, b) => {
+      const aY = a.y ?? 50;
+      const bY = b.y ?? 50;
+      const aX = a.x ?? 50;
+      const bX = b.x ?? 50;
+      // Sort by Y first (rows), then by X (columns)
+      if (Math.abs(aY - bY) > 5) return aY - bY;
+      return aX - bX;
+    })
+  );
+
   // Context menu
   let contextMenu = $state<{ x: number; y: number; table: BanquetTable } | null>(null);
   const menuWidth = 180;
@@ -278,7 +291,7 @@
     </div>
   {:else}
     <div class="grid {gridCols} gap-4">
-      {#each tables as table (table.id)}
+      {#each sortedTables as table (table.id)}
         {@const occ = getOcc(table.id)}
         <!-- svelte-ignore a11y_no_static_element_interactions -->
         <div

@@ -55,16 +55,6 @@
   "sidebar-root",
   $sidebarCollapsed ? "sidebar-collapsed" : "sidebar-expanded"
 )}>
-  <!-- Brand -->
-  <div class="sidebar-brand">
-    <div class="brand-icon">囍</div>
-    {#if !$sidebarCollapsed}
-      <h1 class="brand-text">
-        Wedding<span class="brand-accent">DB</span>
-      </h1>
-    {/if}
-  </div>
-
   <!-- Navigation -->
   <nav class="sidebar-nav">
     {#each navSections as section}
@@ -147,52 +137,11 @@
     }
   }
 
-  /* Brand */
-  .sidebar-brand {
-    border-bottom: 1px solid rgba(0, 0, 0, 0.04);
-    display: flex;
-    align-items: center;
-    gap: 0.75rem;
-    padding: 1.25rem 1.5rem;
-  }
-
-  .sidebar-collapsed .sidebar-brand {
-    padding: 1.25rem 0.75rem;
-    justify-content: center;
-  }
-
-  .brand-icon {
-    width: 2.25rem;
-    height: 2.25rem;
-    background: #A11217;
-    border-radius: 0.5rem;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    color: #D4AF37;
-    font-weight: 700;
-    font-size: 1.125rem;
-    font-family: 'Noto Serif SC', 'Songti SC', serif;
-    flex-shrink: 0;
-  }
-
-  .brand-text {
-    font-size: 1.125rem;
-    font-weight: 700;
-    color: #111827;
-    letter-spacing: -0.02em;
-    white-space: nowrap;
-  }
-
-  .brand-accent {
-    color: #D4AF37;
-  }
-
   /* Navigation */
   .sidebar-nav {
     flex: 1;
     overflow-y: auto;
-    padding: 0.75rem;
+    padding: 1rem 0.75rem;
   }
 
   .nav-section-label {

@@ -14,6 +14,9 @@
 
   let editing = $state(false);
   let saving = $state(false);
+  let showCheckinModal = $state(false);
+  let angbaoAmount = $state('');
+  let giftItem = $state('');
 
   $effect(() => { editing = startEditing; });
   let form = $state({
@@ -88,13 +91,22 @@
     onClose();
   }
 
-  async function handleCheckIn() {
+  function openCheckinModal() {
+    angbaoAmount = guest.angbaoAmount != null ? String(guest.angbaoAmount) : '';
+    giftItem = guest.giftItem ?? '';
+    showCheckinModal = true;
+  }
+
+  async function confirmCheckIn() {
     const wid = get(weddingId);
     try {
       await checkInGuest(wid, guest.id);
       guest.checkedIn = true;
       guest.checkedInAt = new Date();
+      if (angbaoAmount) guest.angbaoAmount = Number(angbaoAmount);
+      if (giftItem) guest.giftItem = giftItem;
       onCheckIn?.(guest);
+      showCheckinModal = false;
       addToast(`${guest.name} checked in`, 'success');
     } catch (e: any) {
       addToast(e.message ?? 'Check-in failed', 'error');
@@ -120,10 +132,6 @@
   <div class="drawer-backdrop"></div>
   <!-- svelte-ignore a11y_no_static_element_interactions -->
   <div class="drawer-panel" onclick={(e) => e.stopPropagation()}>
-    <!-- Mobile drag handle -->
-    <div class="drawer-handle sm:hidden">
-      <div class="drawer-handle-bar"></div>
-    </div>
     <div class="drawer-header">
       <h2 class="drawer-title">{editing ? 'Edit Guest' : 'Guest Details'}</h2>
       <div class="drawer-actions">
@@ -142,7 +150,7 @@
     </div>
 
     <!-- Pill dismiss (mobile) -->
-    <div class="drawer-pill sm:hidden" onclick={onClose} role="presentation">
+    <div class="drawer-pill" onclick={onClose} role="presentation">
       <div class="drawer-pill-bar"></div>
     </div>
 
@@ -315,7 +323,7 @@
               <CheckCircle2 class="w-4 h-4" /> Checked In — Tap to Check Out
             </button>
           {:else}
-            <button onclick={handleCheckIn} class="w-full py-3 bg-red text-white rounded-xl text-sm font-semibold hover:bg-red-light transition-colors flex items-center justify-center gap-2">
+            <button onclick={openCheckinModal} class="w-full py-3 bg-red text-white rounded-xl text-sm font-semibold hover:bg-red-light transition-colors flex items-center justify-center gap-2">
               <UserCheck class="w-4 h-4" /> Check In
             </button>
           {/if}
@@ -324,6 +332,47 @@
     </div>
   </div>
 </div>
+
+<!-- Check-in Modal -->
+{#if showCheckinModal}
+  <div class="fixed inset-0 z-[60] flex items-end sm:items-center justify-center p-0 sm:p-4">
+    <div class="absolute inset-0 bg-black/30 backdrop-blur-md" onclick={() => showCheckinModal = false} role="presentation"></div>
+    <div class="relative bg-white/95 backdrop-blur-xl rounded-t-2xl sm:rounded-2xl shadow-2xl w-full sm:max-w-md overflow-hidden animate-slideUp sm:animate-none">
+      <!-- Pill dismiss -->
+      <div class="flex justify-center pt-3 sm:hidden" onclick={() => showCheckinModal = false} role="presentation">
+        <div class="w-10 h-1 bg-gray-300 rounded-full"></div>
+      </div>
+      <div class="flex items-center justify-between p-5 border-b border-gray-100">
+        <h3 class="font-bold text-gray-900">Check In {guest.name}</h3>
+        <button onclick={() => showCheckinModal = false} class="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-gray-100 transition-colors">
+          <X class="w-4 h-4 text-gray-400" />
+        </button>
+      </div>
+      <div class="p-5 space-y-4">
+        <div>
+          <label class="text-sm font-semibold text-gray-700 mb-1.5 block">Angbao Amount (RM)</label>
+          <input type="number" min="0" bind:value={angbaoAmount} placeholder="0"
+            class="w-full px-4 py-3 border border-black/[0.08] rounded-xl text-sm bg-white/80 focus:border-red focus:ring-2 focus:ring-red/10 outline-none transition-all min-h-[48px]" />
+        </div>
+        <div>
+          <label class="text-sm font-semibold text-gray-700 mb-1.5 block">Gift Item</label>
+          <input bind:value={giftItem} placeholder="Optional"
+            class="w-full px-4 py-3 border border-black/[0.08] rounded-xl text-sm bg-white/80 focus:border-red focus:ring-2 focus:ring-red/10 outline-none transition-all min-h-[48px]" />
+        </div>
+      </div>
+      <div class="flex gap-3 p-5 pt-0">
+        <button onclick={confirmCheckIn}
+          class="flex-1 py-3 bg-red text-white rounded-xl text-sm font-semibold hover:bg-red-light transition-colors flex items-center justify-center gap-2">
+          <UserCheck class="w-4 h-4" /> Confirm Check In
+        </button>
+        <button onclick={() => showCheckinModal = false}
+          class="px-6 py-3 border border-black/[0.06] bg-white/90 rounded-xl text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors">
+          Cancel
+        </button>
+      </div>
+    </div>
+  </div>
+{/if}
 
 <style>
   .drawer-overlay {
@@ -371,19 +420,6 @@
       animation: slideInRight 300ms cubic-bezier(0.2, 0.8, 0.2, 1);
       box-shadow: -12px 0 48px rgba(0, 0, 0, 0.15), -2px 0 8px rgba(0, 0, 0, 0.08);
     }
-  }
-
-  .drawer-handle {
-    display: flex;
-    justify-content: center;
-    padding: 0.75rem 0 0.25rem;
-  }
-
-  .drawer-handle-bar {
-    width: 2.5rem;
-    height: 0.25rem;
-    background: rgba(0, 0, 0, 0.15);
-    border-radius: 9999px;
   }
 
   .drawer-pill {
@@ -757,5 +793,9 @@
   @keyframes slideInRight {
     from { transform: translateX(100%); }
     to { transform: translateX(0); }
+  }
+
+  :global(.animate-slideUp) {
+    animation: slideUp 300ms cubic-bezier(0.2, 0.8, 0.2, 1);
   }
 </style>
