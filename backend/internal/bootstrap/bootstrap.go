@@ -122,6 +122,7 @@ func Init(env config.Env) *App {
 
 	server := config.NewFuegoServer(env)
 
+	fuego.Use(server, middleware.ProxyAwareMiddleware)
 	fuego.Use(server, middleware.CORSMiddleware)
 
 	// Serve uploaded files (block directory listing)
