@@ -44,6 +44,7 @@
   let sheetLastTime = $state(0);
   let sheetAnimFrame = $state(0);
   let prefersReducedMotion = $state(false);
+  let mqHandler: ((e: MediaQueryListEvent) => void) | null = null;
 
   // Sheet collapsed state (peek mode)
   let sheetCollapsed = $state(false);
@@ -89,7 +90,8 @@
     // Check reduced motion preference
     const mq = window.matchMedia('(prefers-reduced-motion: reduce)');
     prefersReducedMotion = mq.matches;
-    mq.addEventListener('change', (e) => prefersReducedMotion = e.matches);
+    mqHandler = (e: MediaQueryListEvent) => prefersReducedMotion = e.matches;
+    mq.addEventListener('change', mqHandler);
 
     const wid = page.params.wid ?? '';
     if (wid) setWeddingId(wid);
@@ -114,6 +116,10 @@
   onDestroy(() => {
     clearInterval(timer);
     if (sheetAnimFrame) cancelAnimationFrame(sheetAnimFrame);
+    if (mqHandler) {
+      const mq = window.matchMedia('(prefers-reduced-motion: reduce)');
+      mq.removeEventListener('change', mqHandler);
+    }
   });
 
   function toggleFullscreen() {
@@ -156,6 +162,7 @@
   // Bottom sheet drag handlers (Apple-style interruptible gesture)
   function onSheetPointerDown(e: PointerEvent) {
     if (prefersReducedMotion) return;
+    e.stopPropagation();
     sheetDragging = true;
     sheetStartY = e.clientY - sheetY;
     sheetLastY = e.clientY;
@@ -255,7 +262,7 @@
 
 <svelte:head>
   <title>Kiosk – WeddingDB</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1, user-scalable=no" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
 </svelte:head>
@@ -327,10 +334,9 @@
           <!-- Drag handle — tap to dismiss, drag to collapse -->
           <div
             class="sheet-handle"
-            onclick={backToSearch}
-            onpointerdown={onSheetPointerDown}
+            onpointerdown={(e) => { onSheetPointerDown(e); }}
             onpointermove={onSheetPointerMove}
-            onpointerup={onSheetPointerUp}
+            onpointerup={(e) => { onSheetPointerUp(); if (!sheetDragging && Math.abs(sheetY) < 5) backToSearch(); }}
           >
             <div class="handle-bar"></div>
           </div>
@@ -355,7 +361,7 @@
                   <span class="guest-table-badge">Table {selectedTableName}</span>
                   <span class="guest-pax">{selectedGuest.pax} pax</span>
                   {#if selectedGuest.rsvp && selectedGuest.rsvp !== 'no_response'}
-                    <span class="guest-rsvp-badge">{selectedGuest.rsvp}</span>
+                    <span class="guest-rsvp-badge rsvp-{selectedGuest.rsvp}">{selectedGuest.rsvp}</span>
                   {/if}
                 </div>
               </div>
@@ -645,9 +651,10 @@
     z-index: 30;
     /* Translucent material */
     background: rgba(255, 255, 255, 0.88);
-    backdrop-filter: blur(24px) saturate(200%);
-    -webkit-backdrop-filter: blur(24px) saturate(200%);
+    backdrop-filter: blur(16px) saturate(200%);
+    -webkit-backdrop-filter: blur(16px) saturate(200%);
     border: 1px solid rgba(255, 255, 255, 0.6);
+    padding-bottom: env(safe-area-inset-bottom, 0px);
     border-radius: 1.25rem 1.25rem 1rem 1rem;
     box-shadow:
       0 -4px 24px rgba(0, 0, 0, 0.08),
@@ -808,11 +815,12 @@
     font-weight: 600;
     padding: 0.125rem 0.5rem;
     border-radius: 9999px;
-    background: #ECFDF5;
-    color: #059669;
-    border: 1px solid #A7F3D0;
     text-transform: capitalize;
   }
+  .guest-rsvp-badge:where(:global(.rsvp-confirmed)) { background: #ECFDF5; color: #059669; border: 1px solid #A7F3D0; }
+  .guest-rsvp-badge:where(:global(.rsvp-pending)) { background: #FFFBEB; color: #D97706; border: 1px solid #FDE68A; }
+  .guest-rsvp-badge:where(:global(.rsvp-declined)) { background: #FEF2F2; color: #DC2626; border: 1px solid #FECACA; }
+  .guest-rsvp-badge:where(:global(.rsvp-no_response)) { background: #F3F4F6; color: #6B7280; border: 1px solid #E5E7EB; }
 
   /* ---------- Seat Display ---------- */
   .seat-display {

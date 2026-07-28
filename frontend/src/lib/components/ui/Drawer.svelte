@@ -9,7 +9,7 @@
   import { weddingId } from '$lib/stores/weddingId';
   import { updateGuest, createGuest, checkInGuest, checkOutGuest, getGuest } from '$lib/api/guests';
   import { get } from 'svelte/store';
-  let { guest, tables = [], onClose, startEditing = false, createMode = false, readonly = false, onCheckIn, onCheckOut }: { guest?: Guest; tables?: BanquetTable[]; onClose: () => void; startEditing?: boolean; createMode?: boolean; readonly?: boolean; onCheckIn?: (g: Guest) => void; onCheckOut?: (g: Guest) => void } = $props();
+  let { guest, tables = [], onClose, startEditing = false, createMode = false, readonly = false }: { guest?: Guest; tables?: BanquetTable[]; onClose: () => void; startEditing?: boolean; createMode?: boolean; readonly?: boolean } = $props();
 
   let tableName = $derived(guest ? (tables.find(t => t.id === guest.tableId)?.name ?? guest.tableId ?? '—') : '—');
 
@@ -191,7 +191,6 @@
       if (angbaoAmount) guest.angbaoAmount = Number(angbaoAmount);
       if (giftItem) guest.giftItem = giftItem;
       localGuest = { ...guest };
-      onCheckIn?.(guest);
       showCheckinModal = false;
       addToast(`${guest.name} checked in`, 'success');
       await refreshGuest();
@@ -208,7 +207,6 @@
       guest.checkedIn = false;
       guest.checkedInAt = undefined;
       localGuest = { ...guest };
-      onCheckOut?.(guest);
       addToast(`${guest.name} checked out`, 'success');
       await refreshGuest();
     } catch (e: any) {

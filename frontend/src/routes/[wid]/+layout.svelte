@@ -4,7 +4,7 @@
   import Sidebar from '$lib/components/layout/Sidebar.svelte';
   import Header from '$lib/components/layout/Header.svelte';
   import Drawer from '$lib/components/ui/Drawer.svelte';
-  import { selectedGuest, isDrawerOpen, drawerStartEditing, drawerCreateMode, drawerReadonly, sidebarCollapsed } from '$lib/stores';
+  import { selectedGuest, isDrawerOpen, drawerStartEditing, drawerCreateMode, sidebarCollapsed } from '$lib/stores';
   import { weddingId, setWeddingId } from '$lib/stores/weddingId';
   import { validateToken } from '$lib/utils/auth';
   import { listGuests } from '$lib/api/guests';
@@ -52,7 +52,7 @@
       <div
         class="sidebar-backdrop lg:hidden"
         onclick={() => $sidebarCollapsed = true}
-        onkeydown={(e) => { if (e.key === 'Enter' || e.key === ' ') $sidebarCollapsed = true; }}
+        onkeydown={(e) => { if (e.key === 'Escape') $sidebarCollapsed = true; }}
         role="button"
         tabindex="-1"
       ></div>
@@ -70,8 +70,8 @@
 {/if}
 
 {#if $isDrawerOpen && ($selectedGuest || $drawerCreateMode)}
-  {#key `${$drawerStartEditing}-${$drawerCreateMode}-${$drawerReadonly}`}
-    <Drawer guest={$selectedGuest ?? undefined} tables={tables} startEditing={$drawerStartEditing} createMode={$drawerCreateMode} readonly={$drawerReadonly} onClose={() => { $isDrawerOpen = false; $selectedGuest = null; $drawerStartEditing = false; $drawerCreateMode = false; $drawerReadonly = false; }} />
+  {#key `${$drawerStartEditing}-${$drawerCreateMode}`}
+    <Drawer guest={$selectedGuest ?? undefined} tables={tables} startEditing={$drawerStartEditing} createMode={$drawerCreateMode} onClose={() => { $isDrawerOpen = false; $selectedGuest = null; $drawerStartEditing = false; $drawerCreateMode = false; }} />
   {/key}
 {/if}
 
@@ -131,11 +131,7 @@
     }
   }
 
-  @media (min-width: 1024px) {
-    .main-content {
-      padding-top: 4rem;
-    }
-  }
+
 
   @keyframes spin {
     to { transform: rotate(360deg); }
