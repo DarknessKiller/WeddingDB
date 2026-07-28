@@ -18,17 +18,70 @@
   let pageTitle = $derived(TITLES[page.url.pathname] || 'WeddingDB');
 </script>
 
-<header class="h-14 sm:h-16 bg-white border-b border-gray-200 flex items-center px-4 sm:px-7 flex-shrink-0 gap-3 relative z-50">
+<header class="app-header">
   <button
     onclick={() => $sidebarCollapsed = !$sidebarCollapsed}
-    class="lg:hidden p-2 -ml-2 rounded-xl hover:bg-gray-100 transition-colors flex-shrink-0"
+    class="header-menu-btn"
     aria-label="Toggle menu"
   >
     {#if $sidebarCollapsed}
-      <Menu class="w-5 h-5 text-gray-700" />
+      <Menu class="w-5 h-5" />
     {:else}
-      <X class="w-5 h-5 text-gray-700" />
+      <X class="w-5 h-5" />
     {/if}
   </button>
-  <span class="text-lg font-bold text-gray-900 tracking-tight">{pageTitle}</span>
+  <span class="header-title">{pageTitle}</span>
 </header>
+
+<style>
+  .app-header {
+    height: 3.5rem;
+    display: flex;
+    align-items: center;
+    padding: 0 1rem;
+    gap: 0.75rem;
+    flex-shrink: 0;
+    position: relative;
+    z-index: 50;
+    /* Apple translucent material */
+    background: rgba(255, 255, 255, 0.72);
+    backdrop-filter: blur(20px) saturate(180%);
+    -webkit-backdrop-filter: blur(20px) saturate(180%);
+    border-bottom: 1px solid rgba(0, 0, 0, 0.06);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.8);
+  }
+
+  @media (min-width: 640px) {
+    .app-header {
+      height: 4rem;
+      padding: 0 1.75rem;
+    }
+  }
+
+  .header-menu-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 2.5rem;
+    height: 2.5rem;
+    border-radius: 0.75rem;
+    color: #374151;
+    flex-shrink: 0;
+    min-width: 44px;
+    min-height: 44px;
+    margin-left: -0.5rem;
+    transition: background 100ms ease, transform 100ms ease;
+  }
+
+  .header-menu-btn:active {
+    transform: scale(0.92);
+    background: rgba(0, 0, 0, 0.06);
+  }
+
+  .header-title {
+    font-size: 1.125rem;
+    font-weight: 700;
+    color: #111827;
+    letter-spacing: -0.02em;
+  }
+</style>

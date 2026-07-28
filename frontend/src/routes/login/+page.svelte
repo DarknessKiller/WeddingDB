@@ -41,7 +41,6 @@
       }
       const wedding = await res.json();
       addToast('Wedding created', 'success');
-      // Auto-select the new wedding
       await selectWedding(wedding.id);
     } catch {
       addToast('Network error', 'error');
@@ -81,7 +80,6 @@
 
       if (weddings.length === 0) {
         if (loginRole === 'admin') {
-          // Admin with no weddings — show selector with create option
           step = 'select';
           return;
         }
@@ -89,11 +87,9 @@
         return;
       }
       if (weddings.length === 1) {
-        // Auto-select single wedding
         await selectWedding(weddings[0].id);
         return;
       }
-      // Multiple weddings — show selector
       step = 'select';
     } catch (err) {
       addToast('Network error', 'error');
@@ -131,47 +127,46 @@
   }
 </script>
 
-<div class="min-h-screen flex items-center justify-center bg-warm-50 px-4">
-  <div class="w-full max-w-sm">
+<svelte:head><title>Sign In – WeddingDB</title></svelte:head>
+
+<div class="auth-page">
+  <div class="auth-card">
     <!-- Logo -->
-    <div class="text-center mb-8">
-      <div class="w-16 h-16 bg-deep-red rounded-2xl flex items-center justify-center mx-auto mb-4 shadow-lg">
-        <span class="text-2xl font-bold text-white font-serif">W</span>
-      </div>
-      <h1 class="text-2xl font-bold text-gray-900 font-serif">WeddingDB</h1>
-      <p class="text-sm text-gray-500 mt-1">Sign in to manage your wedding</p>
+    <div class="auth-hero">
+      <div class="auth-logo">囍</div>
+      <h1 class="auth-title">WeddingDB</h1>
+      <p class="auth-subtitle">Sign in to manage your wedding</p>
     </div>
 
     {#if step === 'login'}
-      <!-- Login Form -->
-      <form onsubmit={handleLogin} class="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 space-y-4">
-        <div>
-          <label for="email" class="block text-sm font-medium text-gray-700 mb-1">Email</label>
+      <form onsubmit={handleLogin} class="auth-form">
+        <div class="form-field">
+          <label for="email" class="form-label">Email</label>
           <input
             id="email"
             type="email"
             bind:value={email}
             required
-            class="w-full px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-deep-red/20 focus:border-deep-red transition-colors"
+            class="form-input"
             placeholder="admin@weddingdb.local"
           />
         </div>
 
-        <div>
-          <label for="password" class="block text-sm font-medium text-gray-700 mb-1">Password</label>
-          <div class="relative">
+        <div class="form-field">
+          <label for="password" class="form-label">Password</label>
+          <div class="password-wrap">
             <input
               id="password"
               type={showPassword ? 'text' : 'password'}
               bind:value={password}
               required
-              class="w-full px-3 py-2 pr-10 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-deep-red/20 focus:border-deep-red transition-colors"
+              class="form-input password-input"
               placeholder="Enter password"
             />
             <button
               type="button"
               onclick={() => showPassword = !showPassword}
-              class="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+              class="password-toggle"
             >
               {#if showPassword}
                 <EyeOff size={18} />
@@ -185,10 +180,10 @@
         <button
           type="submit"
           disabled={loading}
-          class="w-full flex items-center justify-center gap-2 bg-deep-red text-white py-2.5 rounded-lg font-medium hover:bg-deep-red/90 disabled:opacity-50 transition-colors"
+          class="auth-submit"
         >
           {#if loading}
-            <div class="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
+            <div class="btn-spinner"></div>
           {:else}
             <LogIn size={18} />
           {/if}
@@ -196,64 +191,56 @@
         </button>
       </form>
 
-      <p class="text-center text-sm text-gray-500 mt-4">
-        Need an account? <a href="/register" class="text-deep-red font-medium hover:underline">Register</a>
+      <p class="auth-footer">
+        Need an account? <a href="/register" class="auth-link">Register</a>
       </p>
     {:else}
-      <!-- Wedding Selector -->
-      <div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
+      <div class="auth-form">
         {#if availableWeddings.length === 0 && loginRole === 'admin'}
           {#if !showCreate}
-            <div class="text-center py-4">
-              <Calendar class="w-10 h-10 text-gray-300 mx-auto mb-3" />
-              <p class="text-sm text-gray-500 mb-4">No weddings yet. Create your first wedding to get started.</p>
-              <button onclick={() => showCreate = true}
-                class="w-full px-4 py-2.5 bg-deep-red text-white rounded-xl text-sm font-semibold hover:bg-deep-red/90 transition-colors">
+            <div class="empty-state">
+              <Calendar class="empty-icon" />
+              <p class="empty-text">No weddings yet. Create your first wedding to get started.</p>
+              <button onclick={() => showCreate = true} class="auth-submit">
                 Create Wedding
               </button>
             </div>
           {:else}
-            <h2 class="text-sm font-semibold text-gray-900 mb-4">New Wedding</h2>
-            <div class="space-y-3">
-              <div>
-                <label for="wedding-name" class="block text-xs font-medium text-gray-600 mb-1">Wedding Name</label>
-                <input id="wedding-name" type="text" bind:value={newName} placeholder="e.g. John & Jane's Wedding"
-                  class="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-deep-red/20 focus:border-deep-red" />
+            <h2 class="section-title">New Wedding</h2>
+            <div class="form-grid">
+              <div class="form-field">
+                <label for="wedding-name" class="form-label">Wedding Name</label>
+                <input id="wedding-name" type="text" bind:value={newName} placeholder="e.g. John & Jane's Wedding" class="form-input" />
               </div>
-              <div>
-                <label for="wedding-date" class="block text-xs font-medium text-gray-600 mb-1">Date</label>
-                <input id="wedding-date" type="date" bind:value={newDate}
-                  class="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-deep-red/20 focus:border-deep-red" />
+              <div class="form-field">
+                <label for="wedding-date" class="form-label">Date</label>
+                <input id="wedding-date" type="date" bind:value={newDate} class="form-input" />
               </div>
-              <div class="flex gap-2">
-                <button onclick={handleCreateWedding} disabled={creating || !newName || !newDate}
-                  class="flex-1 py-2.5 bg-deep-red text-white rounded-xl text-sm font-semibold hover:bg-deep-red/90 disabled:opacity-50 transition-colors">
+              <div class="form-row">
+                <button onclick={handleCreateWedding} disabled={creating || !newName || !newDate} class="auth-submit">
                   {creating ? 'Creating...' : 'Create & Continue'}
                 </button>
-                <button onclick={() => showCreate = false}
-                  class="px-4 py-2.5 border border-gray-200 rounded-xl text-sm font-medium text-gray-600 hover:bg-gray-50 transition-colors">
-                  Cancel
-                </button>
+                <button onclick={() => showCreate = false} class="auth-cancel">Cancel</button>
               </div>
             </div>
           {/if}
         {:else}
-          <h2 class="text-sm font-semibold text-gray-900 mb-4">Select a wedding</h2>
-          <div class="space-y-2">
+          <h2 class="section-title">Select a wedding</h2>
+          <div class="wedding-list">
             {#each availableWeddings as w}
               <button
                 onclick={() => selectWedding(w.id)}
                 disabled={loading}
-                class="w-full flex items-center gap-3 p-3 rounded-xl border border-gray-200 hover:border-deep-red hover:bg-red-50 transition-all text-left group"
+                class="wedding-item"
               >
-                <div class="w-10 h-10 rounded-lg bg-red-50 border border-red-100 flex items-center justify-center text-red flex-shrink-0">
+                <div class="wedding-icon">
                   <Calendar class="w-5 h-5" />
                 </div>
-                <div class="flex-1 min-w-0">
-                  <div class="font-semibold text-gray-900 text-sm">{w.name}</div>
-                  <div class="text-xs text-gray-500">{w.date ? new Date(w.date).toLocaleDateString() : 'No date'}</div>
+                <div class="wedding-info">
+                  <div class="wedding-name">{w.name}</div>
+                  <div class="wedding-date">{w.date ? new Date(w.date).toLocaleDateString() : 'No date'}</div>
                 </div>
-                <ChevronRight class="w-4 h-4 text-gray-400 group-hover:text-deep-red transition-colors" />
+                <ChevronRight class="wedding-chevron" />
               </button>
             {/each}
           </div>
@@ -262,3 +249,308 @@
     {/if}
   </div>
 </div>
+
+<style>
+  .auth-page {
+    min-height: 100dvh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 1rem;
+    background: linear-gradient(180deg, #fef2f2 0%, #faf7f2 50%, white 100%);
+  }
+
+  .auth-card {
+    width: 100%;
+    max-width: 24rem;
+  }
+
+  .auth-hero {
+    text-align: center;
+    margin-bottom: 2rem;
+  }
+
+  .auth-logo {
+    width: 4rem;
+    height: 4rem;
+    background: #A11217;
+    border-radius: 1rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin: 0 auto 1rem;
+    color: #D4AF37;
+    font-size: 1.5rem;
+    font-weight: 700;
+    font-family: 'Noto Serif SC', 'Songti SC', serif;
+    box-shadow: 0 8px 32px rgba(161, 18, 23, 0.25);
+  }
+
+  .auth-title {
+    font-size: 1.5rem;
+    font-weight: 800;
+    color: #111827;
+    letter-spacing: -0.025em;
+    font-family: 'Noto Serif SC', 'Songti SC', serif;
+  }
+
+  .auth-subtitle {
+    font-size: 0.875rem;
+    color: #6b7280;
+    margin-top: 0.25rem;
+  }
+
+  .auth-form {
+    background: rgba(255, 255, 255, 0.92);
+    backdrop-filter: blur(20px) saturate(180%);
+    -webkit-backdrop-filter: blur(20px) saturate(180%);
+    border: 1px solid rgba(0, 0, 0, 0.06);
+    border-radius: 1.25rem;
+    padding: 1.5rem;
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+    box-shadow: 0 4px 24px rgba(0, 0, 0, 0.06);
+  }
+
+  .form-field {
+    display: flex;
+    flex-direction: column;
+    gap: 0.375rem;
+  }
+
+  .form-label {
+    font-size: 0.8125rem;
+    font-weight: 600;
+    color: #374151;
+  }
+
+  .form-input {
+    width: 100%;
+    padding: 0.75rem 1rem;
+    border: 1.5px solid rgba(0, 0, 0, 0.08);
+    border-radius: 0.75rem;
+    font-size: 0.9375rem;
+    color: #111827;
+    background: white;
+    outline: none;
+    transition: border-color 200ms ease, box-shadow 200ms ease, transform 100ms ease;
+    min-height: 48px;
+  }
+
+  .form-input:focus {
+    border-color: #A11217;
+    box-shadow: 0 0 0 3px rgba(161, 18, 23, 0.1);
+  }
+
+  .form-input:active {
+    transform: scale(0.99);
+  }
+
+  .form-input::placeholder {
+    color: #9ca3af;
+  }
+
+  .password-wrap {
+    position: relative;
+  }
+
+  .password-input {
+    padding-right: 3rem;
+  }
+
+  .password-toggle {
+    position: absolute;
+    right: 0.5rem;
+    top: 50%;
+    transform: translateY(-50%);
+    padding: 0.5rem;
+    color: #9ca3af;
+    min-width: 44px;
+    min-height: 44px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 0.5rem;
+    transition: color 100ms ease;
+  }
+
+  .password-toggle:hover {
+    color: #4b5563;
+  }
+
+  .auth-submit {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    width: 100%;
+    padding: 0.875rem;
+    background: #A11217;
+    color: white;
+    border-radius: 0.75rem;
+    font-size: 0.9375rem;
+    font-weight: 600;
+    transition: background 100ms ease, transform 100ms ease, opacity 100ms ease;
+    min-height: 48px;
+  }
+
+  .auth-submit:active {
+    transform: scale(0.98);
+  }
+
+  .auth-submit:disabled {
+    opacity: 0.5;
+  }
+
+  .auth-cancel {
+    padding: 0.875rem;
+    border: 1.5px solid rgba(0, 0, 0, 0.08);
+    border-radius: 0.75rem;
+    font-size: 0.9375rem;
+    font-weight: 500;
+    color: #4b5563;
+    background: white;
+    transition: background 100ms ease, transform 100ms ease;
+  }
+
+  .auth-cancel:active {
+    transform: scale(0.98);
+  }
+
+  .btn-spinner {
+    width: 1.125rem;
+    height: 1.125rem;
+    border: 2px solid rgba(255, 255, 255, 0.3);
+    border-top-color: white;
+    border-radius: 50%;
+    animation: spin 600ms linear infinite;
+  }
+
+  .auth-footer {
+    text-align: center;
+    font-size: 0.875rem;
+    color: #6b7280;
+    margin-top: 1rem;
+  }
+
+  .auth-link {
+    color: #A11217;
+    font-weight: 600;
+    text-decoration: none;
+  }
+
+  .auth-link:hover {
+    text-decoration: underline;
+  }
+
+  .section-title {
+    font-size: 0.875rem;
+    font-weight: 600;
+    color: #111827;
+  }
+
+  .form-grid {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+  }
+
+  .form-row {
+    display: flex;
+    gap: 0.5rem;
+  }
+
+  .form-row .auth-submit {
+    flex: 1;
+  }
+
+  .form-row .auth-cancel {
+    flex: 1;
+  }
+
+  .empty-state {
+    text-align: center;
+    padding: 1rem 0;
+  }
+
+  .empty-icon {
+    width: 2.5rem;
+    height: 2.5rem;
+    color: #d1d5db;
+    margin: 0 auto 0.75rem;
+  }
+
+  .empty-text {
+    font-size: 0.875rem;
+    color: #6b7280;
+    margin-bottom: 1rem;
+  }
+
+  .wedding-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+  }
+
+  .wedding-item {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.875rem;
+    border: 1.5px solid rgba(0, 0, 0, 0.06);
+    border-radius: 0.875rem;
+    text-align: left;
+    transition: border-color 150ms ease, background 150ms ease, transform 100ms ease;
+    width: 100%;
+  }
+
+  .wedding-item:active {
+    transform: scale(0.98);
+  }
+
+  .wedding-item:hover {
+    border-color: rgba(161, 18, 23, 0.3);
+    background: #fef2f2;
+  }
+
+  .wedding-icon {
+    width: 2.5rem;
+    height: 2.5rem;
+    border-radius: 0.625rem;
+    background: #FDEAEA;
+    border: 1px solid #FAC5C5;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #A11217;
+    flex-shrink: 0;
+  }
+
+  .wedding-info {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .wedding-name {
+    font-weight: 600;
+    color: #111827;
+    font-size: 0.875rem;
+  }
+
+  .wedding-date {
+    font-size: 0.75rem;
+    color: #6b7280;
+  }
+
+  .wedding-chevron {
+    width: 1rem;
+    height: 1rem;
+    color: #d1d5db;
+    flex-shrink: 0;
+  }
+
+  @keyframes spin {
+    to { transform: rotate(360deg); }
+  }
+</style>

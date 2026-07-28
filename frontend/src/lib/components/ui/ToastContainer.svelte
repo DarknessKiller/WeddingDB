@@ -1,51 +1,71 @@
 <script lang="ts">
   import { toasts, type Toast } from '$lib/stores';
   import { CheckCircle, XCircle, Info, X } from 'lucide-svelte';
-
-  const icons: Record<string, typeof CheckCircle> = {
-    success: CheckCircle,
-    error: XCircle,
-    info: Info,
-  };
-
-  const colors: Record<string, string> = {
-    success: 'border-l-emerald-500',
-    error: 'border-l-red-500',
-    info: 'border-l-blue-500',
-  };
-
-  function getIcon(type: string) {
-    return icons[type] ?? Info;
-  }
-
-  function getColor(type: string) {
-    return colors[type] ?? 'border-l-blue-500';
-  }
 </script>
 
-<div class="fixed top-5 right-5 z-[1000] flex flex-col gap-2.5">
+<div class="toast-container">
   {#each $toasts as toast (toast.id)}
-    <div
-      class="bg-white border border-gray-200 rounded-lg shadow-lg px-5 py-3.5 flex items-center gap-3 min-w-[300px] animate-slide-in border-l-4 {getColor(toast.type)}"
-    >
+    <div class="toast-item toast-{toast.type}">
       {#if toast.type === 'success'}
-        <CheckCircle class="w-5 h-5 flex-shrink-0 text-emerald-500" />
+        <CheckCircle class="toast-icon toast-icon-success" />
       {:else if toast.type === 'error'}
-        <XCircle class="w-5 h-5 flex-shrink-0 text-red" />
+        <XCircle class="toast-icon toast-icon-error" />
       {:else}
-        <Info class="w-5 h-5 flex-shrink-0 text-blue-500" />
+        <Info class="toast-icon toast-icon-info" />
       {/if}
-      <span class="text-sm font-medium text-gray-700">{toast.message}</span>
+      <span class="toast-message">{toast.message}</span>
     </div>
   {/each}
 </div>
 
 <style>
-  @keyframes slide-in {
-    from { opacity: 0; transform: translateX(40px); }
-    to { opacity: 1; transform: translateX(0); }
+  .toast-container {
+    position: fixed;
+    top: 1.25rem;
+    right: 1.25rem;
+    z-index: 1000;
+    display: flex;
+    flex-direction: column;
+    gap: 0.625rem;
   }
-  .animate-slide-in {
-    animation: slide-in 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+
+  .toast-item {
+    background: rgba(255, 255, 255, 0.92);
+    backdrop-filter: blur(20px) saturate(180%);
+    -webkit-backdrop-filter: blur(20px) saturate(180%);
+    border: 1px solid rgba(0, 0, 0, 0.06);
+    border-radius: 0.875rem;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.12), inset 0 1px 0 rgba(255, 255, 255, 0.9);
+    padding: 0.875rem 1.25rem;
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    min-width: 18rem;
+    animation: toastIn 350ms cubic-bezier(0.2, 0.8, 0.2, 1);
+  }
+
+  .toast-success { border-left: 3px solid #059669; }
+  .toast-error { border-left: 3px solid #DC2626; }
+  .toast-info { border-left: 3px solid #2563EB; }
+
+  .toast-icon {
+    width: 1.25rem;
+    height: 1.25rem;
+    flex-shrink: 0;
+  }
+
+  .toast-icon-success { color: #059669; }
+  .toast-icon-error { color: #DC2626; }
+  .toast-icon-info { color: #2563EB; }
+
+  .toast-message {
+    font-size: 0.875rem;
+    font-weight: 500;
+    color: #374151;
+  }
+
+  @keyframes toastIn {
+    from { opacity: 0; transform: translateX(1rem) scale(0.95); }
+    to { opacity: 1; transform: translateX(0) scale(1); }
   }
 </style>

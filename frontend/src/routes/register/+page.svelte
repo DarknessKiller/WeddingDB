@@ -35,83 +35,115 @@
 
 <svelte:head><title>Register – WeddingDB</title></svelte:head>
 
-<div class="min-h-screen flex items-center justify-center bg-warm-50 px-4">
-  <div class="w-full max-w-sm">
-    <div class="text-center mb-8">
-      <div class="w-16 h-16 bg-deep-red rounded-2xl flex items-center justify-center mx-auto mb-4 shadow-lg">
-        <span class="text-2xl font-bold text-white font-serif">W</span>
-      </div>
-      <h1 class="text-2xl font-bold text-gray-900 font-serif">WeddingDB</h1>
-      <p class="text-sm text-gray-500 mt-1">Create your admin account</p>
+<div class="auth-page">
+  <div class="auth-card">
+    <div class="auth-hero">
+      <div class="auth-logo">囍</div>
+      <h1 class="auth-title">WeddingDB</h1>
+      <p class="auth-subtitle">Create your admin account</p>
     </div>
 
-    <form onsubmit={handleRegister} class="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 space-y-4">
-      <div>
-        <label for="name" class="block text-sm font-medium text-gray-700 mb-1">Full Name</label>
-        <input
-          id="name"
-          type="text"
-          bind:value={name}
-          required
-          class="w-full px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-deep-red/20 focus:border-deep-red transition-colors"
-          placeholder="Your name"
-        />
+    <form onsubmit={handleRegister} class="auth-form">
+      <div class="form-field">
+        <label for="name" class="form-label">Full Name</label>
+        <input id="name" type="text" bind:value={name} required class="form-input" placeholder="Your name" />
       </div>
 
-      <div>
-        <label for="email" class="block text-sm font-medium text-gray-700 mb-1">Email</label>
-        <input
-          id="email"
-          type="email"
-          bind:value={email}
-          required
-          class="w-full px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-deep-red/20 focus:border-deep-red transition-colors"
-          placeholder="you@example.com"
-        />
+      <div class="form-field">
+        <label for="email" class="form-label">Email</label>
+        <input id="email" type="email" bind:value={email} required class="form-input" placeholder="you@example.com" />
       </div>
 
-      <div>
-        <label for="password" class="block text-sm font-medium text-gray-700 mb-1">Password</label>
-        <div class="relative">
+      <div class="form-field">
+        <label for="password" class="form-label">Password</label>
+        <div class="password-wrap">
           <input
             id="password"
             type={showPassword ? 'text' : 'password'}
             bind:value={password}
             required
             minlength="8"
-            class="w-full px-3 py-2 pr-10 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-deep-red/20 focus:border-deep-red transition-colors"
+            class="form-input password-input"
             placeholder="Min 8 characters"
           />
-          <button
-            type="button"
-            onclick={() => showPassword = !showPassword}
-            class="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
-          >
-            {#if showPassword}
-              <EyeOff size={18} />
-            {:else}
-              <Eye size={18} />
-            {/if}
+          <button type="button" onclick={() => showPassword = !showPassword} class="password-toggle">
+            {#if showPassword}<EyeOff size={18} />{:else}<Eye size={18} />{/if}
           </button>
         </div>
       </div>
 
-      <button
-        type="submit"
-        disabled={loading}
-        class="w-full flex items-center justify-center gap-2 bg-deep-red text-white py-2.5 rounded-lg font-medium hover:bg-deep-red/90 disabled:opacity-50 transition-colors"
-      >
-        {#if loading}
-          <div class="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
-        {:else}
-          <UserPlus size={18} />
-        {/if}
+      <button type="submit" disabled={loading} class="auth-submit">
+        {#if loading}<div class="btn-spinner"></div>{:else}<UserPlus size={18} />{/if}
         {loading ? 'Creating account...' : 'Create account'}
       </button>
 
-      <p class="text-center text-sm text-gray-500">
-        Already have an account? <a href="/login" class="text-deep-red font-medium hover:underline">Sign in</a>
+      <p class="auth-footer">
+        Already have an account? <a href="/login" class="auth-link">Sign in</a>
       </p>
     </form>
   </div>
 </div>
+
+<style>
+  .auth-page {
+    min-height: 100dvh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 1rem;
+    background: linear-gradient(180deg, #fef2f2 0%, #faf7f2 50%, white 100%);
+  }
+  .auth-card { width: 100%; max-width: 24rem; }
+  .auth-hero { text-align: center; margin-bottom: 2rem; }
+  .auth-logo {
+    width: 4rem; height: 4rem; background: #A11217; border-radius: 1rem;
+    display: flex; align-items: center; justify-content: center;
+    margin: 0 auto 1rem; color: #D4AF37; font-size: 1.5rem; font-weight: 700;
+    font-family: 'Noto Serif SC', 'Songti SC', serif;
+    box-shadow: 0 8px 32px rgba(161, 18, 23, 0.25);
+  }
+  .auth-title { font-size: 1.5rem; font-weight: 800; color: #111827; letter-spacing: -0.025em; font-family: 'Noto Serif SC', 'Songti SC', serif; }
+  .auth-subtitle { font-size: 0.875rem; color: #6b7280; margin-top: 0.25rem; }
+  .auth-form {
+    background: rgba(255, 255, 255, 0.92); backdrop-filter: blur(20px) saturate(180%);
+    -webkit-backdrop-filter: blur(20px) saturate(180%); border: 1px solid rgba(0, 0, 0, 0.06);
+    border-radius: 1.25rem; padding: 1.5rem; display: flex; flex-direction: column; gap: 1rem;
+    box-shadow: 0 4px 24px rgba(0, 0, 0, 0.06);
+  }
+  .form-field { display: flex; flex-direction: column; gap: 0.375rem; }
+  .form-label { font-size: 0.8125rem; font-weight: 600; color: #374151; }
+  .form-input {
+    width: 100%; padding: 0.75rem 1rem; border: 1.5px solid rgba(0, 0, 0, 0.08);
+    border-radius: 0.75rem; font-size: 0.9375rem; color: #111827; background: white;
+    outline: none; transition: border-color 200ms ease, box-shadow 200ms ease, transform 100ms ease;
+    min-height: 48px;
+  }
+  .form-input:focus { border-color: #A11217; box-shadow: 0 0 0 3px rgba(161, 18, 23, 0.1); }
+  .form-input:active { transform: scale(0.99); }
+  .form-input::placeholder { color: #9ca3af; }
+  .password-wrap { position: relative; }
+  .password-input { padding-right: 3rem; }
+  .password-toggle {
+    position: absolute; right: 0.5rem; top: 50%; transform: translateY(-50%);
+    padding: 0.5rem; color: #9ca3af; min-width: 44px; min-height: 44px;
+    display: flex; align-items: center; justify-content: center; border-radius: 0.5rem;
+  }
+  .password-toggle:hover { color: #4b5563; }
+  .auth-submit {
+    display: flex; align-items: center; justify-content: center; gap: 0.5rem;
+    width: 100%; padding: 0.875rem; background: #A11217; color: white;
+    border-radius: 0.75rem; font-size: 0.9375rem; font-weight: 600;
+    transition: background 100ms ease, transform 100ms ease, opacity 100ms ease;
+    min-height: 48px;
+  }
+  .auth-submit:active { transform: scale(0.98); }
+  .auth-submit:disabled { opacity: 0.5; }
+  .btn-spinner {
+    width: 1.125rem; height: 1.125rem; border: 2px solid rgba(255, 255, 255, 0.3);
+    border-top-color: white; border-radius: 50%; animation: spin 600ms linear infinite;
+  }
+  .auth-footer { text-align: center; font-size: 0.875rem; color: #6b7280; margin-top: 0.5rem; }
+  .auth-link { color: #A11217; font-weight: 600; text-decoration: none; }
+  .auth-link:hover { text-decoration: underline; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+</style>
