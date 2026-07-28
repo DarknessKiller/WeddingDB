@@ -820,7 +820,7 @@
   .guest-rsvp-badge:where(:global(.rsvp-confirmed)) { background: #ECFDF5; color: #059669; border: 1px solid #A7F3D0; }
   .guest-rsvp-badge:where(:global(.rsvp-pending)) { background: #FFFBEB; color: #D97706; border: 1px solid #FDE68A; }
   .guest-rsvp-badge:where(:global(.rsvp-declined)) { background: #FEF2F2; color: #DC2626; border: 1px solid #FECACA; }
-  .guest-rsvp-badge:where(:global(.rsvp-no_response)) { background: #F3F4F6; color: #6B7280; border: 1px solid #E5E7EB; }
+  .guest-rsvp-badge:where(:global(.rsvp-no_response)) { background: #F9FAFB; color: #6B7280; border: 1px solid #E5E7EB; }
 
   /* ---------- Seat Display ---------- */
   .seat-display {

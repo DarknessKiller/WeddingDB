@@ -1,5 +1,5 @@
-import { writable, derived } from 'svelte/store';
-import type { Guest, ViewMode } from '$lib/types';
+import { writable } from 'svelte/store';
+import type { Guest } from '$lib/types';
 
 // Selected guest for drawer
 export const selectedGuest = writable<Guest | null>(null);
@@ -25,11 +25,6 @@ export function addToast(message: string, type: Toast['type'] = 'info') {
 
 // Sidebar state
 export const sidebarCollapsed = writable(false);
-
-// Kiosk mode
-export const kioskTargetGuest = writable<Guest | null>(null);
-export const kioskTargetTable = writable<number | null>(null);
-export const kioskTargetSeat = writable<number | null>(null);
 
 // Auth state (backed by localStorage for persistence)
 let _accessToken: string | null = null;

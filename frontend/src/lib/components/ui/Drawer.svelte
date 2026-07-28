@@ -216,6 +216,7 @@
 </script>
 
 <!-- svelte-ignore a11y_no_static_element_interactions -->
+<svelte:window onkeydown={(e) => { if (e.key === 'Escape') onClose(); }} />
 <div class="drawer-overlay" onclick={onClose}>
   <div class="drawer-backdrop"></div>
   <!-- svelte-ignore a11y_no_static_element_interactions -->

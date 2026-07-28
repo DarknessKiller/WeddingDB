@@ -3,7 +3,7 @@
   import { CheckCircle, XCircle, Info, X } from 'lucide-svelte';
 </script>
 
-<div class="toast-container">
+<div class="toast-container" aria-live="polite" role="status">
   {#each $toasts as toast (toast.id)}
     <div class="toast-item toast-{toast.type}">
       {#if toast.type === 'success'}
