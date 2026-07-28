@@ -160,6 +160,7 @@
         if (isMobile) {
           let touchStartX = 0;
           let touchStartY = 0;
+          let touchStartTime = 0;
           let isTouchPanning = false;
           let pinchStartDist = 0;
           let pinchStartZoom = 1;
@@ -168,6 +169,7 @@
             if (e.touches.length === 1) {
               touchStartX = e.touches[0].clientX;
               touchStartY = e.touches[0].clientY;
+              touchStartTime = performance.now();
               isTouchPanning = false;
             } else if (e.touches.length === 2) {
               isTouchPanning = false;
@@ -203,7 +205,35 @@
             }
           }, { passive: false });
 
-          canvas.addEventListener('touchend', () => {
+          canvas.addEventListener('touchend', (e: TouchEvent) => {
+            const dx = (e.changedTouches[0]?.clientX ?? touchStartX) - touchStartX;
+            const dy = (e.changedTouches[0]?.clientY ?? touchStartY) - touchStartY;
+            const dist = Math.sqrt(dx * dx + dy * dy);
+            const elapsed = performance.now() - touchStartTime;
+            // Tap: didn't move much and was quick
+            if (!isTouchPanning && dist < 12 && elapsed < 300) {
+              const touch = e.changedTouches[0];
+              if (touch) {
+                const rect = canvas.getBoundingClientRect();
+                const tapX = touch.clientX - rect.left;
+                const tapY = touch.clientY - rect.top;
+                // Hit-test against computed table screen positions
+                let hitTableId = '';
+                for (const t of displayTables) {
+                  const screenX = panX + offsetX + (t.x / 100) * displayHallWidth * viewScale * zoom;
+                  const screenY = panY + offsetY + (t.y / 100) * displayHallHeight * viewScale * zoom;
+                  const ddx = tapX - screenX;
+                  const ddy = tapY - screenY;
+                  // Hit radius: table visual radius (~34px) + seat orbit (~20px) + padding
+                  const hitRadius = 60 * viewScale * zoom;
+                  if (ddx * ddx + ddy * ddy < hitRadius * hitRadius) {
+                    hitTableId = String(t.id);
+                    break;
+                  }
+                }
+                onTableClick?.(hitTableId);
+              }
+            }
             pinchStartDist = 0;
           }, { passive: true });
         }
