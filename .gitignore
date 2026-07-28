@@ -46,3 +46,6 @@ openapi.json
 
 # Uploads
 uploads/
+
+# Backups
+backups/

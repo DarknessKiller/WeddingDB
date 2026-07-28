@@ -13,7 +13,7 @@ interface PublicGuest {
 	checkedInAt: string | null;
 }
 
-function mapGuest(raw: PublicGuest): Guest {
+export function mapGuest(raw: PublicGuest): Guest {
 	return {
 		id: raw.id,
 		name: raw.name ?? '',
