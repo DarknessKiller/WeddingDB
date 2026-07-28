@@ -1,22 +1,54 @@
 <script lang="ts">
   import type { Guest, BanquetTable, RSVPStatus } from '$lib/types';
   import { X, Phone, Mail, Utensils, StickyNote, Banknote, Gift, Pencil, Check, UserCheck, CheckCircle2 } from 'lucide-svelte';
+  import CheckInModal from './CheckInModal.svelte';
   import Badge from './Badge.svelte';
   import { getInitials, cn } from '$lib/utils';
   import { formatSeatRange } from '$lib/utils/seat';
   import { addToast } from '$lib/stores';
   import { weddingId } from '$lib/stores/weddingId';
-  import { updateGuest, checkInGuest, checkOutGuest } from '$lib/api/guests';
+  import { updateGuest, createGuest, checkInGuest, checkOutGuest, getGuest } from '$lib/api/guests';
   import { get } from 'svelte/store';
-  let { guest, tables = [], onClose, startEditing = false, onCheckIn, onCheckOut }: { guest: Guest; tables?: BanquetTable[]; onClose: () => void; startEditing?: boolean; onCheckIn?: (g: Guest) => void; onCheckOut?: (g: Guest) => void } = $props();
+  let { guest, tables = [], onClose, startEditing = false, createMode = false, readonly = false, onCheckIn, onCheckOut }: { guest?: Guest; tables?: BanquetTable[]; onClose: () => void; startEditing?: boolean; createMode?: boolean; readonly?: boolean; onCheckIn?: (g: Guest) => void; onCheckOut?: (g: Guest) => void } = $props();
 
-  let tableName = $derived(tables.find(t => t.id === guest.tableId)?.name ?? guest.tableId ?? '—');
+  let tableName = $derived(guest ? (tables.find(t => t.id === guest.tableId)?.name ?? guest.tableId ?? '—') : '—');
 
-  let editing = $state(false);
+  let editing = $state(startEditing || createMode);
   let saving = $state(false);
   let showCheckinModal = $state(false);
   let angbaoAmount = $state('');
   let giftItem = $state('');
+
+  // Local reactive copy of guest for check-in/checkout UI updates
+  let localGuest = $state(guest);
+  $effect(() => { localGuest = guest; });
+
+  // Re-fetch guest data from server after any action
+  async function refreshGuest() {
+    if (!guest?.id) return;
+    const wid = get(weddingId);
+    try {
+      const fresh = await getGuest(wid, guest.id);
+      // Map GuestResponse back to Guest type
+      Object.assign(guest, {
+        name: fresh.name,
+        phone: fresh.phone,
+        email: fresh.email,
+        pax: fresh.pax,
+        rsvp: fresh.rsvp,
+        isVip: fresh.isVip,
+        notes: fresh.notes,
+        dietaryRequirements: fresh.dietary,
+        checkedIn: !!fresh.checkedInAt,
+        checkedInAt: fresh.checkedInAt ? new Date(fresh.checkedInAt) : undefined,
+        angbaoAmount: fresh.angbaoAmt ?? undefined,
+        giftItem: fresh.giftItem ?? undefined,
+      });
+      localGuest = { ...guest };
+    } catch {
+      // Silent fail — local mutation is already applied
+    }
+  }
 
   // Touch drag state for mobile dismiss
   let dragY = $state(0);
@@ -44,21 +76,21 @@
     dragY = 0;
   }
 
-  $effect(() => { editing = startEditing; });
   let form = $state({
-    name: guest.name,
-    phone: guest.phone,
-    email: guest.email ?? '',
-    pax: guest.pax,
-    rsvp: guest.rsvp,
-    isVip: guest.isVip,
-    notes: guest.notes,
-    dietary: guest.dietaryRequirements,
-    angbaoAmt: guest.angbaoAmount != null ? String(guest.angbaoAmount) : '',
-    giftItem: guest.giftItem ?? '',
+    name: guest?.name ?? '',
+    phone: guest?.phone ?? '',
+    email: guest?.email ?? '',
+    pax: guest?.pax ?? 1,
+    rsvp: (guest?.rsvp ?? 'pending') as RSVPStatus,
+    isVip: guest?.isVip ?? false,
+    notes: guest?.notes ?? '',
+    dietary: guest?.dietaryRequirements ?? [],
+    angbaoAmt: guest?.angbaoAmount != null ? String(guest.angbaoAmount) : '',
+    giftItem: guest?.giftItem ?? '',
   });
 
   $effect(() => {
+    if (!guest) return;
     form.name = guest.name;
     form.phone = guest.phone;
     form.email = guest.email ?? '';
@@ -75,38 +107,56 @@
     saving = true;
     try {
       const wid = get(weddingId);
-      const updated = await updateGuest(wid, guest.id, {
-        name: form.name,
-        phone: form.phone,
-        email: form.email || undefined,
-        pax: form.pax,
-        rsvp: form.rsvp,
-        isVip: form.isVip,
-        notes: form.notes,
-        dietary: form.dietary,
-        angbaoAmt: form.angbaoAmt ? Number(form.angbaoAmt) : null,
-        giftItem: form.giftItem || null,
-      });
-      Object.assign(guest, {
-        name: updated.name,
-        phone: updated.phone,
-        email: updated.email,
-        pax: updated.pax,
-        rsvp: updated.rsvp,
-        isVip: updated.isVip,
-        notes: updated.notes,
-        dietaryRequirements: updated.dietary,
-        angbaoAmount: updated.angbaoAmt ?? undefined,
-        giftItem: updated.giftItem ?? undefined,
-      });
-      Object.assign(form, {
-        angbaoAmt: updated.angbaoAmt != null ? String(updated.angbaoAmt) : '',
-        giftItem: updated.giftItem ?? '',
-      });
-      editing = false;
-      addToast('Guest updated', 'success');
+      if (createMode) {
+        const created = await createGuest(wid, {
+          name: form.name,
+          phone: form.phone,
+          email: form.email || undefined,
+          pax: form.pax,
+          rsvp: form.rsvp,
+          isVip: form.isVip,
+          notes: form.notes,
+          dietary: form.dietary,
+          angbaoAmt: form.angbaoAmt ? Number(form.angbaoAmt) : null,
+          giftItem: form.giftItem || null,
+        });
+        addToast(`${created.name} created`, 'success');
+        onClose();
+      } else {
+        const updated = await updateGuest(wid, guest!.id, {
+          name: form.name,
+          phone: form.phone,
+          email: form.email || undefined,
+          pax: form.pax,
+          rsvp: form.rsvp,
+          isVip: form.isVip,
+          notes: form.notes,
+          dietary: form.dietary,
+          angbaoAmt: form.angbaoAmt ? Number(form.angbaoAmt) : null,
+          giftItem: form.giftItem || null,
+        });
+        Object.assign(guest!, {
+          name: updated.name,
+          phone: updated.phone,
+          email: updated.email,
+          pax: updated.pax,
+          rsvp: updated.rsvp,
+          isVip: updated.isVip,
+          notes: updated.notes,
+          dietaryRequirements: updated.dietary,
+          angbaoAmount: updated.angbaoAmt ?? undefined,
+          giftItem: updated.giftItem ?? undefined,
+        });
+        Object.assign(form, {
+          angbaoAmt: updated.angbaoAmt != null ? String(updated.angbaoAmt) : '',
+          giftItem: updated.giftItem ?? '',
+        });
+        editing = false;
+        addToast('Guest updated', 'success');
+        await refreshGuest();
+      }
     } catch (e: any) {
-      addToast(e.message ?? 'Update failed', 'error');
+      addToast(e.message ?? 'Save failed', 'error');
     } finally {
       saving = false;
     }
@@ -118,12 +168,14 @@
   }
 
   function openCheckinModal() {
+    if (!guest) return;
     angbaoAmount = guest.angbaoAmount != null ? String(guest.angbaoAmount) : '';
     giftItem = guest.giftItem ?? '';
     showCheckinModal = true;
   }
 
   async function confirmCheckIn() {
+    if (!guest) return;
     const wid = get(weddingId);
     try {
       await checkInGuest(wid, guest.id);
@@ -131,22 +183,27 @@
       guest.checkedInAt = new Date();
       if (angbaoAmount) guest.angbaoAmount = Number(angbaoAmount);
       if (giftItem) guest.giftItem = giftItem;
+      localGuest = { ...guest };
       onCheckIn?.(guest);
       showCheckinModal = false;
       addToast(`${guest.name} checked in`, 'success');
+      await refreshGuest();
     } catch (e: any) {
       addToast(e.message ?? 'Check-in failed', 'error');
     }
   }
 
   async function handleCheckOut() {
+    if (!guest) return;
     const wid = get(weddingId);
     try {
       await checkOutGuest(wid, guest.id);
       guest.checkedIn = false;
       guest.checkedInAt = undefined;
+      localGuest = { ...guest };
       onCheckOut?.(guest);
       addToast(`${guest.name} checked out`, 'success');
+      await refreshGuest();
     } catch (e: any) {
       addToast(e.message ?? 'Check-out failed', 'error');
     }
@@ -164,23 +221,30 @@
     style="transform: translateY({dragY}px); transition: {dragging ? 'none' : 'transform 300ms cubic-bezier(0.2, 0.8, 0.2, 1)'}"
   >
     <!-- Pill dismiss (mobile only) -->
-    <div class="drawer-pill sm:hidden" onclick={onClose} role="presentation">
+    <div class="drawer-pill flex sm:hidden" onclick={onClose} role="presentation">
       <div class="drawer-pill-bar"></div>
     </div>
     <div class="drawer-header">
-      <h2 class="drawer-title">{editing ? 'Edit Guest' : 'Guest Details'}</h2>
+      <h2 class="drawer-title">{createMode ? 'New Guest' : editing ? 'Edit Guest' : 'Guest Details'}</h2>
       <div class="drawer-actions">
         {#if editing}
-          <button onclick={cancel} class="drawer-btn-secondary">Cancel</button>
-          <button onclick={save} disabled={saving}
-            class="drawer-btn-primary">
-            <Check class="w-4 h-4" /> {saving ? 'Saving...' : 'Save'}
-          </button>
-        {:else}
-          <button onclick={() => editing = true} class="drawer-icon-btn" aria-label="Edit">
+          <!-- Desktop: show buttons in header -->
+          <div class="hidden sm:flex items-center gap-2">
+            <button onclick={cancel} class="drawer-btn-secondary">Cancel</button>
+            <button onclick={save} disabled={saving}
+              class="drawer-btn-primary">
+              <Check class="w-4 h-4" /> {saving ? 'Saving...' : 'Save'}
+            </button>
+          </div>
+        {:else if !readonly}
+          <button onclick={() => editing = true} class="drawer-icon-btn flex" aria-label="Edit">
             <Pencil class="w-5 h-5" />
           </button>
           <button onclick={onClose} class="drawer-icon-btn hidden sm:flex" aria-label="Close">
+            <X class="w-5 h-5" />
+          </button>
+        {:else}
+          <button onclick={onClose} class="drawer-icon-btn flex" aria-label="Close">
             <X class="w-5 h-5" />
           </button>
         {/if}
@@ -254,26 +318,26 @@
         <div class="guest-hero">
           <div class={cn(
             "guest-avatar-lg",
-            guest.checkedIn ? "avatar-checked" :
-            guest.isVip ? "avatar-vip" : "avatar-default"
+            localGuest.checkedIn ? "avatar-checked" :
+            localGuest.isVip ? "avatar-vip" : "avatar-default"
           )}>
-            {getInitials(guest.name)}
+            {getInitials(localGuest.name)}
           </div>
           <div>
-            <h3 class="guest-name-lg">{#if guest.isVip}<span class="text-gold">★</span>{/if} {guest.name}</h3>
-            <Badge status={guest.rsvp} />
+            <h3 class="guest-name-lg">{#if localGuest.isVip}<span class="text-gold">★</span>{/if} {localGuest.name}</h3>
+            <Badge status={localGuest.rsvp} />
           </div>
         </div>
 
         <div class="info-rows">
           <div class="info-row">
             <Phone class="info-icon" />
-            <span>{guest.phone}</span>
+            <span>{localGuest.phone}</span>
           </div>
-          {#if guest.email}
+          {#if localGuest.email}
             <div class="info-row">
               <Mail class="info-icon" />
-              <span>{guest.email}</span>
+              <span>{localGuest.email}</span>
             </div>
           {/if}
         </div>
@@ -284,65 +348,65 @@
             <div class="detail-value">{tableName}</div>
           </div>
           <div class="detail-card">
-            <div class="detail-label">Seat{guest.pax > 1 ? 's' : ''}</div>
-            <div class="detail-value">{formatSeatRange(guest.seatNumber, guest.pax)}</div>
+            <div class="detail-label">Seat{localGuest.pax > 1 ? 's' : ''}</div>
+            <div class="detail-value">{formatSeatRange(localGuest.seatNumber, localGuest.pax)}</div>
           </div>
           <div class="detail-card">
             <div class="detail-label">Party Size</div>
-            <div class="detail-value">{guest.pax}</div>
+            <div class="detail-value">{localGuest.pax}</div>
           </div>
           <div class="detail-card">
             <div class="detail-label">Checked In</div>
-            <div class="detail-value {guest.checkedIn ? 'text-emerald-600' : 'text-gray-400'}">
-              {guest.checkedIn ? '✓' : '—'}
+            <div class="detail-value {localGuest.checkedIn ? 'text-emerald-600' : 'text-gray-400'}">
+              {localGuest.checkedIn ? '✓' : '—'}
             </div>
           </div>
         </div>
 
-        {#if guest.isVip}
+        {#if localGuest.isVip}
           <div class="vip-banner">⭐ VIP Guest</div>
         {/if}
 
-        {#if guest.dietaryRequirements.length > 0}
+        {#if localGuest.dietaryRequirements.length > 0}
           <div class="section">
             <div class="section-header">
               <Utensils class="section-icon" />
               Dietary Requirements
             </div>
             <div class="chip-group">
-              {#each guest.dietaryRequirements as req}
+              {#each localGuest.dietaryRequirements as req}
                 <span class="dietary-tag">{req}</span>
               {/each}
             </div>
           </div>
         {/if}
 
-        {#if guest.notes}
+        {#if localGuest.notes}
           <div class="section">
             <div class="section-header">
               <StickyNote class="section-icon" />
               Notes
             </div>
-            <p class="notes-text">{guest.notes}</p>
+            <p class="notes-text">{localGuest.notes}</p>
           </div>
         {/if}
 
-        {#if guest.angbaoAmount || guest.giftItem}
+        {#if localGuest.angbaoAmount || localGuest.giftItem}
           <div class="section">
             <div class="section-header">Gift Details</div>
             <div class="gift-card">
-              {#if guest.angbaoAmount}
+              {#if localGuest.angbaoAmount}
                 <div class="gift-row">
                   <Banknote class="gift-icon text-emerald-600" />
                   <span class="gift-label">Angbao:</span>
-                  <span class="gift-value text-emerald-700">RM {guest.angbaoAmount}</span>
+                  <span class="gift-value text-emerald-700">RM {localGuest.angbaoAmount}</span>
                 </div>
               {/if}
-              {#if guest.giftItem}
+              {#if localGuest.giftItem}
                 <div class="gift-row">
                   <Gift class="gift-icon text-gold" />
                   <span class="gift-label">Gift:</span>
-                  <span class="gift-value text-gold-dark">{guest.giftItem}</span>
+                  <span class="gift-value text-gold-dark">{localGuest.giftItem}</span>
                 </div>
               {/if}
             </div>
@@ -350,67 +414,44 @@
         {/if}
 
         <!-- Check-in Action -->
-        <div class="pt-2 pb-4">
-          {#if guest.checkedIn}
-            <button onclick={handleCheckOut} class="w-full py-3 bg-emerald-50 text-emerald-700 rounded-xl text-sm font-semibold border border-emerald-200 hover:bg-emerald-100 transition-colors flex items-center justify-center gap-2">
-              <CheckCircle2 class="w-4 h-4" /> Checked In — Tap to Check Out
-            </button>
-          {:else}
-            <button onclick={openCheckinModal} class="w-full py-3 bg-red text-white rounded-xl text-sm font-semibold hover:bg-red-light transition-colors flex items-center justify-center gap-2">
-              <UserCheck class="w-4 h-4" /> Check In
-            </button>
-          {/if}
-        </div>
+        {#if !readonly}
+          <div class="pt-2 pb-4">
+            {#if localGuest.checkedIn}
+              <button onclick={handleCheckOut} class="w-full py-3 bg-emerald-50 text-emerald-700 rounded-xl text-sm font-semibold border border-emerald-200 hover:bg-emerald-100 transition-colors flex items-center justify-center gap-2">
+                <CheckCircle2 class="w-4 h-4" /> Checked In — Tap to Check Out
+              </button>
+            {:else}
+              <button onclick={openCheckinModal} class="w-full py-3 bg-red text-white rounded-xl text-sm font-semibold hover:bg-red-light transition-colors flex items-center justify-center gap-2">
+                <UserCheck class="w-4 h-4" /> Check In
+              </button>
+            {/if}
+          </div>
+        {/if}
       {/if}
     </div>
+
+    <!-- Mobile sticky footer for edit mode -->
+    {#if editing}
+      <div class="drawer-footer flex sm:hidden">
+        <button onclick={cancel} class="drawer-btn-secondary">Cancel</button>
+        <button onclick={save} disabled={saving}
+          class="drawer-btn-primary">
+          <Check class="w-4 h-4" /> {saving ? 'Saving...' : 'Save'}
+        </button>
+      </div>
+    {/if}
   </div>
 </div>
 
 <!-- Check-in Modal -->
 {#if showCheckinModal}
-  <div class="fixed inset-0 z-[60] flex items-end sm:items-center justify-center p-0 sm:p-4">
-    <div class="absolute inset-0 bg-black/30 backdrop-blur-md" onclick={() => showCheckinModal = false} role="presentation"></div>
-    <div class="relative bg-white/95 backdrop-blur-xl rounded-t-2xl sm:rounded-2xl shadow-2xl w-full sm:max-w-md overflow-hidden">
-      <!-- Pill dismiss (mobile only) -->
-      <div class="flex justify-center pt-3 sm:hidden cursor-pointer" onclick={() => showCheckinModal = false} role="presentation">
-        <div class="w-10 h-1 bg-gray-300 rounded-full"></div>
-      </div>
-      <div class="flex items-center justify-between p-5 border-b border-gray-100">
-        <h3 class="font-bold text-gray-900">Check In {guest.name}</h3>
-        <button onclick={() => showCheckinModal = false} class="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-gray-100 transition-colors hidden sm:flex">
-          <X class="w-4 h-4 text-gray-400" />
-        </button>
-      </div>
-      <div class="p-5 space-y-4">
-        <div>
-          <label class="text-sm font-semibold text-gray-700 mb-1.5 block">Angbao Amount (RM)</label>
-          <div class="relative">
-            <Banknote class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-            <input type="number" min="0" bind:value={angbaoAmount} placeholder="0"
-              class="w-full pl-10 pr-4 py-3 border border-black/[0.08] rounded-xl text-sm bg-white/80 focus:border-red focus:ring-2 focus:ring-red/10 outline-none transition-all min-h-[48px]" />
-          </div>
-        </div>
-        <div>
-          <label class="text-sm font-semibold text-gray-700 mb-1.5 block">Gift Item</label>
-          <div class="relative">
-            <Gift class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-            <input bind:value={giftItem} placeholder="Optional"
-              class="w-full pl-10 pr-4 py-3 border border-black/[0.08] rounded-xl text-sm bg-white/80 focus:border-red focus:ring-2 focus:ring-red/10 outline-none transition-all min-h-[48px]" />
-          </div>
-        </div>
-      </div>
-      <div class="flex gap-3 p-5 pt-0">
-        <button onclick={confirmCheckIn}
-          class="flex-1 py-3 bg-red text-white rounded-xl text-sm font-semibold hover:bg-red-light transition-colors flex items-center justify-center gap-2">
-          <UserCheck class="w-4 h-4" /> Confirm Check In
-        </button>
-        <button onclick={() => showCheckinModal = false}
-          class="px-6 py-3 border border-black/[0.06] bg-white/90 rounded-xl text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors">
-          Cancel
-        </button>
-      </div>
-    </div>
-  </div>
+  <CheckInModal
+    guestName={guest.name}
+    bind:angbaoAmount
+    bind:giftItem
+    onConfirm={confirmCheckIn}
+    onClose={() => showCheckinModal = false}
+  />
 {/if}
 
 <style>
@@ -441,13 +482,17 @@
   .drawer-panel {
     position: relative;
     width: 100%;
-    max-height: 85vh;
+    max-height: 85dvh;
     border-radius: 1.25rem 1.25rem 0 0;
+    padding-top: env(safe-area-inset-top);
+    padding-bottom: env(safe-area-inset-bottom);
     background: rgba(255, 255, 255, 0.95);
     backdrop-filter: blur(24px) saturate(200%);
     -webkit-backdrop-filter: blur(24px) saturate(200%);
     box-shadow: 0 -8px 48px rgba(0, 0, 0, 0.15), 0 -2px 8px rgba(0, 0, 0, 0.08);
     overflow-y: auto;
+    display: flex;
+    flex-direction: column;
     animation: slideUp 300ms cubic-bezier(0.2, 0.8, 0.2, 1);
   }
 
@@ -462,7 +507,6 @@
   }
 
   .drawer-pill {
-    display: flex;
     justify-content: center;
     padding: 0.5rem 0 0.75rem;
     cursor: pointer;
@@ -508,7 +552,6 @@
   }
 
   .drawer-icon-btn {
-    display: flex;
     align-items: center;
     justify-content: center;
     width: 2.25rem;
@@ -568,6 +611,28 @@
     display: flex;
     flex-direction: column;
     gap: 1.5rem;
+  }
+
+  .drawer-footer {
+    position: sticky;
+    bottom: 0;
+    z-index: 10;
+    background: rgba(255, 255, 255, 0.95);
+    backdrop-filter: blur(24px) saturate(200%);
+    -webkit-backdrop-filter: blur(24px) saturate(200%);
+    padding: 1rem 1.5rem;
+    padding-bottom: calc(1rem + env(safe-area-inset-bottom));
+    border-top: 1px solid rgba(0, 0, 0, 0.05);
+    align-items: center;
+    gap: 0.75rem;
+  }
+
+  .drawer-footer .drawer-btn-secondary {
+    flex-shrink: 0;
+  }
+
+  .drawer-footer .drawer-btn-primary {
+    flex: 1;
   }
 
   /* View mode */
