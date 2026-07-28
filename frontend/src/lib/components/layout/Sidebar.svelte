@@ -138,7 +138,7 @@
 
 <style>
   .sidebar-root {
-    height: 100vh;
+    height: 100svh; /* ponytail: svh for notch support, dvh if toolbar collapse matters */
     background: rgba(255, 255, 255, 0.92);
     backdrop-filter: blur(20px) saturate(180%);
     -webkit-backdrop-filter: blur(20px) saturate(180%);

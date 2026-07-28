@@ -77,7 +77,7 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    height: 100vh;
+    height: 100dvh;
     background: #faf7f2;
   }
 
@@ -92,7 +92,7 @@
 
   .app-layout {
     display: flex;
-    height: 100vh;
+    height: 100dvh;
     overflow: hidden;
     background: #faf7f2;
   }
