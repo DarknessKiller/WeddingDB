@@ -370,7 +370,7 @@
   aria-label="Banquet hall seating map"
 >
   <!-- Zoom controls -->
-  <div class="absolute top-3 right-3 sm:top-4 sm:right-4 z-30 flex flex-col gap-1.5">
+  <div class="absolute top-3 right-3 sm:top-4 sm:right-4 z-40 flex flex-col gap-1.5">
     <button onclick={() => zoom = Math.min(3, zoom + 0.15)} class="w-8 h-8 sm:w-9 sm:h-9 {dark ? 'bg-gray-800 border-gray-700 hover:bg-gray-700 text-gray-300' : 'bg-white border-gray-200 hover:bg-gray-50 text-gray-600'} border rounded-lg shadow-sm flex items-center justify-center transition-colors" aria-label="Zoom in">
       <ZoomIn class="w-4 h-4" />
     </button>
@@ -385,7 +385,7 @@
 
   <!-- Legend (view mode only) -->
   {#if mode !== 'edit'}
-    <div class="absolute {legendPosition === 'top-left' ? 'top-3 left-3' : 'bottom-3 left-3'} z-30 {dark ? 'bg-gray-800/90 border-gray-700' : 'bg-white/90 border-gray-200'} backdrop-blur-sm border rounded-lg px-2 py-1.5 text-[9px] sm:text-[10px] flex flex-wrap gap-x-3 gap-y-0.5">
+    <div class="absolute {legendPosition === 'top-left' ? 'top-3 left-3' : 'bottom-3 left-3'} z-40 {dark ? 'bg-gray-800/90 border-gray-700' : 'bg-white/90 border-gray-200'} backdrop-blur-sm border rounded-lg px-2 py-1.5 text-[9px] sm:text-[10px] flex flex-wrap gap-x-3 gap-y-0.5">
       <span class="inline-flex items-center gap-1"><span class="w-2 h-2 rounded-full border {dark ? 'border-gray-600 bg-gray-700' : 'border-gray-200 bg-gray-100'}"></span>Empty</span>
       <span class="inline-flex items-center gap-1"><span class="w-2 h-2 rounded-full border border-red {dark ? 'bg-red-900/40' : 'bg-red-50'}"></span>Occupied</span>
       <span class="inline-flex items-center gap-1"><span class="w-2 h-2 rounded-full border border-emerald-500 {dark ? 'bg-emerald-900/40' : 'bg-emerald-50'}"></span>Checked In</span>
