@@ -133,8 +133,8 @@
 
   .sidebar-collapsed {
     position: fixed;
-    width: 72px;
-    transform: translateX(0);
+    width: 260px;
+    transform: translateX(-100%);
   }
 
   @media (min-width: 1024px) {

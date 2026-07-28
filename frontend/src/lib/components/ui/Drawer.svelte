@@ -94,6 +94,10 @@
   <div class="drawer-backdrop"></div>
   <!-- svelte-ignore a11y_no_static_element_interactions -->
   <div class="drawer-panel" onclick={(e) => e.stopPropagation()}>
+    <!-- Mobile drag handle -->
+    <div class="drawer-handle sm:hidden">
+      <div class="drawer-handle-bar"></div>
+    </div>
     <div class="drawer-header">
       <h2 class="drawer-title">{editing ? 'Edit Guest' : 'Guest Details'}</h2>
       <div class="drawer-actions">
@@ -286,7 +290,14 @@
     inset: 0;
     z-index: 50;
     display: flex;
+    align-items: flex-end;
     justify-content: flex-end;
+  }
+
+  @media (min-width: 640px) {
+    .drawer-overlay {
+      align-items: stretch;
+    }
   }
 
   .drawer-backdrop {
@@ -300,14 +311,38 @@
 
   .drawer-panel {
     position: relative;
-    width: 400px;
-    max-width: 100%;
-    background: rgba(255, 255, 255, 0.96);
-    backdrop-filter: blur(20px) saturate(180%);
-    -webkit-backdrop-filter: blur(20px) saturate(180%);
-    box-shadow: -8px 0 32px rgba(0, 0, 0, 0.12);
+    width: 100%;
+    max-height: 85vh;
+    border-radius: 1.25rem 1.25rem 0 0;
+    background: rgba(255, 255, 255, 0.95);
+    backdrop-filter: blur(24px) saturate(200%);
+    -webkit-backdrop-filter: blur(24px) saturate(200%);
+    box-shadow: 0 -8px 48px rgba(0, 0, 0, 0.15), 0 -2px 8px rgba(0, 0, 0, 0.08);
     overflow-y: auto;
-    animation: slideInRight 300ms cubic-bezier(0.2, 0.8, 0.2, 1);
+    animation: slideUp 300ms cubic-bezier(0.2, 0.8, 0.2, 1);
+  }
+
+  @media (min-width: 640px) {
+    .drawer-panel {
+      width: 400px;
+      max-height: 100%;
+      border-radius: 0;
+      animation: slideInRight 300ms cubic-bezier(0.2, 0.8, 0.2, 1);
+      box-shadow: -12px 0 48px rgba(0, 0, 0, 0.15), -2px 0 8px rgba(0, 0, 0, 0.08);
+    }
+  }
+
+  .drawer-handle {
+    display: flex;
+    justify-content: center;
+    padding: 0.75rem 0 0.25rem;
+  }
+
+  .drawer-handle-bar {
+    width: 2.5rem;
+    height: 0.25rem;
+    background: rgba(0, 0, 0, 0.15);
+    border-radius: 9999px;
   }
 
   .drawer-header {
@@ -458,10 +493,14 @@
   }
 
   .detail-card {
-    background: #f9fafb;
+    background: rgba(249, 250, 251, 0.8);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+    border: 1px solid rgba(0, 0, 0, 0.04);
     border-radius: 0.75rem;
     padding: 1rem;
     text-align: center;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
   }
 
   .detail-label {
@@ -528,9 +567,13 @@
   .notes-text {
     font-size: 0.875rem;
     color: #4b5563;
-    background: #f9fafb;
+    background: rgba(249, 250, 251, 0.8);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+    border: 1px solid rgba(0, 0, 0, 0.04);
     border-radius: 0.75rem;
     padding: 1rem;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
   }
 
   .gift-card {
@@ -583,19 +626,24 @@
 
   .form-input {
     width: 100%;
-    padding: 0.625rem 0.875rem;
+    padding: 0.75rem 1rem;
     border: 1.5px solid rgba(0, 0, 0, 0.08);
-    border-radius: 0.625rem;
-    font-size: 0.875rem;
+    border-radius: 0.75rem;
+    font-size: 0.9375rem;
     color: #111827;
-    background: white;
+    background: rgba(255, 255, 255, 0.8);
     outline: none;
-    transition: border-color 200ms ease, box-shadow 200ms ease;
+    transition: border-color 200ms ease, box-shadow 200ms ease, transform 100ms ease;
+    min-height: 48px;
   }
 
   .form-input:focus {
-    border-color: #D4AF37;
-    box-shadow: 0 0 0 3px rgba(212, 175, 55, 0.12);
+    border-color: #A11217;
+    box-shadow: 0 0 0 3px rgba(161, 18, 23, 0.1);
+  }
+
+  .form-input:active {
+    transform: scale(0.99);
   }
 
   .form-textarea {
@@ -639,6 +687,11 @@
   @keyframes fadeIn {
     from { opacity: 0; }
     to { opacity: 1; }
+  }
+
+  @keyframes slideUp {
+    from { transform: translateY(100%); }
+    to { transform: translateY(0); }
   }
 
   @keyframes slideInRight {

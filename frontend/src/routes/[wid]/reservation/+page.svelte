@@ -242,9 +242,9 @@
 
 <svelte:head><title>New Reservation – WeddingDB</title></svelte:head>
 
-<div class="flex h-[calc(100dvh-56px)] sm:h-[calc(100dvh-64px)]">
-  <!-- Left: Hall Map -->
-  <div class="flex-1 flex flex-col relative">
+<div class="flex flex-col sm:flex-row h-[calc(100dvh-56px)] sm:h-[calc(100dvh-64px)]">
+  <!-- Left: Hall Map (hidden on mobile, shown on desktop) -->
+  <div class="hidden sm:flex flex-1 flex-col relative">
     {#if apiTables.length > 0}
       <HallMap
         tables={apiTables}
@@ -260,7 +260,7 @@
   </div>
 
   <!-- Right: Form -->
-  <div class="w-full max-w-lg bg-white/90 backdrop-blur-xl border-l border-black/[0.06] overflow-y-auto">
+  <div class="flex-1 sm:w-full sm:max-w-lg bg-white/90 backdrop-blur-xl sm:border-l border-black/[0.06] overflow-y-auto">
     <div class="p-6">
       <div class="mb-6">
         <h1 class="text-xl font-bold text-gray-900">New Reservation</h1>
