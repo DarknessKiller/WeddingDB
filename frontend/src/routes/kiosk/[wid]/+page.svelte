@@ -336,7 +336,7 @@
             class="sheet-handle"
             onpointerdown={(e) => { onSheetPointerDown(e); }}
             onpointermove={onSheetPointerMove}
-            onpointerup={(e) => { onSheetPointerUp(); if (!sheetDragging && Math.abs(sheetY) < 5) backToSearch(); }}
+            onpointerup={(e) => { const wasDragging = sheetDragging; onSheetPointerUp(); if (!wasDragging && Math.abs(sheetY) < 5) backToSearch(); }}
           >
             <div class="handle-bar"></div>
           </div>
