@@ -334,9 +334,10 @@
           class:sheet-collapsed={sheetCollapsed}
           style="transform: translateY({sheetY}px); transition: {sheetDragging ? 'none' : `transform 350ms ${SPRING_EASE}`};"
         >
-          <!-- Drag handle -->
+          <!-- Drag handle — tap to dismiss, drag to collapse -->
           <div
             class="sheet-handle"
+            onclick={backToSearch}
             onpointerdown={onSheetPointerDown}
             onpointermove={onSheetPointerMove}
             onpointerup={onSheetPointerUp}
@@ -363,6 +364,9 @@
                 <div class="guest-meta-row">
                   <span class="guest-table-badge">Table {selectedTableName}</span>
                   <span class="guest-pax">{selectedGuest.pax} pax</span>
+                  {#if selectedGuest.rsvp && selectedGuest.rsvp !== 'no_response'}
+                    <span class="guest-rsvp-badge">{selectedGuest.rsvp}</span>
+                  {/if}
                 </div>
               </div>
             </div>
@@ -816,6 +820,17 @@
     color: #6b7280;
   }
 
+  .guest-rsvp-badge {
+    font-size: 0.625rem;
+    font-weight: 600;
+    padding: 0.125rem 0.5rem;
+    border-radius: 9999px;
+    background: #ECFDF5;
+    color: #059669;
+    border: 1px solid #A7F3D0;
+    text-transform: capitalize;
+  }
+
   /* ---------- Seat Display ---------- */
   .seat-display {
     display: flex;
@@ -882,6 +897,13 @@
     font-size: 0.6875rem;
     color: #9ca3af;
     padding-top: 0.25rem;
+  }
+
+  /* Hide hint on desktop — map is always visible */
+  @media (min-width: 640px) {
+    .sheet-hint {
+      display: none;
+    }
   }
 
   /* ---------- Search View ---------- */
