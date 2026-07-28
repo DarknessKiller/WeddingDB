@@ -1,11 +1,9 @@
 <script lang="ts">
   import { cn } from '$lib/utils';
-  import { sidebarCollapsed, getAuth, clearAuth } from '$lib/stores';
-  import { setWeddingId } from '$lib/stores/weddingId';
-  import { goto } from '$app/navigation';
+  import { sidebarCollapsed, getAuth } from '$lib/stores';
   import {
     LayoutDashboard, Users, MapPin, Search, Monitor, Calendar,
-    Settings, BarChart3, Utensils, LogOut, Shield
+    Settings, BarChart3, Utensils, Shield
   } from 'lucide-svelte';
 
   let { currentPath, guestCount = 0, wid = '' }: { currentPath: string; guestCount?: number; wid?: string } = $props();
@@ -50,22 +48,6 @@
 
   function closeOnMobile() {
     if (window.innerWidth < 1024) $sidebarCollapsed = true;
-  }
-
-  async function handleLogout() {
-    const { refreshToken } = getAuth();
-    if (refreshToken) {
-      try {
-        await fetch('/api/auth/logout', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ refreshToken })
-        });
-      } catch { /* ignore */ }
-    }
-    clearAuth();
-    setWeddingId('');
-    goto('/login', { replaceState: true });
   }
 </script>
 
@@ -124,13 +106,6 @@
           <div class="user-name">{displayName}</div>
           <div class="user-role">{auth.role || 'Administrator'}</div>
         </div>
-        <button onclick={handleLogout} class="logout-btn" aria-label="Logout" title="Logout">
-          <LogOut class="w-4 h-4" />
-        </button>
-      {:else}
-        <button onclick={handleLogout} class="logout-btn logout-btn-collapsed" aria-label="Logout" title="Logout">
-          <LogOut class="w-4 h-4" />
-        </button>
       {/if}
     </div>
   </div>
@@ -352,26 +327,5 @@
   .user-role {
     font-size: 0.6875rem;
     color: #9ca3af;
-  }
-
-  .logout-btn {
-    padding: 0.375rem;
-    border-radius: 0.5rem;
-    color: #9ca3af;
-    transition: background 100ms ease, color 100ms ease, transform 100ms ease;
-  }
-
-  .logout-btn:active {
-    transform: scale(0.9);
-    background: rgba(0, 0, 0, 0.06);
-  }
-
-  .logout-btn:hover {
-    color: #A11217;
-    background: rgba(161, 18, 23, 0.06);
-  }
-
-  .logout-btn-collapsed {
-    margin-top: 0.25rem;
   }
 </style>
