@@ -11,6 +11,7 @@
   import { page } from '$app/state';
   import { onMount } from 'svelte';
   import { Users, Star, X, Search, AlertCircle, Plus, UserCheck, CheckCircle2, Banknote, Gift } from 'lucide-svelte';
+  import CheckInModal from '$lib/components/ui/CheckInModal.svelte';
   import { get } from 'svelte/store';
   import type { BanquetTable, Guest, RSVPStatus, TableOccupancy, HallElement } from '$lib/types';
 
@@ -31,6 +32,30 @@
   let unassignedGuests = $state<Guest[]>([]);
   let assigningSeat = $state<number | null>(null);
   let showCheckinModal = $state(false);
+
+  // Swipe-to-dismiss for mobile panel
+  let panelDragY = $state(0);
+  let panelDragging = $state(false);
+  let panelStartY = $state(0);
+
+  function onPanelTouchStart(e: TouchEvent) {
+    if (window.innerWidth >= 768) return; // desktop only
+    panelStartY = e.touches[0].clientY;
+    panelDragging = true;
+  }
+
+  function onPanelTouchMove(e: TouchEvent) {
+    if (!panelDragging) return;
+    const delta = e.touches[0].clientY - panelStartY;
+    if (delta > 0) panelDragY = delta;
+  }
+
+  function onPanelTouchEnd() {
+    if (!panelDragging) return;
+    panelDragging = false;
+    if (panelDragY > 80) closePanel();
+    panelDragY = 0;
+  }
   let checkinGuest = $state<Guest | null>(null);
   let angbaoAmount = $state('');
   let giftItem = $state('');
@@ -234,14 +259,14 @@
 <svelte:head><title>Seating Map – WeddingDB</title></svelte:head>
 
 {#if loading}
-  <div class="flex h-[calc(100dvh-56px)] sm:h-[calc(100dvh-64px)] items-center justify-center">
+  <div class="flex h-full items-center justify-center">
     <div class="flex flex-col items-center gap-3 text-gray-400">
       <div class="w-8 h-8 border-2 border-red/30 border-t-red rounded-full animate-spin"></div>
       <span class="text-sm">Loading seating map...</span>
     </div>
   </div>
 {:else if errored}
-  <div class="flex h-[calc(100dvh-56px)] sm:h-[calc(100dvh-64px)] items-center justify-center">
+  <div class="flex h-full items-center justify-center">
     <div class="flex flex-col items-center gap-3 text-center">
       <div class="w-16 h-16 bg-red-50 rounded-full flex items-center justify-center">
         <AlertCircle class="w-8 h-8 text-red" />
@@ -254,7 +279,7 @@
     </div>
   </div>
 {:else if allTables.length === 0}
-  <div class="flex h-[calc(100dvh-56px)] sm:h-[calc(100dvh-64px)] items-center justify-center">
+  <div class="flex h-full items-center justify-center">
     <div class="flex flex-col items-center gap-3 text-center">
       <div class="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center">
         <Users class="w-8 h-8 text-gray-400" />
@@ -268,7 +293,7 @@
   </div>
 {:else}
 
-<div class="flex h-[calc(100dvh-56px)] sm:h-[calc(100dvh-64px)]">
+<div class="flex h-full">
   <!-- Map -->
   <HallMap
     selectedTableId={editMode ? null : selectedTableId}
@@ -438,9 +463,14 @@
   <!-- Mobile Bottom Panel -->
   {#if selectedTable && showMobilePanel && !editMode}
     <!-- svelte-ignore a11y_no_static_element_interactions -->
-    <div class="md:hidden fixed inset-x-0 bottom-0 z-40 bg-white/95 backdrop-blur-xl border-t border-black/[0.06] rounded-t-2xl shadow-2xl animate-slide-up" style="max-height: 60vh;">
+    <div class="md:hidden fixed inset-x-0 bottom-0 z-40 bg-white/95 backdrop-blur-xl border-t border-black/[0.06] rounded-t-2xl shadow-2xl animate-slide-up pb-[env(safe-area-inset-bottom)]"
+      style="max-height: 60vh; transform: translateY({panelDragY}px); transition: {panelDragging ? 'none' : 'transform 300ms cubic-bezier(0.2, 0.8, 0.2, 1)'}"
+      ontouchstart={onPanelTouchStart}
+      ontouchmove={onPanelTouchMove}
+      ontouchend={onPanelTouchEnd}
+    >
       <!-- Pill dismiss (acts as drag handle) -->
-      <div class="flex justify-center py-2 cursor-pointer" onclick={closePanel} role="presentation">
+      <div class="flex justify-center py-2" role="presentation">
         <div class="w-10 h-1 bg-gray-300 rounded-full"></div>
       </div>
 
@@ -522,47 +552,11 @@
 
 <!-- Check-in Modal -->
 {#if showCheckinModal && checkinGuest}
-  <div class="fixed inset-0 z-[60] flex items-end sm:items-center justify-center p-0 sm:p-4">
-    <div class="absolute inset-0 bg-black/30 backdrop-blur-md" onclick={() => showCheckinModal = false} role="presentation"></div>
-    <div class="relative bg-white/95 backdrop-blur-xl rounded-t-2xl sm:rounded-2xl shadow-2xl w-full sm:max-w-md overflow-hidden">
-      <!-- Pill dismiss (mobile only) -->
-      <div class="flex justify-center pt-3 sm:hidden cursor-pointer" onclick={() => showCheckinModal = false} role="presentation">
-        <div class="w-10 h-1 bg-gray-300 rounded-full"></div>
-      </div>
-      <div class="flex items-center justify-between p-5 border-b border-gray-100">
-        <h3 class="font-bold text-gray-900">Check In {checkinGuest.name}</h3>
-        <button onclick={() => showCheckinModal = false} class="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-gray-100 transition-colors hidden sm:flex">
-          <X class="w-4 h-4 text-gray-400" />
-        </button>
-      </div>
-      <div class="p-5 space-y-4">
-        <div>
-          <label class="text-sm font-semibold text-gray-700 mb-1.5 block">Angbao Amount (RM)</label>
-          <div class="relative">
-            <Banknote class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-            <input type="number" min="0" bind:value={angbaoAmount} placeholder="0"
-              class="w-full pl-10 pr-4 py-3 border border-black/[0.08] rounded-xl text-sm bg-white/80 focus:border-red focus:ring-2 focus:ring-red/10 outline-none transition-all min-h-[48px]" />
-          </div>
-        </div>
-        <div>
-          <label class="text-sm font-semibold text-gray-700 mb-1.5 block">Gift Item</label>
-          <div class="relative">
-            <Gift class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-            <input bind:value={giftItem} placeholder="Optional"
-              class="w-full pl-10 pr-4 py-3 border border-black/[0.08] rounded-xl text-sm bg-white/80 focus:border-red focus:ring-2 focus:ring-red/10 outline-none transition-all min-h-[48px]" />
-          </div>
-        </div>
-      </div>
-      <div class="flex gap-3 p-5 pt-0">
-        <button onclick={confirmCheckIn}
-          class="flex-1 py-3 bg-red text-white rounded-xl text-sm font-semibold hover:bg-red-light transition-colors flex items-center justify-center gap-2">
-          <UserCheck class="w-4 h-4" /> Confirm Check In
-        </button>
-        <button onclick={() => showCheckinModal = false}
-          class="px-6 py-3 border border-black/[0.06] bg-white/90 rounded-xl text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors">
-          Cancel
-        </button>
-      </div>
-    </div>
-  </div>
+  <CheckInModal
+    guestName={checkinGuest.name}
+    bind:angbaoAmount
+    bind:giftItem
+    onConfirm={confirmCheckIn}
+    onClose={() => showCheckinModal = false}
+  />
 {/if}
