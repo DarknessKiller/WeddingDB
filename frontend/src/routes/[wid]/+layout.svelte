@@ -4,7 +4,7 @@
   import Sidebar from '$lib/components/layout/Sidebar.svelte';
   import Header from '$lib/components/layout/Header.svelte';
   import Drawer from '$lib/components/ui/Drawer.svelte';
-  import { selectedGuest, isDrawerOpen, drawerStartEditing, sidebarCollapsed } from '$lib/stores';
+  import { selectedGuest, isDrawerOpen, drawerStartEditing, drawerCreateMode, drawerReadonly, sidebarCollapsed } from '$lib/stores';
   import { weddingId, setWeddingId } from '$lib/stores/weddingId';
   import { validateToken } from '$lib/utils/auth';
   import { listGuests } from '$lib/api/guests';
@@ -66,9 +66,9 @@
   </div>
 {/if}
 
-{#if $isDrawerOpen && $selectedGuest}
-  {#key $drawerStartEditing}
-    <Drawer guest={$selectedGuest} tables={tables} startEditing={$drawerStartEditing} onClose={() => { $isDrawerOpen = false; $selectedGuest = null; $drawerStartEditing = false; }} />
+{#if $isDrawerOpen && ($selectedGuest || $drawerCreateMode)}
+  {#key `${$drawerStartEditing}-${$drawerCreateMode}-${$drawerReadonly}`}
+    <Drawer guest={$selectedGuest} tables={tables} startEditing={$drawerStartEditing} createMode={$drawerCreateMode} readonly={$drawerReadonly} onClose={() => { $isDrawerOpen = false; $selectedGuest = null; $drawerStartEditing = false; $drawerCreateMode = false; $drawerReadonly = false; }} />
   {/key}
 {/if}
 
@@ -119,6 +119,7 @@
     overflow-y: auto;
     background: white;
     padding-top: 3.5rem;
+    padding-bottom: env(safe-area-inset-bottom);
   }
 
   @media (min-width: 640px) {
@@ -129,7 +130,7 @@
 
   @media (min-width: 1024px) {
     .main-content {
-      padding-top: 0;
+      padding-top: 4rem;
     }
   }
 

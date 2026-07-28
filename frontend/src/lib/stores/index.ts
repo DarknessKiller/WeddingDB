@@ -5,6 +5,8 @@ import type { Guest, ViewMode } from '$lib/types';
 export const selectedGuest = writable<Guest | null>(null);
 export const isDrawerOpen = writable(false);
 export const drawerStartEditing = writable(false);
+export const drawerCreateMode = writable(false);
+export const drawerReadonly = writable(false);
 
 // Toast notifications
 export interface Toast {
