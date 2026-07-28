@@ -208,6 +208,8 @@
         (g.notes || '').replace(/,/g, ';')
       ];
     });
+    const totalAngbao = guests.reduce((sum, g) => sum + (g.angbaoAmt ?? 0), 0);
+    rows.push(['TOTAL', '', '', '', '', '', '', '', '', totalAngbao, '', '']);
     const csv = [headers, ...rows].map(r => r.join(',')).join('\n');
     const blob = new Blob([csv], { type: 'text/csv' });
     const url = URL.createObjectURL(blob);
