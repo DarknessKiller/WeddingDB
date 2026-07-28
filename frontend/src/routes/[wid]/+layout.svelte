@@ -55,6 +55,7 @@
         onkeydown={(e) => { if (e.key === 'Escape') $sidebarCollapsed = true; }}
         role="button"
         tabindex="-1"
+        aria-label="Close sidebar"
       ></div>
     {/if}
 
