@@ -211,7 +211,7 @@
 <div class="p-4 sm:p-7 max-w-[1400px]" onclick={() => contextMenu = null}>
   <div class="flex items-center justify-between mb-6">
     <div>
-      <h1 class="text-xl font-bold text-gray-900">Banquet Tables</h1>
+      <h1 class="text-xl font-bold text-gray-900" style="letter-spacing: -0.02em;">Banquet Tables</h1>
       <p class="text-sm text-gray-500 mt-0.5">Overview of all {(tables ?? []).length} tables</p>
     </div>
     <div class="flex items-center gap-1.5 sm:gap-2">
@@ -285,8 +285,8 @@
           onclick={() => goto(`/${$weddingId}/seating?table=${table.id}`)}
           oncontextmenu={(e) => handleCtx(e, table)}
           class={cn(
-            "bg-white border rounded-2xl p-3 sm:p-5 flex flex-col items-center gap-2 sm:gap-3 transition-all hover:shadow-lg hover:-translate-y-0.5 cursor-pointer group relative",
-            table.isVip ? "border-gold-200 hover:border-gold" : "border-gray-200 hover:border-gold/30"
+            "bg-white/90 backdrop-blur-xl border rounded-2xl p-3 sm:p-5 flex flex-col items-center gap-2 sm:gap-3 transition-all cursor-pointer group relative",
+            table.isVip ? "border-gold-200 hover:border-gold hover:shadow-lg hover:-translate-y-0.5" : "border-black/[0.06] hover:border-gold/30 hover:shadow-lg hover:-translate-y-0.5"
           )}
           role="button"
           tabindex="0"
@@ -356,7 +356,7 @@
 <!-- Add/Edit Modal -->
 {#if showModal}
   <div class="fixed inset-0 z-50 flex items-center justify-center p-4">
-    <div class="absolute inset-0 bg-black/40 backdrop-blur-sm" onclick={closeModal} role="presentation"></div>
+    <div class="absolute inset-0 bg-black/30 backdrop-blur-md" onclick={closeModal} role="presentation"></div>
     <div class="relative bg-white rounded-2xl shadow-2xl w-full max-w-md max-h-[90vh] overflow-y-auto">
       <div class="flex items-center justify-between p-5 border-b border-gray-100">
         <h3 class="font-bold text-gray-900">{editingTable ? 'Edit Table' : 'Add Table'}</h3>

@@ -426,7 +426,7 @@
 {#if showCheckinModal && checkinGuest}
   {@const table = tables.find(t => t.id === checkinGuest!.tableId)}
   <div class="fixed inset-0 z-50 flex items-center justify-center p-4">
-    <div class="absolute inset-0 bg-black/40 backdrop-blur-sm" onclick={closeModal} role="presentation"></div>
+    <div class="absolute inset-0 bg-black/30 backdrop-blur-md" onclick={closeModal} role="presentation"></div>
 
     <div class="relative bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden">
       {#if showSeatView}

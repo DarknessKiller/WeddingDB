@@ -221,7 +221,7 @@
 <!-- Create User Modal -->
 {#if showCreate}
   <div class="fixed inset-0 z-50 flex items-center justify-center p-4">
-    <div class="absolute inset-0 bg-black/40 backdrop-blur-sm" onclick={() => showCreate = false} role="presentation"></div>
+    <div class="absolute inset-0 bg-black/30 backdrop-blur-md" onclick={() => showCreate = false} role="presentation"></div>
     <div class="relative bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden">
       <div class="flex items-center justify-between p-5 border-b border-gray-100">
         <h3 class="font-bold text-gray-900">Add User</h3>
@@ -266,7 +266,7 @@
 <!-- Assign Weddings Modal -->
 {#if assignTarget}
   <div class="fixed inset-0 z-50 flex items-center justify-center p-4">
-    <div class="absolute inset-0 bg-black/40 backdrop-blur-sm" onclick={() => assignTarget = null} role="presentation"></div>
+    <div class="absolute inset-0 bg-black/30 backdrop-blur-md" onclick={() => assignTarget = null} role="presentation"></div>
     <div class="relative bg-white rounded-2xl shadow-2xl w-full max-w-sm overflow-hidden">
       <div class="flex items-center justify-between p-5 border-b border-gray-100">
         <h3 class="font-bold text-gray-900">Assign Weddings</h3>
@@ -305,7 +305,7 @@
 <!-- Reset Password Modal -->
 {#if resetTarget}
   <div class="fixed inset-0 z-50 flex items-center justify-center p-4">
-    <div class="absolute inset-0 bg-black/40 backdrop-blur-sm" onclick={() => resetTarget = null} role="presentation"></div>
+    <div class="absolute inset-0 bg-black/30 backdrop-blur-md" onclick={() => resetTarget = null} role="presentation"></div>
     <div class="relative bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden">
       <div class="flex items-center justify-between p-5 border-b border-gray-100">
         <h3 class="font-bold text-gray-900">Reset Password</h3>

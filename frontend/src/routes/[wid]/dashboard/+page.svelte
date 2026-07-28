@@ -57,7 +57,7 @@
     <div class="text-center text-gray-400 py-16 text-sm">Loading dashboard…</div>
   {:else if loaded}
     <!-- Kiosk Quick Access -->
-    <div class="bg-white border border-gray-200 rounded-2xl p-4 sm:p-5 flex items-center justify-between gap-4">
+    <div class="bg-white/90 backdrop-blur-xl border border-black/[0.06] rounded-2xl p-4 sm:p-5 flex items-center justify-between gap-4 shadow-sm">
       <div class="flex items-center gap-3">
         <div class="w-10 h-10 sm:w-12 sm:h-12 rounded-xl bg-red flex items-center justify-center flex-shrink-0">
           <Monitor class="w-5 h-5 sm:w-6 sm:h-6 text-white" />
@@ -104,13 +104,13 @@
         { label: 'Checked In', value: stats.checkedIn, icon: CheckCircle, color: 'bg-emerald-50 text-emerald-600' },
         { label: 'Total Pax', value: stats.totalPax, icon: Users, color: 'bg-blue-50 text-blue-600' }
       ] as card}
-        <div class="bg-white border border-gray-200 rounded-2xl p-3 sm:p-5 flex items-start gap-3 sm:gap-4 hover:shadow-md transition-shadow duration-200">
+        <div class="bg-white/90 backdrop-blur-xl border border-black/[0.06] rounded-2xl p-3 sm:p-5 flex items-start gap-3 sm:gap-4 hover:shadow-md transition-all duration-300" style="transition-timing-function: cubic-bezier(0.2, 0.8, 0.2, 1);">
           <div class="w-10 h-10 sm:w-12 sm:h-12 rounded-xl {card.color} flex items-center justify-center flex-shrink-0">
             <card.icon class="w-5 h-5 sm:w-6 sm:h-6" />
           </div>
           <div class="flex-1 min-w-0">
             <div class="text-[13px] text-gray-500 font-medium">{card.label}</div>
-            <div class="text-[28px] font-extrabold text-gray-900 tracking-tight leading-tight">{card.value}</div>
+            <div class="text-[28px] font-extrabold text-gray-900 leading-tight" style="letter-spacing: -0.02em;">{card.value}</div>
           </div>
         </div>
       {/each}
@@ -118,8 +118,8 @@
 
     <div class="grid grid-cols-1 lg:grid-cols-3 gap-5">
       <!-- RSVP Donut -->
-      <div class="bg-white border border-gray-200 rounded-2xl p-6">
-        <h3 class="text-base font-bold text-gray-800 mb-5">RSVP Status</h3>
+      <div class="bg-white/90 backdrop-blur-xl border border-black/[0.06] rounded-2xl p-6 shadow-sm">
+        <h3 class="text-base font-bold text-gray-800 mb-5" style="letter-spacing: -0.01em;">RSVP Status</h3>
       <div class="relative w-40 h-40 mx-auto mb-5">
         <svg viewBox="0 0 100 100" class="w-full h-full -rotate-90">
           <circle cx="50" cy="50" r={DONUT_R} fill="none" stroke="#E5E7EB" stroke-width="10" />
@@ -144,8 +144,8 @@
       </div>
 
       <!-- Table Occupancy -->
-      <div class="bg-white border border-gray-200 rounded-2xl p-6">
-        <h3 class="text-base font-bold text-gray-800 mb-5">Table Occupancy</h3>
+      <div class="bg-white/90 backdrop-blur-xl border border-black/[0.06] rounded-2xl p-6 shadow-sm">
+        <h3 class="text-base font-bold text-gray-800 mb-5" style="letter-spacing: -0.01em;">Table Occupancy</h3>
         <div class="space-y-3">
           {#each occupancy.slice(0, 10) as t}
             <div class="flex items-center gap-3">
@@ -163,8 +163,8 @@
       </div>
 
       <!-- Recent Activity -->
-      <div class="bg-white border border-gray-200 rounded-2xl p-6">
-        <h3 class="text-base font-bold text-gray-800 mb-5">Recent Activity</h3>
+      <div class="bg-white/90 backdrop-blur-xl border border-black/[0.06] rounded-2xl p-6 shadow-sm">
+        <h3 class="text-base font-bold text-gray-800 mb-5" style="letter-spacing: -0.01em;">Recent Activity</h3>
         <div class="space-y-4">
           {#each activity as item}
             {@const Icon = activityIcons[item.icon] || CheckCircle}

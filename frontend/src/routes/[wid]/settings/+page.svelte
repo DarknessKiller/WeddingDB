@@ -92,7 +92,7 @@
 <svelte:head><title>Settings – WeddingDB</title></svelte:head>
 
 <div class="p-4 sm:p-7 max-w-2xl mx-auto">
-  <h1 class="text-xl font-bold text-gray-900 mb-6">Settings</h1>
+  <h1 class="text-xl font-bold text-gray-900 mb-6" style="letter-spacing: -0.02em;">Settings</h1>
 
   {#if loading}
     <div class="space-y-4">
@@ -109,7 +109,7 @@
   {:else}
     <div class="space-y-6">
       <!-- Kiosk Quick Access -->
-      <div class="bg-white border border-gray-200 rounded-2xl p-5">
+      <div class="bg-white/90 backdrop-blur-xl border border-black/[0.06] rounded-2xl p-5 shadow-sm">
         <div class="flex items-center justify-between">
           <div class="flex items-center gap-3">
             <div class="w-10 h-10 rounded-xl bg-red flex items-center justify-center text-white"><Monitor class="w-5 h-5" /></div>
@@ -131,8 +131,8 @@
       </div>
 
       <!-- Kiosk Customization -->
-      <div class="bg-white border border-gray-200 rounded-2xl p-5 sm:p-6">
-        <h3 class="font-bold text-gray-900 mb-5">Kiosk Display Settings</h3>
+      <div class="bg-white/90 backdrop-blur-xl border border-black/[0.06] rounded-2xl p-5 sm:p-6 shadow-sm">
+        <h3 class="font-bold text-gray-900 mb-5" style="letter-spacing: -0.01em;">Kiosk Display Settings</h3>
 
         <div class="space-y-5">
           <!-- Title -->
@@ -199,7 +199,7 @@
       </div>
 
       <!-- Seat Numbers Toggle -->
-      <div class="bg-white border border-gray-200 rounded-2xl p-5">
+      <div class="bg-white/90 backdrop-blur-xl border border-black/[0.06] rounded-2xl p-5 shadow-sm">
         <div class="flex items-center justify-between py-1">
           <div>
             <p class="text-sm font-semibold text-gray-900">Show Seat Numbers</p>

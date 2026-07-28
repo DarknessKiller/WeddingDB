@@ -675,7 +675,7 @@
 
 <!-- Bulk Move Table Modal -->
 {#if showBulkMoveModal}
-  <div class="fixed inset-0 z-[700] flex items-center justify-center bg-black/40" onclick={() => showBulkMoveModal = false}>
+  <div class="fixed inset-0 z-[700] flex items-center justify-center bg-black/30 backdrop-blur-md" onclick={() => showBulkMoveModal = false}>
     <div class="bg-white rounded-2xl shadow-2xl w-full max-w-md p-6" onclick={(e) => e.stopPropagation()}>
       <h3 class="text-lg font-semibold text-gray-900 mb-4">Move {selectedIds.size} Guests</h3>
       <div class="space-y-3 mb-6">
@@ -737,7 +737,7 @@
 
 <!-- Move Table Modal -->
 {#if showMoveModal && moveGuest}
-  <div class="fixed inset-0 z-[700] flex items-center justify-center bg-black/40" onclick={() => showMoveModal = false}>
+  <div class="fixed inset-0 z-[700] flex items-center justify-center bg-black/30 backdrop-blur-md" onclick={() => showMoveModal = false}>
     <div class="bg-white rounded-2xl shadow-2xl w-full max-w-md p-6" onclick={(e) => e.stopPropagation()}>
       <h3 class="text-lg font-semibold text-gray-900 mb-4">Move Table</h3>
       <div class="space-y-3 mb-6">
@@ -790,7 +790,7 @@
 
 {#if showImportModal}
   <div class="fixed inset-0 z-50 flex items-center justify-center p-4">
-    <div class="absolute inset-0 bg-black/40 backdrop-blur-sm" onclick={() => showImportModal = false} role="presentation"></div>
+    <div class="absolute inset-0 bg-black/30 backdrop-blur-md" onclick={() => showImportModal = false} role="presentation"></div>
     <div class="relative bg-white rounded-2xl shadow-2xl w-full max-w-lg overflow-hidden">
       <div class="flex items-center justify-between p-5 border-b border-gray-100">
         <h3 class="font-bold text-gray-900">Import Guests from CSV</h3>
