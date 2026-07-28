@@ -47,10 +47,10 @@
   </div>
 {:else}
   <div class="app-layout">
+    <!-- Mobile backdrop -->
     {#if !$sidebarCollapsed}
-      <!-- svelte-ignore a11y_no_static_element_interactions -->
       <div
-        class="sidebar-backdrop"
+        class="sidebar-backdrop lg:hidden"
         onclick={() => $sidebarCollapsed = true}
       ></div>
     {/if}
@@ -100,10 +100,8 @@
   .sidebar-backdrop {
     position: fixed;
     inset: 0;
-    background: rgba(0, 0, 0, 0.4);
-    backdrop-filter: blur(4px);
-    -webkit-backdrop-filter: blur(4px);
-    z-index: 30;
+    background: rgba(0, 0, 0, 0.5);
+    z-index: 55;
     animation: fadeIn 200ms ease;
   }
 

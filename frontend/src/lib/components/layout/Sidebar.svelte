@@ -103,15 +103,13 @@
 
 <style>
   .sidebar-root {
-    height: 100svh; /* ponytail: svh for notch support, dvh if toolbar collapse matters */
-    background: rgba(255, 255, 255, 0.92);
-    backdrop-filter: blur(20px) saturate(180%);
-    -webkit-backdrop-filter: blur(20px) saturate(180%);
-    border-right: 1px solid rgba(0, 0, 0, 0.06);
+    height: 100svh;
+    background: white;
+    border-right: 1px solid rgba(0, 0, 0, 0.08);
     display: flex;
     flex-direction: column;
     flex-shrink: 0;
-    z-index: 40;
+    z-index: 60;
     transition: width 300ms cubic-bezier(0.2, 0.8, 0.2, 1);
   }
 
@@ -130,6 +128,7 @@
   @media (min-width: 1024px) {
     .sidebar-root {
       position: relative;
+      z-index: 40; /* Below header on desktop */
     }
     .sidebar-collapsed {
       width: 72px;
