@@ -94,6 +94,12 @@
     }
   }
 
+  @media (min-width: 1024px) {
+    .app-header {
+      left: 72px;
+    }
+  }
+
   .header-menu-btn {
     display: flex;
     align-items: center;

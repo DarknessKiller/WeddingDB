@@ -123,7 +123,7 @@
 
   .sidebar-collapsed {
     position: fixed;
-    width: 260px;
+    width: 72px;
     transform: translateX(-100%);
   }
 

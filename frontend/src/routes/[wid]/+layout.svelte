@@ -129,6 +129,12 @@
     }
   }
 
+  @media (min-width: 1024px) {
+    .main-content {
+      padding-top: 0;
+    }
+  }
+
   @keyframes spin {
     to { transform: rotate(360deg); }
   }
