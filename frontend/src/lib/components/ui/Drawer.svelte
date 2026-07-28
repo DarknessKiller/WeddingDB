@@ -227,16 +227,7 @@
     <div class="drawer-header">
       <h2 class="drawer-title">{createMode ? 'New Guest' : editing ? 'Edit Guest' : 'Guest Details'}</h2>
       <div class="drawer-actions">
-        {#if editing}
-          <!-- Desktop: show buttons in header -->
-          <div class="hidden sm:flex items-center gap-2">
-            <button onclick={cancel} class="drawer-btn-secondary">Cancel</button>
-            <button onclick={save} disabled={saving}
-              class="drawer-btn-primary">
-              <Check class="w-4 h-4" /> {saving ? 'Saving...' : 'Save'}
-            </button>
-          </div>
-        {:else if !readonly}
+        {#if !readonly}
           <button onclick={() => editing = true} class="drawer-icon-btn flex" aria-label="Edit">
             <Pencil class="w-5 h-5" />
           </button>
@@ -432,10 +423,9 @@
 
     <!-- Mobile sticky footer for edit mode -->
     {#if editing}
-      <div class="drawer-footer flex sm:hidden">
-        <button onclick={cancel} class="drawer-btn-secondary">Cancel</button>
+      <div class="drawer-footer flex">
         <button onclick={save} disabled={saving}
-          class="drawer-btn-primary">
+          class="w-full py-3 bg-red text-white rounded-xl text-sm font-semibold hover:bg-red-light transition-colors flex items-center justify-center gap-2">
           <Check class="w-4 h-4" /> {saving ? 'Saving...' : 'Save'}
         </button>
       </div>
