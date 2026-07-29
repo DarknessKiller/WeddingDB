@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"strings"
 	"time"
 	"weddingdb/internal/models"
 	"weddingdb/internal/repository"
@@ -138,8 +139,8 @@ func (h *WeddingHandler) UpdateKioskSettings(c fuego.ContextWithBody[KioskSettin
 	}
 	w.KioskTitle = body.KioskTitle
 	w.KioskDescription = body.KioskDescription
-	w.KioskLogoUrl = body.KioskLogoUrl
-	w.KioskBackgroundUrl = body.KioskBackgroundUrl
+	w.KioskLogoUrl = sanitizeURL(body.KioskLogoUrl)
+	w.KioskBackgroundUrl = sanitizeURL(body.KioskBackgroundUrl)
 	w.KioskBackgroundBlur = body.KioskBackgroundBlur
 	w.KioskBackgroundSize = body.KioskBackgroundSize
 	w.KioskBackgroundPosX = body.KioskBackgroundPosX
@@ -165,4 +166,22 @@ func (h *WeddingHandler) Delete(c fuego.ContextWithBody[any]) (any, error) {
 		return nil, fuego.BadRequestError{Title: "Invalid ID"}
 	}
 	return nil, h.weddingService.Delete(id)
+}
+
+// sanitizeURL strips any value that isn't a safe URL prefix or a relative path.
+// Prevents CSS injection via url() in style attributes.
+func sanitizeURL(s string) string {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return s
+	}
+	allowed := strings.HasPrefix(s, "https://") || strings.HasPrefix(s, "http://") || strings.HasPrefix(s, "/") || strings.HasPrefix(s, "./")
+	if !allowed {
+		return ""
+	}
+	// Block values containing CSS-breaking characters
+	if strings.ContainsAny(s, ")\"';}{") {
+		return ""
+	}
+	return s
 }

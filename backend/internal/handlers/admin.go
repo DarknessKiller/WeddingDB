@@ -41,6 +41,10 @@ func (h *AdminHandler) Create(c fuego.ContextWithBody[AdminRequest]) (any, error
 	if err := validatePassword(body.Password); err != nil {
 		return nil, err
 	}
+	// Validate role field
+	if body.Role != "admin" && body.Role != "user" {
+		body.Role = "user"
+	}
 	hash, err := bcrypt.GenerateFromPassword([]byte(body.Password), bcrypt.DefaultCost)
 	if err != nil {
 		return nil, fuego.InternalServerError{Title: "Failed to hash password"}
@@ -191,6 +195,19 @@ func (h *AdminHandler) UpdateRole(c fuego.ContextWithBody[UpdateRoleRequest]) (a
 	callerID := AdminIDFromContext(c.Context())
 	if id == callerID && body.Role != "admin" {
 		return nil, fuego.BadRequestError{Title: "Cannot change your own role"}
+	}
+	// Prevent demoting the last admin
+	if admin, _ := h.adminRepo.FindByID(id); admin != nil && admin.Role == "admin" && body.Role == "user" {
+		admins, _ := h.adminRepo.List()
+		adminCount := 0
+		for _, a := range admins {
+			if a.Role == "admin" {
+				adminCount++
+			}
+		}
+		if adminCount <= 1 {
+			return nil, fuego.BadRequestError{Title: "Cannot demote the last admin"}
+		}
 	}
 	admin, err := h.adminRepo.FindByID(id)
 	if err != nil {
