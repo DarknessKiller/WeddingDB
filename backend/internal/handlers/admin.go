@@ -85,6 +85,22 @@ func (h *AdminHandler) Delete(c fuego.ContextWithBody[any]) (any, error) {
 	if id == adminID {
 		return nil, fuego.BadRequestError{Title: "Cannot delete your own account"}
 	}
+	target, err := h.adminRepo.FindByID(id)
+	if err != nil {
+		return nil, fuego.NotFoundError{Title: "User not found"}
+	}
+	if target.Role == "admin" {
+		admins, _ := h.adminRepo.List()
+		adminCount := 0
+		for _, a := range admins {
+			if a.Role == "admin" {
+				adminCount++
+			}
+		}
+		if adminCount <= 1 {
+			return nil, fuego.BadRequestError{Title: "Cannot delete the last admin"}
+		}
+	}
 	if err := h.adminRepo.Delete(id); err != nil {
 		return nil, err
 	}
