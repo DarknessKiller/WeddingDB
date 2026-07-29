@@ -505,7 +505,8 @@
     height: 100vh;
     height: 100dvh;
     overflow: hidden;
-    background: #faf7f2;
+    background: linear-gradient(180deg, #fef2f2 0%, #faf7f2 50%, white 100%);
+    background-attachment: fixed;
     color: #111827;
     display: flex;
     flex-direction: column;

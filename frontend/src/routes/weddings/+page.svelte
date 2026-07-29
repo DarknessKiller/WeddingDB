@@ -110,7 +110,7 @@
 
 <svelte:head><title>Weddings – WeddingDB</title></svelte:head>
 
-<div class="min-h-screen flex items-center justify-center bg-white px-4">
+<div class="min-h-screen flex items-center justify-center px-4">
   <div class="w-full max-w-sm">
     <!-- Logo -->
     <div class="text-center mb-8">

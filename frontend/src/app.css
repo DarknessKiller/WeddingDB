@@ -43,7 +43,8 @@
   }
   body {
     font-family: var(--font-sans);
-    background: var(--color-warm-50);
+    background: linear-gradient(180deg, #fef2f2 0%, #faf7f2 50%, white 100%);
+    background-attachment: fixed;
     line-height: 1.5;
   }
 
@@ -110,7 +111,6 @@
     align-items: center;
     justify-content: center;
     padding: 1rem;
-    background: linear-gradient(180deg, #fef2f2 0%, #faf7f2 50%, white 100%);
   }
   .auth-card { width: 100%; max-width: 24rem; }
   .auth-hero { text-align: center; margin-bottom: 2rem; }
