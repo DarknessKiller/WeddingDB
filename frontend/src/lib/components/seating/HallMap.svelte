@@ -364,7 +364,7 @@
 
 <div
   bind:this={containerEl}
-  class="relative flex-1 z-10 overflow-hidden select-none {dark ? 'bg-gray-950' : 'bg-gray-50'}"
+  class="relative flex-1 z-10 overflow-hidden select-none {dark ? 'bg-gray-950' : ''}"
   style="touch-action: none;"
   role="application"
   aria-label="Banquet hall seating map"

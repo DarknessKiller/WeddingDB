@@ -82,7 +82,8 @@
     align-items: center;
     justify-content: center;
     height: 100dvh;
-    background: #faf7f2;
+    background: linear-gradient(180deg, #fef2f2 0%, #faf7f2 50%, white 100%);
+    background-attachment: fixed;
   }
 
   .loading-spinner {
@@ -98,7 +99,8 @@
     display: flex;
     height: 100dvh;
     overflow: hidden;
-    background: #faf7f2;
+    background: linear-gradient(180deg, #fef2f2 0%, #faf7f2 50%, white 100%);
+    background-attachment: fixed;
   }
 
   .sidebar-backdrop {
@@ -121,7 +123,7 @@
   .main-content {
     flex: 1;
     overflow-y: auto;
-    background: white;
+    /* ponytail: no bg, inherit gradient from body */
     padding-top: 3.5rem;
     padding-bottom: env(safe-area-inset-bottom);
   }
