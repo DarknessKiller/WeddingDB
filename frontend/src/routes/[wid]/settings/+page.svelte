@@ -180,7 +180,6 @@
               bind:posY={kioskBackgroundPosY}
               bind:blur={kioskBackgroundBlur}
               label="Background"
-              showBlur={true}
             />
           </div>
         </div>
