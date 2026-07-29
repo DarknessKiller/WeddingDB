@@ -87,18 +87,7 @@
     {/each}
   </nav>
 
-  <!-- Footer -->
-  <div class="sidebar-footer">
-    <div class={cn("user-card", $sidebarCollapsed ? "user-card-collapsed" : "")}>
-      <div class="user-avatar">{initials}</div>
-      {#if !$sidebarCollapsed}
-        <div class="user-info">
-          <div class="user-name">{displayName}</div>
-          <div class="user-role">{auth.role || 'Administrator'}</div>
-        </div>
-      {/if}
-    </div>
-  </div>
+
 </aside>
 
 <style>

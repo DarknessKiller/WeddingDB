@@ -34,6 +34,7 @@
   let kioskBackgroundPosX = $state('center');
   let kioskBackgroundPosY = $state('center');
   let showSeatNumbers = $state(true);
+  let weddingDate = $state<string>('');
 
   // Bottom sheet drag state
   let sheetY = $state(0);
@@ -109,6 +110,7 @@
         if (data.kioskBackgroundPosX) kioskBackgroundPosX = data.kioskBackgroundPosX;
         if (data.kioskBackgroundPosY) kioskBackgroundPosY = data.kioskBackgroundPosY;
         if (data.showSeatNumbers !== undefined) showSeatNumbers = data.showSeatNumbers;
+        if (data.date) weddingDate = data.date;
       }
     }).catch(() => {});
   });
@@ -153,6 +155,12 @@
 
   function formatDate(d: Date) {
     return d.toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
+  }
+
+  function formatWeddingDate(dateStr: string) {
+    if (!dateStr) return formatDate(new Date());
+    const d = new Date(dateStr);
+    return isNaN(d.getTime()) ? formatDate(new Date()) : formatDate(d);
   }
 
   // Spring-like cubic bezier for fluid motion
@@ -288,10 +296,7 @@
           </div>
         {/if}
       </div>
-      <div class="top-bar-center">
-        <div class="time-display">{formatTime(currentTime)}</div>
-        <div class="date-display">{formatDate(currentTime)}</div>
-      </div>
+
       <div class="top-bar-right">
         <button class="icon-btn" onclick={toggleFullscreen} aria-label="Toggle fullscreen">
           {#if isFullscreen}
@@ -412,6 +417,7 @@
     <div class="search-view">
       {#if kioskBackgroundUrl}
         <div class="search-bg" style={`background-image: url(${kioskBackgroundUrl}); background-size: ${kioskBackgroundSize}; background-position: ${kioskBackgroundPosX} ${kioskBackgroundPosY}; filter: blur(${kioskBackgroundBlur}px);`}></div>
+        <div class="search-bg-overlay"></div>
       {/if}
 
       <div class="search-content">
@@ -420,6 +426,9 @@
             <img src={kioskLogoUrl} alt="Logo" class="hero-logo" />
           {:else}
             <div class="hero-icon">囍</div>
+          {/if}
+          {#if weddingDate}
+            <p class="hero-date">{formatWeddingDate(weddingDate)}</p>
           {/if}
           <h1 class="hero-title">{kioskTitle}</h1>
           {#if kioskDescription}
@@ -576,33 +585,6 @@
     font-size: 0.875rem;
     color: #111827;
     letter-spacing: -0.01em;
-  }
-
-  .time-display {
-    font-size: 1.125rem;
-    font-weight: 700;
-    color: #A11217;
-    font-variant-numeric: tabular-nums;
-    letter-spacing: -0.02em;
-    line-height: 1.2;
-  }
-
-  @media (min-width: 640px) {
-    .time-display {
-      font-size: 1.5rem;
-    }
-  }
-
-  .date-display {
-    font-size: 0.625rem;
-    color: #9ca3af;
-    font-weight: 500;
-  }
-
-  @media (min-width: 640px) {
-    .date-display {
-      font-size: 0.75rem;
-    }
   }
 
   /* ---------- Buttons — Press Feedback ---------- */
@@ -1002,9 +984,32 @@
     }
   }
 
+  .hero-date {
+    font-size: 0.875rem;
+    font-weight: 500;
+    color: #9ca3af;
+    letter-spacing: 0.04em;
+    margin-bottom: 0.5rem;
+    text-transform: uppercase;
+  }
+
+  @media (min-width: 640px) {
+    .hero-date {
+      font-size: 1rem;
+    }
+  }
+
   .hero-subtitle {
     color: #6b7280;
     font-size: 0.9375rem;
+  }
+
+  .search-bg-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.3);
+    pointer-events: none;
+    z-index: 1;
   }
 
   /* ---------- Search Input ---------- */
@@ -1025,6 +1030,11 @@
   .search-input-wrap:focus-within {
     border-color: #A11217;
     box-shadow: 0 0 0 3px rgba(161, 18, 23, 0.1), 0 4px 16px rgba(0, 0, 0, 0.06);
+  }
+
+  .search-input-wrap:active {
+    transform: scale(0.98);
+    transition: transform 100ms ease;
   }
 
   .search-icon {
@@ -1083,7 +1093,7 @@
   }
 
   .result-card:active {
-    transform: scale(0.98);
+    transform: scale(0.96);
   }
 
   .result-card:hover {
@@ -1228,4 +1238,26 @@
   .mb-3 { margin-bottom: 0.75rem; }
   .mt-1 { margin-top: 0.25rem; }
   .opacity-30 { opacity: 0.3; }
+
+  /* ---------- Reduced Motion ---------- */
+  @media (prefers-reduced-motion: reduce) {
+    .result-card {
+      animation: none;
+    }
+
+    .search-input-wrap,
+    .result-card,
+    .back-btn,
+    .icon-btn {
+      transition: none;
+    }
+
+    .sheet-collapsed {
+      transition: none;
+    }
+
+    .spinner {
+      animation: spin 1200ms linear infinite;
+    }
+  }
 </style>

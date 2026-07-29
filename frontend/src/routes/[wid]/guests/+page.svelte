@@ -23,7 +23,7 @@
   let totalGuests = $state(0);
   let nextCursor = $state<string | null>(null);
   let cursors = $state<string[]>([]);
-  let sortCol = $state('name');
+  let sortCol = $state<string>('name');
   let sortDir = $state<'asc' | 'desc'>('asc');
   let selectedIds = $state<Set<string>>(new Set());
   let contextMenu = $state<{ x: number; y: number; guest: GuestResponse } | null>(null);
@@ -184,6 +184,21 @@
   let filtered = $derived.by(() => {
     let r = [...guests];
     if (rsvpFilter !== 'all') r = r.filter(g => g.rsvp === rsvpFilter);
+    r.sort((a, b) => {
+      let av: string | number | null, bv: string | number | null;
+      switch (sortCol) {
+        case 'name': av = a.name; bv = b.name; break;
+        case 'phone': av = a.phone; bv = b.phone; break;
+        case 'rsvp': av = a.rsvp; bv = b.rsvp; break;
+        case 'pax': av = a.pax; bv = b.pax; break;
+        case 'tableId': av = a.tableId ?? ''; bv = b.tableId ?? ''; break;
+        case 'seatNum': av = a.seatNum ?? 0; bv = b.seatNum ?? 0; break;
+        case 'checkedInAt': av = a.checkedInAt ?? ''; bv = b.checkedInAt ?? ''; break;
+        default: av = a.name; bv = b.name;
+      }
+      const cmp = av < bv ? -1 : av > bv ? 1 : 0;
+      return sortDir === 'asc' ? cmp : -cmp;
+    });
     return r;
   });
 
