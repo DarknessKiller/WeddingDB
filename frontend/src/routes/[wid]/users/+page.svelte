@@ -6,6 +6,7 @@
   import { listUsers, createUser, deleteUser, assignWeddings, resetPassword, getUserWeddings, updateRole, type User } from '$lib/api/users';
   import { listWeddings, type Wedding } from '$lib/api/weddings';
   import { Plus, Trash2, X, Users, Building2, Key, Shield, Check } from 'lucide-svelte';
+  import { weddingTitle } from '$lib/stores/weddingTitle';
   import PasswordRequirements from '$lib/components/ui/PasswordRequirements.svelte';
 
   let admins = $state<User[]>([]);
@@ -185,7 +186,7 @@
   }
 </script>
 
-<svelte:head><title>User Management – WeddingDB</title></svelte:head>
+<svelte:head> <title>{weddingTitle ? `${weddingTitle} – Users` : 'User Management – WeddingDB'}</title></svelte:head>
 
 <div class="p-4 sm:p-7 max-w-[1200px]">
   <div class="flex items-center justify-between mb-6">

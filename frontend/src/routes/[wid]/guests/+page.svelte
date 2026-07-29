@@ -1,5 +1,6 @@
 <script lang="ts">
   import type { Guest, RSVPStatus } from '$lib/types';
+  import { weddingTitle } from '$lib/stores/weddingTitle';
   import { selectedGuest, isDrawerOpen, drawerStartEditing, drawerCreateMode, addToast } from '$lib/stores';
   import { weddingId } from '$lib/stores/weddingId';
   import { goto } from '$app/navigation';
@@ -521,7 +522,7 @@
   }
 </script>
 
-<svelte:head><title>Guests – WeddingDB</title></svelte:head>
+<svelte:head> <title>{weddingTitle ? `${weddingTitle} – Guests` : 'Guests – WeddingDB'}</title></svelte:head>
 <!-- svelte-ignore a11y_no_static_element_interactions -->
 <div class="p-4 sm:p-7 max-w-[1400px]" onclick={() => contextMenu = null}>
   <!-- Toolbar -->

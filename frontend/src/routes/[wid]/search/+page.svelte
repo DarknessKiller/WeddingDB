@@ -1,5 +1,6 @@
 <script lang="ts">
   import { searchGuests, listGuests, listTables } from '$lib/api/search';
+  import { weddingTitle } from '$lib/stores/weddingTitle';
   import { getLayout } from '$lib/api/layout';
   import { getWedding } from '$lib/api/weddings';
   import { addToast, selectedGuest, isDrawerOpen } from '$lib/stores';
@@ -158,7 +159,8 @@
   let highlightedTableId = $derived($selectedGuest?.tableId ?? highlightTableId);
 </script>
 
-<svelte:head><title>Check In – WeddingDB</title></svelte:head>
+<svelte:head> <title>{weddingTitle ? `${weddingTitle} – Search` : 'Search – WeddingDB'}</title></svelte:head>
+
 
 {#if dataLoading}
   <div class="flex items-center justify-center h-full">

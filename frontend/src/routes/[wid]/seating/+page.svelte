@@ -1,5 +1,6 @@
 <script lang="ts">
   import HallMap from '$lib/components/seating/HallMap.svelte';
+  import { weddingTitle } from '$lib/stores/weddingTitle';
   import { selectedGuest, isDrawerOpen, addToast } from '$lib/stores';
   import { weddingId } from '$lib/stores/weddingId';
   import { goto } from '$app/navigation';
@@ -259,7 +260,8 @@
   }
 </script>
 
-<svelte:head><title>Seating Map – WeddingDB</title></svelte:head>
+<svelte:head> <title>{weddingTitle ? `${weddingTitle} – Seating` : 'Seating – WeddingDB'}</title></svelte:head>
+
 
 {#if loading}
   <div class="flex h-full items-center justify-center">
