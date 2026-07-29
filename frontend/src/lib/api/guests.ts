@@ -143,3 +143,15 @@ export async function bulkImportGuests(guests: GuestImportData[]): Promise<{ imp
   }
   return res.json();
 }
+
+export async function exportGuestsCSV(weddingId: string): Promise<void> {
+  const res = await apiFetch(`/api/weddings/${weddingId}/guests/export`);
+  if (!res.ok) throw new Error(`Failed to export CSV: ${res.status}`);
+  const blob = await res.blob();
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `guests-${new Date().toISOString().slice(0, 10)}.csv`;
+  a.click();
+  URL.revokeObjectURL(url);
+}

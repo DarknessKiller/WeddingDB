@@ -47,6 +47,12 @@ func (r *GuestRepo) ListByWedding(weddingID uuid.UUID, cursor string, limit int)
 	return guests, total, err
 }
 
+func (r *GuestRepo) FindAllByWedding(weddingID uuid.UUID) ([]models.GuestRecord, error) {
+	guests := make([]models.GuestRecord, 0)
+	err := r.db.Where("wedding_id = ?", weddingID).Order("name ASC").Find(&guests).Error
+	return guests, err
+}
+
 func (r *GuestRepo) FindByID(id, weddingID uuid.UUID) (*models.GuestRecord, error) {
 	var g models.GuestRecord
 	err := r.db.Where("id = ? AND wedding_id = ?", id, weddingID).First(&g).Error

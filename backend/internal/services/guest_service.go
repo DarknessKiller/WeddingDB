@@ -23,6 +23,10 @@ func (s *GuestService) List(weddingID uuid.UUID, cursor string, limit int) ([]mo
 	return s.guestRepo.ListByWedding(weddingID, cursor, limit)
 }
 
+func (s *GuestService) FindAllByWedding(weddingID uuid.UUID) ([]models.GuestRecord, error) {
+	return s.guestRepo.FindAllByWedding(weddingID)
+}
+
 func (s *GuestService) Get(id, weddingID uuid.UUID) (*models.GuestRecord, error) {
 	return s.guestRepo.FindByID(id, weddingID)
 }
@@ -137,4 +141,8 @@ func (s *GuestService) BulkCreate(guests []models.GuestRecord) (int, error) {
 
 func (s *GuestService) Occupancy(weddingID uuid.UUID) ([]repository.TableOccupancy, error) {
 	return s.guestRepo.TableOccupancy(weddingID)
+}
+
+func (s *GuestService) ListTables(weddingID uuid.UUID) ([]models.BanquetTable, error) {
+	return s.tableRepo.ListByWedding(weddingID)
 }

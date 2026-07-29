@@ -3,7 +3,7 @@
   import { selectedGuest, isDrawerOpen, drawerStartEditing, addToast } from '$lib/stores';
   import { weddingId } from '$lib/stores/weddingId';
   import { goto } from '$app/navigation';
-  import { listGuests, deleteGuest as apiDeleteGuest, searchGuests, checkInGuest, checkOutGuest, assignSeat, bulkImportGuests } from '$lib/api/guests';
+  import { listGuests, deleteGuest as apiDeleteGuest, searchGuests, checkInGuest, checkOutGuest, assignSeat, bulkImportGuests, exportGuestsCSV } from '$lib/api/guests';
   import type { GuestResponse, GuestImportData } from '$lib/api/guests';
   import { listTables } from '$lib/api/tables';
   import type { BanquetTable } from '$lib/types';
@@ -189,35 +189,12 @@
 
   let totalPages = $derived(Math.ceil(totalGuests / pageSize));
 
-  function exportCSV() {
-    const headers = ['Name', 'Phone', 'Email', 'Table', 'Seat', 'Pax', 'RSVP', 'VIP', 'Checked In', 'Angbao', 'Gift', 'Notes'];
-    const rows = guests.map(g => {
-      const table = tables.find(t => String(t.id) === String(g.tableId));
-      return [
-        g.name,
-        g.phone,
-        g.email || '',
-        table?.name || '',
-        g.seatNum ?? '',
-        g.pax,
-        g.rsvp,
-        g.isVip ? 'Yes' : 'No',
-        g.checkedInAt ? new Date(g.checkedInAt).toLocaleString() : '',
-        g.angbaoAmt ?? '',
-        g.giftItem || '',
-        (g.notes || '').replace(/,/g, ';')
-      ];
-    });
-    const totalAngbao = guests.reduce((sum, g) => sum + (g.angbaoAmt ?? 0), 0);
-    rows.push(['TOTAL', '', '', '', '', '', '', '', '', totalAngbao, '', '']);
-    const csv = [headers, ...rows].map(r => r.join(',')).join('\n');
-    const blob = new Blob([csv], { type: 'text/csv' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `guests-${new Date().toISOString().slice(0, 10)}.csv`;
-    a.click();
-    URL.revokeObjectURL(url);
+  async function exportCSV() {
+    try {
+      await exportGuestsCSV(wid);
+    } catch (e: any) {
+      addToast(e.message ?? 'Export failed', 'error');
+    }
   }
 
   function toggleSort(col: string) {
@@ -382,7 +359,7 @@
         table: tableIdx >= 0 ? cols[tableIdx] : undefined,
         seat: seatIdx >= 0 ? parseInt(cols[seatIdx]) || undefined : undefined,
       };
-    }).filter(g => g.name);
+    }).filter(g => g.name && g.name.toUpperCase() !== 'TOTAL');
   }
 
   function handleImportFile(e: Event) {

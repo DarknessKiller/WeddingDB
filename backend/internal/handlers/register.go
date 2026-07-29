@@ -99,6 +99,7 @@ func RegisterRoutes(
 		fuego.OptionQuery("q", "Search query"),
 	)
 	fuego.Post(scoped, "/guests/import", guestHandler.BulkImport)
+	fuego.Get(scoped, "/guests/export", guestHandler.ExportCSV)
 	fuego.Get(scoped, "/occupancy", guestHandler.Occupancy)
 
 	// Layout

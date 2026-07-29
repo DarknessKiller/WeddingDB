@@ -1,7 +1,10 @@
 package handlers
 
 import (
+	"encoding/csv"
+	"fmt"
 	"strconv"
+
 	"weddingdb/internal/models"
 	"weddingdb/internal/repository"
 	"weddingdb/internal/services"
@@ -347,5 +350,77 @@ func (h *GuestHandler) AssignSeat(c fuego.ContextWithBody[AssignSeatRequest]) (a
 	if err := h.guestService.AssignSeat(guestID, wid, tableID, body.SeatNum); err != nil {
 		return nil, fuego.BadRequestError{Title: err.Error()}
 	}
+	return nil, nil
+}
+
+func (h *GuestHandler) ExportCSV(c fuego.ContextNoBody) (any, error) {
+	wid, err := DecodeWID(c)
+	if err != nil {
+		return nil, fuego.BadRequestError{Title: "Invalid wedding ID"}
+	}
+
+	guests, err := h.guestService.FindAllByWedding(wid)
+	if err != nil {
+		return nil, err
+	}
+
+	tables, err := h.guestService.ListTables(wid)
+	if err != nil {
+		return nil, err
+	}
+
+	tableMap := make(map[string]string)
+	for _, t := range tables {
+		tableMap[t.ID.String()] = t.Name
+	}
+
+	hew := c.Response().Header()
+	hew.Set("Content-Type", "text/csv")
+	hew.Set("Content-Disposition", fmt.Sprintf("attachment; filename=guests-%s.csv", c.PathParam("wid")))
+
+	w := csv.NewWriter(c.Response())
+	defer w.Flush()
+
+	// Header
+	w.Write([]string{"Name", "Phone", "Email", "Table", "Seat", "Pax", "RSVP", "VIP", "Checked In", "Angbao", "Gift", "Notes"})
+
+	// Rows
+	var totalAngbao int
+	for _, g := range guests {
+		tableName := ""
+		if g.TableID != nil {
+			tableName = tableMap[g.TableID.String()]
+		}
+		seatNum := ""
+		if g.SeatNum != nil {
+			seatNum = strconv.Itoa(*g.SeatNum)
+		}
+		angbao := ""
+		if g.AngbaoAmt != nil {
+			angbao = strconv.Itoa(*g.AngbaoAmt)
+			totalAngbao += *g.AngbaoAmt
+		}
+		gift := ""
+		if g.GiftItem != nil {
+			gift = *g.GiftItem
+		}
+		checkedIn := ""
+		if g.CheckedInAt != nil {
+			checkedIn = g.CheckedInAt.Format("2006-01-02 15:04:05")
+		}
+		vip := "No"
+		if g.IsVip {
+			vip = "Yes"
+		}
+		w.Write([]string{
+			g.Name, g.Phone, g.Email, tableName, seatNum,
+			strconv.Itoa(g.Pax), g.RSVP, vip, checkedIn,
+			angbao, gift, g.Notes,
+		})
+	}
+
+	// Total row
+	w.Write([]string{"TOTAL", "", "", "", "", "", "", "", "", strconv.Itoa(totalAngbao), "", ""})
+
 	return nil, nil
 }
