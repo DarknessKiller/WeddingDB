@@ -160,6 +160,7 @@
         if (isMobile) {
           let touchStartX = 0;
           let touchStartY = 0;
+          let touchStartTime = 0;
           let isTouchPanning = false;
           let pinchStartDist = 0;
           let pinchStartZoom = 1;
@@ -168,6 +169,7 @@
             if (e.touches.length === 1) {
               touchStartX = e.touches[0].clientX;
               touchStartY = e.touches[0].clientY;
+              touchStartTime = performance.now();
               isTouchPanning = false;
             } else if (e.touches.length === 2) {
               isTouchPanning = false;
@@ -203,7 +205,35 @@
             }
           }, { passive: false });
 
-          canvas.addEventListener('touchend', () => {
+          canvas.addEventListener('touchend', (e: TouchEvent) => {
+            const dx = (e.changedTouches[0]?.clientX ?? touchStartX) - touchStartX;
+            const dy = (e.changedTouches[0]?.clientY ?? touchStartY) - touchStartY;
+            const dist = Math.sqrt(dx * dx + dy * dy);
+            const elapsed = performance.now() - touchStartTime;
+            // Tap: didn't move much and was quick
+            if (!isTouchPanning && dist < 12 && elapsed < 300) {
+              const touch = e.changedTouches[0];
+              if (touch) {
+                const rect = canvas.getBoundingClientRect();
+                const tapX = touch.clientX - rect.left;
+                const tapY = touch.clientY - rect.top;
+                // Hit-test against computed table screen positions
+                let hitTableId = '';
+                for (const t of displayTables) {
+                  const screenX = panX + offsetX + (t.x / 100) * displayHallWidth * viewScale * zoom;
+                  const screenY = panY + offsetY + (t.y / 100) * displayHallHeight * viewScale * zoom;
+                  const ddx = tapX - screenX;
+                  const ddy = tapY - screenY;
+                  // Hit radius: table visual radius (~34px) + seat orbit (~20px) + padding
+                  const hitRadius = 60 * viewScale * zoom;
+                  if (ddx * ddx + ddy * ddy < hitRadius * hitRadius) {
+                    hitTableId = String(t.id);
+                    break;
+                  }
+                }
+                onTableClick?.(hitTableId);
+              }
+            }
             pinchStartDist = 0;
           }, { passive: true });
         }
@@ -334,13 +364,13 @@
 
 <div
   bind:this={containerEl}
-  class="relative flex-1 z-10 overflow-hidden select-none min-h-[300px] {dark ? 'bg-gray-950' : 'bg-gray-50'}"
+  class="relative flex-1 z-10 overflow-hidden select-none {dark ? 'bg-gray-950' : 'bg-gray-50'}"
   style="touch-action: none;"
   role="application"
   aria-label="Banquet hall seating map"
 >
   <!-- Zoom controls -->
-  <div class="absolute top-3 right-3 sm:top-4 sm:right-4 z-30 flex flex-col gap-1.5">
+  <div class="absolute top-3 right-3 sm:top-4 sm:right-4 z-40 flex flex-col gap-1.5" style="position: absolute !important;">
     <button onclick={() => zoom = Math.min(3, zoom + 0.15)} class="w-8 h-8 sm:w-9 sm:h-9 {dark ? 'bg-gray-800 border-gray-700 hover:bg-gray-700 text-gray-300' : 'bg-white border-gray-200 hover:bg-gray-50 text-gray-600'} border rounded-lg shadow-sm flex items-center justify-center transition-colors" aria-label="Zoom in">
       <ZoomIn class="w-4 h-4" />
     </button>
@@ -355,7 +385,7 @@
 
   <!-- Legend (view mode only) -->
   {#if mode !== 'edit'}
-    <div class="absolute {legendPosition === 'top-left' ? 'top-3 left-3' : 'bottom-3 left-3'} z-30 {dark ? 'bg-gray-800/90 border-gray-700' : 'bg-white/90 border-gray-200'} backdrop-blur-sm border rounded-lg px-2 py-1.5 text-[9px] sm:text-[10px] flex flex-wrap gap-x-3 gap-y-0.5">
+    <div class="absolute {legendPosition === 'top-left' ? 'top-3 left-3' : 'bottom-3 left-3'} z-40 {dark ? 'bg-gray-800/90 border-gray-700' : 'bg-white/90 border-gray-200'} backdrop-blur-sm border rounded-lg px-2 py-1.5 text-[9px] sm:text-[10px] flex flex-wrap gap-x-3 gap-y-0.5">
       <span class="inline-flex items-center gap-1"><span class="w-2 h-2 rounded-full border {dark ? 'border-gray-600 bg-gray-700' : 'border-gray-200 bg-gray-100'}"></span>Empty</span>
       <span class="inline-flex items-center gap-1"><span class="w-2 h-2 rounded-full border border-red {dark ? 'bg-red-900/40' : 'bg-red-50'}"></span>Occupied</span>
       <span class="inline-flex items-center gap-1"><span class="w-2 h-2 rounded-full border border-emerald-500 {dark ? 'bg-emerald-900/40' : 'bg-emerald-50'}"></span>Checked In</span>

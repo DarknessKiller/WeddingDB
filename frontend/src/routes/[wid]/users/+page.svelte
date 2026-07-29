@@ -129,7 +129,7 @@
 <div class="p-4 sm:p-7 max-w-[1200px]">
   <div class="flex items-center justify-between mb-6">
     <div>
-      <h1 class="text-xl font-bold text-gray-900">User Management</h1>
+      <h1 class="text-xl font-bold text-gray-900" style="letter-spacing: -0.02em;">User Management</h1>
       <p class="text-sm text-gray-500 mt-0.5">{admins.length} user(s)</p>
     </div>
     <button onclick={() => showCreate = true} class="px-4 py-2.5 bg-red text-white rounded-xl text-sm font-semibold hover:bg-red-light transition-colors flex items-center gap-2">
@@ -143,7 +143,7 @@
     <div class="text-center py-20 text-gray-400">No users found</div>
   {:else}
     <!-- Desktop table -->
-    <div class="hidden sm:block bg-white border border-gray-200 rounded-2xl overflow-hidden">
+    <div class="hidden sm:block bg-white/90 backdrop-blur-xl border border-black/[0.06] rounded-2xl overflow-hidden">
       <table class="w-full text-sm">
         <thead>
           <tr class="bg-gray-50 border-b border-gray-200">
@@ -189,7 +189,7 @@
     <!-- Mobile cards -->
     <div class="sm:hidden space-y-3">
       {#each admins as user (user.id)}
-        <div class="bg-white border border-gray-200 rounded-2xl p-4">
+        <div class="bg-white/90 backdrop-blur-xl border border-black/[0.06] rounded-2xl p-4">
           <div class="flex items-start justify-between gap-3">
             <div class="min-w-0">
               <div class="font-semibold text-gray-900">{user.name}</div>
@@ -221,8 +221,8 @@
 <!-- Create User Modal -->
 {#if showCreate}
   <div class="fixed inset-0 z-50 flex items-center justify-center p-4">
-    <div class="absolute inset-0 bg-black/40 backdrop-blur-sm" onclick={() => showCreate = false} role="presentation"></div>
-    <div class="relative bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden">
+    <div class="absolute inset-0 bg-black/30 backdrop-blur-md" onclick={() => showCreate = false} role="presentation"></div>
+    <div class="relative bg-white/95 backdrop-blur-xl rounded-2xl shadow-2xl w-full max-w-md overflow-hidden">
       <div class="flex items-center justify-between p-5 border-b border-gray-100">
         <h3 class="font-bold text-gray-900">Add User</h3>
         <button onclick={() => showCreate = false} class="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-gray-100 transition-colors">
@@ -232,19 +232,19 @@
       <div class="p-5 space-y-4">
         <div>
           <label class="text-sm font-semibold text-gray-700 mb-1.5 block">Name</label>
-          <input bind:value={formName} class="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm bg-white focus:border-gold focus:ring-2 focus:ring-gold/15 outline-none transition-all" placeholder="Full name" />
+          <input bind:value={formName} class="w-full px-4 py-2.5 border border-black/[0.08] rounded-xl text-sm bg-white/80 focus:border-red focus:ring-2 focus:ring-red/10 outline-none transition-all min-h-[44px]" placeholder="Full name" />
         </div>
         <div>
           <label class="text-sm font-semibold text-gray-700 mb-1.5 block">Email</label>
-          <input type="email" bind:value={formEmail} class="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm bg-white focus:border-gold focus:ring-2 focus:ring-gold/15 outline-none transition-all" placeholder="email@example.com" />
+          <input type="email" bind:value={formEmail} class="w-full px-4 py-2.5 border border-black/[0.08] rounded-xl text-sm bg-white/80 focus:border-red focus:ring-2 focus:ring-red/10 outline-none transition-all min-h-[44px]" placeholder="email@example.com" />
         </div>
         <div>
           <label class="text-sm font-semibold text-gray-700 mb-1.5 block">Password</label>
-          <input type="password" bind:value={formPassword} minlength="6" class="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm bg-white focus:border-gold focus:ring-2 focus:ring-gold/15 outline-none transition-all" placeholder="Min 6 characters" />
+          <input type="password" bind:value={formPassword} minlength="6" class="w-full px-4 py-2.5 border border-black/[0.08] rounded-xl text-sm bg-white/80 focus:border-red focus:ring-2 focus:ring-red/10 outline-none transition-all min-h-[44px]" placeholder="Min 6 characters" />
         </div>
         <div>
           <label class="text-sm font-semibold text-gray-700 mb-1.5 block">Role</label>
-          <select bind:value={formRole} class="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm bg-white focus:border-gold outline-none">
+          <select bind:value={formRole} class="w-full px-4 py-2.5 border border-black/[0.08] rounded-xl text-sm bg-white/80 focus:border-red focus:ring-2 focus:ring-red/10 outline-none transition-all min-h-[44px]">
             <option value="user">User</option>
             <option value="admin">Admin</option>
           </select>
@@ -255,7 +255,7 @@
           class="flex-1 py-2.5 bg-red text-white rounded-xl text-sm font-semibold hover:bg-red-light transition-colors disabled:opacity-50">
           {saving ? 'Creating...' : 'Create User'}
         </button>
-        <button onclick={() => showCreate = false} class="px-5 py-2.5 border border-gray-200 bg-white rounded-xl text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors">
+        <button onclick={() => showCreate = false} class="px-5 py-2.5 border border-black/[0.06] bg-white/90 rounded-xl text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors">
           Cancel
         </button>
       </div>
@@ -266,8 +266,8 @@
 <!-- Assign Weddings Modal -->
 {#if assignTarget}
   <div class="fixed inset-0 z-50 flex items-center justify-center p-4">
-    <div class="absolute inset-0 bg-black/40 backdrop-blur-sm" onclick={() => assignTarget = null} role="presentation"></div>
-    <div class="relative bg-white rounded-2xl shadow-2xl w-full max-w-sm overflow-hidden">
+    <div class="absolute inset-0 bg-black/30 backdrop-blur-md" onclick={() => assignTarget = null} role="presentation"></div>
+    <div class="relative bg-white/95 backdrop-blur-xl rounded-2xl shadow-2xl w-full max-w-sm overflow-hidden">
       <div class="flex items-center justify-between p-5 border-b border-gray-100">
         <h3 class="font-bold text-gray-900">Assign Weddings</h3>
         <button onclick={() => assignTarget = null} class="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-gray-100 transition-colors">
@@ -294,7 +294,7 @@
           class="flex-1 py-2.5 bg-red text-white rounded-xl text-sm font-semibold hover:bg-red-light transition-colors disabled:opacity-50">
           {assignSaving ? 'Saving...' : 'Save'}
         </button>
-        <button onclick={() => assignTarget = null} class="px-5 py-2.5 border border-gray-200 bg-white rounded-xl text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors">
+        <button onclick={() => assignTarget = null} class="px-5 py-2.5 border border-black/[0.06] bg-white/90 rounded-xl text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors">
           Cancel
         </button>
       </div>
@@ -305,8 +305,8 @@
 <!-- Reset Password Modal -->
 {#if resetTarget}
   <div class="fixed inset-0 z-50 flex items-center justify-center p-4">
-    <div class="absolute inset-0 bg-black/40 backdrop-blur-sm" onclick={() => resetTarget = null} role="presentation"></div>
-    <div class="relative bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden">
+    <div class="absolute inset-0 bg-black/30 backdrop-blur-md" onclick={() => resetTarget = null} role="presentation"></div>
+    <div class="relative bg-white/95 backdrop-blur-xl rounded-2xl shadow-2xl w-full max-w-md overflow-hidden">
       <div class="flex items-center justify-between p-5 border-b border-gray-100">
         <h3 class="font-bold text-gray-900">Reset Password</h3>
         <button onclick={() => resetTarget = null} class="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-gray-100 transition-colors">
@@ -318,7 +318,7 @@
         <div>
           <label class="text-sm font-semibold text-gray-700 mb-1.5 block">New Password</label>
           <input type="password" bind:value={resetPassword_} minlength="6"
-            class="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm bg-white focus:border-gold focus:ring-2 focus:ring-gold/15 outline-none transition-all"
+            class="w-full px-4 py-2.5 border border-black/[0.08] rounded-xl text-sm bg-white/80 focus:border-red focus:ring-2 focus:ring-red/10 outline-none transition-all min-h-[44px]"
             placeholder="Min 6 characters" />
         </div>
       </div>
@@ -327,7 +327,7 @@
           class="flex-1 py-2.5 bg-red text-white rounded-xl text-sm font-semibold hover:bg-red-light transition-colors disabled:opacity-50">
           {resetSaving ? 'Updating...' : 'Update Password'}
         </button>
-        <button onclick={() => resetTarget = null} class="px-5 py-2.5 border border-gray-200 bg-white rounded-xl text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors">
+        <button onclick={() => resetTarget = null} class="px-5 py-2.5 border border-black/[0.06] bg-white/90 rounded-xl text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors">
           Cancel
         </button>
       </div>

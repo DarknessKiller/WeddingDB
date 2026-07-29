@@ -1,9 +1,9 @@
 <script lang="ts">
   import type { Guest, RSVPStatus } from '$lib/types';
-  import { selectedGuest, isDrawerOpen, drawerStartEditing, addToast } from '$lib/stores';
+  import { selectedGuest, isDrawerOpen, drawerStartEditing, drawerCreateMode, addToast } from '$lib/stores';
   import { weddingId } from '$lib/stores/weddingId';
   import { goto } from '$app/navigation';
-  import { listGuests, deleteGuest as apiDeleteGuest, searchGuests, checkInGuest, checkOutGuest, assignSeat, bulkImportGuests } from '$lib/api/guests';
+  import { listGuests, deleteGuest as apiDeleteGuest, searchGuests, assignSeat, bulkImportGuests } from '$lib/api/guests';
   import type { GuestResponse, GuestImportData } from '$lib/api/guests';
   import { listTables } from '$lib/api/tables';
   import type { BanquetTable } from '$lib/types';
@@ -11,7 +11,7 @@
   import { getInitials } from '$lib/utils';
   import {
     Search, Download, Upload, Plus, ChevronLeft, ChevronRight,
-    MoreHorizontal, Pencil, Trash2, ArrowUpDown, CheckCircle, XCircle,
+    MoreHorizontal, Pencil, Trash2, ArrowUpDown,
     FileText, AlertCircle, X, Users
   } from 'lucide-svelte';
   import { onMount } from 'svelte';
@@ -260,23 +260,6 @@
     const left = x + menuWidth > vw ? x - menuWidth : x;
     const top = y + menuHeight > vh ? y - menuHeight : y;
     return `left: ${Math.max(0, left)}px; top: ${Math.max(0, top)}px;`;
-  }
-
-  async function toggleCheckIn(guest: GuestResponse) {
-    try {
-      if (guest.checkedInAt) {
-        await checkOutGuest(wid, guest.id);
-        guests = guests.map(g => g.id === guest.id ? { ...g, checkedInAt: null } : g);
-        addToast(`${guest.name} checked out`, 'info');
-      } else {
-        await checkInGuest(wid, guest.id);
-        guests = guests.map(g => g.id === guest.id ? { ...g, checkedInAt: new Date().toISOString() } : g);
-        addToast(`${guest.name} checked in`, 'success');
-      }
-    } catch (e: any) {
-      addToast(e.message ?? 'Operation failed', 'error');
-    }
-    contextMenu = null;
   }
 
   async function openMoveTable(guest: GuestResponse) {
@@ -550,7 +533,7 @@
       <button onclick={exportCSV} class="px-2 sm:px-3 py-1.5 sm:py-2.5 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-xl text-xs sm:text-sm font-semibold transition-colors flex items-center gap-1 sm:gap-1.5">
         <Download class="w-3.5 h-3.5 sm:w-4 sm:h-4" /> <span class="hidden sm:inline">Export CSV</span><span class="sm:hidden">Export</span>
       </button>
-      <button onclick={() => goto(`/${$weddingId}/reservation`)} class="flex items-center gap-1 sm:gap-2 px-2.5 sm:px-4 py-1.5 sm:py-2.5 bg-red text-white rounded-xl text-xs sm:text-sm font-semibold hover:bg-red-light transition-colors">
+      <button onclick={() => { $drawerCreateMode = true; $isDrawerOpen = true; }} class="flex items-center gap-1 sm:gap-2 px-2.5 sm:px-4 py-1.5 sm:py-2.5 bg-red text-white rounded-xl text-xs sm:text-sm font-semibold hover:bg-red-light transition-colors">
         <Plus class="w-3.5 h-3.5 sm:w-4 sm:h-4" /> <span class="hidden sm:inline">Add Guest</span><span class="sm:hidden">Add</span>
       </button>
     </div>
@@ -559,7 +542,7 @@
   {#if selectedIds.size > 0}
     <div class="mb-4 px-4 py-3 bg-red-50 border border-red-100 rounded-xl flex items-center gap-3 text-sm">
       <span class="font-semibold text-red">{selectedIds.size} selected</span>
-      <button onclick={openBulkMove} class="px-3 py-1.5 bg-white border border-gray-200 rounded-lg text-xs font-medium hover:bg-gray-50">Move Table</button>
+      <button onclick={openBulkMove} class="px-3 py-1.5 bg-white/90 border border-black/[0.06] rounded-lg text-xs font-medium hover:bg-gray-50">Move Table</button>
       <button onclick={bulkDelete} class="px-3 py-1.5 bg-white border border-red-200 rounded-lg text-xs font-medium text-red hover:bg-red-50">Delete</button>
     </div>
   {/if}
@@ -584,13 +567,13 @@
       </div>
       <p class="text-gray-500 font-medium">No guests yet</p>
       <p class="text-sm text-gray-400 mt-1 mb-4">Add your first guest to get started.</p>
-      <button onclick={() => goto(`/${$weddingId}/reservation`)} class="px-4 py-2.5 bg-red text-white rounded-xl text-sm font-semibold hover:bg-red-light transition-colors flex items-center gap-2">
+      <button onclick={() => { $drawerCreateMode = true; $isDrawerOpen = true; }} class="px-4 py-2.5 bg-red text-white rounded-xl text-sm font-semibold hover:bg-red-light transition-colors flex items-center gap-2">
         <Plus class="w-4 h-4" /> Add Guest
       </button>
     </div>
   {:else}
     <!-- Table -->
-    <div class="bg-white border border-gray-200 rounded-2xl overflow-hidden">
+    <div class="bg-white/90 backdrop-blur-xl border border-black/[0.06] rounded-2xl overflow-hidden">
       <div class="overflow-x-auto">
         <table class="w-full text-sm">
           <thead>
@@ -675,8 +658,8 @@
 
 <!-- Bulk Move Table Modal -->
 {#if showBulkMoveModal}
-  <div class="fixed inset-0 z-[700] flex items-center justify-center bg-black/40" onclick={() => showBulkMoveModal = false}>
-    <div class="bg-white rounded-2xl shadow-2xl w-full max-w-md p-6" onclick={(e) => e.stopPropagation()}>
+  <div class="fixed inset-0 z-[700] flex items-center justify-center bg-black/30 backdrop-blur-md" onclick={() => showBulkMoveModal = false}>
+    <div class="bg-white/95 backdrop-blur-xl rounded-2xl shadow-2xl w-full max-w-md p-6" onclick={(e) => e.stopPropagation()}>
       <h3 class="text-lg font-semibold text-gray-900 mb-4">Move {selectedIds.size} Guests</h3>
       <div class="space-y-3 mb-6">
         <div>
@@ -713,15 +696,8 @@
 <!-- Context Menu -->
 {#if contextMenu}
   <!-- svelte-ignore a11y_no_static_element_interactions -->
-  <div class="fixed z-[600] bg-white border border-gray-200 rounded-xl shadow-xl py-1.5 min-w-[180px]"
+  <div class="fixed z-[600] bg-white/95 backdrop-blur-xl border border-black/[0.06] rounded-xl shadow-xl py-1.5 min-w-[180px]"
     style={getMenuStyle(contextMenu.x, contextMenu.y)} onclick={(e) => e.stopPropagation()}>
-    <button class="w-full flex items-center gap-2.5 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50" onclick={() => toggleCheckIn(contextMenu!.guest)}>
-      {#if contextMenu!.guest.checkedInAt}
-        <XCircle class="w-4 h-4" /> Check Out
-      {:else}
-        <CheckCircle class="w-4 h-4" /> Check In
-      {/if}
-    </button>
     <button class="w-full flex items-center gap-2.5 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50" onclick={() => { $drawerStartEditing = true; openGuest(contextMenu!.guest); contextMenu = null; }}>
       <Pencil class="w-4 h-4" /> Edit
     </button>
@@ -737,8 +713,8 @@
 
 <!-- Move Table Modal -->
 {#if showMoveModal && moveGuest}
-  <div class="fixed inset-0 z-[700] flex items-center justify-center bg-black/40" onclick={() => showMoveModal = false}>
-    <div class="bg-white rounded-2xl shadow-2xl w-full max-w-md p-6" onclick={(e) => e.stopPropagation()}>
+  <div class="fixed inset-0 z-[700] flex items-center justify-center bg-black/30 backdrop-blur-md" onclick={() => showMoveModal = false}>
+    <div class="bg-white/95 backdrop-blur-xl rounded-2xl shadow-2xl w-full max-w-md p-6" onclick={(e) => e.stopPropagation()}>
       <h3 class="text-lg font-semibold text-gray-900 mb-4">Move Table</h3>
       <div class="space-y-3 mb-6">
         <div>
@@ -790,8 +766,8 @@
 
 {#if showImportModal}
   <div class="fixed inset-0 z-50 flex items-center justify-center p-4">
-    <div class="absolute inset-0 bg-black/40 backdrop-blur-sm" onclick={() => showImportModal = false} role="presentation"></div>
-    <div class="relative bg-white rounded-2xl shadow-2xl w-full max-w-lg overflow-hidden">
+    <div class="absolute inset-0 bg-black/30 backdrop-blur-md" onclick={() => showImportModal = false} role="presentation"></div>
+    <div class="relative bg-white/95 backdrop-blur-xl rounded-2xl shadow-2xl w-full max-w-lg overflow-hidden">
       <div class="flex items-center justify-between p-5 border-b border-gray-100">
         <h3 class="font-bold text-gray-900">Import Guests from CSV</h3>
         <button onclick={() => showImportModal = false} class="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-gray-100 transition-colors">
@@ -868,7 +844,7 @@
           {/if}
         </button>
         <button onclick={() => showImportModal = false}
-          class="px-5 py-2.5 border border-gray-200 bg-white rounded-xl text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors">
+          class="px-5 py-2.5 border border-black/[0.06] bg-white/90 rounded-xl text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors">
           Cancel
         </button>
       </div>

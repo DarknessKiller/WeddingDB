@@ -6,6 +6,7 @@ interface PublicGuest {
 	id: string;
 	name: string;
 	phone: string;
+	rsvp?: string;
 	tableId: string | null;
 	seatNum: number | null;
 	pax: number;
@@ -13,12 +14,12 @@ interface PublicGuest {
 	checkedInAt: string | null;
 }
 
-function mapGuest(raw: PublicGuest): Guest {
+export function mapGuest(raw: PublicGuest): Guest {
 	return {
 		id: raw.id,
 		name: raw.name ?? '',
 		phone: raw.phone ?? '',
-		rsvp: 'no_response',
+		rsvp: (raw.rsvp as Guest['rsvp']) ?? 'no_response',
 		pax: raw.pax ?? 1,
 		tableId: raw.tableId ?? null,
 		seatNumber: raw.seatNum ?? null,

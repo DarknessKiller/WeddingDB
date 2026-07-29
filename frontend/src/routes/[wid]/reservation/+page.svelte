@@ -242,9 +242,9 @@
 
 <svelte:head><title>New Reservation – WeddingDB</title></svelte:head>
 
-<div class="flex h-[calc(100dvh-56px)] sm:h-[calc(100dvh-64px)]">
-  <!-- Left: Hall Map -->
-  <div class="flex-1 flex flex-col relative">
+<div class="flex flex-col sm:flex-row h-full">
+  <!-- Left: Hall Map (hidden on mobile, shown on desktop) -->
+  <div class="hidden sm:flex flex-1 flex-col relative">
     {#if apiTables.length > 0}
       <HallMap
         tables={apiTables}
@@ -260,7 +260,7 @@
   </div>
 
   <!-- Right: Form -->
-  <div class="w-full max-w-lg bg-white border-l border-gray-200 overflow-y-auto">
+  <div class="flex-1 sm:w-full sm:max-w-lg bg-white/90 backdrop-blur-xl sm:border-l border-black/[0.06] overflow-y-auto">
     <div class="p-6">
       <div class="mb-6">
         <h1 class="text-xl font-bold text-gray-900">New Reservation</h1>
@@ -429,7 +429,7 @@
             id="notes"
             bind:value={form.notes}
             rows="3"
-            class="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm bg-white focus:border-gold focus:ring-2 focus:ring-gold/15 outline-none transition-all resize-none"
+            class="w-full px-4 py-3 border border-black/[0.08] rounded-xl text-sm bg-white/80 focus:border-red focus:ring-2 focus:ring-red/10 outline-none transition-all resize-none min-h-[80px]"
             placeholder="Any special requirements or notes..."
           ></textarea>
         </div>
@@ -448,7 +448,7 @@
               <CheckCircle2 class="w-4 h-4" /> Save Reservation
             {/if}
           </button>
-          <button type="button" onclick={() => goto(`/${$weddingId}/guests`)} class="px-6 py-3 border border-gray-200 bg-white rounded-xl text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors">
+          <button type="button" onclick={() => goto(`/${$weddingId}/guests`)} class="px-6 py-3 border border-black/[0.06] bg-white/90 rounded-xl text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors">
             Cancel
           </button>
         </div>

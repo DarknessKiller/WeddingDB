@@ -4,7 +4,7 @@
   import Sidebar from '$lib/components/layout/Sidebar.svelte';
   import Header from '$lib/components/layout/Header.svelte';
   import Drawer from '$lib/components/ui/Drawer.svelte';
-  import { selectedGuest, isDrawerOpen, drawerStartEditing, sidebarCollapsed } from '$lib/stores';
+  import { selectedGuest, isDrawerOpen, drawerStartEditing, drawerCreateMode, sidebarCollapsed } from '$lib/stores';
   import { weddingId, setWeddingId } from '$lib/stores/weddingId';
   import { validateToken } from '$lib/utils/auth';
   import { listGuests } from '$lib/api/guests';
@@ -21,7 +21,6 @@
 
   onMount(async () => {
     if (!await validateToken()) return;
-    // Sync URL param to store (wid is already decoded)
     if (wid) {
       setWeddingId(wid);
     }
@@ -34,7 +33,6 @@
     }).catch(() => {});
   });
 
-  // Close sidebar on mobile when navigating
   $effect(() => {
     currentPath;
     if (typeof window !== 'undefined' && window.innerWidth < 1024) {
@@ -44,32 +42,104 @@
 </script>
 
 {#if !authChecked}
-  <div class="flex items-center justify-center h-screen bg-warm-50">
-    <div class="w-8 h-8 border-2 border-red border-t-transparent rounded-full animate-spin"></div>
+  <div class="loading-screen">
+    <div class="loading-spinner"></div>
   </div>
 {:else}
-  <div class="flex h-screen overflow-hidden bg-warm-50">
+  <div class="app-layout">
+    <!-- Mobile backdrop -->
     {#if !$sidebarCollapsed}
-      <!-- svelte-ignore a11y_no_static_element_interactions -->
       <div
-        class="fixed inset-0 bg-black/40 z-30 lg:hidden"
+        class="sidebar-backdrop lg:hidden"
         onclick={() => $sidebarCollapsed = true}
+        onkeydown={(e) => { if (e.key === 'Escape') $sidebarCollapsed = true; }}
+        role="button"
+        tabindex="-1"
+        aria-label="Close sidebar"
       ></div>
     {/if}
 
     <Sidebar {currentPath} {guestCount} {wid} />
 
-    <div class="flex flex-1 flex-col overflow-hidden min-w-0">
+    <div class="main-area">
       <Header />
-      <main class="flex-1 overflow-y-auto bg-white">
+      <main class="main-content">
         {@render children()}
       </main>
     </div>
   </div>
 {/if}
 
-{#if $isDrawerOpen && $selectedGuest}
-  {#key $drawerStartEditing}
-    <Drawer guest={$selectedGuest} tables={tables} startEditing={$drawerStartEditing} onClose={() => { $isDrawerOpen = false; $selectedGuest = null; $drawerStartEditing = false; }} />
+{#if $isDrawerOpen && ($selectedGuest || $drawerCreateMode)}
+  {#key `${$drawerStartEditing}-${$drawerCreateMode}`}
+    <Drawer guest={$selectedGuest ?? undefined} tables={tables} startEditing={$drawerStartEditing} createMode={$drawerCreateMode} onClose={() => { $isDrawerOpen = false; $selectedGuest = null; $drawerStartEditing = false; $drawerCreateMode = false; }} />
   {/key}
 {/if}
+
+<style>
+  .loading-screen {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    height: 100dvh;
+    background: #faf7f2;
+  }
+
+  .loading-spinner {
+    width: 2rem;
+    height: 2rem;
+    border: 2.5px solid rgba(161, 18, 23, 0.2);
+    border-top-color: #A11217;
+    border-radius: 50%;
+    animation: spin 600ms linear infinite;
+  }
+
+  .app-layout {
+    display: flex;
+    height: 100dvh;
+    overflow: hidden;
+    background: #faf7f2;
+  }
+
+  .sidebar-backdrop {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.5);
+    z-index: 55;
+    animation: fadeIn 200ms ease;
+  }
+
+  .main-area {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    position: relative;
+    overflow: hidden;
+  }
+
+  .main-content {
+    flex: 1;
+    overflow-y: auto;
+    background: white;
+    padding-top: 3.5rem;
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+
+  @media (min-width: 640px) {
+    .main-content {
+      padding-top: 4rem;
+    }
+  }
+
+
+
+  @keyframes spin {
+    to { transform: rotate(360deg); }
+  }
+
+  @keyframes fadeIn {
+    from { opacity: 0; }
+    to { opacity: 1; }
+  }
+</style>

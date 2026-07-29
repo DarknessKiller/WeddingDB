@@ -3,14 +3,15 @@
   import { selectedGuest, isDrawerOpen, addToast } from '$lib/stores';
   import { weddingId } from '$lib/stores/weddingId';
   import { goto } from '$app/navigation';
-  import { fetchAllGuests, assignSeat, type GuestResponse } from '$lib/api/guests';
+  import { fetchAllGuests, assignSeat, checkInGuest, checkOutGuest, type GuestResponse } from '$lib/api/guests';
   import { getOccupancy, listTables } from '$lib/api/tables';
   import { getLayout, saveLayout } from '$lib/api/layout';
   import Badge from '$lib/components/ui/Badge.svelte';
   import { cn } from '$lib/utils';
   import { page } from '$app/state';
   import { onMount } from 'svelte';
-  import { Users, Star, X, Search, AlertCircle, Plus } from 'lucide-svelte';
+  import { Users, Star, X, Search, AlertCircle, Plus, UserCheck, CheckCircle2, Banknote, Gift } from 'lucide-svelte';
+  import CheckInModal from '$lib/components/ui/CheckInModal.svelte';
   import { get } from 'svelte/store';
   import type { BanquetTable, Guest, RSVPStatus, TableOccupancy, HallElement } from '$lib/types';
 
@@ -30,6 +31,34 @@
   let guestSearch = $state('');
   let unassignedGuests = $state<Guest[]>([]);
   let assigningSeat = $state<number | null>(null);
+  let showCheckinModal = $state(false);
+
+  // Swipe-to-dismiss for mobile panel
+  let panelDragY = $state(0);
+  let panelDragging = $state(false);
+  let panelStartY = $state(0);
+
+  function onPanelTouchStart(e: TouchEvent) {
+    if (window.innerWidth >= 768) return; // desktop only
+    panelStartY = e.touches[0].clientY;
+    panelDragging = true;
+  }
+
+  function onPanelTouchMove(e: TouchEvent) {
+    if (!panelDragging) return;
+    const delta = e.touches[0].clientY - panelStartY;
+    if (delta > 0) panelDragY = delta;
+  }
+
+  function onPanelTouchEnd() {
+    if (!panelDragging) return;
+    panelDragging = false;
+    if (panelDragY > 80) closePanel();
+    panelDragY = 0;
+  }
+  let checkinGuest = $state<Guest | null>(null);
+  let angbaoAmount = $state('');
+  let giftItem = $state('');
 
   function mapGuest(r: GuestResponse): Guest {
     return {
@@ -174,6 +203,40 @@
     }
   }
 
+  function openCheckinModal(guest: Guest) {
+    checkinGuest = guest;
+    angbaoAmount = guest.angbaoAmount != null ? String(guest.angbaoAmount) : '';
+    giftItem = guest.giftItem ?? '';
+    showCheckinModal = true;
+  }
+
+  async function confirmCheckIn() {
+    if (!checkinGuest) return;
+    const wid = get(weddingId);
+    try {
+      const body: { angbaoAmt?: number; giftItem?: string } = {};
+      if (angbaoAmount) body.angbaoAmt = Number(angbaoAmount);
+      if (giftItem) body.giftItem = giftItem;
+      await checkInGuest(wid, checkinGuest.id, Object.keys(body).length ? body : undefined);
+      allGuests = allGuests.map(g => g.id === checkinGuest!.id ? { ...g, checkedIn: true, checkedInAt: new Date(), angbaoAmount: angbaoAmount ? Number(angbaoAmount) : g.angbaoAmount, giftItem: giftItem || g.giftItem } : g);
+      showCheckinModal = false;
+      addToast(`${checkinGuest.name} checked in`, 'success');
+    } catch (e: any) {
+      addToast(e.message ?? 'Check-in failed', 'error');
+    }
+  }
+
+  async function handleCheckOut(guest: Guest) {
+    const wid = get(weddingId);
+    try {
+      await checkOutGuest(wid, guest.id);
+      allGuests = allGuests.map(g => g.id === guest.id ? { ...g, checkedIn: false, checkedInAt: undefined } : g);
+      addToast(`${guest.name} checked out`, 'success');
+    } catch (e: any) {
+      addToast(e.message ?? 'Check-out failed', 'error');
+    }
+  }
+
   async function handleSaveLayout(editTables: BanquetTable[], editElements: HallElement[], hw: number, hh: number) {
     const wid = get(weddingId);
     try {
@@ -199,14 +262,14 @@
 <svelte:head><title>Seating Map – WeddingDB</title></svelte:head>
 
 {#if loading}
-  <div class="flex h-[calc(100dvh-56px)] sm:h-[calc(100dvh-64px)] items-center justify-center">
+  <div class="flex h-full items-center justify-center">
     <div class="flex flex-col items-center gap-3 text-gray-400">
       <div class="w-8 h-8 border-2 border-red/30 border-t-red rounded-full animate-spin"></div>
       <span class="text-sm">Loading seating map...</span>
     </div>
   </div>
 {:else if errored}
-  <div class="flex h-[calc(100dvh-56px)] sm:h-[calc(100dvh-64px)] items-center justify-center">
+  <div class="flex h-full items-center justify-center">
     <div class="flex flex-col items-center gap-3 text-center">
       <div class="w-16 h-16 bg-red-50 rounded-full flex items-center justify-center">
         <AlertCircle class="w-8 h-8 text-red" />
@@ -219,7 +282,7 @@
     </div>
   </div>
 {:else if allTables.length === 0}
-  <div class="flex h-[calc(100dvh-56px)] sm:h-[calc(100dvh-64px)] items-center justify-center">
+  <div class="flex h-full items-center justify-center">
     <div class="flex flex-col items-center gap-3 text-center">
       <div class="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center">
         <Users class="w-8 h-8 text-gray-400" />
@@ -233,7 +296,7 @@
   </div>
 {:else}
 
-<div class="flex h-[calc(100dvh-56px)] sm:h-[calc(100dvh-64px)]">
+<div class="flex h-full">
   <!-- Map -->
   <HallMap
     selectedTableId={editMode ? null : selectedTableId}
@@ -252,7 +315,7 @@
 
   <!-- Desktop Side Panel -->
   {#if selectedTable && !editMode}
-    <div class="hidden md:flex w-[340px] bg-white border-l border-gray-200 flex-col overflow-hidden animate-in">
+    <div class="hidden md:flex w-[340px] bg-white/90 backdrop-blur-xl border-l border-black/[0.06] flex-col overflow-hidden animate-in">
       <!-- Panel Header -->
       <div class="flex items-center justify-between px-5 py-4 border-b border-gray-100">
         <div class="flex items-center gap-3">
@@ -328,7 +391,14 @@
                   <span>{guest.pax} pax</span>
                 </div>
               </div>
-              <Badge status={guest.rsvp} />
+              <div class="flex items-center gap-1.5">
+                <Badge status={guest.rsvp} />
+                {#if guest.checkedIn}
+                  <span class="inline-flex items-center gap-0.5 px-1.5 py-0.5 bg-emerald-50 text-emerald-700 rounded-full text-[10px] font-semibold border border-emerald-200">
+                    <CheckCircle2 class="w-2.5 h-2.5" /> In
+                  </span>
+                {/if}
+              </div>
             {:else}
               <span class="text-xs text-gray-400 italic">{assigningSeat === seatNum ? 'Select a guest below...' : 'Click to assign'}</span>
             {/if}
@@ -374,8 +444,19 @@
       {/if}
 
       <!-- Panel Footer -->
-      <div class="px-5 py-4 border-t border-gray-100 bg-gray-50/50">
-        <button onclick={() => goto(`/${$weddingId}/tables`)} class="w-full py-2.5 border border-gray-200 bg-white rounded-xl text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors">
+      <div class="px-5 py-4 border-t border-gray-100 bg-gray-50/50 space-y-2">
+        {#if $selectedGuest && $selectedGuest.tableId === selectedTableId}
+          {#if $selectedGuest.checkedIn}
+            <button onclick={() => $selectedGuest && handleCheckOut($selectedGuest)} class="w-full py-2.5 bg-emerald-50 text-emerald-700 rounded-xl text-sm font-semibold border border-emerald-200 hover:bg-emerald-100 transition-colors flex items-center justify-center gap-1.5">
+              <CheckCircle2 class="w-4 h-4" /> Checked In — Tap to Check Out
+            </button>
+          {:else}
+            <button onclick={() => $selectedGuest && openCheckinModal($selectedGuest)} class="w-full py-2.5 bg-red text-white rounded-xl text-sm font-semibold hover:bg-red-light transition-colors flex items-center justify-center gap-1.5">
+              <UserCheck class="w-4 h-4" /> Check In
+            </button>
+          {/if}
+        {/if}
+        <button onclick={() => goto(`/${$weddingId}/tables`)} class="w-full py-2.5 border border-black/[0.06] bg-white/90 rounded-xl text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors">
           Manage Tables
         </button>
       </div>
@@ -385,14 +466,19 @@
   <!-- Mobile Bottom Panel -->
   {#if selectedTable && showMobilePanel && !editMode}
     <!-- svelte-ignore a11y_no_static_element_interactions -->
-    <div class="md:hidden fixed inset-x-0 bottom-0 z-40 bg-white border-t border-gray-200 rounded-t-2xl shadow-2xl animate-slide-up" style="max-height: 60vh;">
-      <!-- Drag handle -->
-      <div class="flex justify-center py-2">
+    <div class="md:hidden fixed inset-x-0 bottom-0 z-40 bg-white/95 backdrop-blur-xl border-t border-black/[0.06] rounded-t-2xl shadow-2xl animate-slide-up pb-[env(safe-area-inset-bottom)]"
+      style="max-height: 60vh; transform: translateY({panelDragY}px); transition: {panelDragging ? 'none' : 'transform 300ms cubic-bezier(0.2, 0.8, 0.2, 1)'}"
+      ontouchstart={onPanelTouchStart}
+      ontouchmove={onPanelTouchMove}
+      ontouchend={onPanelTouchEnd}
+    >
+      <!-- Pill dismiss (acts as drag handle) -->
+      <div class="flex justify-center py-2" role="presentation">
         <div class="w-10 h-1 bg-gray-300 rounded-full"></div>
       </div>
 
       <!-- Panel Header -->
-      <div class="flex items-center justify-between px-4 py-3 border-b border-gray-100">
+      <div class="flex items-center px-4 py-3 border-b border-gray-100">
         <div class="flex items-center gap-3">
           <div class="w-9 h-9 rounded-xl bg-red-50 border border-red-100 flex items-center justify-center text-red font-bold text-sm">
             {selectedTable.name || selectedTable.id}
@@ -405,9 +491,6 @@
             </div>
           </div>
         </div>
-        <button onclick={closePanel} class="p-2 rounded-lg hover:bg-gray-100" aria-label="Close">
-          <X class="w-5 h-5 text-gray-400" />
-        </button>
       </div>
 
       <!-- Occupancy -->
@@ -469,3 +552,14 @@
     animation: slideUp 0.25s ease-out;
   }
 </style>
+
+<!-- Check-in Modal -->
+{#if showCheckinModal && checkinGuest}
+  <CheckInModal
+    guestName={checkinGuest.name}
+    bind:angbaoAmount
+    bind:giftItem
+    onConfirm={confirmCheckIn}
+    onClose={() => showCheckinModal = false}
+  />
+{/if}

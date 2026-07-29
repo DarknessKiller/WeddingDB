@@ -4,10 +4,10 @@
   let { status }: { status: RSVPStatus } = $props();
 
   const styles: Record<string, string> = {
-    confirmed: 'bg-emerald-50 text-emerald-700 border-emerald-200',
-    pending: 'bg-amber-50 text-amber-700 border-amber-200',
-    declined: 'bg-red-50 text-red-700 border-red-200',
-    no_response: 'bg-gray-50 text-gray-500 border-gray-200',
+    confirmed: 'badge-confirmed',
+    pending: 'badge-pending',
+    declined: 'badge-declined',
+    no_response: 'badge-none',
   };
 
   const labels: Record<string, string> = {
@@ -18,7 +18,51 @@
   };
 </script>
 
-<span class="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold border {styles[status]}">
-  <span class="w-1.5 h-1.5 rounded-full bg-current"></span>
+<span class="badge {styles[status]}">
+  <span class="badge-dot"></span>
   {labels[status]}
 </span>
+
+<style>
+  .badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+    padding: 0.25rem 0.625rem;
+    border-radius: 9999px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    line-height: 1;
+  }
+
+  .badge-dot {
+    width: 0.375rem;
+    height: 0.375rem;
+    border-radius: 50%;
+    background: currentColor;
+  }
+
+  .badge-confirmed {
+    background: #ECFDF5;
+    color: #059669;
+    border: 1px solid #A7F3D0;
+  }
+
+  .badge-pending {
+    background: #FFFBEB;
+    color: #D97706;
+    border: 1px solid #FDE68A;
+  }
+
+  .badge-declined {
+    background: #FEF2F2;
+    color: #DC2626;
+    border: 1px solid #FECACA;
+  }
+
+  .badge-none {
+    background: #F9FAFB;
+    color: #6B7280;
+    border: 1px solid #E5E7EB;
+  }
+</style>

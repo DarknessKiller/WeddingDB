@@ -1,37 +1,100 @@
 <script lang="ts">
   import type { Guest, BanquetTable, RSVPStatus } from '$lib/types';
-  import { X, Phone, Mail, Utensils, StickyNote, Banknote, Gift, Pencil, Check } from 'lucide-svelte';
+  import { X, Phone, Mail, Utensils, StickyNote, Banknote, Gift, Pencil, Check, UserCheck, CheckCircle2 } from 'lucide-svelte';
+  import CheckInModal from './CheckInModal.svelte';
   import Badge from './Badge.svelte';
   import { getInitials, cn } from '$lib/utils';
   import { formatSeatRange } from '$lib/utils/seat';
   import { addToast } from '$lib/stores';
   import { weddingId } from '$lib/stores/weddingId';
-  import { updateGuest } from '$lib/api/guests';
+  import { updateGuest, createGuest, checkInGuest, checkOutGuest, getGuest } from '$lib/api/guests';
   import { get } from 'svelte/store';
-  let { guest, tables = [], onClose, startEditing = false }: { guest: Guest; tables?: BanquetTable[]; onClose: () => void; startEditing?: boolean } = $props();
+  let { guest, tables = [], onClose, startEditing = false, createMode = false, readonly = false }: { guest?: Guest; tables?: BanquetTable[]; onClose: () => void; startEditing?: boolean; createMode?: boolean; readonly?: boolean } = $props();
 
-  let tableName = $derived(tables.find(t => t.id === guest.tableId)?.name ?? guest.tableId ?? '—');
+  let tableName = $derived(guest ? (tables.find(t => t.id === guest.tableId)?.name ?? guest.tableId ?? '—') : '—');
 
-  let editing = $state(false);
+  let editing = $state(startEditing || createMode);
   let saving = $state(false);
+  let showCheckinModal = $state(false);
+  let angbaoAmount = $state('');
+  let giftItem = $state('');
 
-  // ponytail: effect watches startEditing prop, syncs editing state
-  $effect(() => { editing = startEditing; });
+  // Local reactive copy of guest for check-in/checkout UI updates
+  let localGuest = $state(guest);
+  $effect(() => { localGuest = guest; });
+
+  // Re-fetch guest data from server after any action
+  async function refreshGuest() {
+    if (!guest?.id) return;
+    const wid = get(weddingId);
+    try {
+      const fresh = await getGuest(wid, guest.id);
+      // Map GuestResponse back to Guest type
+      Object.assign(guest, {
+        name: fresh.name,
+        phone: fresh.phone,
+        email: fresh.email,
+        pax: fresh.pax,
+        rsvp: fresh.rsvp,
+        isVip: fresh.isVip,
+        notes: fresh.notes,
+        dietaryRequirements: fresh.dietary,
+        checkedIn: !!fresh.checkedInAt,
+        checkedInAt: fresh.checkedInAt ? new Date(fresh.checkedInAt) : undefined,
+        angbaoAmount: fresh.angbaoAmt ?? undefined,
+        giftItem: fresh.giftItem ?? undefined,
+      });
+      localGuest = { ...guest };
+    } catch {
+      // Silent fail — local mutation is already applied
+    }
+  }
+
+  // Touch drag state for mobile dismiss
+  let dragY = $state(0);
+  let dragging = $state(false);
+  let startY = $state(0);
+
+  function onTouchStart(e: TouchEvent) {
+    if (window.innerWidth >= 640) return; // desktop only
+    const panel = e.currentTarget;
+    if (panel instanceof HTMLElement && panel.scrollTop > 0) { dragging = false; return; }
+    startY = e.touches[0].clientY;
+    dragging = true;
+  }
+
+  function onTouchMove(e: TouchEvent) {
+    if (!dragging) return;
+    const panel = e.currentTarget;
+    if (panel instanceof HTMLElement && panel.scrollTop > 0) return;
+    const delta = e.touches[0].clientY - startY;
+    if (delta > 0) dragY = delta;
+  }
+
+  function onTouchEnd() {
+    if (!dragging) return;
+    dragging = false;
+    if (dragY > 100) {
+      onClose();
+    }
+    dragY = 0;
+  }
+
   let form = $state({
-    name: guest.name,
-    phone: guest.phone,
-    email: guest.email ?? '',
-    pax: guest.pax,
-    rsvp: guest.rsvp,
-    isVip: guest.isVip,
-    notes: guest.notes,
-    dietary: guest.dietaryRequirements,
-    angbaoAmt: guest.angbaoAmount != null ? String(guest.angbaoAmount) : '',
-    giftItem: guest.giftItem ?? '',
+    name: guest?.name ?? '',
+    phone: guest?.phone ?? '',
+    email: guest?.email ?? '',
+    pax: guest?.pax ?? 1,
+    rsvp: (guest?.rsvp ?? 'pending') as RSVPStatus,
+    isVip: guest?.isVip ?? false,
+    notes: guest?.notes ?? '',
+    dietary: guest?.dietaryRequirements ?? [],
+    angbaoAmt: guest?.angbaoAmount != null ? String(guest.angbaoAmount) : '',
+    giftItem: guest?.giftItem ?? '',
   });
 
-  // ponytail: sync form when guest prop changes
   $effect(() => {
+    if (!guest) return;
     form.name = guest.name;
     form.phone = guest.phone;
     form.email = guest.email ?? '';
@@ -48,39 +111,56 @@
     saving = true;
     try {
       const wid = get(weddingId);
-      const updated = await updateGuest(wid, guest.id, {
-        name: form.name,
-        phone: form.phone,
-        email: form.email || undefined,
-        pax: form.pax,
-        rsvp: form.rsvp,
-        isVip: form.isVip,
-        notes: form.notes,
-        dietary: form.dietary,
-        angbaoAmt: form.angbaoAmt ? Number(form.angbaoAmt) : null,
-        giftItem: form.giftItem || null,
-      });
-      // update parent guest via props mutation
-      Object.assign(guest, {
-        name: updated.name,
-        phone: updated.phone,
-        email: updated.email,
-        pax: updated.pax,
-        rsvp: updated.rsvp,
-        isVip: updated.isVip,
-        notes: updated.notes,
-        dietaryRequirements: updated.dietary,
-        angbaoAmount: updated.angbaoAmt ?? undefined,
-        giftItem: updated.giftItem ?? undefined,
-      });
-      Object.assign(form, {
-        angbaoAmt: updated.angbaoAmt != null ? String(updated.angbaoAmt) : '',
-        giftItem: updated.giftItem ?? '',
-      });
-      editing = false;
-      addToast('Guest updated', 'success');
+      if (createMode) {
+        const created = await createGuest(wid, {
+          name: form.name,
+          phone: form.phone,
+          email: form.email || undefined,
+          pax: form.pax,
+          rsvp: form.rsvp,
+          isVip: form.isVip,
+          notes: form.notes,
+          dietary: form.dietary,
+          angbaoAmt: form.angbaoAmt ? Number(form.angbaoAmt) : null,
+          giftItem: form.giftItem || null,
+        });
+        addToast(`${created.name} created`, 'success');
+        onClose();
+      } else {
+        const updated = await updateGuest(wid, guest!.id, {
+          name: form.name,
+          phone: form.phone,
+          email: form.email || undefined,
+          pax: form.pax,
+          rsvp: form.rsvp,
+          isVip: form.isVip,
+          notes: form.notes,
+          dietary: form.dietary,
+          angbaoAmt: form.angbaoAmt ? Number(form.angbaoAmt) : null,
+          giftItem: form.giftItem || null,
+        });
+        Object.assign(guest!, {
+          name: updated.name,
+          phone: updated.phone,
+          email: updated.email,
+          pax: updated.pax,
+          rsvp: updated.rsvp,
+          isVip: updated.isVip,
+          notes: updated.notes,
+          dietaryRequirements: updated.dietary,
+          angbaoAmount: updated.angbaoAmt ?? undefined,
+          giftItem: updated.giftItem ?? undefined,
+        });
+        Object.assign(form, {
+          angbaoAmt: updated.angbaoAmt != null ? String(updated.angbaoAmt) : '',
+          giftItem: updated.giftItem ?? '',
+        });
+        editing = false;
+        addToast('Guest updated', 'success');
+        await refreshGuest();
+      }
     } catch (e: any) {
-      addToast(e.message ?? 'Update failed', 'error');
+      addToast(e.message ?? 'Save failed', 'error');
     } finally {
       saving = false;
     }
@@ -90,60 +170,107 @@
     editing = false;
     onClose();
   }
+
+  function openCheckinModal() {
+    if (!guest) return;
+    angbaoAmount = guest.angbaoAmount != null ? String(guest.angbaoAmount) : '';
+    giftItem = guest.giftItem ?? '';
+    showCheckinModal = true;
+  }
+
+  async function confirmCheckIn() {
+    if (!guest) return;
+    const wid = get(weddingId);
+    try {
+      const body: { angbaoAmt?: number; giftItem?: string } = {};
+      if (angbaoAmount) body.angbaoAmt = Number(angbaoAmount);
+      if (giftItem) body.giftItem = giftItem;
+      await checkInGuest(wid, guest.id, Object.keys(body).length ? body : undefined);
+      guest.checkedIn = true;
+      guest.checkedInAt = new Date();
+      if (angbaoAmount) guest.angbaoAmount = Number(angbaoAmount);
+      if (giftItem) guest.giftItem = giftItem;
+      localGuest = { ...guest };
+      showCheckinModal = false;
+      addToast(`${guest.name} checked in`, 'success');
+      await refreshGuest();
+    } catch (e: any) {
+      addToast(e.message ?? 'Check-in failed', 'error');
+    }
+  }
+
+  async function handleCheckOut() {
+    if (!guest) return;
+    const wid = get(weddingId);
+    try {
+      await checkOutGuest(wid, guest.id);
+      guest.checkedIn = false;
+      guest.checkedInAt = undefined;
+      localGuest = { ...guest };
+      addToast(`${guest.name} checked out`, 'success');
+      await refreshGuest();
+    } catch (e: any) {
+      addToast(e.message ?? 'Check-out failed', 'error');
+    }
+  }
 </script>
 
 <!-- svelte-ignore a11y_no_static_element_interactions -->
-<div class="fixed inset-0 z-50 flex justify-end" onclick={onClose}>
-  <div class="absolute inset-0 bg-black/30 backdrop-blur-sm"></div>
+<svelte:window onkeydown={(e) => { if (e.key === 'Escape') onClose(); }} />
+<div class="drawer-overlay" onclick={onClose}>
+  <div class="drawer-backdrop"></div>
   <!-- svelte-ignore a11y_no_static_element_interactions -->
-  <div
-    class="relative w-[400px] max-w-full bg-white shadow-2xl overflow-y-auto"
-    onclick={(e) => e.stopPropagation()}
+  <div class="drawer-panel" onclick={(e) => e.stopPropagation()}
+    ontouchstart={onTouchStart}
+    ontouchmove={onTouchMove}
+    ontouchend={onTouchEnd}
+    style="transform: translateY({dragY}px); transition: {dragging ? 'none' : 'transform 300ms cubic-bezier(0.2, 0.8, 0.2, 1)'}"
   >
-    <div class="sticky top-0 bg-white z-10 px-6 py-5 border-b border-gray-100 flex items-center justify-between">
-      <h2 class="text-lg font-bold text-gray-900">{editing ? 'Edit Guest' : 'Guest Details'}</h2>
-      <div class="flex items-center gap-2">
-        {#if editing}
-          <button onclick={cancel} class="p-2 rounded-lg hover:bg-gray-100 text-gray-500 text-sm">Cancel</button>
-          <button onclick={save} disabled={saving}
-            class="flex items-center gap-1.5 px-3 py-1.5 bg-red text-white rounded-lg text-sm font-semibold hover:bg-red-light disabled:opacity-50 transition-colors">
-            <Check class="w-4 h-4" /> {saving ? 'Saving...' : 'Save'}
-          </button>
-        {:else}
-          <button onclick={() => editing = true} class="p-2 rounded-lg hover:bg-gray-100 text-gray-500" aria-label="Edit">
+    <!-- Pill dismiss (mobile only) -->
+    <div class="drawer-pill flex sm:hidden" onclick={onClose} role="presentation">
+      <div class="drawer-pill-bar"></div>
+    </div>
+    <div class="drawer-header">
+      <h2 class="drawer-title">{createMode ? 'New Guest' : editing ? 'Edit Guest' : 'Guest Details'}</h2>
+      <div class="drawer-actions">
+        {#if !readonly}
+          <button onclick={() => editing = true} class="drawer-icon-btn flex" aria-label="Edit">
             <Pencil class="w-5 h-5" />
           </button>
-          <button onclick={onClose} class="p-2 rounded-lg hover:bg-gray-100 text-gray-500" aria-label="Close">
+          <button onclick={onClose} class="drawer-icon-btn hidden sm:flex" aria-label="Close">
+            <X class="w-5 h-5" />
+          </button>
+        {:else}
+          <button onclick={onClose} class="drawer-icon-btn flex" aria-label="Close">
             <X class="w-5 h-5" />
           </button>
         {/if}
       </div>
     </div>
 
-    <div class="p-6 space-y-6">
+    <div class="drawer-body">
       {#if editing}
-        <!-- Edit Form -->
-        <div class="space-y-4">
-          <div>
-            <label class="text-xs font-semibold text-gray-500 mb-1 block">Name</label>
-            <input bind:value={form.name} class="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm focus:border-gold focus:ring-2 focus:ring-gold/15 outline-none" />
+        <div class="form-grid">
+          <div class="form-field">
+            <label class="form-label">Name</label>
+            <input bind:value={form.name} class="form-input" />
           </div>
-          <div>
-            <label class="text-xs font-semibold text-gray-500 mb-1 block">Phone</label>
-            <input bind:value={form.phone} class="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm focus:border-gold focus:ring-2 focus:ring-gold/15 outline-none" />
+          <div class="form-field">
+            <label class="form-label">Phone</label>
+            <input bind:value={form.phone} class="form-input" />
           </div>
-          <div>
-            <label class="text-xs font-semibold text-gray-500 mb-1 block">Email</label>
-            <input bind:value={form.email} class="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm focus:border-gold focus:ring-2 focus:ring-gold/15 outline-none" />
+          <div class="form-field">
+            <label class="form-label">Email</label>
+            <input bind:value={form.email} class="form-input" />
           </div>
-          <div class="grid grid-cols-2 gap-3">
-            <div>
-              <label class="text-xs font-semibold text-gray-500 mb-1 block">Pax</label>
-              <input type="number" min="1" bind:value={form.pax} class="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm focus:border-gold focus:ring-2 focus:ring-gold/15 outline-none" />
+          <div class="form-row-2">
+            <div class="form-field">
+              <label class="form-label">Pax</label>
+              <input type="number" min="1" bind:value={form.pax} class="form-input" />
             </div>
-            <div>
-              <label class="text-xs font-semibold text-gray-500 mb-1 block">RSVP</label>
-              <select bind:value={form.rsvp} class="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm focus:border-gold outline-none bg-white">
+            <div class="form-field">
+              <label class="form-label">RSVP</label>
+              <select bind:value={form.rsvp} class="form-input">
                 <option value="confirmed">Confirmed</option>
                 <option value="pending">Pending</option>
                 <option value="declined">Declined</option>
@@ -151,143 +278,617 @@
               </select>
             </div>
           </div>
-          <div>
-            <label class="flex items-center gap-2 text-sm text-gray-700">
+          <div class="form-field">
+            <label class="form-check-label">
               <input type="checkbox" bind:checked={form.isVip} class="rounded" /> VIP Guest
             </label>
           </div>
-          <div>
-            <label class="text-xs font-semibold text-gray-500 mb-1 block">Notes</label>
-            <textarea bind:value={form.notes} rows="2" class="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm focus:border-gold focus:ring-2 focus:ring-gold/15 outline-none resize-none"></textarea>
+          <div class="form-field">
+            <label class="form-label">Notes</label>
+            <textarea bind:value={form.notes} rows="2" class="form-input form-textarea"></textarea>
           </div>
-          <div>
-            <label class="text-xs font-semibold text-gray-500 mb-1 block">Dietary</label>
-            <div class="flex flex-wrap gap-2">
+          <div class="form-field">
+            <label class="form-label">Dietary</label>
+            <div class="dietary-chips">
               {#each ['Halal', 'Vegetarian', 'Vegan', 'Gluten-Free', 'Nut-Free', 'No Seafood'] as opt}
                 <button type="button"
                   onclick={() => { form.dietary = form.dietary.includes(opt) ? form.dietary.filter(d => d !== opt) : [...form.dietary, opt]; }}
                   class={cn(
-                    "px-3 py-1.5 rounded-lg text-xs font-medium border transition-all",
-                    form.dietary.includes(opt)
-                      ? "bg-gold-50 border-gold text-gold"
-                      : "bg-white border-gray-200 text-gray-600 hover:border-gray-300"
+                    "dietary-chip",
+                    form.dietary.includes(opt) ? "dietary-chip-active" : ""
                   )}
                 >{opt}</button>
               {/each}
             </div>
           </div>
-          <div>
-            <label class="text-xs font-semibold text-gray-500 mb-1 block">Angbao Amount (RM)</label>
-            <input type="number" min="0" bind:value={form.angbaoAmt} placeholder="0" class="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm focus:border-gold focus:ring-2 focus:ring-gold/15 outline-none" />
+          <div class="form-field">
+            <label class="form-label">Angbao Amount (RM)</label>
+            <input type="number" min="0" bind:value={form.angbaoAmt} placeholder="0" class="form-input" />
           </div>
-          <div>
-            <label class="text-xs font-semibold text-gray-500 mb-1 block">Gift Item</label>
-            <input bind:value={form.giftItem} placeholder="e.g. Kitchenware set" class="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm focus:border-gold focus:ring-2 focus:ring-gold/15 outline-none" />
+          <div class="form-field">
+            <label class="form-label">Gift Item</label>
+            <input bind:value={form.giftItem} placeholder="e.g. Kitchenware set" class="form-input" />
           </div>
         </div>
-      {:else}
+      {:else if localGuest}
         <!-- View Mode -->
-        <!-- Avatar + Name -->
-        <div class="flex items-center gap-4">
-          <div class="w-14 h-14 rounded-full bg-red-50 flex items-center justify-center text-red font-bold text-lg">
-            {getInitials(guest.name)}
+        <div class="guest-hero">
+          <div class={cn(
+            "guest-avatar-lg",
+            localGuest.checkedIn ? "avatar-checked" :
+            localGuest.isVip ? "avatar-vip" : "avatar-default"
+          )}>
+            {getInitials(localGuest.name)}
           </div>
           <div>
-            <h3 class="text-xl font-bold text-gray-900">{guest.name}</h3>
-            <Badge status={guest.rsvp} />
+            <h3 class="guest-name-lg">{#if localGuest.isVip}<span class="text-gold">★</span>{/if} {localGuest.name}</h3>
+            <Badge status={localGuest.rsvp} />
           </div>
         </div>
 
-        <!-- Info -->
-        <div class="space-y-3">
-          <div class="flex items-center gap-3 text-sm text-gray-600">
-            <Phone class="w-4 h-4 text-gray-400" />
-            {guest.phone}
+        <div class="info-rows">
+          <div class="info-row">
+            <Phone class="info-icon" />
+            <span>{localGuest.phone}</span>
           </div>
-          {#if guest.email}
-            <div class="flex items-center gap-3 text-sm text-gray-600">
-              <Mail class="w-4 h-4 text-gray-400" />
-              {guest.email}
+          {#if localGuest.email}
+            <div class="info-row">
+              <Mail class="info-icon" />
+              <span>{localGuest.email}</span>
             </div>
           {/if}
         </div>
 
-        <!-- Details Grid -->
-        <div class="grid grid-cols-2 gap-4">
-          <div class="bg-gray-50 rounded-xl p-4">
-            <div class="text-xs text-gray-500 font-medium mb-1">Table</div>
-            <div class="text-2xl font-bold text-gray-900">{tableName}</div>
+        <div class="detail-grid">
+          <div class="detail-card">
+            <div class="detail-label">Table</div>
+            <div class="detail-value">{tableName}</div>
           </div>
-          <div class="bg-gray-50 rounded-xl p-4">
-            <div class="text-xs text-gray-500 font-medium mb-1">Seat{guest.pax > 1 ? 's' : ''}</div>
-            <div class="text-2xl font-bold text-gray-900">{formatSeatRange(guest.seatNumber, guest.pax)}</div>
+          <div class="detail-card">
+            <div class="detail-label">Seat{localGuest.pax > 1 ? 's' : ''}</div>
+            <div class="detail-value">{formatSeatRange(localGuest.seatNumber, localGuest.pax)}</div>
           </div>
-          <div class="bg-gray-50 rounded-xl p-4">
-            <div class="text-xs text-gray-500 font-medium mb-1">Party Size</div>
-            <div class="text-2xl font-bold text-gray-900">{guest.pax}</div>
+          <div class="detail-card">
+            <div class="detail-label">Party Size</div>
+            <div class="detail-value">{localGuest.pax}</div>
           </div>
-          <div class="bg-gray-50 rounded-xl p-4">
-            <div class="text-xs text-gray-500 font-medium mb-1">Checked In</div>
-            <div class="text-2xl font-bold {guest.checkedIn ? 'text-emerald-600' : 'text-gray-400'}">
-              {guest.checkedIn ? '✓' : '—'}
+          <div class="detail-card">
+            <div class="detail-label">Checked In</div>
+            <div class="detail-value {localGuest.checkedIn ? 'text-emerald-600' : 'text-gray-400'}">
+              {localGuest.checkedIn ? '✓' : '—'}
             </div>
           </div>
         </div>
 
-        {#if guest.isVip}
-          <div class="bg-gold-50 border border-gold/30 rounded-xl p-4 text-center">
-            <span class="text-gold-dark font-bold">⭐ VIP Guest</span>
-          </div>
+        {#if localGuest.isVip}
+          <div class="vip-banner">⭐ VIP Guest</div>
         {/if}
 
-        {#if guest.dietaryRequirements.length > 0}
-          <div>
-            <div class="flex items-center gap-2 text-sm font-semibold text-gray-700 mb-2">
-              <Utensils class="w-4 h-4" />
+        {#if localGuest.dietaryRequirements.length > 0}
+          <div class="section">
+            <div class="section-header">
+              <Utensils class="section-icon" />
               Dietary Requirements
             </div>
-            <div class="flex flex-wrap gap-2">
-              {#each guest.dietaryRequirements as req}
-                <span class="px-3 py-1 bg-amber-50 text-amber-700 rounded-full text-xs font-medium border border-amber-200">
-                  {req}
-                </span>
+            <div class="chip-group">
+              {#each localGuest.dietaryRequirements as req}
+                <span class="dietary-tag">{req}</span>
               {/each}
             </div>
           </div>
         {/if}
 
-        {#if guest.notes}
-          <div>
-            <div class="flex items-center gap-2 text-sm font-semibold text-gray-700 mb-2">
-              <StickyNote class="w-4 h-4" />
+        {#if localGuest.notes}
+          <div class="section">
+            <div class="section-header">
+              <StickyNote class="section-icon" />
               Notes
             </div>
-            <p class="text-sm text-gray-600 bg-gray-50 rounded-xl p-4">{guest.notes}</p>
+            <p class="notes-text">{localGuest.notes}</p>
           </div>
         {/if}
 
-        {#if guest.angbaoAmount || guest.giftItem}
-          <div>
-            <div class="text-sm font-semibold text-gray-700 mb-2">Gift Details</div>
-            <div class="bg-gold-50 border border-gold/20 rounded-xl p-4 space-y-2">
-              {#if guest.angbaoAmount}
-                <div class="flex items-center gap-2 text-sm">
-                  <Banknote class="w-4 h-4 text-emerald-600" />
-                  <span class="text-gray-600">Angbao:</span>
-                  <span class="font-bold text-emerald-700">RM {guest.angbaoAmount}</span>
+        {#if localGuest.angbaoAmount || localGuest.giftItem}
+          <div class="section">
+            <div class="section-header">Gift Details</div>
+            <div class="gift-card">
+              {#if localGuest.angbaoAmount}
+                <div class="gift-row">
+                  <Banknote class="gift-icon text-emerald-600" />
+                  <span class="gift-label">Angbao:</span>
+                  <span class="gift-value text-emerald-700">RM {localGuest.angbaoAmount}</span>
                 </div>
               {/if}
-              {#if guest.giftItem}
-                <div class="flex items-center gap-2 text-sm">
-                  <Gift class="w-4 h-4 text-gold" />
-                  <span class="text-gray-600">Gift:</span>
-                  <span class="font-bold text-gold-dark">{guest.giftItem}</span>
+              {#if localGuest.giftItem}
+                <div class="gift-row">
+                  <Gift class="gift-icon text-gold" />
+                  <span class="gift-label">Gift:</span>
+                  <span class="gift-value text-gold-dark">{localGuest.giftItem}</span>
                 </div>
               {/if}
             </div>
+          </div>
+        {/if}
+
+        <!-- Check-in Action -->
+        {#if !readonly}
+          <div class="pt-2 pb-4">
+            {#if localGuest.checkedIn}
+              <button onclick={handleCheckOut} class="w-full py-3 bg-emerald-50 text-emerald-700 rounded-xl text-sm font-semibold border border-emerald-200 hover:bg-emerald-100 transition-colors flex items-center justify-center gap-2">
+                <CheckCircle2 class="w-4 h-4" /> Checked In — Tap to Check Out
+              </button>
+            {:else}
+              <button onclick={openCheckinModal} class="w-full py-3 bg-red text-white rounded-xl text-sm font-semibold hover:bg-red-light transition-colors flex items-center justify-center gap-2">
+                <UserCheck class="w-4 h-4" /> Check In
+              </button>
+            {/if}
           </div>
         {/if}
       {/if}
     </div>
+
+    <!-- Mobile sticky footer for edit mode -->
+    {#if editing}
+      <div class="drawer-footer flex">
+        <button onclick={save} disabled={saving}
+          class="w-full py-3 bg-red text-white rounded-xl text-sm font-semibold hover:bg-red-light transition-colors flex items-center justify-center gap-2">
+          <Check class="w-4 h-4" /> {saving ? 'Saving...' : 'Save'}
+        </button>
+      </div>
+    {/if}
   </div>
 </div>
+
+<!-- Check-in Modal -->
+{#if showCheckinModal && guest}
+  <CheckInModal
+    guestName={guest.name}
+    bind:angbaoAmount
+    bind:giftItem
+    onConfirm={confirmCheckIn}
+    onClose={() => showCheckinModal = false}
+  />
+{/if}
+
+<style>
+  .drawer-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 50;
+    display: flex;
+    align-items: flex-end;
+    justify-content: flex-end;
+  }
+
+  @media (min-width: 640px) {
+    .drawer-overlay {
+      align-items: stretch;
+    }
+  }
+
+  .drawer-backdrop {
+    position: absolute;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.3);
+    backdrop-filter: blur(4px);
+    -webkit-backdrop-filter: blur(4px);
+    animation: fadeIn 200ms ease;
+  }
+
+  .drawer-panel {
+    position: relative;
+    width: 100%;
+    max-height: 85dvh;
+    border-radius: 1.25rem 1.25rem 0 0;
+    padding-top: env(safe-area-inset-top);
+    padding-bottom: env(safe-area-inset-bottom);
+    background: rgba(255, 255, 255, 0.95);
+    backdrop-filter: blur(24px) saturate(200%);
+    -webkit-backdrop-filter: blur(24px) saturate(200%);
+    box-shadow: 0 -8px 48px rgba(0, 0, 0, 0.15), 0 -2px 8px rgba(0, 0, 0, 0.08);
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    animation: slideUp 300ms cubic-bezier(0.2, 0.8, 0.2, 1);
+  }
+
+  @media (min-width: 640px) {
+    .drawer-panel {
+      width: 400px;
+      max-height: 100%;
+      border-radius: 0;
+      animation: slideInRight 300ms cubic-bezier(0.2, 0.8, 0.2, 1);
+      box-shadow: -12px 0 48px rgba(0, 0, 0, 0.15), -2px 0 8px rgba(0, 0, 0, 0.08);
+    }
+  }
+
+  .drawer-pill {
+    justify-content: center;
+    padding: 0.5rem 0 0.75rem;
+    cursor: pointer;
+  }
+
+  .drawer-pill-bar {
+    width: 2.5rem;
+    height: 0.25rem;
+    background: rgba(0, 0, 0, 0.15);
+    border-radius: 9999px;
+    transition: background 150ms ease;
+  }
+
+  .drawer-pill:active .drawer-pill-bar {
+    background: rgba(0, 0, 0, 0.25);
+  }
+
+  .drawer-header {
+    position: sticky;
+    top: 0;
+    z-index: 10;
+    background: rgba(255, 255, 255, 0.95);
+    backdrop-filter: blur(24px) saturate(200%);
+    -webkit-backdrop-filter: blur(24px) saturate(200%);
+    padding: 1.25rem 1.5rem;
+    border-bottom: 1px solid rgba(0, 0, 0, 0.05);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+
+  .drawer-title {
+    font-size: 1.125rem;
+    font-weight: 700;
+    color: #111827;
+    letter-spacing: -0.01em;
+  }
+
+  .drawer-actions {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+
+  .drawer-icon-btn {
+    align-items: center;
+    justify-content: center;
+    width: 2.25rem;
+    height: 2.25rem;
+    border-radius: 0.5rem;
+    color: #6b7280;
+    transition: background 100ms ease, transform 100ms ease;
+    min-width: 44px;
+    min-height: 44px;
+  }
+
+  .drawer-icon-btn:active {
+    transform: scale(0.9);
+    background: rgba(0, 0, 0, 0.06);
+  }
+
+  .drawer-icon-btn:hover {
+    background: rgba(0, 0, 0, 0.04);
+  }
+
+  .drawer-btn-secondary {
+    padding: 0.5rem 1rem;
+    border-radius: 0.5rem;
+    font-size: 0.875rem;
+    font-weight: 500;
+    color: #6b7280;
+    transition: background 100ms ease, transform 100ms ease;
+  }
+
+  .drawer-btn-secondary:active {
+    transform: scale(0.97);
+  }
+
+  .drawer-btn-primary {
+    display: flex;
+    align-items: center;
+    gap: 0.375rem;
+    padding: 0.5rem 0.875rem;
+    background: #A11217;
+    color: white;
+    border-radius: 0.5rem;
+    font-size: 0.875rem;
+    font-weight: 600;
+    transition: background 100ms ease, transform 100ms ease;
+  }
+
+  .drawer-btn-primary:active {
+    transform: scale(0.97);
+  }
+
+  .drawer-btn-primary:disabled {
+    opacity: 0.5;
+  }
+
+  .drawer-body {
+    padding: 1.5rem;
+    padding-bottom: calc(1.5rem + 5rem);
+    display: flex;
+    flex-direction: column;
+    gap: 1.5rem;
+  }
+
+  .drawer-footer {
+    position: sticky;
+    bottom: 0;
+    z-index: 10;
+    background: rgba(255, 255, 255, 0.95);
+    backdrop-filter: blur(24px) saturate(200%);
+    -webkit-backdrop-filter: blur(24px) saturate(200%);
+    padding: 1rem 1.5rem;
+    padding-bottom: calc(1rem + env(safe-area-inset-bottom));
+    border-top: 1px solid rgba(0, 0, 0, 0.05);
+    align-items: center;
+    gap: 0.75rem;
+  }
+
+  /* View mode */
+  .guest-hero {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+  }
+
+  .guest-avatar-lg {
+    width: 3.5rem;
+    height: 3.5rem;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 700;
+    font-size: 1rem;
+    flex-shrink: 0;
+  }
+
+  .avatar-default { background: #FDEAEA; color: #A11217; border: 2px solid #FAC5C5; }
+  .avatar-vip { background: #FDF8E8; color: #B8941F; border: 2px solid #E8CC6E; }
+  .avatar-checked { background: #ECFDF5; color: #059669; border: 2px solid #A7F3D0; }
+
+  .guest-name-lg {
+    font-size: 1.25rem;
+    font-weight: 700;
+    color: #111827;
+    letter-spacing: -0.01em;
+  }
+
+  .info-rows {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+  }
+
+  .info-row {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    font-size: 0.875rem;
+    color: #4b5563;
+  }
+
+  .info-icon {
+    width: 1rem;
+    height: 1rem;
+    color: #9ca3af;
+    flex-shrink: 0;
+  }
+
+  .detail-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0.75rem;
+  }
+
+  .detail-card {
+    background: rgba(249, 250, 251, 0.8);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+    border: 1px solid rgba(0, 0, 0, 0.04);
+    border-radius: 0.75rem;
+    padding: 1rem;
+    text-align: center;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+  }
+
+  .detail-label {
+    font-size: 0.75rem;
+    color: #6b7280;
+    font-weight: 500;
+    margin-bottom: 0.25rem;
+  }
+
+  .detail-value {
+    font-size: 1.5rem;
+    font-weight: 700;
+    color: #111827;
+    letter-spacing: -0.02em;
+  }
+
+  .vip-banner {
+    background: #FDF8E8;
+    border: 1px solid rgba(212, 175, 55, 0.3);
+    border-radius: 0.75rem;
+    padding: 1rem;
+    text-align: center;
+    font-weight: 700;
+    color: #B8941F;
+  }
+
+  .section {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+  }
+
+  .section-header {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: 0.875rem;
+    font-weight: 600;
+    color: #374151;
+  }
+
+  .section-icon {
+    width: 1rem;
+    height: 1rem;
+    color: #9ca3af;
+  }
+
+  .chip-group {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+  }
+
+  .dietary-tag {
+    padding: 0.375rem 0.75rem;
+    background: #FFFBEB;
+    color: #D97706;
+    border-radius: 9999px;
+    font-size: 0.75rem;
+    font-weight: 500;
+    border: 1px solid #FDE68A;
+  }
+
+  .notes-text {
+    font-size: 0.875rem;
+    color: #4b5563;
+    background: rgba(249, 250, 251, 0.8);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+    border: 1px solid rgba(0, 0, 0, 0.04);
+    border-radius: 0.75rem;
+    padding: 1rem;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+  }
+
+  .gift-card {
+    background: #FDF8E8;
+    border: 1px solid rgba(212, 175, 55, 0.2);
+    border-radius: 0.75rem;
+    padding: 1rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+  }
+
+  .gift-row {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: 0.875rem;
+  }
+
+  .gift-icon { width: 1rem; height: 1rem; flex-shrink: 0; }
+  .gift-label { color: #6b7280; }
+  .gift-value { font-weight: 700; }
+
+  /* Edit mode */
+  .form-grid {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+  }
+
+  .form-field {
+    display: flex;
+    flex-direction: column;
+    gap: 0.375rem;
+  }
+
+  .form-label {
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: #6b7280;
+  }
+
+  .form-check-label {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: 0.875rem;
+    color: #374151;
+  }
+
+  .form-input {
+    width: 100%;
+    padding: 0.75rem 1rem;
+    border: 1.5px solid rgba(0, 0, 0, 0.08);
+    border-radius: 0.75rem;
+    font-size: 0.9375rem;
+    color: #111827;
+    background: rgba(255, 255, 255, 0.8);
+    outline: none;
+    transition: border-color 200ms ease, box-shadow 200ms ease, transform 100ms ease;
+    min-height: 48px;
+  }
+
+  .form-input:focus {
+    border-color: #A11217;
+    box-shadow: 0 0 0 3px rgba(161, 18, 23, 0.1);
+  }
+
+  .form-input:active {
+    transform: scale(0.99);
+  }
+
+  .form-textarea {
+    resize: none;
+    min-height: 3.5rem;
+  }
+
+  .form-row-2 {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0.75rem;
+  }
+
+  .dietary-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+  }
+
+  .dietary-chip {
+    padding: 0.375rem 0.75rem;
+    border-radius: 0.5rem;
+    font-size: 0.75rem;
+    font-weight: 500;
+    border: 1.5px solid rgba(0, 0, 0, 0.08);
+    color: #4b5563;
+    background: white;
+    transition: all 150ms ease, transform 100ms ease;
+  }
+
+  .dietary-chip:active {
+    transform: scale(0.95);
+  }
+
+  .dietary-chip-active {
+    background: #FDF8E8;
+    border-color: #D4AF37;
+    color: #B8941F;
+  }
+
+  @keyframes fadeIn {
+    from { opacity: 0; }
+    to { opacity: 1; }
+  }
+
+  @keyframes slideUp {
+    from { transform: translateY(100%); }
+    to { transform: translateY(0); }
+  }
+
+  @keyframes slideInRight {
+    from { transform: translateX(100%); }
+    to { transform: translateX(0); }
+  }
+
+  :global(.animate-slideUp) {
+    animation: slideUp 300ms cubic-bezier(0.2, 0.8, 0.2, 1);
+  }
+</style>
