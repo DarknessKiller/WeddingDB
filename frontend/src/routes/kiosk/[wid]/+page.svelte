@@ -287,10 +287,10 @@
         {/if}
       </div>
 
-      <!-- Center: show wedding name when guest selected -->
+      <!-- Center: always show kiosk title -->
       <div class="top-bar-center">
-        {#if selectedGuest && weddingName}
-          <span class="top-bar-wedding-name">{weddingName}</span>
+        {#if selectedGuest}
+          <span class="top-bar-wedding-name">{kioskTitle}</span>
         {/if}
       </div>
 
@@ -508,8 +508,7 @@
     height: 100vh;
     height: 100dvh;
     overflow: hidden;
-    background: linear-gradient(180deg, #fef2f2 0%, #faf7f2 50%, white 100%);
-    background-attachment: fixed;
+    background: linear-gradient(180deg, #FAF7F2 0%, #F5F0E8 50%, white 100%);
     color: #111827;
     display: flex;
     flex-direction: column;
