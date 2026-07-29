@@ -220,18 +220,37 @@
     }
   }
 
-  function animateSheetTo(target: number) {
+  // Critically damped spring solver (Apple's damping=1.0, response=0.3s)
+  const SPRING_DAMPING = 1.0;
+  const SPRING_RESPONSE = 0.3;
+
+  function animateSheetTo(target: number, initialVelocity = 0) {
     if (sheetAnimFrame) cancelAnimationFrame(sheetAnimFrame);
+    if (prefersReducedMotion) { sheetY = target; sheetVelocity = 0; return; }
+
     const start = sheetY;
+    const v0 = initialVelocity || sheetVelocity;
+    // Spring coefficient from response time: ω₀ = 2π / (response * √(1 - ζ²))
+    // For ζ=1 (critically damped): ω₀ = 2π / response, but simpler closed form:
+    // x(t) = (A + Bt) * e^(-ω₀t) where ω₀ = 4π / response
+    const omega = 4 * Math.PI / SPRING_RESPONSE;
     const startTime = performance.now();
-    const duration = prefersReducedMotion ? 100 : 350;
 
     function tick() {
-      const elapsed = performance.now() - startTime;
-      const t = Math.min(1, elapsed / duration);
-      const ease = 1 - Math.pow(1 - t, 3);
-      sheetY = start + (target - start) * ease;
-      if (t < 1) {
+      const elapsed = (performance.now() - startTime) / 1000;
+      const decay = Math.exp(-omega * elapsed);
+      // Critically damped: x(t) = (x0 + (v0/ω + x0)*ω*t) * e^(-ωt)
+      const displacement = start - target;
+      const tOverResp = omega * elapsed;
+      const ease = 1 - decay * (1 + tOverResp);
+      sheetY = start - displacement * ease;
+      // Check convergence (velocity near zero and close to target)
+      if (Math.abs(sheetY - target) < 0.5 && Math.abs(v0 * decay) < 0.1) {
+        sheetY = target;
+        sheetVelocity = 0;
+        return;
+      }
+      if (elapsed < 2) { // safety: max 2s
         sheetAnimFrame = requestAnimationFrame(tick);
       } else {
         sheetY = target;
@@ -331,7 +350,7 @@
           class="bottom-sheet"
           class:sheet-dragging={sheetDragging}
           class:sheet-collapsed={sheetCollapsed}
-          style="transform: translateY({sheetY}px); transition: {sheetDragging ? 'none' : `transform 350ms ${SPRING_EASE}`};"
+          style="transform: translateY({sheetY}px); transition: {sheetDragging || prefersReducedMotion ? 'none' : `transform 350ms ${SPRING_EASE}`};"
         >
           <div
             class="sheet-handle"
@@ -1005,6 +1024,7 @@
   @media (min-width: 640px) {
     .hero-date {
       font-size: 1rem;
+      letter-spacing: 0.02em;
     }
   }
 

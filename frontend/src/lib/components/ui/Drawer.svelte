@@ -48,12 +48,43 @@
   let dragY = $state(0);
   let dragging = $state(false);
   let startY = $state(0);
+  // Velocity tracking: last 3 samples for averaging
+  const velSamples: { y: number; t: number }[] = [];
+  const DISMISS_THRESHOLD = 100;
+  const VELOCITY_THRESHOLD = 0.5; // px/ms — a moderate flick
+  const RUBBER_BAND = 0.4;
+
+  function rubberband(delta: number): number {
+    // Progressive resistance: the further you drag, the less it follows
+    return (delta * RUBBER_BAND);
+  }
+
+  function projectVelocity(velocity: number): number {
+    // Apple's exponential decay projection: v/1000 * d/(1-d), d≈0.998
+    const d = 0.998;
+    return (velocity / 1000) * d / (1 - d);
+  }
 
   function onTouchStart(e: TouchEvent) {
     if (window.innerWidth >= 640) return;
     const panel = e.currentTarget;
     if (panel instanceof HTMLElement && panel.scrollTop > 0) { dragging = false; return; }
-    startY = e.touches[0].clientY;
+    // Interrupt: read current computed transform to avoid snap-back stutter
+    if (panel instanceof HTMLElement) {
+      const cs = getComputedStyle(panel);
+      const match = cs.transform.match(/matrix.*\((.+)\)/);
+      if (match) {
+        const m = match[1].split(', ');
+        const currentY = parseFloat(m[5]) || 0;
+        startY = e.touches[0].clientY - currentY;
+      } else {
+        startY = e.touches[0].clientY;
+      }
+    } else {
+      startY = e.touches[0].clientY;
+    }
+    velSamples.length = 0;
+    velSamples.push({ y: e.touches[0].clientY, t: performance.now() });
     dragging = true;
   }
 
@@ -61,15 +92,35 @@
     if (!dragging) return;
     const panel = e.currentTarget;
     if (panel instanceof HTMLElement && panel.scrollTop > 0) return;
-    const delta = e.touches[0].clientY - startY;
-    if (delta > 0) dragY = delta;
+    const raw = e.touches[0].clientY - startY;
+    // Rubber-band: apply progressive dampening for downward drag
+    dragY = raw > 0 ? rubberband(raw) : raw;
+    // Track velocity (keep last 3 samples)
+    const now = performance.now();
+    velSamples.push({ y: e.touches[0].clientY, t: now });
+    if (velSamples.length > 3) velSamples.shift();
   }
 
   function onTouchEnd() {
     if (!dragging) return;
     dragging = false;
-    if (dragY > 100) onClose();
-    dragY = 0;
+    // Calculate release velocity from recent samples
+    let velocity = 0;
+    if (velSamples.length >= 2) {
+      const last = velSamples[velSamples.length - 1];
+      const first = velSamples[0];
+      const dt = last.t - first.t;
+      if (dt > 0) velocity = (last.y - first.y) / dt;
+    }
+    // Project where the gesture is heading
+    const projected = dragY + projectVelocity(velocity) * 16;
+    // Dismiss if: past threshold OR fast flick downward
+    if (projected > DISMISS_THRESHOLD || velocity > VELOCITY_THRESHOLD) {
+      onClose();
+    } else {
+      // Snap back: let CSS transition handle it by resetting dragY next frame
+      requestAnimationFrame(() => { dragY = 0; });
+    }
   }
 
   let form = $state({
@@ -189,7 +240,7 @@
 <!-- svelte-ignore a11y_no_static_element_interactions -->
 <svelte:window onkeydown={(e) => { if (e.key === 'Escape') onClose(); }} />
 <div class="drawer-overlay" onclick={onClose}>
-  <div class="drawer-backdrop"></div>
+  <div class="drawer-backdrop" style="opacity: {dragging ? Math.max(0, 1 - dragY / 400) : 1}"></div>
   <!-- svelte-ignore a11y_no_static_element_interactions -->
   <div class="drawer-panel" onclick={(e) => e.stopPropagation()}
     ontouchstart={onTouchStart}
@@ -438,7 +489,7 @@
     background: rgba(0, 0, 0, 0.3);
     backdrop-filter: blur(4px);
     -webkit-backdrop-filter: blur(4px);
-    animation: fadeIn 200ms ease;
+    transition: opacity 300ms cubic-bezier(0.2, 0.8, 0.2, 1);
   }
 
   .drawer-panel {
@@ -831,7 +882,6 @@
     color: #B8941F;
   }
 
-  @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
   @keyframes slideUp { from { transform: translateY(100%); } to { transform: translateY(0); } }
   @keyframes slideInRight { from { transform: translateX(100%); } to { transform: translateX(0); } }
 </style>

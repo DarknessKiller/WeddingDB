@@ -54,12 +54,12 @@
     border-radius: 4px;
   }
 
-  /* Press feedback for all interactive elements */
+  /* Press feedback for all interactive elements — instant on pointer-down */
   button:active,
   a:active,
   [role="button"]:active {
     transform: scale(0.97);
-    transition: transform 80ms ease;
+    transition: none;
   }
 
   /* Smooth transitions on interactive elements only */
