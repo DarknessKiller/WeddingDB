@@ -43,8 +43,7 @@
   }
   body {
     font-family: var(--font-sans);
-    background: linear-gradient(180deg, #fef2f2 0%, #faf7f2 50%, white 100%);
-    background-attachment: fixed;
+    background: linear-gradient(180deg, #FAF7F2 0%, #F5F0E8 50%, white 100%);
     line-height: 1.5;
   }
 
@@ -55,12 +54,12 @@
     border-radius: 4px;
   }
 
-  /* Press feedback for all interactive elements */
+  /* Press feedback for all interactive elements — instant on pointer-down */
   button:active,
   a:active,
   [role="button"]:active {
     transform: scale(0.97);
-    transition: transform 80ms ease;
+    transition: none;
   }
 
   /* Smooth transitions on interactive elements only */

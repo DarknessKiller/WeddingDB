@@ -19,17 +19,14 @@
   let angbaoAmount = $state('');
   let giftItem = $state('');
 
-  // Local reactive copy of guest for check-in/checkout UI updates
   let localGuest = $state(guest);
   $effect(() => { localGuest = guest; });
 
-  // Re-fetch guest data from server after any action
   async function refreshGuest() {
     if (!guest?.id) return;
     const wid = get(weddingId);
     try {
       const fresh = await getGuest(wid, guest.id);
-      // Map GuestResponse back to Guest type
       Object.assign(guest, {
         name: fresh.name,
         phone: fresh.phone,
@@ -45,39 +42,112 @@
         giftItem: fresh.giftItem ?? undefined,
       });
       localGuest = { ...guest };
-    } catch {
-      // Silent fail — local mutation is already applied
-    }
+    } catch {}
   }
 
-  // Touch drag state for mobile dismiss
   let dragY = $state(0);
   let dragging = $state(false);
+  let pendingDrag = $state(false);
   let startY = $state(0);
+  // Velocity tracking: last 3 samples for averaging
+  const velSamples: { y: number; t: number }[] = [];
+  const DISMISS_THRESHOLD = 100;
+  const VELOCITY_THRESHOLD = 0.5; // px/ms — a moderate flick
+  const RUBBER_BAND = 0.4;
+  const DRAG_THRESHOLD = 8; // px before committing to drawer drag vs scroll
+
+  function rubberband(delta: number): number {
+    // Progressive resistance: the further you drag, the less it follows
+    return (delta * RUBBER_BAND);
+  }
+
+  function projectVelocity(velocity: number): number {
+    // Apple's exponential decay projection: v/1000 * d/(1-d), d≈0.998
+    const d = 0.998;
+    return (velocity / 1000) * d / (1 - d);
+  }
+
+  function getScrollableBody(panel: EventTarget | null): HTMLElement | null {
+    if (panel instanceof HTMLElement) {
+      return panel.querySelector('.drawer-body');
+    }
+    return null;
+  }
 
   function onTouchStart(e: TouchEvent) {
-    if (window.innerWidth >= 640) return; // desktop only
+    if (window.innerWidth >= 640) return;
     const panel = e.currentTarget;
-    if (panel instanceof HTMLElement && panel.scrollTop > 0) { dragging = false; return; }
-    startY = e.touches[0].clientY;
-    dragging = true;
+    const scroller = getScrollableBody(panel);
+    // If inner content is scrolled, don't hijack the gesture
+    if (scroller && scroller.scrollTop > 0) return;
+    // Interrupt: read current computed transform to avoid snap-back stutter
+    if (panel instanceof HTMLElement) {
+      const cs = getComputedStyle(panel);
+      const match = cs.transform.match(/matrix.*\((.+)\)/);
+      if (match) {
+        const m = match[1].split(', ');
+        const currentY = parseFloat(m[5]) || 0;
+        startY = e.touches[0].clientY - currentY;
+      } else {
+        startY = e.touches[0].clientY;
+      }
+    } else {
+      startY = e.touches[0].clientY;
+    }
+    velSamples.length = 0;
+    velSamples.push({ y: e.touches[0].clientY, t: performance.now() });
+    // Don't commit yet — wait for gesture intent
+    pendingDrag = true;
+    dragging = false;
   }
 
   function onTouchMove(e: TouchEvent) {
-    if (!dragging) return;
+    if (!pendingDrag && !dragging) return;
     const panel = e.currentTarget;
-    if (panel instanceof HTMLElement && panel.scrollTop > 0) return;
-    const delta = e.touches[0].clientY - startY;
-    if (delta > 0) dragY = delta;
+    const scroller = getScrollableBody(panel);
+    // If inner content is scrolled mid-gesture, bail
+    if (scroller && scroller.scrollTop > 0) {
+      pendingDrag = false;
+      dragging = false;
+      return;
+    }
+    // During pending phase: only commit to drag after 8px vertical movement
+    if (pendingDrag && !dragging) {
+      const dy = e.touches[0].clientY - startY;
+      if (dy <= DRAG_THRESHOLD) return; // let browser scroll
+      pendingDrag = false;
+      dragging = true;
+    }
+    const raw = e.touches[0].clientY - startY;
+    // Rubber-band: apply progressive dampening for downward drag
+    dragY = raw > 0 ? rubberband(raw) : raw;
+    // Track velocity (keep last 3 samples)
+    const now = performance.now();
+    velSamples.push({ y: e.touches[0].clientY, t: now });
+    if (velSamples.length > 3) velSamples.shift();
   }
 
   function onTouchEnd() {
-    if (!dragging) return;
+    if (!dragging && !pendingDrag) return;
+    pendingDrag = false;
     dragging = false;
-    if (dragY > 100) {
-      onClose();
+    // Calculate release velocity from recent samples
+    let velocity = 0;
+    if (velSamples.length >= 2) {
+      const last = velSamples[velSamples.length - 1];
+      const first = velSamples[0];
+      const dt = last.t - first.t;
+      if (dt > 0) velocity = (last.y - first.y) / dt;
     }
-    dragY = 0;
+    // Project where the gesture is heading
+    const projected = dragY + projectVelocity(velocity) * 16;
+    // Dismiss if: past threshold OR fast flick downward
+    if (projected > DISMISS_THRESHOLD || velocity > VELOCITY_THRESHOLD) {
+      onClose();
+    } else {
+      // Snap back: let CSS transition handle it by resetting dragY next frame
+      requestAnimationFrame(() => { dragY = 0; });
+    }
   }
 
   let form = $state({
@@ -113,43 +183,25 @@
       const wid = get(weddingId);
       if (createMode) {
         const created = await createGuest(wid, {
-          name: form.name,
-          phone: form.phone,
-          email: form.email || undefined,
-          pax: form.pax,
-          rsvp: form.rsvp,
-          isVip: form.isVip,
-          notes: form.notes,
-          dietary: form.dietary,
-          angbaoAmt: form.angbaoAmt ? Number(form.angbaoAmt) : null,
+          name: form.name, phone: form.phone, email: form.email || undefined,
+          pax: form.pax, rsvp: form.rsvp, isVip: form.isVip, notes: form.notes,
+          dietary: form.dietary, angbaoAmt: form.angbaoAmt ? Number(form.angbaoAmt) : null,
           giftItem: form.giftItem || null,
         });
         addToast(`${created.name} created`, 'success');
         onClose();
       } else {
         const updated = await updateGuest(wid, guest!.id, {
-          name: form.name,
-          phone: form.phone,
-          email: form.email || undefined,
-          pax: form.pax,
-          rsvp: form.rsvp,
-          isVip: form.isVip,
-          notes: form.notes,
-          dietary: form.dietary,
-          angbaoAmt: form.angbaoAmt ? Number(form.angbaoAmt) : null,
+          name: form.name, phone: form.phone, email: form.email || undefined,
+          pax: form.pax, rsvp: form.rsvp, isVip: form.isVip, notes: form.notes,
+          dietary: form.dietary, angbaoAmt: form.angbaoAmt ? Number(form.angbaoAmt) : null,
           giftItem: form.giftItem || null,
         });
         Object.assign(guest!, {
-          name: updated.name,
-          phone: updated.phone,
-          email: updated.email,
-          pax: updated.pax,
-          rsvp: updated.rsvp,
-          isVip: updated.isVip,
-          notes: updated.notes,
-          dietaryRequirements: updated.dietary,
-          angbaoAmount: updated.angbaoAmt ?? undefined,
-          giftItem: updated.giftItem ?? undefined,
+          name: updated.name, phone: updated.phone, email: updated.email,
+          pax: updated.pax, rsvp: updated.rsvp, isVip: updated.isVip,
+          notes: updated.notes, dietaryRequirements: updated.dietary,
+          angbaoAmount: updated.angbaoAmt ?? undefined, giftItem: updated.giftItem ?? undefined,
         });
         Object.assign(form, {
           angbaoAmt: updated.angbaoAmt != null ? String(updated.angbaoAmt) : '',
@@ -166,10 +218,7 @@
     }
   }
 
-  function cancel() {
-    editing = false;
-    onClose();
-  }
+  function cancel() { editing = false; onClose(); }
 
   function openCheckinModal() {
     if (!guest) return;
@@ -218,7 +267,7 @@
 <!-- svelte-ignore a11y_no_static_element_interactions -->
 <svelte:window onkeydown={(e) => { if (e.key === 'Escape') onClose(); }} />
 <div class="drawer-overlay" onclick={onClose}>
-  <div class="drawer-backdrop"></div>
+  <div class="drawer-backdrop" style="opacity: {dragging ? Math.max(0, 1 - dragY / 400) : 1}"></div>
   <!-- svelte-ignore a11y_no_static_element_interactions -->
   <div class="drawer-panel" onclick={(e) => e.stopPropagation()}
     ontouchstart={onTouchStart}
@@ -226,7 +275,6 @@
     ontouchend={onTouchEnd}
     style="transform: translateY({dragY}px); transition: {dragging ? 'none' : 'transform 300ms cubic-bezier(0.2, 0.8, 0.2, 1)'}"
   >
-    <!-- Pill dismiss (mobile only) -->
     <div class="drawer-pill flex sm:hidden" onclick={onClose} role="presentation">
       <div class="drawer-pill-bar"></div>
     </div>
@@ -248,7 +296,7 @@
       </div>
     </div>
 
-    <div class="drawer-body">
+    <div class="drawer-body" class:drawer-body-view={!editing && localGuest}>
       {#if editing}
         <div class="form-grid">
           <div class="form-field">
@@ -293,10 +341,7 @@
               {#each ['Halal', 'Vegetarian', 'Vegan', 'Gluten-Free', 'Nut-Free', 'No Seafood'] as opt}
                 <button type="button"
                   onclick={() => { form.dietary = form.dietary.includes(opt) ? form.dietary.filter(d => d !== opt) : [...form.dietary, opt]; }}
-                  class={cn(
-                    "dietary-chip",
-                    form.dietary.includes(opt) ? "dietary-chip-active" : ""
-                  )}
+                  class={cn("dietary-chip", form.dietary.includes(opt) ? "dietary-chip-active" : "")}
                 >{opt}</button>
               {/each}
             </div>
@@ -311,18 +356,22 @@
           </div>
         </div>
       {:else if localGuest}
-        <!-- View Mode -->
+        <!-- View Mode — compact for mobile -->
         <div class="guest-hero">
           <div class={cn(
             "guest-avatar-lg",
-            localGuest.checkedIn ? "avatar-checked" :
-            localGuest.isVip ? "avatar-vip" : "avatar-default"
+            localGuest.checkedIn ? "avatar-checked" : localGuest.isVip ? "avatar-vip" : "avatar-default"
           )}>
             {getInitials(localGuest.name)}
           </div>
-          <div>
+          <div class="min-w-0">
             <h3 class="guest-name-lg">{#if localGuest.isVip}<span class="text-gold">★</span>{/if} {localGuest.name}</h3>
-            <Badge status={localGuest.rsvp} />
+            <div class="flex items-center gap-2 mt-0.5">
+              <Badge status={localGuest.rsvp} />
+              {#if localGuest.pax > 1}
+                <span class="text-xs text-gray-400">{localGuest.pax} pax</span>
+              {/if}
+            </div>
           </div>
         </div>
 
@@ -334,7 +383,7 @@
           {#if localGuest.email}
             <div class="info-row">
               <Mail class="info-icon" />
-              <span>{localGuest.email}</span>
+              <span class="truncate">{localGuest.email}</span>
             </div>
           {/if}
         </div>
@@ -365,10 +414,10 @@
         {/if}
 
         {#if localGuest.dietaryRequirements.length > 0}
-          <div class="section">
+          <div class="compact-section">
             <div class="section-header">
               <Utensils class="section-icon" />
-              Dietary Requirements
+              Dietary
             </div>
             <div class="chip-group">
               {#each localGuest.dietaryRequirements as req}
@@ -379,7 +428,7 @@
         {/if}
 
         {#if localGuest.notes}
-          <div class="section">
+          <div class="compact-section">
             <div class="section-header">
               <StickyNote class="section-icon" />
               Notes
@@ -389,7 +438,7 @@
         {/if}
 
         {#if localGuest.angbaoAmount || localGuest.giftItem}
-          <div class="section">
+          <div class="compact-section">
             <div class="section-header">Gift Details</div>
             <div class="gift-card">
               {#if localGuest.angbaoAmount}
@@ -410,15 +459,14 @@
           </div>
         {/if}
 
-        <!-- Check-in Action -->
         {#if !readonly}
-          <div class="pt-2 pb-4">
+          <div class="pt-1 pb-3 sm:pb-4">
             {#if localGuest.checkedIn}
-              <button onclick={handleCheckOut} class="w-full py-3 bg-emerald-50 text-emerald-700 rounded-xl text-sm font-semibold border border-emerald-200 hover:bg-emerald-100 transition-colors flex items-center justify-center gap-2">
+              <button onclick={handleCheckOut} class="w-full py-2.5 sm:py-3 bg-emerald-50 text-emerald-700 rounded-xl text-sm font-semibold border border-emerald-200 hover:bg-emerald-100 transition-colors flex items-center justify-center gap-2">
                 <CheckCircle2 class="w-4 h-4" /> Checked In — Tap to Check Out
               </button>
             {:else}
-              <button onclick={openCheckinModal} class="w-full py-3 bg-red text-white rounded-xl text-sm font-semibold hover:bg-red-light transition-colors flex items-center justify-center gap-2">
+              <button onclick={openCheckinModal} class="w-full py-2.5 sm:py-3 bg-red text-white rounded-xl text-sm font-semibold hover:bg-red-light transition-colors flex items-center justify-center gap-2">
                 <UserCheck class="w-4 h-4" /> Check In
               </button>
             {/if}
@@ -427,7 +475,6 @@
       {/if}
     </div>
 
-    <!-- Mobile sticky footer for edit mode -->
     {#if editing}
       <div class="drawer-footer flex">
         <button onclick={save} disabled={saving}
@@ -439,7 +486,6 @@
   </div>
 </div>
 
-<!-- Check-in Modal -->
 {#if showCheckinModal && guest}
   <CheckInModal
     guestName={guest.name}
@@ -461,9 +507,7 @@
   }
 
   @media (min-width: 640px) {
-    .drawer-overlay {
-      align-items: stretch;
-    }
+    .drawer-overlay { align-items: stretch; }
   }
 
   .drawer-backdrop {
@@ -472,7 +516,7 @@
     background: rgba(0, 0, 0, 0.3);
     backdrop-filter: blur(4px);
     -webkit-backdrop-filter: blur(4px);
-    animation: fadeIn 200ms ease;
+    transition: opacity 300ms cubic-bezier(0.2, 0.8, 0.2, 1);
   }
 
   .drawer-panel {
@@ -486,9 +530,9 @@
     backdrop-filter: blur(24px) saturate(200%);
     -webkit-backdrop-filter: blur(24px) saturate(200%);
     box-shadow: 0 -8px 48px rgba(0, 0, 0, 0.15), 0 -2px 8px rgba(0, 0, 0, 0.08);
-    overflow-y: auto;
     display: flex;
     flex-direction: column;
+    overflow: hidden;
     animation: slideUp 300ms cubic-bezier(0.2, 0.8, 0.2, 1);
   }
 
@@ -513,7 +557,6 @@
     height: 0.25rem;
     background: rgba(0, 0, 0, 0.15);
     border-radius: 9999px;
-    transition: background 150ms ease;
   }
 
   .drawer-pill:active .drawer-pill-bar {
@@ -527,7 +570,7 @@
     background: rgba(255, 255, 255, 0.95);
     backdrop-filter: blur(24px) saturate(200%);
     -webkit-backdrop-filter: blur(24px) saturate(200%);
-    padding: 1.25rem 1.5rem;
+    padding: 1rem 1.5rem;
     border-bottom: 1px solid rgba(0, 0, 0, 0.05);
     display: flex;
     align-items: center;
@@ -564,61 +607,35 @@
     background: rgba(0, 0, 0, 0.06);
   }
 
-  .drawer-icon-btn:hover {
-    background: rgba(0, 0, 0, 0.04);
-  }
-
-  .drawer-btn-secondary {
-    padding: 0.5rem 1rem;
-    border-radius: 0.5rem;
-    font-size: 0.875rem;
-    font-weight: 500;
-    color: #6b7280;
-    transition: background 100ms ease, transform 100ms ease;
-  }
-
-  .drawer-btn-secondary:active {
-    transform: scale(0.97);
-  }
-
-  .drawer-btn-primary {
-    display: flex;
-    align-items: center;
-    gap: 0.375rem;
-    padding: 0.5rem 0.875rem;
-    background: #A11217;
-    color: white;
-    border-radius: 0.5rem;
-    font-size: 0.875rem;
-    font-weight: 600;
-    transition: background 100ms ease, transform 100ms ease;
-  }
-
-  .drawer-btn-primary:active {
-    transform: scale(0.97);
-  }
-
-  .drawer-btn-primary:disabled {
-    opacity: 0.5;
-  }
-
   .drawer-body {
-    padding: 1.5rem;
-    padding-bottom: calc(1.5rem + 5rem);
+    padding: 1.25rem 1.5rem;
+    padding-bottom: 1rem;
     display: flex;
     flex-direction: column;
-    gap: 1.5rem;
+    gap: 1rem;
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  /* View mode: tighter spacing on mobile */
+  .drawer-body-view {
+    gap: 0.75rem;
+  }
+
+  @media (min-width: 640px) {
+    .drawer-body { padding-bottom: 1rem; gap: 1.25rem; }
+    .drawer-body-view { gap: 1rem; }
   }
 
   .drawer-footer {
-    position: sticky;
-    bottom: 0;
-    z-index: 10;
+    flex-shrink: 0;
     background: rgba(255, 255, 255, 0.95);
     backdrop-filter: blur(24px) saturate(200%);
     -webkit-backdrop-filter: blur(24px) saturate(200%);
-    padding: 1rem 1.5rem;
-    padding-bottom: calc(1rem + env(safe-area-inset-bottom));
+    padding: 0.75rem 1.5rem;
+    padding-bottom: calc(0.75rem + env(safe-area-inset-bottom));
     border-top: 1px solid rgba(0, 0, 0, 0.05);
     align-items: center;
     gap: 0.75rem;
@@ -628,19 +645,23 @@
   .guest-hero {
     display: flex;
     align-items: center;
-    gap: 1rem;
+    gap: 0.875rem;
   }
 
   .guest-avatar-lg {
-    width: 3.5rem;
-    height: 3.5rem;
+    width: 3rem;
+    height: 3rem;
     border-radius: 50%;
     display: flex;
     align-items: center;
     justify-content: center;
     font-weight: 700;
-    font-size: 1rem;
+    font-size: 0.9375rem;
     flex-shrink: 0;
+  }
+
+  @media (min-width: 640px) {
+    .guest-avatar-lg { width: 3.5rem; height: 3.5rem; font-size: 1rem; }
   }
 
   .avatar-default { background: #FDEAEA; color: #A11217; border: 2px solid #FAC5C5; }
@@ -648,29 +669,33 @@
   .avatar-checked { background: #ECFDF5; color: #059669; border: 2px solid #A7F3D0; }
 
   .guest-name-lg {
-    font-size: 1.25rem;
+    font-size: 1.125rem;
     font-weight: 700;
     color: #111827;
     letter-spacing: -0.01em;
   }
 
+  @media (min-width: 640px) {
+    .guest-name-lg { font-size: 1.25rem; }
+  }
+
   .info-rows {
     display: flex;
     flex-direction: column;
-    gap: 0.5rem;
+    gap: 0.375rem;
   }
 
   .info-row {
     display: flex;
     align-items: center;
-    gap: 0.75rem;
-    font-size: 0.875rem;
+    gap: 0.625rem;
+    font-size: 0.8125rem;
     color: #4b5563;
   }
 
   .info-icon {
-    width: 1rem;
-    height: 1rem;
+    width: 0.875rem;
+    height: 0.875rem;
     color: #9ca3af;
     flex-shrink: 0;
   }
@@ -678,7 +703,11 @@
   .detail-grid {
     display: grid;
     grid-template-columns: 1fr 1fr;
-    gap: 0.75rem;
+    gap: 0.5rem;
+  }
+
+  @media (min-width: 640px) {
+    .detail-grid { gap: 0.75rem; }
   }
 
   .detail-card {
@@ -687,102 +716,109 @@
     -webkit-backdrop-filter: blur(8px);
     border: 1px solid rgba(0, 0, 0, 0.04);
     border-radius: 0.75rem;
-    padding: 1rem;
+    padding: 0.75rem;
     text-align: center;
     box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
   }
 
+  @media (min-width: 640px) {
+    .detail-card { padding: 1rem; }
+  }
+
   .detail-label {
-    font-size: 0.75rem;
+    font-size: 0.625rem;
     color: #6b7280;
     font-weight: 500;
-    margin-bottom: 0.25rem;
+    margin-bottom: 0.125rem;
   }
 
   .detail-value {
-    font-size: 1.5rem;
+    font-size: 1.25rem;
     font-weight: 700;
     color: #111827;
     letter-spacing: -0.02em;
+  }
+
+  @media (min-width: 640px) {
+    .detail-value { font-size: 1.5rem; }
   }
 
   .vip-banner {
     background: #FDF8E8;
     border: 1px solid rgba(212, 175, 55, 0.3);
     border-radius: 0.75rem;
-    padding: 1rem;
+    padding: 0.75rem;
     text-align: center;
     font-weight: 700;
+    font-size: 0.8125rem;
     color: #B8941F;
   }
 
-  .section {
+  .compact-section {
     display: flex;
     flex-direction: column;
-    gap: 0.5rem;
+    gap: 0.375rem;
   }
 
   .section-header {
     display: flex;
     align-items: center;
     gap: 0.5rem;
-    font-size: 0.875rem;
+    font-size: 0.8125rem;
     font-weight: 600;
     color: #374151;
   }
 
   .section-icon {
-    width: 1rem;
-    height: 1rem;
+    width: 0.875rem;
+    height: 0.875rem;
     color: #9ca3af;
   }
 
   .chip-group {
     display: flex;
     flex-wrap: wrap;
-    gap: 0.5rem;
+    gap: 0.375rem;
   }
 
   .dietary-tag {
-    padding: 0.375rem 0.75rem;
+    padding: 0.25rem 0.625rem;
     background: #FFFBEB;
     color: #D97706;
     border-radius: 9999px;
-    font-size: 0.75rem;
+    font-size: 0.6875rem;
     font-weight: 500;
     border: 1px solid #FDE68A;
   }
 
   .notes-text {
-    font-size: 0.875rem;
+    font-size: 0.8125rem;
     color: #4b5563;
     background: rgba(249, 250, 251, 0.8);
-    backdrop-filter: blur(8px);
-    -webkit-backdrop-filter: blur(8px);
     border: 1px solid rgba(0, 0, 0, 0.04);
     border-radius: 0.75rem;
-    padding: 1rem;
-    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+    padding: 0.75rem;
+    line-height: 1.5;
   }
 
   .gift-card {
     background: #FDF8E8;
     border: 1px solid rgba(212, 175, 55, 0.2);
     border-radius: 0.75rem;
-    padding: 1rem;
+    padding: 0.75rem;
     display: flex;
     flex-direction: column;
-    gap: 0.5rem;
+    gap: 0.375rem;
   }
 
   .gift-row {
     display: flex;
     align-items: center;
     gap: 0.5rem;
-    font-size: 0.875rem;
+    font-size: 0.8125rem;
   }
 
-  .gift-icon { width: 1rem; height: 1rem; flex-shrink: 0; }
+  .gift-icon { width: 0.875rem; height: 0.875rem; flex-shrink: 0; }
   .gift-label { color: #6b7280; }
   .gift-value { font-weight: 700; }
 
@@ -790,7 +826,7 @@
   .form-grid {
     display: flex;
     flex-direction: column;
-    gap: 1rem;
+    gap: 0.875rem;
   }
 
   .form-field {
@@ -815,7 +851,7 @@
 
   .form-input {
     width: 100%;
-    padding: 0.75rem 1rem;
+    padding: 0.625rem 0.875rem;
     border: 1.5px solid rgba(0, 0, 0, 0.08);
     border-radius: 0.75rem;
     font-size: 0.9375rem;
@@ -823,7 +859,11 @@
     background: rgba(255, 255, 255, 0.8);
     outline: none;
     transition: border-color 200ms ease, box-shadow 200ms ease, transform 100ms ease;
-    min-height: 48px;
+    min-height: 44px;
+  }
+
+  @media (min-width: 640px) {
+    .form-input { padding: 0.75rem 1rem; min-height: 48px; }
   }
 
   .form-input:focus {
@@ -831,13 +871,11 @@
     box-shadow: 0 0 0 3px rgba(161, 18, 23, 0.1);
   }
 
-  .form-input:active {
-    transform: scale(0.99);
-  }
+  .form-input:active { transform: scale(0.99); }
 
   .form-textarea {
     resize: none;
-    min-height: 3.5rem;
+    min-height: 3rem;
   }
 
   .form-row-2 {
@@ -849,13 +887,13 @@
   .dietary-chips {
     display: flex;
     flex-wrap: wrap;
-    gap: 0.5rem;
+    gap: 0.375rem;
   }
 
   .dietary-chip {
-    padding: 0.375rem 0.75rem;
+    padding: 0.3125rem 0.625rem;
     border-radius: 0.5rem;
-    font-size: 0.75rem;
+    font-size: 0.6875rem;
     font-weight: 500;
     border: 1.5px solid rgba(0, 0, 0, 0.08);
     color: #4b5563;
@@ -863,9 +901,7 @@
     transition: all 150ms ease, transform 100ms ease;
   }
 
-  .dietary-chip:active {
-    transform: scale(0.95);
-  }
+  .dietary-chip:active { transform: scale(0.95); }
 
   .dietary-chip-active {
     background: #FDF8E8;
@@ -873,22 +909,6 @@
     color: #B8941F;
   }
 
-  @keyframes fadeIn {
-    from { opacity: 0; }
-    to { opacity: 1; }
-  }
-
-  @keyframes slideUp {
-    from { transform: translateY(100%); }
-    to { transform: translateY(0); }
-  }
-
-  @keyframes slideInRight {
-    from { transform: translateX(100%); }
-    to { transform: translateX(0); }
-  }
-
-  :global(.animate-slideUp) {
-    animation: slideUp 300ms cubic-bezier(0.2, 0.8, 0.2, 1);
-  }
+  @keyframes slideUp { from { transform: translateY(100%); } to { transform: translateY(0); } }
+  @keyframes slideInRight { from { transform: translateX(100%); } to { transform: translateX(0); } }
 </style>

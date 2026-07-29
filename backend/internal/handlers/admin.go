@@ -41,6 +41,10 @@ func (h *AdminHandler) Create(c fuego.ContextWithBody[AdminRequest]) (any, error
 	if err := validatePassword(body.Password); err != nil {
 		return nil, err
 	}
+	// Validate role field
+	if body.Role != "admin" && body.Role != "user" {
+		body.Role = "user"
+	}
 	hash, err := bcrypt.GenerateFromPassword([]byte(body.Password), bcrypt.DefaultCost)
 	if err != nil {
 		return nil, fuego.InternalServerError{Title: "Failed to hash password"}
@@ -58,7 +62,7 @@ func (h *AdminHandler) Create(c fuego.ContextWithBody[AdminRequest]) (any, error
 	if len(body.Weddings) > 0 {
 		var ids []uuid.UUID
 		for _, ws := range body.Weddings {
-			if id, err := uuid.Parse(ws); err == nil {
+			if id, err := DecodeID(ws); err == nil {
 				ids = append(ids, id)
 			}
 		}
@@ -80,6 +84,19 @@ func (h *AdminHandler) Delete(c fuego.ContextWithBody[any]) (any, error) {
 	}
 	if id == adminID {
 		return nil, fuego.BadRequestError{Title: "Cannot delete your own account"}
+	}
+	target, err := h.adminRepo.FindByID(id)
+	if err != nil {
+		return nil, fuego.NotFoundError{Title: "User not found"}
+	}
+	if target.Role == "admin" {
+		adminCount, err := h.adminRepo.CountByRole("admin")
+		if err != nil {
+			return nil, fuego.InternalServerError{Title: "Failed to check admin count"}
+		}
+		if adminCount <= 1 {
+			return nil, fuego.BadRequestError{Title: "Cannot delete the last admin"}
+		}
 	}
 	if err := h.adminRepo.Delete(id); err != nil {
 		return nil, err
@@ -109,7 +126,7 @@ func (h *AdminHandler) AssignWeddings(c fuego.ContextWithBody[AssignWeddingsRequ
 	}
 	var ids []uuid.UUID
 	for _, ws := range body.Weddings {
-		if wid, err := uuid.Parse(ws); err == nil {
+		if wid, err := DecodeID(ws); err == nil {
 			ids = append(ids, wid)
 		}
 	}
@@ -166,4 +183,50 @@ func (h *AdminHandler) ResetPassword(c fuego.ContextWithBody[ResetPasswordReques
 		return nil, fuego.InternalServerError{Title: "Failed to update password"}
 	}
 	return map[string]any{"message": "Password updated"}, nil
+}
+
+type UpdateRoleRequest struct {
+	Role string `json:"role"`
+}
+
+func (h *AdminHandler) UpdateRole(c fuego.ContextWithBody[UpdateRoleRequest]) (any, error) {
+	if err := requireAdmin(c.Context()); err != nil {
+		return nil, fuego.UnauthorizedError{Title: err.Error()}
+	}
+	body, err := c.Body()
+	if err != nil {
+		return nil, fuego.BadRequestError{Title: "Invalid request"}
+	}
+	if body.Role != "admin" && body.Role != "user" {
+		return nil, fuego.BadRequestError{Title: "Role must be admin or user"}
+	}
+	id, err := DecodeID(c.PathParam("id"))
+	if err != nil {
+		return nil, fuego.BadRequestError{Title: "Invalid ID"}
+	}
+	// Prevent self-demotion
+	callerID := AdminIDFromContext(c.Context())
+	if id == callerID && body.Role != "admin" {
+		return nil, fuego.BadRequestError{Title: "Cannot change your own role"}
+	}
+	// Fetch user once for guard check and update
+	admin, err := h.adminRepo.FindByID(id)
+	if err != nil {
+		return nil, fuego.NotFoundError{Title: "User not found"}
+	}
+	// Prevent demoting the last admin
+	if admin.Role == "admin" && body.Role == "user" {
+		adminCount, err := h.adminRepo.CountByRole("admin")
+		if err != nil {
+			return nil, fuego.InternalServerError{Title: "Failed to check admin count"}
+		}
+		if adminCount <= 1 {
+			return nil, fuego.BadRequestError{Title: "Cannot demote the last admin"}
+		}
+	}
+	admin.Role = body.Role
+	if err := h.adminRepo.Update(admin); err != nil {
+		return nil, fuego.InternalServerError{Title: "Failed to update role"}
+	}
+	return admin, nil
 }

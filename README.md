@@ -92,6 +92,7 @@ Server runs at `http://localhost:8080`.
 | DELETE | `/api/users/{id}` | Delete admin user |
 | GET | `/api/users/{id}/weddings` | Get user wedding assignments |
 | PUT | `/api/users/{id}/weddings` | Assign weddings to user |
+| PUT | `/api/users/{id}/role` | Update user role |
 | POST | `/api/users/{id}/reset-password` | Reset user password |
 | GET | `/api/weddings` | List weddings |
 | POST | `/api/weddings` | Create wedding |

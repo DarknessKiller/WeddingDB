@@ -1,5 +1,6 @@
 <script lang="ts">
   import { addToast } from '$lib/stores';
+  import { weddingTitle } from '$lib/stores/weddingTitle';
   import { goto } from '$app/navigation';
   import { cn } from '$lib/utils';
   import { z } from 'zod';
@@ -240,7 +241,8 @@
   }
 </script>
 
-<svelte:head><title>New Reservation – WeddingDB</title></svelte:head>
+  <svelte:head> <title>{$weddingTitle ? `${$weddingTitle} – Reservation` : 'Reservation – WeddingDB'}</title></svelte:head>
+
 
 <div class="flex flex-col sm:flex-row h-full">
   <!-- Left: Hall Map (hidden on mobile, shown on desktop) -->

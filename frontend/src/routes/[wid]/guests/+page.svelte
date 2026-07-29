@@ -1,5 +1,6 @@
 <script lang="ts">
   import type { Guest, RSVPStatus } from '$lib/types';
+  import { weddingTitle } from '$lib/stores/weddingTitle';
   import { selectedGuest, isDrawerOpen, drawerStartEditing, drawerCreateMode, addToast } from '$lib/stores';
   import { weddingId } from '$lib/stores/weddingId';
   import { goto } from '$app/navigation';
@@ -23,7 +24,7 @@
   let totalGuests = $state(0);
   let nextCursor = $state<string | null>(null);
   let cursors = $state<string[]>([]);
-  let sortCol = $state('name');
+  let sortCol = $state<string>('name');
   let sortDir = $state<'asc' | 'desc'>('asc');
   let selectedIds = $state<Set<string>>(new Set());
   let contextMenu = $state<{ x: number; y: number; guest: GuestResponse } | null>(null);
@@ -184,6 +185,21 @@
   let filtered = $derived.by(() => {
     let r = [...guests];
     if (rsvpFilter !== 'all') r = r.filter(g => g.rsvp === rsvpFilter);
+    r.sort((a, b) => {
+      let av: string | number | null, bv: string | number | null;
+      switch (sortCol) {
+        case 'name': av = a.name; bv = b.name; break;
+        case 'phone': av = a.phone; bv = b.phone; break;
+        case 'rsvp': av = a.rsvp; bv = b.rsvp; break;
+        case 'pax': av = a.pax; bv = b.pax; break;
+        case 'tableId': av = a.tableId ?? ''; bv = b.tableId ?? ''; break;
+        case 'seatNum': av = a.seatNum ?? 0; bv = b.seatNum ?? 0; break;
+        case 'checkedInAt': av = a.checkedInAt ?? ''; bv = b.checkedInAt ?? ''; break;
+        default: av = a.name; bv = b.name;
+      }
+      const cmp = av < bv ? -1 : av > bv ? 1 : 0;
+      return sortDir === 'asc' ? cmp : -cmp;
+    });
     return r;
   });
 
@@ -506,16 +522,16 @@
   }
 </script>
 
-<svelte:head><title>Guests – WeddingDB</title></svelte:head>
+<svelte:head> <title>{$weddingTitle ? `${$weddingTitle} – Guests` : 'Guests – WeddingDB'}</title></svelte:head>
 <!-- svelte-ignore a11y_no_static_element_interactions -->
 <div class="p-4 sm:p-7 max-w-[1400px]" onclick={() => contextMenu = null}>
   <!-- Toolbar -->
   <div class="flex items-center justify-between gap-2 sm:gap-4 mb-5 flex-wrap">
     <div class="relative flex-1 min-w-[160px] sm:min-w-[200px] max-w-md">
-      <Search class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 sm:w-5 sm:h-5 text-gray-400 pointer-events-none" />
+      <Search class="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 sm:w-[18px] sm:h-[18px] text-gray-400 pointer-events-none" />
       <input
         type="text" placeholder="Search guests..." bind:value={searchQuery}
-        class="w-full pl-9 sm:pl-11 pr-3 sm:pr-4 py-2 sm:py-2.5 border border-gray-200 rounded-xl text-sm bg-white focus:border-gold focus:ring-2 focus:ring-gold/15 outline-none transition-all"
+        class="w-full pl-10 sm:pl-11 pr-3 sm:pr-4 py-2.5 sm:py-3 border border-gray-200 rounded-xl text-sm bg-white focus:border-red focus:ring-2 focus:ring-red/10 outline-none transition-all min-h-[44px]"
       />
     </div>
     <div class="flex items-center gap-1 sm:gap-2 flex-wrap">
@@ -695,6 +711,7 @@
 
 <!-- Context Menu -->
 {#if contextMenu}
+  <div class="fixed inset-0 z-[599]" onclick={() => contextMenu = null} role="presentation"></div>
   <!-- svelte-ignore a11y_no_static_element_interactions -->
   <div class="fixed z-[600] bg-white/95 backdrop-blur-xl border border-black/[0.06] rounded-xl shadow-xl py-1.5 min-w-[180px]"
     style={getMenuStyle(contextMenu.x, contextMenu.y)} onclick={(e) => e.stopPropagation()}>

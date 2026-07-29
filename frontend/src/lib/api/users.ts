@@ -64,3 +64,12 @@ export async function resetPassword(userId: string, password: string): Promise<v
 	});
 	if (!res.ok) throw new Error('Failed to reset password');
 }
+
+export async function updateRole(userId: string, role: string): Promise<User> {
+	const res = await apiFetch(`/api/users/${userId}/role`, {
+		method: 'PUT',
+		body: JSON.stringify({ role }),
+	});
+	if (!res.ok) throw new Error('Failed to update role');
+	return res.json();
+}

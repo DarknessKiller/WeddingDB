@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onMount } from 'svelte';
+  import { weddingTitle } from '$lib/stores/weddingTitle';
   import { addToast } from '$lib/stores';
   import { weddingId } from '$lib/stores/weddingId';
   import { get } from 'svelte/store';
@@ -89,7 +90,8 @@
   }
 </script>
 
-<svelte:head><title>Settings – WeddingDB</title></svelte:head>
+<svelte:head> <title>{$weddingTitle ? `${$weddingTitle} – Settings` : 'Settings – WeddingDB'}</title></svelte:head>
+
 
 <div class="p-4 sm:p-7 max-w-2xl mx-auto">
   <h1 class="text-xl font-bold text-gray-900 mb-6" style="letter-spacing: -0.02em;">Settings</h1>
@@ -180,7 +182,6 @@
               bind:posY={kioskBackgroundPosY}
               bind:blur={kioskBackgroundBlur}
               label="Background"
-              showBlur={true}
             />
           </div>
         </div>

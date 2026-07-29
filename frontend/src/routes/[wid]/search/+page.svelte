@@ -1,5 +1,6 @@
 <script lang="ts">
   import { searchGuests, listGuests, listTables } from '$lib/api/search';
+  import { weddingTitle } from '$lib/stores/weddingTitle';
   import { getLayout } from '$lib/api/layout';
   import { getWedding } from '$lib/api/weddings';
   import { addToast, selectedGuest, isDrawerOpen } from '$lib/stores';
@@ -25,6 +26,30 @@
   let showSeatNumbers = $state(true);
   let highlightTableId = $state<string | null>(null);
   let showResults = $state(false);
+  let sortCol = $state<string>('name');
+  let sortDir = $state<'asc' | 'desc'>('asc');
+
+  function toggleSort(col: string) {
+    if (sortCol === col) sortDir = sortDir === 'asc' ? 'desc' : 'asc';
+    else { sortCol = col; sortDir = 'asc'; }
+  }
+
+  let sortedGuests = $derived.by(() => {
+    const r = [...allGuests];
+    r.sort((a, b) => {
+      let av: string | number, bv: string | number;
+      switch (sortCol) {
+        case 'name': av = a.name; bv = b.name; break;
+        case 'rsvp': av = a.rsvp; bv = b.rsvp; break;
+        case 'pax': av = a.pax; bv = b.pax; break;
+        case 'checkedIn': av = a.checkedIn ? 1 : 0; bv = b.checkedIn ? 1 : 0; break;
+        default: av = a.name; bv = b.name;
+      }
+      const cmp = av < bv ? -1 : av > bv ? 1 : 0;
+      return sortDir === 'asc' ? cmp : -cmp;
+    });
+    return r;
+  });
 
   // Track drawer open/close to refresh data
   let prevDrawerOpen = $state(false);
@@ -134,7 +159,8 @@
   let highlightedTableId = $derived($selectedGuest?.tableId ?? highlightTableId);
 </script>
 
-<svelte:head><title>Check In – WeddingDB</title></svelte:head>
+<svelte:head> <title>{$weddingTitle ? `${$weddingTitle} – Search` : 'Search – WeddingDB'}</title></svelte:head>
+
 
 {#if dataLoading}
   <div class="flex items-center justify-center h-full">
@@ -230,8 +256,13 @@
             <p class="text-sm">Loading guests...</p>
           </div>
         {:else}
+          <div class="flex items-center gap-2 px-3 py-1.5 border-b border-gray-100 bg-gray-50 text-xs">
+            <button onclick={() => toggleSort('name')} class="{sortCol === 'name' ? 'text-red font-bold' : 'text-gray-500'}">Name</button>
+            <button onclick={() => toggleSort('rsvp')} class="{sortCol === 'rsvp' ? 'text-red font-bold' : 'text-gray-500'}">RSVP</button>
+            <button onclick={() => toggleSort('checkedIn')} class="{sortCol === 'checkedIn' ? 'text-red font-bold' : 'text-gray-500'}">Status</button>
+          </div>
           <div class="divide-y divide-gray-100">
-            {#each allGuests as guest (guest.id)}
+            {#each sortedGuests as guest (guest.id)}
               <button
                 class="w-full flex items-center gap-3 px-4 py-3 hover:bg-gray-50 transition-colors text-left"
                 onclick={() => openGuest(guest)}

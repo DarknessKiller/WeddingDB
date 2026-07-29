@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onMount } from 'svelte';
+  import { weddingTitle } from '$lib/stores/weddingTitle';
   import { goto } from '$app/navigation';
   import { cn } from '$lib/utils';
   import { addToast, isDrawerOpen } from '$lib/stores';
@@ -219,7 +220,8 @@
   });
 </script>
 
-<svelte:head><title>Tables – WeddingDB</title></svelte:head>
+<svelte:head> <title>{$weddingTitle ? `${$weddingTitle} – Tables` : 'Tables – WeddingDB'}</title></svelte:head>
+
 <!-- svelte-ignore a11y_no_static_element_interactions -->
 <div class="p-4 sm:p-7 max-w-[1400px]" onclick={() => contextMenu = null}>
   <div class="flex items-center justify-between mb-6">
@@ -353,6 +355,7 @@
 
 <!-- Context Menu -->
 {#if contextMenu}
+  <div class="fixed inset-0 z-[599]" onclick={() => contextMenu = null} role="presentation"></div>
   <!-- svelte-ignore a11y_no_static_element_interactions -->
   <div class="fixed z-[600] bg-white/95 backdrop-blur-xl border border-black/[0.06] rounded-xl shadow-xl py-1.5 min-w-[180px]"
     style={getMenuStyle(contextMenu.x, contextMenu.y)} onclick={(e) => e.stopPropagation()}>

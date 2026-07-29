@@ -38,6 +38,13 @@ func (r *AdminRepo) Update(admin *models.AdminUser) error {
 	return r.db.Save(admin).Error
 }
 
+// CountByRole returns the number of admins with the given role.
+func (r *AdminRepo) CountByRole(role string) (int64, error) {
+	var count int64
+	err := r.db.Model(&models.AdminUser{}).Where("role = ?", role).Count(&count).Error
+	return count, err
+}
+
 func (r *AdminRepo) Delete(id uuid.UUID) error {
 	return r.db.Delete(&models.AdminUser{}, id).Error
 }

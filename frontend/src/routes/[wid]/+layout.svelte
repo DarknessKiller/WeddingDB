@@ -6,8 +6,10 @@
   import Drawer from '$lib/components/ui/Drawer.svelte';
   import { selectedGuest, isDrawerOpen, drawerStartEditing, drawerCreateMode, sidebarCollapsed } from '$lib/stores';
   import { weddingId, setWeddingId } from '$lib/stores/weddingId';
+  import { weddingTitle } from '$lib/stores/weddingTitle';
   import { validateToken } from '$lib/utils/auth';
   import { listGuests } from '$lib/api/guests';
+  import { getWedding } from '$lib/api/weddings';
   import { listTables } from '$lib/api/tables';
   import type { BanquetTable } from '$lib/types';
 
@@ -30,6 +32,9 @@
     }).catch(() => {});
     listTables($weddingId).then((t) => {
       tables = t;
+    }).catch(() => {});
+    getWedding(wid).then((w) => {
+      weddingTitle.set(w.name || '');
     }).catch(() => {});
   });
 

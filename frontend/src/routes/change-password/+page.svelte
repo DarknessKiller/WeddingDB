@@ -1,19 +1,26 @@
 <script lang="ts">
   import { goto } from '$app/navigation';
-  import { addToast, getAuth, setAuth } from '$lib/stores';
+  import { addToast, getAuth } from '$lib/stores';
   import { Eye, EyeOff, KeyRound } from 'lucide-svelte';
+  import PasswordRequirements from '$lib/components/ui/PasswordRequirements.svelte';
 
   let password = $state('');
   let confirmPassword = $state('');
   let showPassword = $state(false);
   let loading = $state(false);
 
+  let passwordMismatch = $derived(confirmPassword.length > 0 && password !== confirmPassword);
+  let canSubmit = $derived(
+    password.length >= 8 &&
+    password === confirmPassword &&
+    /[a-zA-Z]/.test(password) &&
+    /\d/.test(password) &&
+    /[^a-zA-Z0-9]/.test(password)
+  );
+
   async function handleChangePassword(e: Event) {
     e.preventDefault();
-    if (password !== confirmPassword) {
-      addToast('Passwords do not match', 'error');
-      return;
-    }
+    if (!canSubmit) return;
     loading = true;
     try {
       const { accessToken } = getAuth();
@@ -67,6 +74,7 @@
             {#if showPassword}<EyeOff size={18} />{:else}<Eye size={18} />{/if}
           </button>
         </div>
+        <PasswordRequirements {password} />
       </div>
 
       <div class="form-field">
@@ -78,11 +86,15 @@
           required
           minlength="8"
           class="form-input"
+          class:input-error={passwordMismatch}
           placeholder="Repeat password"
         />
+        {#if passwordMismatch}
+          <p class="field-error">Passwords do not match</p>
+        {/if}
       </div>
 
-      <button type="submit" disabled={loading || !password || !confirmPassword} class="auth-submit">
+      <button type="submit" disabled={loading || !canSubmit} class="auth-submit">
         {#if loading}<div class="btn-spinner"></div>{:else}<KeyRound size={18} />{/if}
         {loading ? 'Updating...' : 'Update Password'}
       </button>
@@ -90,4 +102,14 @@
   </div>
 </div>
 
-
+<style>
+  .input-error {
+    border-color: #ef4444 !important;
+    box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.1) !important;
+  }
+  .field-error {
+    font-size: 0.75rem;
+    color: #ef4444;
+    margin-top: 0.25rem;
+  }
+</style>

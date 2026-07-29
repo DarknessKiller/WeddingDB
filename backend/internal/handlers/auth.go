@@ -1,12 +1,13 @@
 package handlers
 
 import (
+	"net/mail"
 	"unicode"
 	"weddingdb/internal/middleware"
 	"weddingdb/internal/models"
-	"weddingdb/internal/utils"
 	"weddingdb/internal/repository"
 	"weddingdb/internal/services"
+	"weddingdb/internal/utils"
 
 	"github.com/go-fuego/fuego"
 	"github.com/google/uuid"
@@ -189,6 +190,10 @@ func (h *AuthHandler) Register(c fuego.ContextWithBody[RegisterRequest]) (any, e
 	}
 	if body.Email == "" || body.Password == "" || body.Name == "" {
 		return nil, fuego.BadRequestError{Title: "Name, email, and password are required"}
+	}
+	// Validate email format
+	if _, err := mail.ParseAddress(body.Email); err != nil {
+		return nil, fuego.BadRequestError{Title: "Invalid email format"}
 	}
 	if err := validatePassword(body.Password); err != nil {
 		return nil, err

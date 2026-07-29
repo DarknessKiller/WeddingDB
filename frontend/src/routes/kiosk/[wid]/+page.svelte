@@ -29,11 +29,12 @@
   let kioskDescription = $state('Enter your name to find your table and seat');
   let kioskLogoUrl = $state('');
   let kioskBackgroundUrl = $state('');
-  let kioskBackgroundBlur = $state(0);
   let kioskBackgroundSize = $state('cover');
   let kioskBackgroundPosX = $state('center');
   let kioskBackgroundPosY = $state('center');
   let showSeatNumbers = $state(true);
+  let weddingDate = $state<string>('');
+  let weddingName = $state('');
 
   // Bottom sheet drag state
   let sheetY = $state(0);
@@ -87,7 +88,6 @@
   });
 
   onMount(() => {
-    // Check reduced motion preference
     const mq = window.matchMedia('(prefers-reduced-motion: reduce)');
     prefersReducedMotion = mq.matches;
     mqHandler = (e: MediaQueryListEvent) => prefersReducedMotion = e.matches;
@@ -104,11 +104,12 @@
         if (data.kioskDescription) kioskDescription = data.kioskDescription;
         if (data.kioskLogoUrl) kioskLogoUrl = data.kioskLogoUrl;
         if (data.kioskBackgroundUrl) kioskBackgroundUrl = data.kioskBackgroundUrl;
-        if (data.kioskBackgroundBlur) kioskBackgroundBlur = data.kioskBackgroundBlur;
         if (data.kioskBackgroundSize) kioskBackgroundSize = data.kioskBackgroundSize;
         if (data.kioskBackgroundPosX) kioskBackgroundPosX = data.kioskBackgroundPosX;
         if (data.kioskBackgroundPosY) kioskBackgroundPosY = data.kioskBackgroundPosY;
         if (data.showSeatNumbers !== undefined) showSeatNumbers = data.showSeatNumbers;
+        if (data.date) weddingDate = data.date;
+        if (data.name) weddingName = data.name;
       }
     }).catch(() => {});
   });
@@ -155,11 +156,14 @@
     return d.toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
   }
 
-  // Spring-like cubic bezier for fluid motion
-  // Apple's default: damping 1.0, response 0.3-0.4
+  function formatWeddingDate(dateStr: string) {
+    if (!dateStr) return formatDate(new Date());
+    const d = new Date(dateStr);
+    return isNaN(d.getTime()) ? formatDate(new Date()) : formatDate(d);
+  }
+
   const SPRING_EASE = 'cubic-bezier(0.2, 0.8, 0.2, 1)';
 
-  // Bottom sheet drag handlers (Apple-style interruptible gesture)
   function onSheetPointerDown(e: PointerEvent) {
     if (prefersReducedMotion) return;
     e.stopPropagation();
@@ -177,16 +181,15 @@
     const now = performance.now();
     const dt = now - sheetLastTime;
     const dy = e.clientY - sheetLastY;
-    if (dt > 0) sheetVelocity = dy / dt * 16; // normalize to ~frame
+    if (dt > 0) sheetVelocity = dy / dt * 16;
     sheetLastY = e.clientY;
     sheetLastTime = now;
 
-    // Rubber-band past the top: resistance increases as you drag further up
     const raw = e.clientY - sheetStartY;
     if (raw > 0) {
-      sheetY = raw * 0.4; // rubber-band drag down
+      sheetY = raw * 0.4;
     } else {
-      sheetY = raw; // free drag up
+      sheetY = raw;
     }
   }
 
@@ -201,7 +204,6 @@
     const projected = sheetY + sheetVelocity * 8;
 
     if (sheetCollapsed) {
-      // Currently collapsed — swipe up to expand
       if (projected < -30 || sheetVelocity < -2) {
         sheetCollapsed = false;
         animateSheetTo(0);
@@ -209,7 +211,6 @@
         animateSheetTo(0);
       }
     } else {
-      // Currently expanded — swipe down to collapse
       if (projected > collapseThreshold || sheetVelocity > 2) {
         sheetCollapsed = true;
         animateSheetTo(0);
@@ -219,19 +220,37 @@
     }
   }
 
-  function animateSheetTo(target: number) {
+  // Critically damped spring solver (Apple's damping=1.0, response=0.3s)
+  const SPRING_DAMPING = 1.0;
+  const SPRING_RESPONSE = 0.3;
+
+  function animateSheetTo(target: number, initialVelocity = 0) {
     if (sheetAnimFrame) cancelAnimationFrame(sheetAnimFrame);
+    if (prefersReducedMotion) { sheetY = target; sheetVelocity = 0; return; }
+
     const start = sheetY;
+    const v0 = initialVelocity || sheetVelocity;
+    // Spring coefficient from response time: ω₀ = 2π / (response * √(1 - ζ²))
+    // For ζ=1 (critically damped): ω₀ = 2π / response, but simpler closed form:
+    // x(t) = (A + Bt) * e^(-ω₀t) where ω₀ = 4π / response
+    const omega = 4 * Math.PI / SPRING_RESPONSE;
     const startTime = performance.now();
-    const duration = prefersReducedMotion ? 100 : 350;
 
     function tick() {
-      const elapsed = performance.now() - startTime;
-      const t = Math.min(1, elapsed / duration);
-      // Ease-out with slight overshoot approximation
-      const ease = 1 - Math.pow(1 - t, 3);
-      sheetY = start + (target - start) * ease;
-      if (t < 1) {
+      const elapsed = (performance.now() - startTime) / 1000;
+      const decay = Math.exp(-omega * elapsed);
+      // Critically damped: x(t) = (x0 + (v0/ω + x0)*ω*t) * e^(-ωt)
+      const displacement = start - target;
+      const tOverResp = omega * elapsed;
+      const ease = 1 - decay * (1 + tOverResp);
+      sheetY = start - displacement * ease;
+      // Check convergence (velocity near zero and close to target)
+      if (Math.abs(sheetY - target) < 0.5 && Math.abs(v0 * decay) < 0.1) {
+        sheetY = target;
+        sheetVelocity = 0;
+        return;
+      }
+      if (elapsed < 2) { // safety: max 2s
         sheetAnimFrame = requestAnimationFrame(tick);
       } else {
         sheetY = target;
@@ -241,7 +260,6 @@
     sheetAnimFrame = requestAnimationFrame(tick);
   }
 
-  // Swipe back gesture on map view (velocity-based dismissal)
   let swipeStartX = $state(0);
   let swipeStartYMap = $state(0);
 
@@ -253,7 +271,6 @@
   function onMapPointerUp(e: PointerEvent) {
     const dx = e.clientX - swipeStartX;
     const dy = e.clientY - swipeStartYMap;
-    // Only trigger on horizontal swipe right from left edge
     if (dx > 80 && Math.abs(dy) < 60 && swipeStartX < 60) {
       backToSearch();
     }
@@ -261,7 +278,7 @@
 </script>
 
 <svelte:head>
-  <title>Kiosk – WeddingDB</title>
+  <title>{kioskTitle ? `${kioskTitle} – Kiosk` : 'Kiosk – WeddingDB'}</title>
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
@@ -284,14 +301,18 @@
         {:else}
           <div class="top-bar-brand">
             <Monitor class="icon-sm text-red" />
-            <span class="top-bar-title">Find Your Seat</span>
+            <span class="top-bar-wedding-name text-align-left">{kioskTitle}</span>
           </div>
         {/if}
       </div>
+
+      <!-- Center: always show kiosk title -->
       <div class="top-bar-center">
-        <div class="time-display">{formatTime(currentTime)}</div>
-        <div class="date-display">{formatDate(currentTime)}</div>
+        {#if selectedGuest}
+          <span class="top-bar-wedding-name">{kioskTitle}</span>
+        {/if}
       </div>
+
       <div class="top-bar-right">
         <button class="icon-btn" onclick={toggleFullscreen} aria-label="Toggle fullscreen">
           {#if isFullscreen}
@@ -329,9 +350,8 @@
           class="bottom-sheet"
           class:sheet-dragging={sheetDragging}
           class:sheet-collapsed={sheetCollapsed}
-          style="transform: translateY({sheetY}px); transition: {sheetDragging ? 'none' : `transform 350ms ${SPRING_EASE}`};"
+          style="transform: translateY({sheetY}px); transition: {sheetDragging || prefersReducedMotion ? 'none' : `transform 350ms ${SPRING_EASE}`};"
         >
-          <!-- Drag handle — tap to dismiss, drag to collapse -->
           <div
             class="sheet-handle"
             onpointerdown={(e) => { onSheetPointerDown(e); }}
@@ -341,7 +361,6 @@
             <div class="handle-bar"></div>
           </div>
 
-          <!-- Guest info -->
           <div class="sheet-content">
             <div class="guest-header">
               <div class={cn(
@@ -393,7 +412,6 @@
           </div>
         </div>
       {:else}
-        <!-- No table assigned -->
         <div class="bottom-sheet" style="transform: translateY({sheetY}px);">
           <div class="sheet-handle" onpointerdown={onSheetPointerDown} onpointermove={onSheetPointerMove} onpointerup={onSheetPointerUp}>
             <div class="handle-bar"></div>
@@ -411,7 +429,8 @@
     <!-- Search View -->
     <div class="search-view">
       {#if kioskBackgroundUrl}
-        <div class="search-bg" style={`background-image: url(${kioskBackgroundUrl}); background-size: ${kioskBackgroundSize}; background-position: ${kioskBackgroundPosX} ${kioskBackgroundPosY}; filter: blur(${kioskBackgroundBlur}px);`}></div>
+        <div class="search-bg" style={`background-image: url(${kioskBackgroundUrl}); background-size: ${kioskBackgroundSize}; background-position: ${kioskBackgroundPosX} ${kioskBackgroundPosY};`}></div>
+        <div class="search-bg-overlay"></div>
       {/if}
 
       <div class="search-content">
@@ -420,6 +439,9 @@
             <img src={kioskLogoUrl} alt="Logo" class="hero-logo" />
           {:else}
             <div class="hero-icon">囍</div>
+          {/if}
+          {#if weddingDate}
+            <p class="hero-date">{formatWeddingDate(weddingDate)}</p>
           {/if}
           <h1 class="hero-title">{kioskTitle}</h1>
           {#if kioskDescription}
@@ -505,8 +527,7 @@
     height: 100vh;
     height: 100dvh;
     overflow: hidden;
-    background: linear-gradient(180deg, #fef2f2 0%, #faf7f2 50%, white 100%);
-    background-attachment: fixed;
+    background: linear-gradient(180deg, #FAF7F2 0%, #F5F0E8 50%, white 100%);
     color: #111827;
     display: flex;
     flex-direction: column;
@@ -515,7 +536,6 @@
     -webkit-tap-highlight-color: transparent;
   }
 
-  /* ---------- Reduced Motion ---------- */
   .kiosk-root.reduced-motion * {
     animation-duration: 0.01ms !important;
     animation-iteration-count: 1 !important;
@@ -555,8 +575,29 @@
   }
 
   .top-bar-center {
-    flex-shrink: 0;
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 0;
+  }
+
+  .top-bar-wedding-name {
+    font-weight: 700;
+    font-size: 0.875rem;
+    color: #111827;
+    letter-spacing: -0.01em;
     text-align: center;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    max-width: 100%;
+  }
+
+  @media (min-width: 640px) {
+    .top-bar-wedding-name {
+      font-size: 1rem;
+    }
   }
 
   .top-bar-right {
@@ -571,41 +612,7 @@
     gap: 0.5rem;
   }
 
-  .top-bar-title {
-    font-weight: 600;
-    font-size: 0.875rem;
-    color: #111827;
-    letter-spacing: -0.01em;
-  }
-
-  .time-display {
-    font-size: 1.125rem;
-    font-weight: 700;
-    color: #A11217;
-    font-variant-numeric: tabular-nums;
-    letter-spacing: -0.02em;
-    line-height: 1.2;
-  }
-
-  @media (min-width: 640px) {
-    .time-display {
-      font-size: 1.5rem;
-    }
-  }
-
-  .date-display {
-    font-size: 0.625rem;
-    color: #9ca3af;
-    font-weight: 500;
-  }
-
-  @media (min-width: 640px) {
-    .date-display {
-      font-size: 0.75rem;
-    }
-  }
-
-  /* ---------- Buttons — Press Feedback ---------- */
+  /* ---------- Buttons ---------- */
   .back-btn, .icon-btn {
     display: flex;
     align-items: center;
@@ -617,7 +624,6 @@
     color: #4b5563;
     transition: background 100ms ease, transform 100ms ease, color 100ms ease;
     flex-shrink: 0;
-    /* Large touch target */
     min-width: 44px;
     min-height: 44px;
   }
@@ -632,8 +638,6 @@
     color: #111827;
   }
 
-
-
   /* ---------- Map View ---------- */
   .map-view {
     flex: 1;
@@ -643,14 +647,13 @@
     overflow: hidden;
   }
 
-  /* ---------- Bottom Sheet — Draggable Translucent Material ---------- */
+  /* ---------- Bottom Sheet ---------- */
   .bottom-sheet {
     position: absolute;
     bottom: 0;
     left: 0.5rem;
     right: 0.5rem;
     z-index: 30;
-    /* Translucent material */
     background: rgba(255, 255, 255, 0.88);
     backdrop-filter: blur(16px) saturate(200%);
     -webkit-backdrop-filter: blur(16px) saturate(200%);
@@ -662,7 +665,6 @@
       0 -1px 4px rgba(0, 0, 0, 0.04),
       inset 0 1px 0 rgba(255, 255, 255, 0.9);
     overflow: hidden;
-    /* Apple: max height for bottom sheet */
     max-height: 45vh;
     touch-action: none;
   }
@@ -700,8 +702,6 @@
   .sheet-collapsed .guest-header {
     padding-bottom: 0;
   }
-
-
 
   .sheet-handle {
     display: flex;
@@ -891,7 +891,6 @@
     padding-top: 0.25rem;
   }
 
-  /* Hide hint on desktop — map is always visible */
   @media (min-width: 640px) {
     .sheet-hint {
       display: none;
@@ -918,10 +917,22 @@
   }
 
   .search-bg {
-    position: absolute;
+    position: fixed;
     inset: 0;
     transform: scale(1.05);
     pointer-events: none;
+    z-index: 0;
+  }
+
+  /* Apple-style: backdrop-filter blur on overlay, not filter on bg image */
+  .search-bg-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(255, 255, 255, 0.65);
+    backdrop-filter: blur(24px) saturate(180%);
+    -webkit-backdrop-filter: blur(24px) saturate(180%);
+    pointer-events: none;
+    z-index: 1;
   }
 
   .search-content {
@@ -930,7 +941,6 @@
     text-align: center;
     position: relative;
     z-index: 10;
-    /* Center vertically when content is short, scroll when tall */
     margin: auto 0;
     padding: 2rem 0;
   }
@@ -1002,6 +1012,22 @@
     }
   }
 
+  .hero-date {
+    font-size: 0.875rem;
+    font-weight: 500;
+    color: #9ca3af;
+    letter-spacing: 0.04em;
+    margin-bottom: 0.5rem;
+    text-transform: uppercase;
+  }
+
+  @media (min-width: 640px) {
+    .hero-date {
+      font-size: 1rem;
+      letter-spacing: 0.02em;
+    }
+  }
+
   .hero-subtitle {
     color: #6b7280;
     font-size: 0.9375rem;
@@ -1025,6 +1051,11 @@
   .search-input-wrap:focus-within {
     border-color: #A11217;
     box-shadow: 0 0 0 3px rgba(161, 18, 23, 0.1), 0 4px 16px rgba(0, 0, 0, 0.06);
+  }
+
+  .search-input-wrap:active {
+    transform: scale(0.98);
+    transition: transform 100ms ease;
   }
 
   .search-icon {
@@ -1078,12 +1109,11 @@
     width: 100%;
     transition: transform 150ms ease, border-color 150ms ease, box-shadow 150ms ease;
     box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
-    /* Staggered entrance animation */
     animation: resultEnter 350ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
   }
 
   .result-card:active {
-    transform: scale(0.98);
+    transform: scale(0.96);
   }
 
   .result-card:hover {
@@ -1228,4 +1258,26 @@
   .mb-3 { margin-bottom: 0.75rem; }
   .mt-1 { margin-top: 0.25rem; }
   .opacity-30 { opacity: 0.3; }
+
+  /* ---------- Reduced Motion ---------- */
+  @media (prefers-reduced-motion: reduce) {
+    .result-card {
+      animation: none;
+    }
+
+    .search-input-wrap,
+    .result-card,
+    .back-btn,
+    .icon-btn {
+      transition: none;
+    }
+
+    .sheet-collapsed {
+      transition: none;
+    }
+
+    .spinner {
+      animation: spin 1200ms linear infinite;
+    }
+  }
 </style>
