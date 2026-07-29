@@ -259,7 +259,7 @@
 </script>
 
 <svelte:head>
-  <title>{weddingName ? `${weddingName} – Kiosk` : 'Kiosk – WeddingDB'}</title>
+  <title>{kioskTitle ? `${kioskTitle} – Kiosk` : 'Kiosk – WeddingDB'}</title>
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
@@ -282,7 +282,7 @@
         {:else}
           <div class="top-bar-brand">
             <Monitor class="icon-sm text-red" />
-            <span class="top-bar-title">{kioskTitle}</span>
+            <span class="top-bar-wedding-name text-align-left">{kioskTitle}</span>
           </div>
         {/if}
       </div>
@@ -591,13 +591,6 @@
     display: flex;
     align-items: center;
     gap: 0.5rem;
-  }
-
-  .top-bar-title {
-    font-weight: 600;
-    font-size: 0.875rem;
-    color: #111827;
-    letter-spacing: -0.01em;
   }
 
   /* ---------- Buttons ---------- */
