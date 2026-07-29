@@ -3,9 +3,10 @@
   import { goto } from '$app/navigation';
   import { addToast, getAuth } from '$lib/stores';
   import { weddingId } from '$lib/stores/weddingId';
-  import { listUsers, createUser, deleteUser, assignWeddings, resetPassword, type User } from '$lib/api/users';
+  import { listUsers, createUser, deleteUser, assignWeddings, resetPassword, getUserWeddings, updateRole, type User } from '$lib/api/users';
   import { listWeddings, type Wedding } from '$lib/api/weddings';
-  import { Plus, Trash2, X, Users, Building2, Key, Shield } from 'lucide-svelte';
+  import { Plus, Trash2, X, Users, Building2, Key, Shield, Check } from 'lucide-svelte';
+  import PasswordRequirements from '$lib/components/ui/PasswordRequirements.svelte';
 
   let admins = $state<User[]>([]);
   let weddings = $state<Wedding[]>([]);
@@ -21,8 +22,25 @@
   let formName = $state('');
   let formEmail = $state('');
   let formPassword = $state('');
+  let formConfirmPassword = $state('');
   let formRole = $state('user');
   let saving = $state(false);
+
+  let createPasswordMismatch = $derived(formConfirmPassword.length > 0 && formPassword !== formConfirmPassword);
+  let canCreate = $derived(
+    formName.length > 0 &&
+    formEmail.length > 0 &&
+    formPassword.length >= 8 &&
+    formPassword === formConfirmPassword &&
+    /[a-zA-Z]/.test(formPassword) &&
+    /\d/.test(formPassword) &&
+    /[^a-zA-Z0-9]/.test(formPassword)
+  );
+
+  // Inline role editing
+  let editingRoleUserId = $state<string | null>(null);
+  let editingRoleValue = $state('');
+  let roleSaving = $state(false);
 
   // Assign weddings modal
   let assignTarget = $state<User | null>(null);
@@ -32,7 +50,17 @@
   // Reset password modal
   let resetTarget = $state<User | null>(null);
   let resetPassword_ = $state('');
+  let resetConfirmPassword = $state('');
   let resetSaving = $state(false);
+
+  let resetPasswordMismatch = $derived(resetConfirmPassword.length > 0 && resetPassword_ !== resetConfirmPassword);
+  let canReset = $derived(
+    resetPassword_.length >= 8 &&
+    resetPassword_ === resetConfirmPassword &&
+    /[a-zA-Z]/.test(resetPassword_) &&
+    /\d/.test(resetPassword_) &&
+    /[^a-zA-Z0-9]/.test(resetPassword_)
+  );
 
   onMount(async () => {
     await loadData();
@@ -52,13 +80,13 @@
   }
 
   async function handleCreate() {
-    if (!formName || !formEmail || !formPassword) return;
+    if (!canCreate) return;
     saving = true;
     try {
       await createUser({ name: formName, email: formEmail, password: formPassword, role: formRole });
       addToast('User created', 'success');
       showCreate = false;
-      formName = ''; formEmail = ''; formPassword = ''; formRole = 'user';
+      formName = ''; formEmail = ''; formPassword = ''; formConfirmPassword = ''; formRole = 'user';
       await loadData();
     } catch (e: any) {
       addToast(e.message ?? 'Failed to create user', 'error');
@@ -78,12 +106,47 @@
     }
   }
 
+  // Inline role editing
+  function startEditRole(user: User) {
+    editingRoleUserId = user.id;
+    editingRoleValue = user.role;
+  }
+
+  function cancelEditRole() {
+    editingRoleUserId = null;
+    editingRoleValue = '';
+  }
+
+  async function saveRole(user: User) {
+    if (editingRoleValue === user.role) { cancelEditRole(); return; }
+    if (editingRoleValue !== 'admin' && editingRoleValue !== 'user') return;
+
+    // Confirm demotion
+    if (user.role === 'admin' && editingRoleValue === 'user') {
+      if (!confirm(`Demote "${user.name}" from admin to user?`)) { cancelEditRole(); return; }
+    }
+    if (editingRoleValue === 'admin' && user.role === 'user') {
+      if (!confirm(`Promote "${user.name}" to admin?`)) { cancelEditRole(); return; }
+    }
+
+    roleSaving = true;
+    try {
+      await updateRole(user.id, editingRoleValue);
+      addToast(`${user.name} is now ${editingRoleValue}`, 'success');
+      editingRoleUserId = null;
+      await loadData();
+    } catch (e: any) {
+      addToast(e.message ?? 'Failed to update role', 'error');
+    } finally {
+      roleSaving = false;
+    }
+  }
+
   function openAssign(user: User) {
     assignTarget = user;
     assignWeddingIds = [];
-    // Load current assignments
-    getUserWeddings(user.id).then(weddings => {
-      assignWeddingIds = weddings.map(w => w.id);
+    getUserWeddings(user.id).then(weds => {
+      assignWeddingIds = weds.map(w => w.id);
     }).catch(() => {});
   }
 
@@ -104,10 +167,11 @@
   function openReset(user: User) {
     resetTarget = user;
     resetPassword_ = '';
+    resetConfirmPassword = '';
   }
 
   async function handleReset() {
-    if (!resetTarget || !resetPassword_) return;
+    if (!resetTarget || !canReset) return;
     resetSaving = true;
     try {
       await resetPassword(resetTarget.id, resetPassword_);
@@ -119,9 +183,6 @@
       resetSaving = false;
     }
   }
-
-  // lazy: import getUserWeddings at top-level would be cleaner, but inline is fine
-  import { getUserWeddings } from '$lib/api/users';
 </script>
 
 <svelte:head><title>User Management – WeddingDB</title></svelte:head>
@@ -159,25 +220,42 @@
               <td class="px-5 py-3.5 font-semibold text-gray-900">{user.name}</td>
               <td class="px-5 py-3.5 text-gray-600">{user.email}</td>
               <td class="px-5 py-3.5">
-                <span class="inline-flex px-2 py-0.5 rounded-full text-xs font-semibold {user.role === 'admin' ? 'bg-gold-50 text-gold border border-gold-200' : 'bg-gray-100 text-gray-600 border border-gray-200'}">
-                  {user.role === 'admin' ? 'Admin' : 'User'}
-                </span>
+                {#if editingRoleUserId === user.id}
+                  <div class="flex items-center gap-1.5">
+                    <select bind:value={editingRoleValue}
+                      class="px-2 py-1 border border-gray-200 rounded-lg text-xs font-semibold bg-white focus:border-red focus:ring-1 focus:ring-red/10 outline-none">
+                      <option value="user">User</option>
+                      <option value="admin">Admin</option>
+                    </select>
+                    <button onclick={() => saveRole(user)} disabled={roleSaving}
+                      class="p-1 rounded-md bg-emerald-50 text-emerald-600 hover:bg-emerald-100 transition-colors" title="Save">
+                      <Check class="w-3.5 h-3.5" />
+                    </button>
+                    <button onclick={cancelEditRole}
+                      class="p-1 rounded-md bg-gray-100 text-gray-500 hover:bg-gray-200 transition-colors" title="Cancel">
+                      <X class="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                {:else}
+                  <button onclick={() => startEditRole(user)}
+                    class="inline-flex px-2 py-0.5 rounded-full text-xs font-semibold cursor-pointer hover:opacity-80 transition-opacity {user.role === 'admin' ? 'bg-gold-50 text-gold border border-gold-200' : 'bg-gray-100 text-gray-600 border border-gray-200'}">
+                    {user.role === 'admin' ? 'Admin' : 'User'}
+                  </button>
+                {/if}
               </td>
               <td class="px-5 py-3.5">
                 <div class="flex items-center gap-1">
-                  {#if user.role !== 'admin'}
+                  {#if user.role !== 'admin' || editingRoleUserId === user.id}
                     <button onclick={() => openAssign(user)} class="p-1.5 rounded-lg hover:bg-blue-50 text-gray-400 hover:text-blue-600 transition-colors" aria-label="Assign weddings" title="Assign weddings">
                       <Building2 class="w-4 h-4" />
                     </button>
                     <button onclick={() => openReset(user)} class="p-1.5 rounded-lg hover:bg-amber-50 text-gray-400 hover:text-amber-600 transition-colors" aria-label="Reset password" title="Reset password">
                       <Key class="w-4 h-4" />
                     </button>
+                  {/if}
                     <button onclick={() => handleDelete(user)} class="p-1.5 rounded-lg hover:bg-red-50 text-gray-400 hover:text-red transition-colors" aria-label="Delete">
                       <Trash2 class="w-4 h-4" />
                     </button>
-                  {:else}
-                    <span class="text-xs text-gray-400 italic px-2">—</span>
-                  {/if}
                 </div>
               </td>
             </tr>
@@ -195,11 +273,30 @@
               <div class="font-semibold text-gray-900">{user.name}</div>
               <div class="text-sm text-gray-500 truncate">{user.email}</div>
             </div>
-            <span class="inline-flex px-2 py-0.5 rounded-full text-xs font-semibold flex-shrink-0 {user.role === 'admin' ? 'bg-gold-50 text-gold border border-gold-200' : 'bg-gray-100 text-gray-600 border border-gray-200'}">
-              {user.role === 'admin' ? 'Admin' : 'User'}
-            </span>
+            {#if editingRoleUserId === user.id}
+              <div class="flex items-center gap-1 flex-shrink-0">
+                <select bind:value={editingRoleValue}
+                  class="px-2 py-1 border border-gray-200 rounded-lg text-xs font-semibold bg-white focus:border-red outline-none">
+                  <option value="user">User</option>
+                  <option value="admin">Admin</option>
+                </select>
+                <button onclick={() => saveRole(user)} disabled={roleSaving}
+                  class="p-1 rounded-md bg-emerald-50 text-emerald-600 hover:bg-emerald-100 transition-colors">
+                  <Check class="w-3.5 h-3.5" />
+                </button>
+                <button onclick={cancelEditRole}
+                  class="p-1 rounded-md bg-gray-100 text-gray-500 hover:bg-gray-200 transition-colors">
+                  <X class="w-3.5 h-3.5" />
+                </button>
+              </div>
+            {:else}
+              <button onclick={() => startEditRole(user)}
+                class="inline-flex px-2 py-0.5 rounded-full text-xs font-semibold flex-shrink-0 cursor-pointer hover:opacity-80 transition-opacity {user.role === 'admin' ? 'bg-gold-50 text-gold border border-gold-200' : 'bg-gray-100 text-gray-600 border border-gray-200'}">
+                {user.role === 'admin' ? 'Admin' : 'User'}
+              </button>
+            {/if}
           </div>
-          {#if user.role !== 'admin'}
+          {#if user.role !== 'admin' || editingRoleUserId === user.id}
             <div class="flex items-center gap-2 mt-3 pt-3 border-t border-gray-100">
               <button onclick={() => openAssign(user)} class="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg bg-blue-50 text-blue-600 text-xs font-semibold hover:bg-blue-100 transition-colors">
                 <Building2 class="w-3.5 h-3.5" /> Weddings
@@ -240,7 +337,17 @@
         </div>
         <div>
           <label class="text-sm font-semibold text-gray-700 mb-1.5 block">Password</label>
-          <input type="password" bind:value={formPassword} minlength="6" class="w-full px-4 py-2.5 border border-black/[0.08] rounded-xl text-sm bg-white/80 focus:border-red focus:ring-2 focus:ring-red/10 outline-none transition-all min-h-[44px]" placeholder="Min 6 characters" />
+          <input type="password" bind:value={formPassword} minlength="8" class="w-full px-4 py-2.5 border border-black/[0.08] rounded-xl text-sm bg-white/80 focus:border-red focus:ring-2 focus:ring-red/10 outline-none transition-all min-h-[44px]" placeholder="Min 8 characters" />
+          <PasswordRequirements password={formPassword} />
+        </div>
+        <div>
+          <label class="text-sm font-semibold text-gray-700 mb-1.5 block">Confirm Password</label>
+          <input type="password" bind:value={formConfirmPassword} minlength="8"
+            class="w-full px-4 py-2.5 border border-black/[0.08] rounded-xl text-sm bg-white/80 focus:border-red focus:ring-2 focus:ring-red/10 outline-none transition-all min-h-[44px] {createPasswordMismatch ? 'border-red !shadow-[0_0_0_3px_rgba(239,68,68,0.1)]' : ''}"
+            placeholder="Repeat password" />
+          {#if createPasswordMismatch}
+            <p class="text-xs text-red mt-1">Passwords do not match</p>
+          {/if}
         </div>
         <div>
           <label class="text-sm font-semibold text-gray-700 mb-1.5 block">Role</label>
@@ -251,7 +358,7 @@
         </div>
       </div>
       <div class="flex gap-3 p-5 pt-0">
-        <button onclick={handleCreate} disabled={saving || !formName || !formEmail || !formPassword}
+        <button onclick={handleCreate} disabled={saving || !canCreate}
           class="flex-1 py-2.5 bg-red text-white rounded-xl text-sm font-semibold hover:bg-red-light transition-colors disabled:opacity-50">
           {saving ? 'Creating...' : 'Create User'}
         </button>
@@ -317,13 +424,23 @@
         <p class="text-sm text-gray-600">Set new password for <strong>{resetTarget.name}</strong></p>
         <div>
           <label class="text-sm font-semibold text-gray-700 mb-1.5 block">New Password</label>
-          <input type="password" bind:value={resetPassword_} minlength="6"
+          <input type="password" bind:value={resetPassword_} minlength="8"
             class="w-full px-4 py-2.5 border border-black/[0.08] rounded-xl text-sm bg-white/80 focus:border-red focus:ring-2 focus:ring-red/10 outline-none transition-all min-h-[44px]"
-            placeholder="Min 6 characters" />
+            placeholder="Min 8 characters" />
+          <PasswordRequirements password={resetPassword_} />
+        </div>
+        <div>
+          <label class="text-sm font-semibold text-gray-700 mb-1.5 block">Confirm Password</label>
+          <input type="password" bind:value={resetConfirmPassword} minlength="8"
+            class="w-full px-4 py-2.5 border border-black/[0.08] rounded-xl text-sm bg-white/80 focus:border-red focus:ring-2 focus:ring-red/10 outline-none transition-all min-h-[44px] {resetPasswordMismatch ? 'border-red !shadow-[0_0_0_3px_rgba(239,68,68,0.1)]' : ''}"
+            placeholder="Repeat password" />
+          {#if resetPasswordMismatch}
+            <p class="text-xs text-red mt-1">Passwords do not match</p>
+          {/if}
         </div>
       </div>
       <div class="flex gap-3 p-5 pt-0">
-        <button onclick={handleReset} disabled={resetSaving || !resetPassword_}
+        <button onclick={handleReset} disabled={resetSaving || !canReset}
           class="flex-1 py-2.5 bg-red text-white rounded-xl text-sm font-semibold hover:bg-red-light transition-colors disabled:opacity-50">
           {resetSaving ? 'Updating...' : 'Update Password'}
         </button>
