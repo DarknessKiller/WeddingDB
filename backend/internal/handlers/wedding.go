@@ -142,12 +142,12 @@ func (h *WeddingHandler) UpdateKioskSettings(c fuego.ContextWithBody[KioskSettin
 	w.KioskLogoUrl = sanitizeURL(body.KioskLogoUrl)
 	w.KioskBackgroundUrl = sanitizeURL(body.KioskBackgroundUrl)
 	w.KioskBackgroundBlur = body.KioskBackgroundBlur
-	w.KioskBackgroundSize = body.KioskBackgroundSize
-	w.KioskBackgroundPosX = body.KioskBackgroundPosX
-	w.KioskBackgroundPosY = body.KioskBackgroundPosY
+	w.KioskBackgroundSize = validateCSSValue(body.KioskBackgroundSize, validBackgroundSizes, "cover")
+	w.KioskBackgroundPosX = validateCSSValue(body.KioskBackgroundPosX, validPositionsX, "center")
+	w.KioskBackgroundPosY = validateCSSValue(body.KioskBackgroundPosY, validPositionsY, "center")
 	w.KioskLogoSize = body.KioskLogoSize
-	w.KioskLogoPosX = body.KioskLogoPosX
-	w.KioskLogoPosY = body.KioskLogoPosY
+	w.KioskLogoPosX = validateCSSValue(body.KioskLogoPosX, validPositionsX, "center")
+	w.KioskLogoPosY = validateCSSValue(body.KioskLogoPosY, validPositionsY, "center")
 	if body.ShowSeatNumbers != nil {
 		w.ShowSeatNumbers = *body.ShowSeatNumbers
 	}
@@ -175,6 +175,9 @@ func sanitizeURL(s string) string {
 	if s == "" {
 		return s
 	}
+	if strings.HasPrefix(s, "//") {
+		return ""
+	}
 	allowed := strings.HasPrefix(s, "https://") || strings.HasPrefix(s, "http://") || strings.HasPrefix(s, "/") || strings.HasPrefix(s, "./")
 	if !allowed {
 		return ""
@@ -184,4 +187,17 @@ func sanitizeURL(s string) string {
 		return ""
 	}
 	return s
+}
+
+var (
+	validBackgroundSizes = map[string]bool{"cover": true, "contain": true, "auto": true}
+	validPositionsX      = map[string]bool{"left": true, "center": true, "right": true}
+	validPositionsY      = map[string]bool{"top": true, "center": true, "bottom": true}
+)
+
+func validateCSSValue(val string, allowed map[string]bool, fallback string) string {
+	if allowed[val] {
+		return val
+	}
+	return fallback
 }

@@ -90,12 +90,9 @@ func (h *AdminHandler) Delete(c fuego.ContextWithBody[any]) (any, error) {
 		return nil, fuego.NotFoundError{Title: "User not found"}
 	}
 	if target.Role == "admin" {
-		admins, _ := h.adminRepo.List()
-		adminCount := 0
-		for _, a := range admins {
-			if a.Role == "admin" {
-				adminCount++
-			}
+		adminCount, err := h.adminRepo.CountByRole("admin")
+		if err != nil {
+			return nil, fuego.InternalServerError{Title: "Failed to check admin count"}
 		}
 		if adminCount <= 1 {
 			return nil, fuego.BadRequestError{Title: "Cannot delete the last admin"}
@@ -219,12 +216,9 @@ func (h *AdminHandler) UpdateRole(c fuego.ContextWithBody[UpdateRoleRequest]) (a
 	}
 	// Prevent demoting the last admin
 	if admin.Role == "admin" && body.Role == "user" {
-		admins, _ := h.adminRepo.List()
-		adminCount := 0
-		for _, a := range admins {
-			if a.Role == "admin" {
-				adminCount++
-			}
+		adminCount, err := h.adminRepo.CountByRole("admin")
+		if err != nil {
+			return nil, fuego.InternalServerError{Title: "Failed to check admin count"}
 		}
 		if adminCount <= 1 {
 			return nil, fuego.BadRequestError{Title: "Cannot demote the last admin"}
