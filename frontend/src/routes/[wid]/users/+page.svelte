@@ -186,7 +186,7 @@
   }
 </script>
 
-<svelte:head> <title>{weddingTitle ? `${weddingTitle} – Users` : 'User Management – WeddingDB'}</title></svelte:head>
+<svelte:head> <title>{$weddingTitle ? `${$weddingTitle} – Users` : 'User Management – WeddingDB'}</title></svelte:head>
 
 <div class="p-4 sm:p-7 max-w-[1200px]">
   <div class="flex items-center justify-between mb-6">

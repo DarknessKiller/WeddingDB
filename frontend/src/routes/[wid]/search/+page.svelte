@@ -159,7 +159,7 @@
   let highlightedTableId = $derived($selectedGuest?.tableId ?? highlightTableId);
 </script>
 
-<svelte:head> <title>{weddingTitle ? `${weddingTitle} – Search` : 'Search – WeddingDB'}</title></svelte:head>
+<svelte:head> <title>{$weddingTitle ? `${$weddingTitle} – Search` : 'Search – WeddingDB'}</title></svelte:head>
 
 
 {#if dataLoading}

@@ -51,7 +51,7 @@
   };
 </script>
 
-<svelte:head> <title>{weddingTitle ? `${weddingTitle} – Dashboard` : 'Dashboard – WeddingDB'}</title></svelte:head>
+<svelte:head> <title>{$weddingTitle ? `${$weddingTitle} – Dashboard` : 'Dashboard – WeddingDB'}</title></svelte:head>
 
 <div class="p-4 sm:p-7 space-y-4 sm:space-y-6 max-w-[1400px]">
   {#if loading}

@@ -241,7 +241,7 @@
   }
 </script>
 
-  <svelte:head> <title>{weddingTitle ? `${weddingTitle} – Reservation` : 'Reservation – WeddingDB'}</title></svelte:head>
+  <svelte:head> <title>{$weddingTitle ? `${$weddingTitle} – Reservation` : 'Reservation – WeddingDB'}</title></svelte:head>
 
 
 <div class="flex flex-col sm:flex-row h-full">

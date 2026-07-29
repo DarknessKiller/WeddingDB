@@ -260,7 +260,7 @@
   }
 </script>
 
-<svelte:head> <title>{weddingTitle ? `${weddingTitle} – Seating` : 'Seating – WeddingDB'}</title></svelte:head>
+<svelte:head> <title>{$weddingTitle ? `${$weddingTitle} – Seating` : 'Seating – WeddingDB'}</title></svelte:head>
 
 
 {#if loading}

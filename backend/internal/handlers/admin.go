@@ -196,8 +196,13 @@ func (h *AdminHandler) UpdateRole(c fuego.ContextWithBody[UpdateRoleRequest]) (a
 	if id == callerID && body.Role != "admin" {
 		return nil, fuego.BadRequestError{Title: "Cannot change your own role"}
 	}
+	// Fetch user once for guard check and update
+	admin, err := h.adminRepo.FindByID(id)
+	if err != nil {
+		return nil, fuego.NotFoundError{Title: "User not found"}
+	}
 	// Prevent demoting the last admin
-	if admin, _ := h.adminRepo.FindByID(id); admin != nil && admin.Role == "admin" && body.Role == "user" {
+	if admin.Role == "admin" && body.Role == "user" {
 		admins, _ := h.adminRepo.List()
 		adminCount := 0
 		for _, a := range admins {
@@ -208,10 +213,6 @@ func (h *AdminHandler) UpdateRole(c fuego.ContextWithBody[UpdateRoleRequest]) (a
 		if adminCount <= 1 {
 			return nil, fuego.BadRequestError{Title: "Cannot demote the last admin"}
 		}
-	}
-	admin, err := h.adminRepo.FindByID(id)
-	if err != nil {
-		return nil, fuego.NotFoundError{Title: "User not found"}
 	}
 	admin.Role = body.Role
 	if err := h.adminRepo.Update(admin); err != nil {

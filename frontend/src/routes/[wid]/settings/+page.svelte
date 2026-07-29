@@ -90,7 +90,7 @@
   }
 </script>
 
-<svelte:head> <title>{weddingTitle ? `${weddingTitle} – Settings` : 'Settings – WeddingDB'}</title></svelte:head>
+<svelte:head> <title>{$weddingTitle ? `${$weddingTitle} – Settings` : 'Settings – WeddingDB'}</title></svelte:head>
 
 
 <div class="p-4 sm:p-7 max-w-2xl mx-auto">
