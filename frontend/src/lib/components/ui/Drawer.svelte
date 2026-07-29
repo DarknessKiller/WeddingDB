@@ -47,12 +47,14 @@
 
   let dragY = $state(0);
   let dragging = $state(false);
+  let pendingDrag = $state(false);
   let startY = $state(0);
   // Velocity tracking: last 3 samples for averaging
   const velSamples: { y: number; t: number }[] = [];
   const DISMISS_THRESHOLD = 100;
   const VELOCITY_THRESHOLD = 0.5; // px/ms — a moderate flick
   const RUBBER_BAND = 0.4;
+  const DRAG_THRESHOLD = 8; // px before committing to drawer drag vs scroll
 
   function rubberband(delta: number): number {
     // Progressive resistance: the further you drag, the less it follows
@@ -65,10 +67,19 @@
     return (velocity / 1000) * d / (1 - d);
   }
 
+  function getScrollableBody(panel: EventTarget | null): HTMLElement | null {
+    if (panel instanceof HTMLElement) {
+      return panel.querySelector('.drawer-body');
+    }
+    return null;
+  }
+
   function onTouchStart(e: TouchEvent) {
     if (window.innerWidth >= 640) return;
     const panel = e.currentTarget;
-    if (panel instanceof HTMLElement && panel.scrollTop > 0) { dragging = false; return; }
+    const scroller = getScrollableBody(panel);
+    // If inner content is scrolled, don't hijack the gesture
+    if (scroller && scroller.scrollTop > 0) return;
     // Interrupt: read current computed transform to avoid snap-back stutter
     if (panel instanceof HTMLElement) {
       const cs = getComputedStyle(panel);
@@ -85,13 +96,28 @@
     }
     velSamples.length = 0;
     velSamples.push({ y: e.touches[0].clientY, t: performance.now() });
-    dragging = true;
+    // Don't commit yet — wait for gesture intent
+    pendingDrag = true;
+    dragging = false;
   }
 
   function onTouchMove(e: TouchEvent) {
-    if (!dragging) return;
+    if (!pendingDrag && !dragging) return;
     const panel = e.currentTarget;
-    if (panel instanceof HTMLElement && panel.scrollTop > 0) return;
+    const scroller = getScrollableBody(panel);
+    // If inner content is scrolled mid-gesture, bail
+    if (scroller && scroller.scrollTop > 0) {
+      pendingDrag = false;
+      dragging = false;
+      return;
+    }
+    // During pending phase: only commit to drag after 8px vertical movement
+    if (pendingDrag && !dragging) {
+      const dy = e.touches[0].clientY - startY;
+      if (dy <= DRAG_THRESHOLD) return; // let browser scroll
+      pendingDrag = false;
+      dragging = true;
+    }
     const raw = e.touches[0].clientY - startY;
     // Rubber-band: apply progressive dampening for downward drag
     dragY = raw > 0 ? rubberband(raw) : raw;
@@ -102,7 +128,8 @@
   }
 
   function onTouchEnd() {
-    if (!dragging) return;
+    if (!dragging && !pendingDrag) return;
+    pendingDrag = false;
     dragging = false;
     // Calculate release velocity from recent samples
     let velocity = 0;
