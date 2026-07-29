@@ -43,8 +43,7 @@
   }
   body {
     font-family: var(--font-sans);
-    background: linear-gradient(180deg, #fef2f2 0%, #faf7f2 50%, white 100%);
-    background-attachment: fixed;
+    background: linear-gradient(180deg, #FAF7F2 0%, #F5F0E8 50%, white 100%);
     line-height: 1.5;
   }
 
