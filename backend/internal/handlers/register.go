@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"net/http"
 	"weddingdb/internal/middleware"
 	"weddingdb/internal/repository"
 	"weddingdb/internal/services"
@@ -16,6 +17,7 @@ func RegisterRoutes(
 	tableService *services.TableService,
 	weddingService *services.WeddingService,
 	layoutService *services.LayoutService,
+	reportService *services.ReportService,
 	adminRepo *repository.AdminRepo,
 ) {
 	authHandler := NewAuthHandler(authService, adminRepo)
@@ -105,4 +107,9 @@ func RegisterRoutes(
 	// Layout
 	fuego.Get(scoped, "/layout", layoutHandler.Get)
 	fuego.Patch(scoped, "/layout", layoutHandler.Save)
+
+	// Reports
+	reportHandler := NewReportHandler(reportService)
+	s.Mux.Handle("GET /api/weddings/{wid}/reports/angpao",
+		middleware.AuthMiddleware(authService)(middleware.WeddingScopeMiddleware(http.HandlerFunc(reportHandler.ExportAngpao))))
 }

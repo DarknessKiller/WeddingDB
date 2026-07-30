@@ -119,6 +119,7 @@ func Init(env config.Env) *App {
 	guestService := services.NewGuestService(guestRepo, tableRepo)
 	weddingService := services.NewWeddingService(weddingRepo)
 	layoutService := services.NewLayoutService(layoutRepo)
+	reportService := services.NewReportService(guestRepo, tableRepo, weddingRepo)
 
 	server := config.NewFuegoServer(env)
 
@@ -136,7 +137,7 @@ func Init(env config.Env) *App {
 		http.ServeFile(w, r, filePath)
 	})
 
-	handlers.RegisterRoutes(server, authService, guestService, tableService, weddingService, layoutService, adminRepo)
+	handlers.RegisterRoutes(server, authService, guestService, tableService, weddingService, layoutService, reportService, adminRepo)
 
 	// Serve static frontend (SPA fallback to index.html)
 	staticDir := getEnv("STATIC_DIR", "./static")

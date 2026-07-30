@@ -76,6 +76,7 @@ Server runs at `http://localhost:8080`.
 | `/settings` | App settings (placeholder) |
 | `/change-password` | Change password (post-login for forced changes) |
 | `/kiosk` | Standalone guest self-service kiosk |
+| `/reports` | Report exports (CSV/XLSX) for angpao data |
 
 ## API Endpoints
 
@@ -118,6 +119,7 @@ Server runs at `http://localhost:8080`.
 | GET | `/api/weddings/{wid}/occupancy` | Table occupancy |
 | GET | `/api/weddings/{wid}/layout` | Get hall layout (tables + elements with positions) |
 | PATCH | `/api/weddings/{wid}/layout` | Save hall layout (atomic replace) |
+| GET | `/api/weddings/{wid}/reports/angpao?format=csv\|xlsx` | Export angpao report (CSV or Excel) |
 
 ### Public Endpoints (no auth required)
 
