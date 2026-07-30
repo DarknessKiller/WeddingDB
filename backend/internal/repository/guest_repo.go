@@ -96,6 +96,12 @@ func (r *GuestRepo) Delete(id, weddingID uuid.UUID) error {
 	return r.db.Where("id = ? AND wedding_id = ?", id, weddingID).Delete(&models.GuestRecord{}).Error
 }
 
+func (r *GuestRepo) ListAllByWedding(weddingID uuid.UUID) ([]models.GuestRecord, error) {
+	guests := make([]models.GuestRecord, 0)
+	err := r.db.Where("wedding_id = ?", weddingID).Order("name ASC").Find(&guests).Error
+	return guests, err
+}
+
 func (r *GuestRepo) TableOccupancy(weddingID uuid.UUID) ([]TableOccupancy, error) {
 	type row struct {
 		TableID uuid.UUID

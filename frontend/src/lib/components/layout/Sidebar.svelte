@@ -3,7 +3,7 @@
   import { sidebarCollapsed, getAuth } from '$lib/stores';
   import {
     LayoutDashboard, Users, MapPin, Search, Monitor, Calendar,
-    Settings, BarChart3, Utensils, Shield
+    Settings, BarChart3, Utensils, Shield, FileDown
   } from 'lucide-svelte';
 
   let { currentPath, guestCount = 0, wid = '' }: { currentPath: string; guestCount?: number; wid?: string } = $props();
@@ -29,6 +29,7 @@
       items: [
         { href: `/${wid}/seating`, label: 'Seating Map', icon: MapPin },
         { href: `/${wid}/search`, label: 'Check In', icon: Search },
+        { href: `/${wid}/reports`, label: 'Reports', icon: FileDown },
       ]
     },
     {
