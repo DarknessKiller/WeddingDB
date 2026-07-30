@@ -70,6 +70,7 @@ func (h *AdminHandler) Create(c fuego.ContextWithBody[AdminRequest]) (any, error
 			h.adminRepo.SetUserWeddings(admin.ID, ids)
 		}
 	}
+	c.SetStatus(201)
 	return admin, nil
 }
 
@@ -101,6 +102,7 @@ func (h *AdminHandler) Delete(c fuego.ContextWithBody[any]) (any, error) {
 	if err := h.adminRepo.Delete(id); err != nil {
 		return nil, err
 	}
+	c.SetStatus(204)
 	return nil, nil
 }
 

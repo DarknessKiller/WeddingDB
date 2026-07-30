@@ -75,6 +75,7 @@ func (h *WeddingHandler) Create(c fuego.ContextWithBody[WeddingRequest]) (any, e
 	if adminID != uuid.Nil {
 		h.adminRepo.AddUserWedding(adminID, w.ID)
 	}
+	c.SetStatus(201)
 	return w, nil
 }
 
@@ -165,6 +166,7 @@ func (h *WeddingHandler) Delete(c fuego.ContextWithBody[any]) (any, error) {
 	if err != nil {
 		return nil, fuego.BadRequestError{Title: "Invalid ID"}
 	}
+	c.SetStatus(204)
 	return nil, h.weddingService.Delete(id)
 }
 
