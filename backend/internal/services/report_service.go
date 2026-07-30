@@ -347,21 +347,6 @@ func (s *ReportService) sanitizeFilename(name string) string {
 	return name
 }
 
-// truncateSheetName: Excel sheet names max 31 chars, no special chars
-func truncateSheetName(name string) string {
-	name = strings.ReplaceAll(name, `[`, "(")
-	name = strings.ReplaceAll(name, `]`, ")")
-	name = strings.ReplaceAll(name, `*`, "")
-	name = strings.ReplaceAll(name, `?`, "")
-	name = strings.ReplaceAll(name, `:`, "")
-	name = strings.ReplaceAll(name, `/`, "-")
-	name = strings.ReplaceAll(name, `\`, "-")
-	if len(name) > 31 {
-		name = name[:31]
-	}
-	return name
-}
-
 func cellName(col, row int) string {
 	name, _ := excelize.CoordinatesToCellName(col, row)
 	return name

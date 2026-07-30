@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"net/http"
 	"weddingdb/internal/middleware"
 	"weddingdb/internal/repository"
 	"weddingdb/internal/services"
@@ -109,5 +110,6 @@ func RegisterRoutes(
 
 	// Reports
 	reportHandler := NewReportHandler(reportService)
-	s.Mux.HandleFunc("GET /api/weddings/{wid}/reports/angpao", reportHandler.ExportAngpao)
+	s.Mux.Handle("GET /api/weddings/{wid}/reports/angpao",
+		middleware.AuthMiddleware(authService)(middleware.WeddingScopeMiddleware(http.HandlerFunc(reportHandler.ExportAngpao))))
 }
