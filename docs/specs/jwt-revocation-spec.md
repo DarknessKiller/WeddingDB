@@ -138,8 +138,9 @@ func (s *AuthService) Refresh(ctx context.Context, refreshTokenStr string) (*Log
 func (s *AuthService) Refresh(ctx context.Context, refreshTokenStr string, oldAccessToken string) (*LoginResult, error)
 ```
 
-- After creating new tokens and deleting old refresh token, blacklist old access token's JTI if `oldAccessToken != ""`.
+- Before creating new tokens, blacklist old access token's JTI if `oldAccessToken != ""`.
 - Parse old token via `parseTokenClaims`, call `BlacklistAccessToken`.
+- If blacklisting fails, return error immediately — no token state has been mutated.
 
 ### 1k. Modify `ValidateToken` signature
 
