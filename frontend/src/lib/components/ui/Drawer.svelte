@@ -11,7 +11,7 @@
   import { get } from 'svelte/store';
   let { guest, tables = [], onClose, startEditing = false, createMode = false, readonly = false }: { guest?: Guest; tables?: BanquetTable[]; onClose: () => void; startEditing?: boolean; createMode?: boolean; readonly?: boolean } = $props();
 
-  let tableName = $derived(guest ? (tables.find(t => t.id === guest.tableId)?.name ?? guest.tableId ?? '—') : '—');
+  let tableName = $derived(guest ? (tables.find(t => t.id === guest!.tableId)?.name ?? guest!.tableId ?? '—') : '—');
 
   let editToggle = $state(false);
   let editing = $derived(createMode || editToggle);
