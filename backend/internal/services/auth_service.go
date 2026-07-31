@@ -21,18 +21,26 @@ type AccessClaims struct {
 	jwt.RegisteredClaims
 }
 
+// TokenRevoker abstracts access-token revocation (Redis blacklist).
+type TokenRevoker interface {
+	Revoke(ctx context.Context, jti string, ttl time.Duration) error
+	IsRevoked(ctx context.Context, jti string) bool
+}
+
 type AuthService struct {
 	adminRepo   *repository.AdminRepo
 	weddingRepo *repository.WeddingRepo
 	tokenRepo   *repository.TokenRepo
+	revoker     TokenRevoker
 	secret      []byte
 }
 
-func NewAuthService(adminRepo *repository.AdminRepo, weddingRepo *repository.WeddingRepo, tokenRepo *repository.TokenRepo, secret string) *AuthService {
+func NewAuthService(adminRepo *repository.AdminRepo, weddingRepo *repository.WeddingRepo, tokenRepo *repository.TokenRepo, revoker TokenRevoker, secret string) *AuthService {
 	return &AuthService{
 		adminRepo:   adminRepo,
 		weddingRepo: weddingRepo,
 		tokenRepo:   tokenRepo,
+		revoker:     revoker,
 		secret:      []byte(secret),
 	}
 }
@@ -59,7 +67,9 @@ func (s *AuthService) Login(ctx context.Context, email, password string) (*Login
 	if err != nil {
 		return nil, err
 	}
-	refreshToken, err := s.generateRefreshToken(admin.ID, nil)
+	// Extract jti from access token for refresh-token binding
+	accessJTI := s.extractJTI(accessToken)
+	refreshToken, err := s.generateRefreshToken(admin.ID, nil, accessJTI)
 	if err != nil {
 		return nil, err
 	}
@@ -104,6 +114,10 @@ func (s *AuthService) Refresh(ctx context.Context, refreshTokenStr string) (*Log
 	if err != nil {
 		return nil, errors.New("invalid refresh token")
 	}
+	// Revoke old access token
+	if s.revoker != nil && token.AccessTokenJTI != "" {
+		s.revoker.Revoke(ctx, token.AccessTokenJTI, 15*time.Minute)
+	}
 	admin, err := s.adminRepo.FindByID(token.AdminID)
 	if err != nil {
 		return nil, errors.New("admin not found")
@@ -112,7 +126,8 @@ func (s *AuthService) Refresh(ctx context.Context, refreshTokenStr string) (*Log
 	if err != nil {
 		return nil, err
 	}
-	newRefreshToken, err := s.generateRefreshToken(admin.ID, token.WeddingID)
+	accessJTI := s.extractJTI(accessToken)
+	newRefreshToken, err := s.generateRefreshToken(admin.ID, token.WeddingID, accessJTI)
 	if err != nil {
 		return nil, err
 	}
@@ -136,11 +151,17 @@ func (s *AuthService) Refresh(ctx context.Context, refreshTokenStr string) (*Log
 	}, nil
 }
 
-func (s *AuthService) Logout(refreshToken string) error {
+func (s *AuthService) Logout(ctx context.Context, refreshToken string) error {
+	// Revoke the access token bound to this refresh token
+	if s.revoker != nil {
+		if token, err := s.tokenRepo.FindByToken(refreshToken); err == nil && token.AccessTokenJTI != "" {
+			s.revoker.Revoke(ctx, token.AccessTokenJTI, 15*time.Minute)
+		}
+	}
 	return s.tokenRepo.DeleteByToken(refreshToken)
 }
 
-func (s *AuthService) ValidateToken(tokenStr string) (*AccessClaims, error) {
+func (s *AuthService) ValidateToken(ctx context.Context, tokenStr string) (*AccessClaims, error) {
 	token, err := jwt.ParseWithClaims(tokenStr, &AccessClaims{}, func(t *jwt.Token) (interface{}, error) {
 		return s.secret, nil
 	})
@@ -150,6 +171,10 @@ func (s *AuthService) ValidateToken(tokenStr string) (*AccessClaims, error) {
 	claims, ok := token.Claims.(*AccessClaims)
 	if !ok || !token.Valid {
 		return nil, errors.New("invalid token")
+	}
+	// Check blacklist (fail closed: if revoker exists and reports revoked, reject)
+	if s.revoker != nil && claims.ID != "" && s.revoker.IsRevoked(ctx, claims.ID) {
+		return nil, errors.New("token revoked")
 	}
 	return claims, nil
 }
@@ -171,21 +196,34 @@ func (s *AuthService) generateAccessToken(admin *models.AdminUser, weddingID *uu
 	return token.SignedString(s.secret)
 }
 
-func (s *AuthService) generateRefreshToken(adminID uuid.UUID, weddingID *uuid.UUID) (string, error) {
+func (s *AuthService) generateRefreshToken(adminID uuid.UUID, weddingID *uuid.UUID, accessJTI string) (string, error) {
 	b := make([]byte, 32)
 	if _, err := rand.Read(b); err != nil {
 		return "", err
 	}
 	tokenStr := hex.EncodeToString(b)
 	token := &models.RefreshToken{
-		ID:        uuid.New(),
-		AdminID:   adminID,
-		WeddingID: weddingID,
-		Token:     tokenStr,
-		ExpiresAt: time.Now().Add(7 * 24 * time.Hour),
+		ID:             uuid.New(),
+		AdminID:        adminID,
+		WeddingID:      weddingID,
+		Token:          tokenStr,
+		AccessTokenJTI: accessJTI,
+		ExpiresAt:      time.Now().Add(7 * 24 * time.Hour),
 	}
 	if err := s.tokenRepo.Save(token); err != nil {
 		return "", err
 	}
 	return tokenStr, nil
+}
+
+func (s *AuthService) extractJTI(tokenStr string) string {
+	claims := &AccessClaims{}
+	// Unvalidated parse — we just created this token, signature is guaranteed valid
+	token, _ := jwt.ParseWithClaims(tokenStr, claims, func(t *jwt.Token) (interface{}, error) {
+		return s.secret, nil
+	})
+	if token != nil && token.Valid {
+		return claims.ID
+	}
+	return ""
 }

@@ -74,6 +74,5 @@ export async function getDashboardData(weddingId: string): Promise<{ stats: Dash
       timestamp: new Date(g.updatedAt),
       icon: g.checkedInAt ? 'check-circle' : 'user-check'
     }));
-
   return { stats, occupancy, activity };
 }

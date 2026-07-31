@@ -1,12 +1,41 @@
 package services
 
 import (
+	"context"
+	"sync"
 	"testing"
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/google/uuid"
 )
+
+// mockRevoker is an in-memory revoker for unit tests.
+type mockRevoker struct {
+	mu       sync.Mutex
+	revoked  map[string]bool
+	revokeFn func(ctx context.Context, jti string, ttl time.Duration) error
+}
+
+func newMockRevoker() *mockRevoker {
+	return &mockRevoker{revoked: make(map[string]bool)}
+}
+
+func (m *mockRevoker) Revoke(ctx context.Context, jti string, ttl time.Duration) error {
+	if m.revokeFn != nil {
+		return m.revokeFn(ctx, jti, ttl)
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.revoked[jti] = true
+	return nil
+}
+
+func (m *mockRevoker) IsRevoked(ctx context.Context, jti string) bool {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.revoked[jti]
+}
 
 // newTestAuthService creates an AuthService with nil repos (ValidateToken doesn't need them).
 func newTestAuthService(secret string) *AuthService {
@@ -36,7 +65,7 @@ func TestValidateToken_Valid(t *testing.T) {
 		},
 	})
 
-	claims, err := svc.ValidateToken(tok)
+	claims, err := svc.ValidateToken(context.Background(), tok)
 	if err != nil {
 		t.Fatalf("ValidateToken failed: %v", err)
 	}
@@ -65,7 +94,7 @@ func TestValidateToken_Expired(t *testing.T) {
 		},
 	})
 
-	_, err := svc.ValidateToken(tok)
+	_, err := svc.ValidateToken(context.Background(), tok)
 	if err == nil {
 		t.Fatal("expected error for expired token, got nil")
 	}
@@ -85,7 +114,7 @@ func TestValidateToken_WrongSecret(t *testing.T) {
 		},
 	})
 
-	_, err := svc.ValidateToken(tok)
+	_, err := svc.ValidateToken(context.Background(), tok)
 	if err == nil {
 		t.Fatal("expected error for wrong-secret token, got nil")
 	}
@@ -94,9 +123,69 @@ func TestValidateToken_WrongSecret(t *testing.T) {
 func TestValidateToken_Malformed(t *testing.T) {
 	svc := newTestAuthService("test-secret-123")
 
-	_, err := svc.ValidateToken("not.a.jwt")
+	_, err := svc.ValidateToken(context.Background(), "not.a.jwt")
 	if err == nil {
 		t.Fatal("expected error for malformed token, got nil")
+	}
+}
+
+func TestValidateToken_Revoked(t *testing.T) {
+	secret := "test-secret-123"
+	revoker := newMockRevoker()
+	svc := &AuthService{secret: []byte(secret), revoker: revoker}
+
+	jti := uuid.New().String()
+	tok := signTestToken(secret, AccessClaims{
+		AdminID: uuid.New(),
+		Role:    "admin",
+		RegisteredClaims: jwt.RegisteredClaims{
+			ID:        jti,
+			IssuedAt:  jwt.NewNumericDate(time.Now()),
+			ExpiresAt: jwt.NewNumericDate(time.Now().Add(15 * time.Minute)),
+		},
+	})
+
+	// Token is valid before revocation
+	_, err := svc.ValidateToken(context.Background(), tok)
+	if err != nil {
+		t.Fatalf("expected valid token before revocation, got: %v", err)
+	}
+
+	// Revoke it
+	if err := revoker.Revoke(context.Background(), jti, 15*time.Minute); err != nil {
+		t.Fatalf("Revoke failed: %v", err)
+	}
+
+	// Now ValidateToken should reject it
+	_, err = svc.ValidateToken(context.Background(), tok)
+	if err == nil {
+		t.Fatal("expected error for revoked token, got nil")
+	}
+	if err.Error() != "token revoked" {
+		t.Errorf("error = %q, want %q", err.Error(), "token revoked")
+	}
+}
+
+func TestValidateToken_NilRevoker(t *testing.T) {
+	secret := "test-secret-123"
+	svc := &AuthService{secret: []byte(secret), revoker: nil}
+
+	tok := signTestToken(secret, AccessClaims{
+		AdminID: uuid.New(),
+		Role:    "admin",
+		RegisteredClaims: jwt.RegisteredClaims{
+			ID:        uuid.New().String(),
+			IssuedAt:  jwt.NewNumericDate(time.Now()),
+			ExpiresAt: jwt.NewNumericDate(time.Now().Add(15 * time.Minute)),
+		},
+	})
+
+	claims, err := svc.ValidateToken(context.Background(), tok)
+	if err != nil {
+		t.Fatalf("ValidateToken failed: %v", err)
+	}
+	if claims == nil {
+		t.Fatal("expected claims, got nil")
 	}
 }
 
@@ -115,7 +204,7 @@ func TestValidateToken_NilWeddingID(t *testing.T) {
 		},
 	})
 
-	claims, err := svc.ValidateToken(tok)
+	claims, err := svc.ValidateToken(context.Background(), tok)
 	if err != nil {
 		t.Fatalf("ValidateToken failed: %v", err)
 	}

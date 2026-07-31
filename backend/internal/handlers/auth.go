@@ -150,7 +150,9 @@ func (h *AuthHandler) Logout(c fuego.ContextWithBody[RefreshRequest]) (any, erro
 	if err != nil {
 		return nil, fuego.BadRequestError{Title: "Invalid request"}
 	}
-	h.authService.Logout(body.RefreshToken)
+	if err := h.authService.Logout(c.Context(), body.RefreshToken); err != nil {
+		return nil, fuego.InternalServerError{Title: "Failed to logout"}
+	}
 	return nil, nil
 }
 
