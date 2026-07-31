@@ -48,7 +48,7 @@ func (h *GuestHandler) List(c fuego.ContextNoBody) (any, error) {
 	}
 	var nextCursor string
 	if len(guests) > limit {
-		nextCursor = guests[limit].ID.String()
+		nextCursor = guests[limit-1].ID.String()
 		guests = guests[:limit]
 	}
 	return map[string]any{"guests": guests, "total": total, "nextCursor": nextCursor}, nil

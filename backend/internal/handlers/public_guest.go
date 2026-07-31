@@ -47,7 +47,7 @@ func (h *PublicGuestHandler) List(c fuego.ContextNoBody) (any, error) {
 	}
 	var nextCursor string
 	if len(guests) > limit {
-		nextCursor = utils.EncodeUUID(guests[limit].ID)
+		nextCursor = utils.EncodeUUID(guests[limit-1].ID)
 		guests = guests[:limit]
 	}
 	out := make([]publicGuest, 0, len(guests))
