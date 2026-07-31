@@ -166,8 +166,11 @@ func (h *WeddingHandler) Delete(c fuego.ContextWithBody[any]) (any, error) {
 	if err != nil {
 		return nil, fuego.BadRequestError{Title: "Invalid ID"}
 	}
+	if err := h.weddingService.Delete(id); err != nil {
+		return nil, err
+	}
 	c.SetStatus(204)
-	return nil, h.weddingService.Delete(id)
+	return nil, nil
 }
 
 // sanitizeURL strips any value that isn't a safe URL prefix or a relative path.
