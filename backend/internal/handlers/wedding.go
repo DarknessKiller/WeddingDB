@@ -29,14 +29,14 @@ func (h *WeddingHandler) List(c fuego.ContextNoBody) (any, error) {
 	ctx := c.Context()
 	role := RoleFromContext(ctx)
 	if role == "admin" {
-		return h.weddingService.List()
+		return h.weddingService.List(ctx)
 	}
 	// user: only return their own wedding from JWT
 	wid := WeddingIDFromContext(ctx)
 	if wid == nil {
 		return []models.WeddingEvent{}, nil
 	}
-	w, err := h.weddingService.Get(*wid)
+	w, err := h.weddingService.Get(ctx, *wid)
 	if err != nil {
 		return nil, fuego.NotFoundError{Title: "Wedding not found"}
 	}
@@ -48,14 +48,16 @@ func (h *WeddingHandler) Get(c fuego.ContextNoBody) (any, error) {
 	if err != nil {
 		return nil, fuego.BadRequestError{Title: "Invalid ID"}
 	}
-	if err := requireWeddingAccess(c.Context(), id); err != nil {
+	ctx := c.Context()
+	if err := requireWeddingAccess(ctx, id); err != nil {
 		return nil, fuego.UnauthorizedError{Title: err.Error()}
 	}
-	return h.weddingService.Get(id)
+	return h.weddingService.Get(ctx, id)
 }
 
 func (h *WeddingHandler) Create(c fuego.ContextWithBody[WeddingRequest]) (any, error) {
-	if err := requireAdmin(c.Context()); err != nil {
+	ctx := c.Context()
+	if err := requireAdmin(ctx); err != nil {
 		return nil, fuego.UnauthorizedError{Title: err.Error()}
 	}
 	body, err := c.Body()
@@ -67,13 +69,13 @@ func (h *WeddingHandler) Create(c fuego.ContextWithBody[WeddingRequest]) (any, e
 		return nil, fuego.BadRequestError{Title: "Invalid date format, use YYYY-MM-DD"}
 	}
 	w := &models.WeddingEvent{Name: body.Name, Date: d}
-	if err := h.weddingService.Create(w); err != nil {
+	if err := h.weddingService.Create(ctx, w); err != nil {
 		return nil, err
 	}
 	// Link the creating admin to this wedding
 	adminID := AdminIDFromContext(c.Context())
 	if adminID != uuid.Nil {
-		h.adminRepo.AddUserWedding(adminID, w.ID)
+		h.adminRepo.AddUserWedding(ctx, adminID, w.ID)
 	}
 	c.SetStatus(201)
 	return w, nil
@@ -84,7 +86,8 @@ func (h *WeddingHandler) Update(c fuego.ContextWithBody[WeddingRequest]) (any, e
 	if err != nil {
 		return nil, fuego.BadRequestError{Title: "Invalid ID"}
 	}
-	if err := requireWeddingAccess(c.Context(), id); err != nil {
+	ctx := c.Context()
+	if err := requireWeddingAccess(ctx, id); err != nil {
 		return nil, fuego.UnauthorizedError{Title: err.Error()}
 	}
 	body, err := c.Body()
@@ -95,13 +98,13 @@ func (h *WeddingHandler) Update(c fuego.ContextWithBody[WeddingRequest]) (any, e
 	if err != nil {
 		return nil, fuego.BadRequestError{Title: "Invalid date format, use YYYY-MM-DD"}
 	}
-	w, err := h.weddingService.Get(id)
+	w, err := h.weddingService.Get(ctx, id)
 	if err != nil {
 		return nil, fuego.NotFoundError{Title: "Wedding not found"}
 	}
 	w.Name = body.Name
 	w.Date = d
-	if err := h.weddingService.Update(w); err != nil {
+	if err := h.weddingService.Update(ctx, w); err != nil {
 		return nil, err
 	}
 	return w, nil
@@ -127,14 +130,15 @@ func (h *WeddingHandler) UpdateKioskSettings(c fuego.ContextWithBody[KioskSettin
 	if err != nil {
 		return nil, fuego.BadRequestError{Title: "Invalid ID"}
 	}
-	if err := requireWeddingAccess(c.Context(), id); err != nil {
+	ctx := c.Context()
+	if err := requireWeddingAccess(ctx, id); err != nil {
 		return nil, fuego.UnauthorizedError{Title: err.Error()}
 	}
 	body, err := c.Body()
 	if err != nil {
 		return nil, fuego.BadRequestError{Title: "Invalid request"}
 	}
-	w, err := h.weddingService.Get(id)
+	w, err := h.weddingService.Get(ctx, id)
 	if err != nil {
 		return nil, fuego.NotFoundError{Title: "Wedding not found"}
 	}
@@ -152,21 +156,22 @@ func (h *WeddingHandler) UpdateKioskSettings(c fuego.ContextWithBody[KioskSettin
 	if body.ShowSeatNumbers != nil {
 		w.ShowSeatNumbers = *body.ShowSeatNumbers
 	}
-	if err := h.weddingService.Update(w); err != nil {
+	if err := h.weddingService.Update(ctx, w); err != nil {
 		return nil, fuego.InternalServerError{Title: "Failed to update kiosk settings"}
 	}
 	return w, nil
 }
 
 func (h *WeddingHandler) Delete(c fuego.ContextWithBody[any]) (any, error) {
-	if err := requireAdmin(c.Context()); err != nil {
+	ctx := c.Context()
+	if err := requireAdmin(ctx); err != nil {
 		return nil, fuego.UnauthorizedError{Title: err.Error()}
 	}
 	id, err := DecodeID(c.PathParam("id"))
 	if err != nil {
 		return nil, fuego.BadRequestError{Title: "Invalid ID"}
 	}
-	if err := h.weddingService.Delete(id); err != nil {
+	if err := h.weddingService.Delete(ctx, id); err != nil {
 		return nil, err
 	}
 	c.SetStatus(204)

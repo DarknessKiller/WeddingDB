@@ -23,11 +23,12 @@ type TableRequest struct {
 }
 
 func (h *TableHandler) List(c fuego.ContextNoBody) (any, error) {
+	ctx := c.Context()
 	wid, err := DecodeWID(c)
 	if err != nil {
 		return nil, fuego.BadRequestError{Title: "Invalid wedding ID"}
 	}
-	tables, err := h.tableService.List(wid)
+	tables, err := h.tableService.List(ctx, wid)
 	if err != nil {
 		return nil, err
 	}
@@ -35,6 +36,7 @@ func (h *TableHandler) List(c fuego.ContextNoBody) (any, error) {
 }
 
 func (h *TableHandler) Create(c fuego.ContextWithBody[TableRequest]) (any, error) {
+	ctx := c.Context()
 	body, err := c.Body()
 	if err != nil {
 		return nil, fuego.BadRequestError{Title: "Invalid request"}
@@ -52,7 +54,7 @@ func (h *TableHandler) Create(c fuego.ContextWithBody[TableRequest]) (any, error
 		Degree:    body.Degree,
 		IsVip:     body.IsVip,
 	}
-	if err := h.tableService.Create(table); err != nil {
+	if err := h.tableService.Create(ctx, table); err != nil {
 		return nil, err
 	}
 	c.SetStatus(201)
@@ -60,6 +62,7 @@ func (h *TableHandler) Create(c fuego.ContextWithBody[TableRequest]) (any, error
 }
 
 func (h *TableHandler) Update(c fuego.ContextWithBody[TableRequest]) (any, error) {
+	ctx := c.Context()
 	body, err := c.Body()
 	if err != nil {
 		return nil, fuego.BadRequestError{Title: "Invalid request"}
@@ -72,7 +75,7 @@ func (h *TableHandler) Update(c fuego.ContextWithBody[TableRequest]) (any, error
 	if err != nil {
 		return nil, fuego.BadRequestError{Title: "Invalid ID"}
 	}
-	table, err := h.tableService.Get(id, wid)
+	table, err := h.tableService.Get(ctx, id, wid)
 	if err != nil {
 		return nil, fuego.NotFoundError{Title: "Table not found"}
 	}
@@ -82,13 +85,14 @@ func (h *TableHandler) Update(c fuego.ContextWithBody[TableRequest]) (any, error
 	table.Y = body.Y
 	table.Degree = body.Degree
 	table.IsVip = body.IsVip
-	if err := h.tableService.Update(table); err != nil {
+	if err := h.tableService.Update(ctx, table); err != nil {
 		return nil, err
 	}
 	return table, nil
 }
 
 func (h *TableHandler) Delete(c fuego.ContextWithBody[any]) (any, error) {
+	ctx := c.Context()
 	wid, err := DecodeWID(c)
 	if err != nil {
 		return nil, fuego.BadRequestError{Title: "Invalid wedding ID"}
@@ -97,7 +101,7 @@ func (h *TableHandler) Delete(c fuego.ContextWithBody[any]) (any, error) {
 	if err != nil {
 		return nil, fuego.BadRequestError{Title: "Invalid ID"}
 	}
-	if err := h.tableService.Delete(id, wid); err != nil {
+	if err := h.tableService.Delete(ctx, id, wid); err != nil {
 		return nil, err
 	}
 	c.SetStatus(204)

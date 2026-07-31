@@ -24,14 +24,16 @@ type AdminRequest struct {
 }
 
 func (h *AdminHandler) List(c fuego.ContextNoBody) (any, error) {
-	if err := requireAdmin(c.Context()); err != nil {
+	ctx := c.Context()
+	if err := requireAdmin(ctx); err != nil {
 		return nil, fuego.UnauthorizedError{Title: err.Error()}
 	}
-	return h.adminRepo.List()
+	return h.adminRepo.List(ctx)
 }
 
 func (h *AdminHandler) Create(c fuego.ContextWithBody[AdminRequest]) (any, error) {
-	if err := requireAdmin(c.Context()); err != nil {
+	ctx := c.Context()
+	if err := requireAdmin(ctx); err != nil {
 		return nil, fuego.UnauthorizedError{Title: err.Error()}
 	}
 	body, err := c.Body()
@@ -55,7 +57,7 @@ func (h *AdminHandler) Create(c fuego.ContextWithBody[AdminRequest]) (any, error
 		Name:     body.Name,
 		Role:     body.Role,
 	}
-	if err := h.adminRepo.Create(admin); err != nil {
+	if err := h.adminRepo.Create(ctx, admin); err != nil {
 		return nil, err
 	}
 	// Assign weddings if provided
@@ -67,7 +69,7 @@ func (h *AdminHandler) Create(c fuego.ContextWithBody[AdminRequest]) (any, error
 			}
 		}
 		if len(ids) > 0 {
-			h.adminRepo.SetUserWeddings(admin.ID, ids)
+			h.adminRepo.SetUserWeddings(ctx, admin.ID, ids)
 		}
 	}
 	c.SetStatus(201)
@@ -75,10 +77,11 @@ func (h *AdminHandler) Create(c fuego.ContextWithBody[AdminRequest]) (any, error
 }
 
 func (h *AdminHandler) Delete(c fuego.ContextWithBody[any]) (any, error) {
-	if err := requireAdmin(c.Context()); err != nil {
+	ctx := c.Context()
+	if err := requireAdmin(ctx); err != nil {
 		return nil, fuego.UnauthorizedError{Title: err.Error()}
 	}
-	adminID := AdminIDFromContext(c.Context())
+	adminID := AdminIDFromContext(ctx)
 	id, err := DecodeID(c.PathParam("id"))
 	if err != nil {
 		return nil, fuego.BadRequestError{Title: "Invalid ID"}
@@ -86,12 +89,12 @@ func (h *AdminHandler) Delete(c fuego.ContextWithBody[any]) (any, error) {
 	if id == adminID {
 		return nil, fuego.BadRequestError{Title: "Cannot delete your own account"}
 	}
-	target, err := h.adminRepo.FindByID(id)
+	target, err := h.adminRepo.FindByID(ctx, id)
 	if err != nil {
 		return nil, fuego.NotFoundError{Title: "User not found"}
 	}
 	if target.Role == "admin" {
-		adminCount, err := h.adminRepo.CountByRole("admin")
+		adminCount, err := h.adminRepo.CountByRole(ctx, "admin")
 		if err != nil {
 			return nil, fuego.InternalServerError{Title: "Failed to check admin count"}
 		}
@@ -99,7 +102,7 @@ func (h *AdminHandler) Delete(c fuego.ContextWithBody[any]) (any, error) {
 			return nil, fuego.BadRequestError{Title: "Cannot delete the last admin"}
 		}
 	}
-	if err := h.adminRepo.Delete(id); err != nil {
+	if err := h.adminRepo.Delete(ctx, id); err != nil {
 		return nil, err
 	}
 	c.SetStatus(204)
@@ -111,7 +114,8 @@ type AssignWeddingsRequest struct {
 }
 
 func (h *AdminHandler) AssignWeddings(c fuego.ContextWithBody[AssignWeddingsRequest]) (any, error) {
-	if err := requireAdmin(c.Context()); err != nil {
+	ctx := c.Context()
+	if err := requireAdmin(ctx); err != nil {
 		return nil, fuego.UnauthorizedError{Title: err.Error()}
 	}
 	body, err := c.Body()
@@ -122,7 +126,7 @@ func (h *AdminHandler) AssignWeddings(c fuego.ContextWithBody[AssignWeddingsRequ
 	if err != nil {
 		return nil, fuego.BadRequestError{Title: "Invalid ID"}
 	}
-	admin, err := h.adminRepo.FindByID(id)
+	admin, err := h.adminRepo.FindByID(ctx, id)
 	if err != nil {
 		return nil, fuego.NotFoundError{Title: "Admin not found"}
 	}
@@ -132,21 +136,22 @@ func (h *AdminHandler) AssignWeddings(c fuego.ContextWithBody[AssignWeddingsRequ
 			ids = append(ids, wid)
 		}
 	}
-	if err := h.adminRepo.SetUserWeddings(admin.ID, ids); err != nil {
+	if err := h.adminRepo.SetUserWeddings(ctx, admin.ID, ids); err != nil {
 		return nil, fuego.InternalServerError{Title: "Failed to assign weddings"}
 	}
 	return admin, nil
 }
 
 func (h *AdminHandler) GetUserWeddings(c fuego.ContextNoBody) (any, error) {
-	if err := requireAdmin(c.Context()); err != nil {
+	ctx := c.Context()
+	if err := requireAdmin(ctx); err != nil {
 		return nil, fuego.UnauthorizedError{Title: err.Error()}
 	}
 	id, err := DecodeID(c.PathParam("id"))
 	if err != nil {
 		return nil, fuego.BadRequestError{Title: "Invalid ID"}
 	}
-	weddings, err := h.adminRepo.GetUserWeddings(id)
+	weddings, err := h.adminRepo.GetUserWeddings(ctx, id)
 	if err != nil {
 		return nil, err
 	}
@@ -158,7 +163,8 @@ type ResetPasswordRequest struct {
 }
 
 func (h *AdminHandler) ResetPassword(c fuego.ContextWithBody[ResetPasswordRequest]) (any, error) {
-	if err := requireAdmin(c.Context()); err != nil {
+	ctx := c.Context()
+	if err := requireAdmin(ctx); err != nil {
 		return nil, fuego.UnauthorizedError{Title: err.Error()}
 	}
 	body, err := c.Body()
@@ -172,7 +178,7 @@ func (h *AdminHandler) ResetPassword(c fuego.ContextWithBody[ResetPasswordReques
 	if err != nil {
 		return nil, fuego.BadRequestError{Title: "Invalid ID"}
 	}
-	admin, err := h.adminRepo.FindByID(id)
+	admin, err := h.adminRepo.FindByID(ctx, id)
 	if err != nil {
 		return nil, fuego.NotFoundError{Title: "User not found"}
 	}
@@ -181,7 +187,7 @@ func (h *AdminHandler) ResetPassword(c fuego.ContextWithBody[ResetPasswordReques
 		return nil, fuego.InternalServerError{Title: "Failed to hash password"}
 	}
 	admin.Password = string(hash)
-	if err := h.adminRepo.Update(admin); err != nil {
+	if err := h.adminRepo.Update(ctx, admin); err != nil {
 		return nil, fuego.InternalServerError{Title: "Failed to update password"}
 	}
 	return map[string]any{"message": "Password updated"}, nil
@@ -192,7 +198,8 @@ type UpdateRoleRequest struct {
 }
 
 func (h *AdminHandler) UpdateRole(c fuego.ContextWithBody[UpdateRoleRequest]) (any, error) {
-	if err := requireAdmin(c.Context()); err != nil {
+	ctx := c.Context()
+	if err := requireAdmin(ctx); err != nil {
 		return nil, fuego.UnauthorizedError{Title: err.Error()}
 	}
 	body, err := c.Body()
@@ -207,18 +214,18 @@ func (h *AdminHandler) UpdateRole(c fuego.ContextWithBody[UpdateRoleRequest]) (a
 		return nil, fuego.BadRequestError{Title: "Invalid ID"}
 	}
 	// Prevent self-demotion
-	callerID := AdminIDFromContext(c.Context())
+	callerID := AdminIDFromContext(ctx)
 	if id == callerID && body.Role != "admin" {
 		return nil, fuego.BadRequestError{Title: "Cannot change your own role"}
 	}
 	// Fetch user once for guard check and update
-	admin, err := h.adminRepo.FindByID(id)
+	admin, err := h.adminRepo.FindByID(ctx, id)
 	if err != nil {
 		return nil, fuego.NotFoundError{Title: "User not found"}
 	}
 	// Prevent demoting the last admin
 	if admin.Role == "admin" && body.Role == "user" {
-		adminCount, err := h.adminRepo.CountByRole("admin")
+		adminCount, err := h.adminRepo.CountByRole(ctx, "admin")
 		if err != nil {
 			return nil, fuego.InternalServerError{Title: "Failed to check admin count"}
 		}
@@ -227,7 +234,7 @@ func (h *AdminHandler) UpdateRole(c fuego.ContextWithBody[UpdateRoleRequest]) (a
 		}
 	}
 	admin.Role = body.Role
-	if err := h.adminRepo.Update(admin); err != nil {
+	if err := h.adminRepo.Update(ctx, admin); err != nil {
 		return nil, fuego.InternalServerError{Title: "Failed to update role"}
 	}
 	return admin, nil

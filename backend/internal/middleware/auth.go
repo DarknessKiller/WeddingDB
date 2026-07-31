@@ -25,7 +25,7 @@ func AuthMiddleware(authService *services.AuthService) func(http.Handler) http.H
 				http.Error(w, `{"error":"Missing token"}`, http.StatusUnauthorized)
 				return
 			}
-			claims, err := authService.ValidateToken(token)
+			claims, err := authService.ValidateToken(r.Context(), token)
 			if err != nil {
 				http.Error(w, `{"error":"Invalid token"}`, http.StatusUnauthorized)
 				return

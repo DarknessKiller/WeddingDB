@@ -1,6 +1,8 @@
 package repository
 
 import (
+	"context"
+
 	"github.com/google/uuid"
 	"gorm.io/gorm"
 	"weddingdb/internal/models"
@@ -10,20 +12,21 @@ type LayoutRepo struct{ db *gorm.DB }
 
 func NewLayoutRepo(db *gorm.DB) *LayoutRepo { return &LayoutRepo{db: db} }
 
-func (r *LayoutRepo) ElementsByWedding(weddingID uuid.UUID) ([]models.HallElement, error) {
+func (r *LayoutRepo) ElementsByWedding(ctx context.Context, weddingID uuid.UUID) ([]models.HallElement, error) {
 	els := make([]models.HallElement, 0)
-	err := r.db.Where("wedding_id = ?", weddingID).Order("z_index").Find(&els).Error
+	err := r.db.WithContext(ctx).Where("wedding_id = ?", weddingID).Order("z_index").Find(&els).Error
 	return els, err
 }
 
 func (r *LayoutRepo) SaveLayout(
+	ctx context.Context,
 	weddingID uuid.UUID,
 	hallWidth, hallHeight int,
 	tablePos map[uuid.UUID][3]float64,
 	toCreate, toUpdate []models.HallElement,
 	toDelete []uuid.UUID,
 ) error {
-	return r.db.Transaction(func(tx *gorm.DB) error {
+	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if hallWidth > 0 && hallHeight > 0 {
 			if err := tx.Model(&models.WeddingEvent{}).Where("id = ?", weddingID).
 				Updates(map[string]any{"hall_width": hallWidth, "hall_height": hallHeight}).Error; err != nil {

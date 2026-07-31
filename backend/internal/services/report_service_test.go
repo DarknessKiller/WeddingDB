@@ -14,7 +14,6 @@ import (
 
 func intPtr(i int) *int       { return &i }
 func strPtr(s string) *string { return &s }
-func timePtr(t time.Time) *time.Time { return &t }
 
 func TestBuildRows_FullData(t *testing.T) {
 	svc := &ReportService{}

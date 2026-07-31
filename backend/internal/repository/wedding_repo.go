@@ -1,6 +1,8 @@
 package repository
 
 import (
+	"context"
+
 	"github.com/google/uuid"
 	"gorm.io/gorm"
 	"weddingdb/internal/models"
@@ -12,26 +14,26 @@ func NewWeddingRepo(db *gorm.DB) *WeddingRepo {
 	return &WeddingRepo{db: db}
 }
 
-func (r *WeddingRepo) FindByID(id uuid.UUID) (*models.WeddingEvent, error) {
+func (r *WeddingRepo) FindByID(ctx context.Context, id uuid.UUID) (*models.WeddingEvent, error) {
 	var w models.WeddingEvent
-	err := r.db.First(&w, id).Error
+	err := r.db.WithContext(ctx).First(&w, id).Error
 	return &w, err
 }
 
-func (r *WeddingRepo) List() ([]models.WeddingEvent, error) {
+func (r *WeddingRepo) List(ctx context.Context) ([]models.WeddingEvent, error) {
 	var weddings []models.WeddingEvent
-	err := r.db.Find(&weddings).Error
+	err := r.db.WithContext(ctx).Find(&weddings).Error
 	return weddings, err
 }
 
-func (r *WeddingRepo) Create(w *models.WeddingEvent) error {
-	return r.db.Create(w).Error
+func (r *WeddingRepo) Create(ctx context.Context, w *models.WeddingEvent) error {
+	return r.db.WithContext(ctx).Create(w).Error
 }
 
-func (r *WeddingRepo) Update(w *models.WeddingEvent) error {
-	return r.db.Save(w).Error
+func (r *WeddingRepo) Update(ctx context.Context, w *models.WeddingEvent) error {
+	return r.db.WithContext(ctx).Save(w).Error
 }
 
-func (r *WeddingRepo) Delete(id uuid.UUID) error {
-	return r.db.Delete(&models.WeddingEvent{}, id).Error
+func (r *WeddingRepo) Delete(ctx context.Context, id uuid.UUID) error {
+	return r.db.WithContext(ctx).Delete(&models.WeddingEvent{}, id).Error
 }

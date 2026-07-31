@@ -2,6 +2,7 @@ package services
 
 import (
 	"bytes"
+	"context"
 	"encoding/csv"
 	"fmt"
 	"sort"
@@ -52,18 +53,18 @@ type angpaoSummary struct {
 	GiftItems       []string
 }
 
-func (s *ReportService) GenerateCSV(weddingID uuid.UUID) ([]byte, string, error) {
-	wedding, err := s.weddingRepo.FindByID(weddingID)
+func (s *ReportService) GenerateCSV(ctx context.Context, weddingID uuid.UUID) ([]byte, string, error) {
+	wedding, err := s.weddingRepo.FindByID(ctx, weddingID)
 	if err != nil {
 		return nil, "", fmt.Errorf("wedding not found")
 	}
 
-	guests, err := s.guestRepo.ListAllByWedding(weddingID)
+	guests, err := s.guestRepo.ListAllByWedding(ctx, weddingID)
 	if err != nil {
 		return nil, "", err
 	}
 
-	tables, err := s.tableRepo.ListByWedding(weddingID)
+	tables, err := s.tableRepo.ListByWedding(ctx, weddingID)
 	if err != nil {
 		return nil, "", err
 	}
@@ -124,18 +125,18 @@ func (s *ReportService) GenerateCSV(weddingID uuid.UUID) ([]byte, string, error)
 	return buf.Bytes(), filename, nil
 }
 
-func (s *ReportService) GenerateXLSX(weddingID uuid.UUID) ([]byte, string, error) {
-	wedding, err := s.weddingRepo.FindByID(weddingID)
+func (s *ReportService) GenerateXLSX(ctx context.Context, weddingID uuid.UUID) ([]byte, string, error) {
+	wedding, err := s.weddingRepo.FindByID(ctx, weddingID)
 	if err != nil {
 		return nil, "", fmt.Errorf("wedding not found")
 	}
 
-	guests, err := s.guestRepo.ListAllByWedding(weddingID)
+	guests, err := s.guestRepo.ListAllByWedding(ctx, weddingID)
 	if err != nil {
 		return nil, "", err
 	}
 
-	tables, err := s.tableRepo.ListByWedding(weddingID)
+	tables, err := s.tableRepo.ListByWedding(ctx, weddingID)
 	if err != nil {
 		return nil, "", err
 	}

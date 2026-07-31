@@ -58,19 +58,20 @@ type LayoutResponse struct {
 }
 
 func (h *LayoutHandler) Get(c fuego.ContextNoBody) (any, error) {
+	ctx := c.Context()
 	wid, err := DecodeWID(c)
 	if err != nil {
 		return nil, fuego.BadRequestError{Title: "Invalid wedding ID"}
 	}
-	tables, err := h.tableService.List(wid)
+	tables, err := h.tableService.List(ctx, wid)
 	if err != nil {
 		return nil, err
 	}
-	elements, err := h.layoutService.Elements(wid)
+	elements, err := h.layoutService.Elements(ctx, wid)
 	if err != nil {
 		return nil, err
 	}
-	wedding, err := h.weddingService.Get(wid)
+	wedding, err := h.weddingService.Get(ctx, wid)
 	if err != nil {
 		return nil, err
 	}
@@ -81,6 +82,7 @@ func (h *LayoutHandler) Get(c fuego.ContextNoBody) (any, error) {
 }
 
 func (h *LayoutHandler) Save(c fuego.ContextWithBody[LayoutRequest]) (any, error) {
+	ctx := c.Context()
 	body, err := c.Body()
 	if err != nil {
 		return nil, fuego.BadRequestError{Title: "Invalid request"}
@@ -131,7 +133,7 @@ func (h *LayoutHandler) Save(c fuego.ContextWithBody[LayoutRequest]) (any, error
 		}
 		elements = append(elements, el)
 	}
-	if err := h.layoutService.Save(wid, body.HallWidth, body.HallHeight, tablePos, elements); err != nil {
+	if err := h.layoutService.Save(ctx, wid, body.HallWidth, body.HallHeight, tablePos, elements); err != nil {
 		log.Printf("layout save error: %v", err)
 		return nil, fuego.InternalServerError{Title: "Failed to save layout"}
 	}

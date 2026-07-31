@@ -150,8 +150,8 @@ func (h *AuthHandler) Logout(c fuego.ContextWithBody[RefreshRequest]) (any, erro
 	if err != nil {
 		return nil, fuego.BadRequestError{Title: "Invalid request"}
 	}
-
-	if err := h.authService.Logout(body.RefreshToken); err != nil {
+	ctx := c.Context()
+	if err := h.authService.Logout(ctx, body.RefreshToken); err != nil {
 		return nil, fuego.InternalServerError{Title: "Failed to logout"}
 	}
 	c.SetStatus(204)
@@ -171,7 +171,8 @@ func (h *AuthHandler) ChangePassword(c fuego.ContextWithBody[ChangePasswordReque
 		return nil, err
 	}
 	adminID := AdminIDFromContext(c.Context())
-	admin, err := h.adminRepo.FindByID(adminID)
+	ctx := c.Context()
+	admin, err := h.adminRepo.FindByID(ctx, adminID)
 	if err != nil {
 		return nil, fuego.NotFoundError{Title: "User not found"}
 	}
@@ -181,7 +182,7 @@ func (h *AuthHandler) ChangePassword(c fuego.ContextWithBody[ChangePasswordReque
 	}
 	admin.Password = string(hash)
 	admin.ForcePasswordChange = false
-	if err := h.adminRepo.Update(admin); err != nil {
+	if err := h.adminRepo.Update(ctx, admin); err != nil {
 		return nil, fuego.InternalServerError{Title: "Failed to update password"}
 	}
 	return map[string]any{"message": "Password updated"}, nil
@@ -202,7 +203,8 @@ func (h *AuthHandler) Register(c fuego.ContextWithBody[RegisterRequest]) (any, e
 	if err := validatePassword(body.Password); err != nil {
 		return nil, err
 	}
-	existing, _ := h.adminRepo.FindByEmail(body.Email)
+	ctx := c.Context()
+	existing, _ := h.adminRepo.FindByEmail(ctx, body.Email)
 	if existing != nil && existing.ID != uuid.Nil {
 		return nil, fuego.ConflictError{Title: "Email already registered"}
 	}
@@ -216,7 +218,7 @@ func (h *AuthHandler) Register(c fuego.ContextWithBody[RegisterRequest]) (any, e
 		Name:     body.Name,
 		Role:     "user",
 	}
-	if err := h.adminRepo.Create(admin); err != nil {
+	if err := h.adminRepo.Create(ctx, admin); err != nil {
 		return nil, fuego.InternalServerError{Title: "Failed to create account"}
 	}
 	c.SetStatus(201)
