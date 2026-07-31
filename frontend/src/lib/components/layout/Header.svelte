@@ -24,12 +24,15 @@
   );
 
   async function handleLogout() {
-    const { refreshToken } = getAuth();
+    const { refreshToken, accessToken } = getAuth();
     if (refreshToken) {
       try {
         await fetch('/api/auth/logout', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: {
+            'Content-Type': 'application/json',
+            ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {})
+          },
           body: JSON.stringify({ refreshToken })
         });
       } catch { /* ignore */ }
