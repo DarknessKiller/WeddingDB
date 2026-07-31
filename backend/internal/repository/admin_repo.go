@@ -1,6 +1,8 @@
 package repository
 
 import (
+	"context"
+
 	"github.com/google/uuid"
 	"gorm.io/gorm"
 	"weddingdb/internal/models"
@@ -12,56 +14,56 @@ func NewAdminRepo(db *gorm.DB) *AdminRepo {
 	return &AdminRepo{db: db}
 }
 
-func (r *AdminRepo) FindByEmail(email string) (*models.AdminUser, error) {
+func (r *AdminRepo) FindByEmail(ctx context.Context, email string) (*models.AdminUser, error) {
 	var admin models.AdminUser
-	err := r.db.Where("email = ?", email).First(&admin).Error
+	err := r.db.WithContext(ctx).Where("email = ?", email).First(&admin).Error
 	return &admin, err
 }
 
-func (r *AdminRepo) FindByID(id uuid.UUID) (*models.AdminUser, error) {
+func (r *AdminRepo) FindByID(ctx context.Context, id uuid.UUID) (*models.AdminUser, error) {
 	var admin models.AdminUser
-	err := r.db.First(&admin, id).Error
+	err := r.db.WithContext(ctx).First(&admin, id).Error
 	return &admin, err
 }
 
-func (r *AdminRepo) Create(admin *models.AdminUser) error {
-	return r.db.Create(admin).Error
+func (r *AdminRepo) Create(ctx context.Context, admin *models.AdminUser) error {
+	return r.db.WithContext(ctx).Create(admin).Error
 }
 
-func (r *AdminRepo) List() ([]models.AdminUser, error) {
+func (r *AdminRepo) List(ctx context.Context) ([]models.AdminUser, error) {
 	var admins []models.AdminUser
-	err := r.db.Find(&admins).Error
+	err := r.db.WithContext(ctx).Find(&admins).Error
 	return admins, err
 }
 
-func (r *AdminRepo) Update(admin *models.AdminUser) error {
-	return r.db.Save(admin).Error
+func (r *AdminRepo) Update(ctx context.Context, admin *models.AdminUser) error {
+	return r.db.WithContext(ctx).Save(admin).Error
 }
 
 // CountByRole returns the number of admins with the given role.
-func (r *AdminRepo) CountByRole(role string) (int64, error) {
+func (r *AdminRepo) CountByRole(ctx context.Context, role string) (int64, error) {
 	var count int64
-	err := r.db.Model(&models.AdminUser{}).Where("role = ?", role).Count(&count).Error
+	err := r.db.WithContext(ctx).Model(&models.AdminUser{}).Where("role = ?", role).Count(&count).Error
 	return count, err
 }
 
-func (r *AdminRepo) Delete(id uuid.UUID) error {
-	return r.db.Delete(&models.AdminUser{}, id).Error
+func (r *AdminRepo) Delete(ctx context.Context, id uuid.UUID) error {
+	return r.db.WithContext(ctx).Delete(&models.AdminUser{}, id).Error
 }
 
 // GetUserWeddings returns all weddings a user has access to.
-func (r *AdminRepo) GetUserWeddings(userID uuid.UUID) ([]models.WeddingEvent, error) {
+func (r *AdminRepo) GetUserWeddings(ctx context.Context, userID uuid.UUID) ([]models.WeddingEvent, error) {
 	var weddings []models.WeddingEvent
-	err := r.db.Joins("JOIN user_weddings ON user_weddings.wedding_id = wedding_events.id").
+	err := r.db.WithContext(ctx).Joins("JOIN user_weddings ON user_weddings.wedding_id = wedding_events.id").
 		Where("user_weddings.user_id = ?", userID).
 		Find(&weddings).Error
 	return weddings, err
 }
 
 // SetUserWeddings replaces a user's wedding associations.
-func (r *AdminRepo) SetUserWeddings(userID uuid.UUID, weddingIDs []uuid.UUID) error {
+func (r *AdminRepo) SetUserWeddings(ctx context.Context, userID uuid.UUID, weddingIDs []uuid.UUID) error {
 	// Delete existing
-	r.db.Where("user_id = ?", userID).Delete(&models.UserWedding{})
+	r.db.WithContext(ctx).Where("user_id = ?", userID).Delete(&models.UserWedding{})
 	// Insert new
 	for _, wid := range weddingIDs {
 		uw := models.UserWedding{
@@ -69,7 +71,7 @@ func (r *AdminRepo) SetUserWeddings(userID uuid.UUID, weddingIDs []uuid.UUID) er
 			UserID:    userID,
 			WeddingID: wid,
 		}
-		if err := r.db.Create(&uw).Error; err != nil {
+		if err := r.db.WithContext(ctx).Create(&uw).Error; err != nil {
 			return err
 		}
 	}
@@ -77,17 +79,17 @@ func (r *AdminRepo) SetUserWeddings(userID uuid.UUID, weddingIDs []uuid.UUID) er
 }
 
 // HasWeddingAccess checks if a user has access to a specific wedding.
-func (r *AdminRepo) HasWeddingAccess(userID, weddingID uuid.UUID) (bool, error) {
+func (r *AdminRepo) HasWeddingAccess(ctx context.Context, userID, weddingID uuid.UUID) (bool, error) {
 	var count int64
-	err := r.db.Model(&models.UserWedding{}).
+	err := r.db.WithContext(ctx).Model(&models.UserWedding{}).
 		Where("user_id = ? AND wedding_id = ?", userID, weddingID).
 		Count(&count).Error
 	return count > 0, err
 }
 
 // AddUserWedding adds a wedding association if it doesn't already exist.
-func (r *AdminRepo) AddUserWedding(userID, weddingID uuid.UUID) error {
-	exists, _ := r.HasWeddingAccess(userID, weddingID)
+func (r *AdminRepo) AddUserWedding(ctx context.Context, userID, weddingID uuid.UUID) error {
+	exists, _ := r.HasWeddingAccess(ctx, userID, weddingID)
 	if exists {
 		return nil
 	}
@@ -96,5 +98,5 @@ func (r *AdminRepo) AddUserWedding(userID, weddingID uuid.UUID) error {
 		UserID:    userID,
 		WeddingID: weddingID,
 	}
-	return r.db.Create(&uw).Error
+	return r.db.WithContext(ctx).Create(&uw).Error
 }

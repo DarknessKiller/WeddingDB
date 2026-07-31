@@ -48,7 +48,7 @@ type LoginResult struct {
 }
 
 func (s *AuthService) Login(ctx context.Context, email, password string) (*LoginResult, error) {
-	admin, err := s.adminRepo.FindByEmail(email)
+	admin, err := s.adminRepo.FindByEmail(ctx, email)
 	if err != nil {
 		return nil, errors.New("invalid credentials")
 	}
@@ -59,15 +59,15 @@ func (s *AuthService) Login(ctx context.Context, email, password string) (*Login
 	if err != nil {
 		return nil, err
 	}
-	refreshToken, err := s.generateRefreshToken(admin.ID, nil)
+	refreshToken, err := s.generateRefreshToken(ctx, admin.ID, nil)
 	if err != nil {
 		return nil, err
 	}
 	var weddings []models.WeddingEvent
 	if admin.Role == "admin" {
-		weddings, _ = s.weddingRepo.List()
+		weddings, _ = s.weddingRepo.List(ctx)
 	} else {
-		weddings, _ = s.adminRepo.GetUserWeddings(admin.ID)
+		weddings, _ = s.adminRepo.GetUserWeddings(ctx, admin.ID)
 	}
 	if weddings == nil {
 		weddings = []models.WeddingEvent{}
@@ -84,13 +84,13 @@ func (s *AuthService) Login(ctx context.Context, email, password string) (*Login
 
 // SelectWedding generates a new access token with the selected wedding embedded.
 func (s *AuthService) SelectWedding(ctx context.Context, adminID uuid.UUID, weddingID uuid.UUID) (string, error) {
-	admin, err := s.adminRepo.FindByID(adminID)
+	admin, err := s.adminRepo.FindByID(ctx, adminID)
 	if err != nil {
 		return "", errors.New("admin not found")
 	}
 	// Verify access
 	if admin.Role != "admin" {
-		hasAccess, err := s.adminRepo.HasWeddingAccess(adminID, weddingID)
+		hasAccess, err := s.adminRepo.HasWeddingAccess(ctx, adminID, weddingID)
 		if err != nil || !hasAccess {
 			return "", errors.New("no access to this wedding")
 		}
@@ -100,11 +100,11 @@ func (s *AuthService) SelectWedding(ctx context.Context, adminID uuid.UUID, wedd
 
 // Refresh returns a new LoginResult with fresh tokens.
 func (s *AuthService) Refresh(ctx context.Context, refreshTokenStr string) (*LoginResult, error) {
-	token, err := s.tokenRepo.FindByToken(refreshTokenStr)
+	token, err := s.tokenRepo.FindByToken(ctx, refreshTokenStr)
 	if err != nil {
 		return nil, errors.New("invalid refresh token")
 	}
-	admin, err := s.adminRepo.FindByID(token.AdminID)
+	admin, err := s.adminRepo.FindByID(ctx, token.AdminID)
 	if err != nil {
 		return nil, errors.New("admin not found")
 	}
@@ -112,16 +112,16 @@ func (s *AuthService) Refresh(ctx context.Context, refreshTokenStr string) (*Log
 	if err != nil {
 		return nil, err
 	}
-	newRefreshToken, err := s.generateRefreshToken(admin.ID, token.WeddingID)
+	newRefreshToken, err := s.generateRefreshToken(ctx, admin.ID, token.WeddingID)
 	if err != nil {
 		return nil, err
 	}
-	s.tokenRepo.DeleteByToken(refreshTokenStr)
+	s.tokenRepo.DeleteByToken(ctx, refreshTokenStr)
 	var weddings []models.WeddingEvent
 	if admin.Role == "admin" {
-		weddings, _ = s.weddingRepo.List()
+		weddings, _ = s.weddingRepo.List(ctx)
 	} else {
-		weddings, _ = s.adminRepo.GetUserWeddings(admin.ID)
+		weddings, _ = s.adminRepo.GetUserWeddings(ctx, admin.ID)
 	}
 	if weddings == nil {
 		weddings = []models.WeddingEvent{}
@@ -136,11 +136,11 @@ func (s *AuthService) Refresh(ctx context.Context, refreshTokenStr string) (*Log
 	}, nil
 }
 
-func (s *AuthService) Logout(refreshToken string) error {
-	return s.tokenRepo.DeleteByToken(refreshToken)
+func (s *AuthService) Logout(ctx context.Context, refreshToken string) error {
+	return s.tokenRepo.DeleteByToken(ctx, refreshToken)
 }
 
-func (s *AuthService) ValidateToken(tokenStr string) (*AccessClaims, error) {
+func (s *AuthService) ValidateToken(ctx context.Context, tokenStr string) (*AccessClaims, error) {
 	token, err := jwt.ParseWithClaims(tokenStr, &AccessClaims{}, func(t *jwt.Token) (interface{}, error) {
 		return s.secret, nil
 	})
@@ -171,7 +171,7 @@ func (s *AuthService) generateAccessToken(admin *models.AdminUser, weddingID *uu
 	return token.SignedString(s.secret)
 }
 
-func (s *AuthService) generateRefreshToken(adminID uuid.UUID, weddingID *uuid.UUID) (string, error) {
+func (s *AuthService) generateRefreshToken(ctx context.Context, adminID uuid.UUID, weddingID *uuid.UUID) (string, error) {
 	b := make([]byte, 32)
 	if _, err := rand.Read(b); err != nil {
 		return "", err
@@ -184,7 +184,7 @@ func (s *AuthService) generateRefreshToken(adminID uuid.UUID, weddingID *uuid.UU
 		Token:     tokenStr,
 		ExpiresAt: time.Now().Add(7 * 24 * time.Hour),
 	}
-	if err := s.tokenRepo.Save(token); err != nil {
+	if err := s.tokenRepo.Save(ctx, token); err != nil {
 		return "", err
 	}
 	return tokenStr, nil

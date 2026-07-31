@@ -19,6 +19,8 @@ func NewReportHandler(reportService *services.ReportService) *ReportHandler {
 // ExportAngpao handles GET /api/weddings/{wid}/reports/angpao?format=csv|xlsx
 // Returns a file download with Content-Disposition header.
 func (h *ReportHandler) ExportAngpao(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+
 	wid, err := DecodeWID(rawPathParams{r: r})
 	if err != nil {
 		http.Error(w, "Invalid wedding ID", http.StatusBadRequest)
@@ -35,9 +37,9 @@ func (h *ReportHandler) ExportAngpao(w http.ResponseWriter, r *http.Request) {
 
 	switch format {
 	case "xlsx":
-		data, filename, err = h.reportService.GenerateXLSX(wid)
+		data, filename, err = h.reportService.GenerateXLSX(ctx, wid)
 	default:
-		data, filename, err = h.reportService.GenerateCSV(wid)
+		data, filename, err = h.reportService.GenerateCSV(ctx, wid)
 	}
 
 	if err != nil {

@@ -1,6 +1,7 @@
 package repository
 
 import (
+	"context"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
@@ -33,11 +34,11 @@ func parseCursorID(s string) (uuid.UUID, error) {
 	return uuid.FromBytes(decoded)
 }
 
-func (r *GuestRepo) ListByWedding(weddingID uuid.UUID, cursor string, limit int) ([]models.GuestRecord, int64, error) {
+func (r *GuestRepo) ListByWedding(ctx context.Context, weddingID uuid.UUID, cursor string, limit int) ([]models.GuestRecord, int64, error) {
 	guests := make([]models.GuestRecord, 0)
 	var total int64
-	r.db.Model(&models.GuestRecord{}).Where("wedding_id = ?", weddingID).Count(&total)
-	q := r.db.Where("wedding_id = ?", weddingID).Order("id ASC").Limit(limit + 1)
+	r.db.WithContext(ctx).Model(&models.GuestRecord{}).Where("wedding_id = ?", weddingID).Count(&total)
+	q := r.db.WithContext(ctx).Where("wedding_id = ?", weddingID).Order("id ASC").Limit(limit + 1)
 	if cursor != "" {
 		if cid, err := parseCursorID(cursor); err == nil {
 			q = q.Where("id > ?", cid)
@@ -47,26 +48,26 @@ func (r *GuestRepo) ListByWedding(weddingID uuid.UUID, cursor string, limit int)
 	return guests, total, err
 }
 
-func (r *GuestRepo) FindByID(id, weddingID uuid.UUID) (*models.GuestRecord, error) {
+func (r *GuestRepo) FindByID(ctx context.Context, id, weddingID uuid.UUID) (*models.GuestRecord, error) {
 	var g models.GuestRecord
-	err := r.db.Where("id = ? AND wedding_id = ?", id, weddingID).First(&g).Error
+	err := r.db.WithContext(ctx).Where("id = ? AND wedding_id = ?", id, weddingID).First(&g).Error
 	return &g, err
 }
 
-func (r *GuestRepo) FindByTable(weddingID, tableID uuid.UUID) ([]models.GuestRecord, error) {
+func (r *GuestRepo) FindByTable(ctx context.Context, weddingID, tableID uuid.UUID) ([]models.GuestRecord, error) {
 	guests := make([]models.GuestRecord, 0)
-	err := r.db.Where("wedding_id = ? AND table_id = ?", weddingID, tableID).Find(&guests).Error
+	err := r.db.WithContext(ctx).Where("wedding_id = ? AND table_id = ?", weddingID, tableID).Find(&guests).Error
 	return guests, err
 }
 
-func (r *GuestRepo) SearchByWedding(weddingID uuid.UUID, query string) ([]models.GuestRecord, error) {
+func (r *GuestRepo) SearchByWedding(ctx context.Context, weddingID uuid.UUID, query string) ([]models.GuestRecord, error) {
 	guests := make([]models.GuestRecord, 0)
 	escaped := strings.ReplaceAll(query, "%", "\\%")
 	escaped = strings.ReplaceAll(escaped, "_", "\\_")
 	q := fmt.Sprintf("%%%s%%", escaped)
 	pinyinQ := fmt.Sprintf("%%%s%%", strings.ToLower(models.GenerateNamePinyin(query)))
 	lowerQ := strings.ToLower(query)
-	err := r.db.Where("wedding_id = ? AND (name ILIKE ? OR name_pinyin ILIKE ? OR phone ILIKE ? OR email ILIKE ?)",
+	err := r.db.WithContext(ctx).Where("wedding_id = ? AND (name ILIKE ? OR name_pinyin ILIKE ? OR phone ILIKE ? OR email ILIKE ?)",
 		weddingID, q, pinyinQ, q, q).
 		Order(fmt.Sprintf(`
 			CASE
@@ -82,33 +83,33 @@ func (r *GuestRepo) SearchByWedding(weddingID uuid.UUID, query string) ([]models
 	return guests, err
 }
 
-func (r *GuestRepo) Create(g *models.GuestRecord) error {
+func (r *GuestRepo) Create(ctx context.Context, g *models.GuestRecord) error {
 	g.NamePinyin = models.GenerateNamePinyin(g.Name)
-	return r.db.Create(g).Error
+	return r.db.WithContext(ctx).Create(g).Error
 }
 
-func (r *GuestRepo) Update(g *models.GuestRecord) error {
+func (r *GuestRepo) Update(ctx context.Context, g *models.GuestRecord) error {
 	g.NamePinyin = models.GenerateNamePinyin(g.Name)
-	return r.db.Save(g).Error
+	return r.db.WithContext(ctx).Save(g).Error
 }
 
-func (r *GuestRepo) Delete(id, weddingID uuid.UUID) error {
-	return r.db.Where("id = ? AND wedding_id = ?", id, weddingID).Delete(&models.GuestRecord{}).Error
+func (r *GuestRepo) Delete(ctx context.Context, id, weddingID uuid.UUID) error {
+	return r.db.WithContext(ctx).Where("id = ? AND wedding_id = ?", id, weddingID).Delete(&models.GuestRecord{}).Error
 }
 
-func (r *GuestRepo) ListAllByWedding(weddingID uuid.UUID) ([]models.GuestRecord, error) {
+func (r *GuestRepo) ListAllByWedding(ctx context.Context, weddingID uuid.UUID) ([]models.GuestRecord, error) {
 	guests := make([]models.GuestRecord, 0)
-	err := r.db.Where("wedding_id = ?", weddingID).Order("name ASC").Find(&guests).Error
+	err := r.db.WithContext(ctx).Where("wedding_id = ?", weddingID).Order("name ASC").Find(&guests).Error
 	return guests, err
 }
 
-func (r *GuestRepo) TableOccupancy(weddingID uuid.UUID) ([]TableOccupancy, error) {
+func (r *GuestRepo) TableOccupancy(ctx context.Context, weddingID uuid.UUID) ([]TableOccupancy, error) {
 	type row struct {
 		TableID uuid.UUID
 		Pax     int
 	}
 	rows := make([]row, 0)
-	err := r.db.Model(&models.GuestRecord{}).
+	err := r.db.WithContext(ctx).Model(&models.GuestRecord{}).
 		Select("table_id, SUM(pax) as pax").
 		Where("wedding_id = ? AND table_id IS NOT NULL", weddingID).
 		Group("table_id").Find(&rows).Error

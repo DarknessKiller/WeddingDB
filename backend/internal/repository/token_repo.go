@@ -1,6 +1,7 @@
 package repository
 
 import (
+	"context"
 	"gorm.io/gorm"
 	"time"
 	"weddingdb/internal/models"
@@ -12,20 +13,20 @@ func NewTokenRepo(db *gorm.DB) *TokenRepo {
 	return &TokenRepo{db: db}
 }
 
-func (r *TokenRepo) Save(token *models.RefreshToken) error {
-	return r.db.Create(token).Error
+func (r *TokenRepo) Save(ctx context.Context, token *models.RefreshToken) error {
+	return r.db.WithContext(ctx).Create(token).Error
 }
 
-func (r *TokenRepo) FindByToken(token string) (*models.RefreshToken, error) {
+func (r *TokenRepo) FindByToken(ctx context.Context, token string) (*models.RefreshToken, error) {
 	var t models.RefreshToken
-	err := r.db.Where("token = ? AND expires_at > ?", token, time.Now()).First(&t).Error
+	err := r.db.WithContext(ctx).Where("token = ? AND expires_at > ?", token, time.Now()).First(&t).Error
 	return &t, err
 }
 
-func (r *TokenRepo) DeleteByToken(token string) error {
-	return r.db.Where("token = ?", token).Delete(&models.RefreshToken{}).Error
+func (r *TokenRepo) DeleteByToken(ctx context.Context, token string) error {
+	return r.db.WithContext(ctx).Where("token = ?", token).Delete(&models.RefreshToken{}).Error
 }
 
-func (r *TokenRepo) DeleteExpired() error {
-	return r.db.Where("expires_at < ?", time.Now()).Delete(&models.RefreshToken{}).Error
+func (r *TokenRepo) DeleteExpired(ctx context.Context) error {
+	return r.db.WithContext(ctx).Where("expires_at < ?", time.Now()).Delete(&models.RefreshToken{}).Error
 }

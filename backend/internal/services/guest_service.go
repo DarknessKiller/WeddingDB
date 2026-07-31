@@ -1,6 +1,7 @@
 package services
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"time"
@@ -19,43 +20,43 @@ func NewGuestService(guestRepo *repository.GuestRepo, tableRepo *repository.Tabl
 	return &GuestService{guestRepo: guestRepo, tableRepo: tableRepo}
 }
 
-func (s *GuestService) List(weddingID uuid.UUID, cursor string, limit int) ([]models.GuestRecord, int64, error) {
-	return s.guestRepo.ListByWedding(weddingID, cursor, limit)
+func (s *GuestService) List(ctx context.Context, weddingID uuid.UUID, cursor string, limit int) ([]models.GuestRecord, int64, error) {
+	return s.guestRepo.ListByWedding(ctx, weddingID, cursor, limit)
 }
 
-func (s *GuestService) Get(id, weddingID uuid.UUID) (*models.GuestRecord, error) {
-	return s.guestRepo.FindByID(id, weddingID)
+func (s *GuestService) Get(ctx context.Context, id, weddingID uuid.UUID) (*models.GuestRecord, error) {
+	return s.guestRepo.FindByID(ctx, id, weddingID)
 }
 
-func (s *GuestService) Create(g *models.GuestRecord) error {
-	return s.guestRepo.Create(g)
+func (s *GuestService) Create(ctx context.Context, g *models.GuestRecord) error {
+	return s.guestRepo.Create(ctx, g)
 }
 
-func (s *GuestService) Update(g *models.GuestRecord) error {
-	return s.guestRepo.Update(g)
+func (s *GuestService) Update(ctx context.Context, g *models.GuestRecord) error {
+	return s.guestRepo.Update(ctx, g)
 }
 
-func (s *GuestService) Delete(id, weddingID uuid.UUID) error {
-	return s.guestRepo.Delete(id, weddingID)
+func (s *GuestService) Delete(ctx context.Context, id, weddingID uuid.UUID) error {
+	return s.guestRepo.Delete(ctx, id, weddingID)
 }
 
-func (s *GuestService) Search(weddingID uuid.UUID, query string) ([]models.GuestRecord, error) {
-	return s.guestRepo.SearchByWedding(weddingID, query)
+func (s *GuestService) Search(ctx context.Context, weddingID uuid.UUID, query string) ([]models.GuestRecord, error) {
+	return s.guestRepo.SearchByWedding(ctx, weddingID, query)
 }
 
-func (s *GuestService) AssignSeat(guestID, weddingID, tableID uuid.UUID, seatNum int) error {
-	guest, err := s.guestRepo.FindByID(guestID, weddingID)
+func (s *GuestService) AssignSeat(ctx context.Context, guestID, weddingID, tableID uuid.UUID, seatNum int) error {
+	guest, err := s.guestRepo.FindByID(ctx, guestID, weddingID)
 	if err != nil {
 		return err
 	}
-	table, err := s.tableRepo.FindByID(tableID, weddingID)
+	table, err := s.tableRepo.FindByID(ctx, tableID, weddingID)
 	if err != nil {
 		return errors.New("table not found")
 	}
 	if seatNum < 1 || seatNum+guest.Pax-1 > table.Capacity {
 		return errors.New("seat range exceeds table capacity")
 	}
-	existing, err := s.guestRepo.FindByTable(weddingID, tableID)
+	existing, err := s.guestRepo.FindByTable(ctx, weddingID, tableID)
 	if err != nil {
 		return err
 	}
@@ -74,35 +75,35 @@ func (s *GuestService) AssignSeat(guestID, weddingID, tableID uuid.UUID, seatNum
 	}
 	guest.TableID = &tableID
 	guest.SeatNum = &seatNum
-	return s.guestRepo.Update(guest)
+	return s.guestRepo.Update(ctx, guest)
 }
 
-func (s *GuestService) CheckIn(id, weddingID uuid.UUID) error {
-	guest, err := s.guestRepo.FindByID(id, weddingID)
+func (s *GuestService) CheckIn(ctx context.Context, id, weddingID uuid.UUID) error {
+	guest, err := s.guestRepo.FindByID(ctx, id, weddingID)
 	if err != nil {
 		return err
 	}
 	now := time.Now()
 	guest.CheckedInAt = &now
-	return s.guestRepo.Update(guest)
+	return s.guestRepo.Update(ctx, guest)
 }
 
-func (s *GuestService) CheckOut(id, weddingID uuid.UUID) error {
-	guest, err := s.guestRepo.FindByID(id, weddingID)
+func (s *GuestService) CheckOut(ctx context.Context, id, weddingID uuid.UUID) error {
+	guest, err := s.guestRepo.FindByID(ctx, id, weddingID)
 	if err != nil {
 		return err
 	}
 	guest.CheckedInAt = nil
-	return s.guestRepo.Update(guest)
+	return s.guestRepo.Update(ctx, guest)
 }
 
-func (s *GuestService) BulkCreate(guests []models.GuestRecord) (int, error) {
+func (s *GuestService) BulkCreate(ctx context.Context, guests []models.GuestRecord) (int, error) {
 	created := 0
 	existing := make(map[uuid.UUID][]models.GuestRecord)
 	for i := range guests {
 		g := &guests[i]
 		if g.TableID == nil || g.SeatNum == nil {
-			if err := s.guestRepo.Create(g); err != nil {
+			if err := s.guestRepo.Create(ctx, g); err != nil {
 				return created, err
 			}
 			created++
@@ -110,7 +111,7 @@ func (s *GuestService) BulkCreate(guests []models.GuestRecord) (int, error) {
 		}
 		tid := *g.TableID
 		if _, ok := existing[tid]; !ok {
-			rows, err := s.guestRepo.FindByTable(g.WeddingID, tid)
+			rows, err := s.guestRepo.FindByTable(ctx, g.WeddingID, tid)
 			if err != nil {
 				return created, err
 			}
@@ -127,7 +128,7 @@ func (s *GuestService) BulkCreate(guests []models.GuestRecord) (int, error) {
 			}
 		}
 		existing[tid] = append(existing[tid], *g)
-		if err := s.guestRepo.Create(g); err != nil {
+		if err := s.guestRepo.Create(ctx, g); err != nil {
 			return created, err
 		}
 		created++
@@ -135,6 +136,6 @@ func (s *GuestService) BulkCreate(guests []models.GuestRecord) (int, error) {
 	return created, nil
 }
 
-func (s *GuestService) Occupancy(weddingID uuid.UUID) ([]repository.TableOccupancy, error) {
-	return s.guestRepo.TableOccupancy(weddingID)
+func (s *GuestService) Occupancy(ctx context.Context, weddingID uuid.UUID) ([]repository.TableOccupancy, error) {
+	return s.guestRepo.TableOccupancy(ctx, weddingID)
 }

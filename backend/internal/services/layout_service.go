@@ -1,6 +1,8 @@
 package services
 
 import (
+	"context"
+
 	"github.com/google/uuid"
 	"weddingdb/internal/models"
 	"weddingdb/internal/repository"
@@ -14,22 +16,23 @@ func NewLayoutService(lr *repository.LayoutRepo) *LayoutService {
 	return &LayoutService{layoutRepo: lr}
 }
 
-func (s *LayoutService) Elements(weddingID uuid.UUID) ([]models.HallElement, error) {
-	return s.layoutRepo.ElementsByWedding(weddingID)
+func (s *LayoutService) Elements(ctx context.Context, weddingID uuid.UUID) ([]models.HallElement, error) {
+	return s.layoutRepo.ElementsByWedding(ctx, weddingID)
 }
 
 func (s *LayoutService) Save(
+	ctx context.Context,
 	weddingID uuid.UUID,
 	hallWidth, hallHeight int,
 	tablePos map[uuid.UUID][3]float64,
 	incoming []models.HallElement,
 ) error {
-	existing, err := s.layoutRepo.ElementsByWedding(weddingID)
+	existing, err := s.layoutRepo.ElementsByWedding(ctx, weddingID)
 	if err != nil {
 		return err
 	}
 	toCreate, toUpdate, toDelete := ReconcileElements(existing, incoming)
-	return s.layoutRepo.SaveLayout(weddingID, hallWidth, hallHeight, tablePos, toCreate, toUpdate, toDelete)
+	return s.layoutRepo.SaveLayout(ctx, weddingID, hallWidth, hallHeight, tablePos, toCreate, toUpdate, toDelete)
 }
 
 // ReconcileElements diffs desired elements against stored ones (full-replace semantics).

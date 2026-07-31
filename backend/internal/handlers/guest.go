@@ -31,6 +31,7 @@ type GuestCreateRequest struct {
 }
 
 func (h *GuestHandler) List(c fuego.ContextNoBody) (any, error) {
+	ctx := c.Context()
 	wid, err := DecodeWID(c)
 	if err != nil {
 		return nil, fuego.BadRequestError{Title: "Invalid wedding ID"}
@@ -42,7 +43,7 @@ func (h *GuestHandler) List(c fuego.ContextNoBody) (any, error) {
 			limit = n
 		}
 	}
-	guests, total, err := h.guestService.List(wid, cursor, limit)
+	guests, total, err := h.guestService.List(ctx, wid, cursor, limit)
 	if err != nil {
 		return nil, err
 	}
@@ -55,6 +56,7 @@ func (h *GuestHandler) List(c fuego.ContextNoBody) (any, error) {
 }
 
 func (h *GuestHandler) Get(c fuego.ContextNoBody) (any, error) {
+	ctx := c.Context()
 	wid, err := DecodeWID(c)
 	if err != nil {
 		return nil, fuego.BadRequestError{Title: "Invalid wedding ID"}
@@ -63,7 +65,7 @@ func (h *GuestHandler) Get(c fuego.ContextNoBody) (any, error) {
 	if err != nil {
 		return nil, fuego.BadRequestError{Title: "Invalid ID"}
 	}
-	guest, err := h.guestService.Get(id, wid)
+	guest, err := h.guestService.Get(ctx, id, wid)
 	if err != nil {
 		return nil, fuego.NotFoundError{Title: "Guest not found"}
 	}
@@ -71,6 +73,7 @@ func (h *GuestHandler) Get(c fuego.ContextNoBody) (any, error) {
 }
 
 func (h *GuestHandler) Create(c fuego.ContextWithBody[GuestCreateRequest]) (any, error) {
+	ctx := c.Context()
 	body, err := c.Body()
 	if err != nil {
 		return nil, fuego.BadRequestError{Title: "Invalid request"}
@@ -100,7 +103,7 @@ func (h *GuestHandler) Create(c fuego.ContextWithBody[GuestCreateRequest]) (any,
 		Notes:     body.Notes,
 		Dietary:   body.Dietary,
 	}
-	if err := h.guestService.Create(guest); err != nil {
+	if err := h.guestService.Create(ctx, guest); err != nil {
 		return nil, err
 	}
 	c.SetStatus(201)
@@ -110,7 +113,7 @@ func (h *GuestHandler) Create(c fuego.ContextWithBody[GuestCreateRequest]) (any,
 			if body.SeatNum != nil {
 				seatNum = *body.SeatNum
 			}
-			if err := h.guestService.AssignSeat(guest.ID, wid, tid, seatNum); err == nil {
+			if err := h.guestService.AssignSeat(ctx, guest.ID, wid, tid, seatNum); err == nil {
 				guest.TableID = &tid
 				guest.SeatNum = &seatNum
 			}
@@ -120,6 +123,7 @@ func (h *GuestHandler) Create(c fuego.ContextWithBody[GuestCreateRequest]) (any,
 }
 
 func (h *GuestHandler) Update(c fuego.ContextWithBody[GuestCreateRequest]) (any, error) {
+	ctx := c.Context()
 	body, err := c.Body()
 	if err != nil {
 		return nil, fuego.BadRequestError{Title: "Invalid request"}
@@ -142,7 +146,7 @@ func (h *GuestHandler) Update(c fuego.ContextWithBody[GuestCreateRequest]) (any,
 	if err != nil {
 		return nil, fuego.BadRequestError{Title: "Invalid ID"}
 	}
-	guest, err := h.guestService.Get(id, wid)
+	guest, err := h.guestService.Get(ctx, id, wid)
 	if err != nil {
 		return nil, fuego.NotFoundError{Title: "Guest not found"}
 	}
@@ -166,20 +170,21 @@ func (h *GuestHandler) Update(c fuego.ContextWithBody[GuestCreateRequest]) (any,
 			if body.SeatNum != nil {
 				seatNum = *body.SeatNum
 			}
-			if err := h.guestService.AssignSeat(guest.ID, wid, tid, seatNum); err == nil {
+			if err := h.guestService.AssignSeat(ctx, guest.ID, wid, tid, seatNum); err == nil {
 				guest.TableID = &tid
 				guest.SeatNum = &seatNum
 			}
 		}
 	}
 	// else: tableId not provided — preserve existing seat assignment
-	if err := h.guestService.Update(guest); err != nil {
+	if err := h.guestService.Update(ctx, guest); err != nil {
 		return nil, err
 	}
 	return guest, nil
 }
 
 func (h *GuestHandler) Delete(c fuego.ContextWithBody[any]) (any, error) {
+	ctx := c.Context()
 	wid, err := DecodeWID(c)
 	if err != nil {
 		return nil, fuego.BadRequestError{Title: "Invalid wedding ID"}
@@ -188,7 +193,7 @@ func (h *GuestHandler) Delete(c fuego.ContextWithBody[any]) (any, error) {
 	if err != nil {
 		return nil, fuego.BadRequestError{Title: "Invalid ID"}
 	}
-	if err := h.guestService.Delete(id, wid); err != nil {
+	if err := h.guestService.Delete(ctx, id, wid); err != nil {
 		return nil, err
 	}
 	c.SetStatus(204)
@@ -201,6 +206,7 @@ type CheckInRequest struct {
 }
 
 func (h *GuestHandler) CheckIn(c fuego.ContextWithBody[CheckInRequest]) (any, error) {
+	ctx := c.Context()
 	body, _ := c.Body()
 	wid, err := DecodeWID(c)
 	if err != nil {
@@ -211,7 +217,7 @@ func (h *GuestHandler) CheckIn(c fuego.ContextWithBody[CheckInRequest]) (any, er
 		return nil, fuego.BadRequestError{Title: "Invalid ID"}
 	}
 	if body.AngbaoAmt != nil || body.GiftItem != nil {
-		guest, err := h.guestService.Get(id, wid)
+		guest, err := h.guestService.Get(ctx, id, wid)
 		if err != nil {
 			return nil, fuego.NotFoundError{Title: "Guest not found"}
 		}
@@ -221,14 +227,14 @@ func (h *GuestHandler) CheckIn(c fuego.ContextWithBody[CheckInRequest]) (any, er
 		if body.GiftItem != nil {
 			guest.GiftItem = body.GiftItem
 		}
-		if err := h.guestService.Update(guest); err != nil {
+		if err := h.guestService.Update(ctx, guest); err != nil {
 			return nil, err
 		}
 	}
-	if err := h.guestService.CheckIn(id, wid); err != nil {
+	if err := h.guestService.CheckIn(ctx, id, wid); err != nil {
 		return nil, err
 	}
-	guest, err := h.guestService.Get(id, wid)
+	guest, err := h.guestService.Get(ctx, id, wid)
 	if err != nil {
 		return nil, err
 	}
@@ -236,6 +242,7 @@ func (h *GuestHandler) CheckIn(c fuego.ContextWithBody[CheckInRequest]) (any, er
 }
 
 func (h *GuestHandler) CheckOut(c fuego.ContextWithBody[any]) (any, error) {
+	ctx := c.Context()
 	wid, err := DecodeWID(c)
 	if err != nil {
 		return nil, fuego.BadRequestError{Title: "Invalid wedding ID"}
@@ -244,7 +251,7 @@ func (h *GuestHandler) CheckOut(c fuego.ContextWithBody[any]) (any, error) {
 	if err != nil {
 		return nil, fuego.BadRequestError{Title: "Invalid ID"}
 	}
-	if err := h.guestService.CheckOut(id, wid); err != nil {
+	if err := h.guestService.CheckOut(ctx, id, wid); err != nil {
 		return nil, err
 	}
 	c.SetStatus(204)
@@ -252,12 +259,13 @@ func (h *GuestHandler) CheckOut(c fuego.ContextWithBody[any]) (any, error) {
 }
 
 func (h *GuestHandler) Search(c fuego.ContextNoBody) (any, error) {
+	ctx := c.Context()
 	wid, err := DecodeWID(c)
 	if err != nil {
 		return nil, fuego.BadRequestError{Title: "Invalid wedding ID"}
 	}
 	query := c.QueryParam("q")
-	guests, err := h.guestService.Search(wid, query)
+	guests, err := h.guestService.Search(ctx, wid, query)
 	if err != nil {
 		return nil, err
 	}
@@ -265,11 +273,12 @@ func (h *GuestHandler) Search(c fuego.ContextNoBody) (any, error) {
 }
 
 func (h *GuestHandler) Occupancy(c fuego.ContextNoBody) (any, error) {
+	ctx := c.Context()
 	wid, err := DecodeWID(c)
 	if err != nil {
 		return nil, fuego.BadRequestError{Title: "Invalid wedding ID"}
 	}
-	occ, err := h.guestService.Occupancy(wid)
+	occ, err := h.guestService.Occupancy(ctx, wid)
 	if err != nil {
 		return nil, err
 	}
@@ -284,6 +293,7 @@ type BulkImportRequest struct {
 }
 
 func (h *GuestHandler) BulkImport(c fuego.ContextWithBody[BulkImportRequest]) (any, error) {
+	ctx := c.Context()
 	body, err := c.Body()
 	if err != nil {
 		return nil, fuego.BadRequestError{Title: "Invalid request"}
@@ -318,7 +328,7 @@ func (h *GuestHandler) BulkImport(c fuego.ContextWithBody[BulkImportRequest]) (a
 		}
 		guests = append(guests, gr)
 	}
-	count, err := h.guestService.BulkCreate(guests)
+	count, err := h.guestService.BulkCreate(ctx, guests)
 	if err != nil {
 		return nil, fuego.BadRequestError{Title: err.Error()}
 	}
@@ -331,6 +341,7 @@ type AssignSeatRequest struct {
 }
 
 func (h *GuestHandler) AssignSeat(c fuego.ContextWithBody[AssignSeatRequest]) (any, error) {
+	ctx := c.Context()
 	body, err := c.Body()
 	if err != nil {
 		return nil, fuego.BadRequestError{Title: "Invalid request"}
@@ -347,7 +358,7 @@ func (h *GuestHandler) AssignSeat(c fuego.ContextWithBody[AssignSeatRequest]) (a
 	if err != nil {
 		return nil, fuego.BadRequestError{Title: "Invalid table ID"}
 	}
-	if err := h.guestService.AssignSeat(guestID, wid, tableID, body.SeatNum); err != nil {
+	if err := h.guestService.AssignSeat(ctx, guestID, wid, tableID, body.SeatNum); err != nil {
 		return nil, fuego.BadRequestError{Title: err.Error()}
 	}
 	c.SetStatus(204)

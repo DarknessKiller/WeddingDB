@@ -1,6 +1,8 @@
 package services
 
 import (
+	"context"
+
 	"github.com/google/uuid"
 	"weddingdb/internal/models"
 	"weddingdb/internal/repository"
@@ -14,22 +16,22 @@ func NewWeddingService(weddingRepo *repository.WeddingRepo) *WeddingService {
 	return &WeddingService{weddingRepo: weddingRepo}
 }
 
-func (s *WeddingService) List() ([]models.WeddingEvent, error) {
-	return s.weddingRepo.List()
+func (s *WeddingService) List(ctx context.Context) ([]models.WeddingEvent, error) {
+	return s.weddingRepo.List(ctx)
 }
 
-func (s *WeddingService) Get(id uuid.UUID) (*models.WeddingEvent, error) {
-	return s.weddingRepo.FindByID(id)
+func (s *WeddingService) Get(ctx context.Context, id uuid.UUID) (*models.WeddingEvent, error) {
+	return s.weddingRepo.FindByID(ctx, id)
 }
 
-func (s *WeddingService) Create(w *models.WeddingEvent) error {
-	return s.weddingRepo.Create(w)
+func (s *WeddingService) Create(ctx context.Context, w *models.WeddingEvent) error {
+	return s.weddingRepo.Create(ctx, w)
 }
 
-func (s *WeddingService) Update(w *models.WeddingEvent) error {
-	return s.weddingRepo.Update(w)
+func (s *WeddingService) Update(ctx context.Context, w *models.WeddingEvent) error {
+	return s.weddingRepo.Update(ctx, w)
 }
 
-func (s *WeddingService) Delete(id uuid.UUID) error {
-	return s.weddingRepo.Delete(id)
+func (s *WeddingService) Delete(ctx context.Context, id uuid.UUID) error {
+	return s.weddingRepo.Delete(ctx, id)
 }

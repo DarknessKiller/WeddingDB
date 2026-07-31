@@ -30,6 +30,7 @@ func NewPublicGuestHandler(guestService *services.GuestService) *PublicGuestHand
 }
 
 func (h *PublicGuestHandler) List(c fuego.ContextNoBody) (any, error) {
+	ctx := c.Context()
 	wid, err := DecodeWID(c)
 	if err != nil {
 		return nil, fuego.BadRequestError{Title: "Invalid wedding ID"}
@@ -41,7 +42,7 @@ func (h *PublicGuestHandler) List(c fuego.ContextNoBody) (any, error) {
 			limit = n
 		}
 	}
-	guests, _, err := h.guestService.List(wid, cursor, limit+1)
+	guests, _, err := h.guestService.List(ctx, wid, cursor, limit+1)
 	if err != nil {
 		return nil, err
 	}
@@ -81,11 +82,12 @@ func NewPublicKioskHandler(weddingService *services.WeddingService) *PublicKiosk
 }
 
 func (h *PublicKioskHandler) GetKioskSettings(c fuego.ContextNoBody) (any, error) {
+	ctx := c.Context()
 	wid, err := DecodeWID(c)
 	if err != nil {
 		return nil, fuego.BadRequestError{Title: "Invalid wedding ID"}
 	}
-	w, err := h.weddingService.Get(wid)
+	w, err := h.weddingService.Get(ctx, wid)
 	if err != nil {
 		return nil, fuego.NotFoundError{Title: "Wedding not found"}
 	}
@@ -108,12 +110,13 @@ func (h *PublicKioskHandler) GetKioskSettings(c fuego.ContextNoBody) (any, error
 }
 
 func (h *PublicGuestHandler) Search(c fuego.ContextNoBody) (any, error) {
+	ctx := c.Context()
 	wid, err := DecodeWID(c)
 	if err != nil {
 		return nil, fuego.BadRequestError{Title: "Invalid wedding ID"}
 	}
 	query := c.QueryParam("q")
-	guests, err := h.guestService.Search(wid, query)
+	guests, err := h.guestService.Search(ctx, wid, query)
 	if err != nil {
 		return nil, err
 	}
