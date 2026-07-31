@@ -5,13 +5,18 @@ import (
 	"testing"
 	"time"
 
+	"github.com/alicebob/miniredis/v2"
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/google/uuid"
+	"github.com/redis/go-redis/v9"
 )
 
-// newTestAuthService creates an AuthService with nil repos (ValidateToken doesn't need them).
-func newTestAuthService(secret string) *AuthService {
-	return &AuthService{secret: []byte(secret)}
+// newTestAuthService creates an AuthService with a miniredis instance for testing.
+func newTestAuthService(t *testing.T, secret string) (*AuthService, *miniredis.Miniredis) {
+	t.Helper()
+	mr := miniredis.RunT(t)
+	rdb := redis.NewClient(&redis.Options{Addr: mr.Addr()})
+	return &AuthService{secret: []byte(secret), redisClient: rdb}, mr
 }
 
 func signTestToken(secret string, claims AccessClaims) string {
@@ -21,7 +26,7 @@ func signTestToken(secret string, claims AccessClaims) string {
 }
 
 func TestValidateToken_Valid(t *testing.T) {
-	svc := newTestAuthService("test-secret-123")
+	svc, _ := newTestAuthService(t, "test-secret-123")
 	adminID := uuid.New()
 	wid := uuid.New()
 	now := time.Now()
@@ -53,7 +58,7 @@ func TestValidateToken_Valid(t *testing.T) {
 }
 
 func TestValidateToken_Expired(t *testing.T) {
-	svc := newTestAuthService("test-secret-123")
+	svc, _ := newTestAuthService(t, "test-secret-123")
 	now := time.Now()
 
 	tok := signTestToken("test-secret-123", AccessClaims{
@@ -73,7 +78,7 @@ func TestValidateToken_Expired(t *testing.T) {
 }
 
 func TestValidateToken_WrongSecret(t *testing.T) {
-	svc := newTestAuthService("correct-secret")
+	svc, _ := newTestAuthService(t, "correct-secret")
 	now := time.Now()
 
 	tok := signTestToken("wrong-secret", AccessClaims{
@@ -93,7 +98,7 @@ func TestValidateToken_WrongSecret(t *testing.T) {
 }
 
 func TestValidateToken_Malformed(t *testing.T) {
-	svc := newTestAuthService("test-secret-123")
+	svc, _ := newTestAuthService(t, "test-secret-123")
 
 	_, err := svc.ValidateToken(context.Background(), "not.a.jwt")
 	if err == nil {
@@ -102,7 +107,7 @@ func TestValidateToken_Malformed(t *testing.T) {
 }
 
 func TestValidateToken_NilWeddingID(t *testing.T) {
-	svc := newTestAuthService("test-secret-123")
+	svc, _ := newTestAuthService(t, "test-secret-123")
 	adminID := uuid.New()
 	now := time.Now()
 
@@ -122,5 +127,56 @@ func TestValidateToken_NilWeddingID(t *testing.T) {
 	}
 	if claims.WeddingID != nil {
 		t.Errorf("expected nil WeddingID, got %v", claims.WeddingID)
+	}
+}
+
+func TestValidateToken_Blacklisted(t *testing.T) {
+	svc, mr := newTestAuthService(t, "test-secret-123")
+	now := time.Now()
+	jti := uuid.New().String()
+
+	// Sign a valid token
+	tok := signTestToken("test-secret-123", AccessClaims{
+		AdminID: uuid.New(),
+		Role:    "admin",
+		RegisteredClaims: jwt.RegisteredClaims{
+			ID:        jti,
+			IssuedAt:  jwt.NewNumericDate(now),
+			ExpiresAt: jwt.NewNumericDate(now.Add(15 * time.Minute)),
+		},
+	})
+
+	// Blacklist the JTI in miniredis
+	mr.Set("blacklist:jti:"+jti, "1")
+
+	_, err := svc.ValidateToken(context.Background(), tok)
+	if err == nil {
+		t.Fatal("expected error for blacklisted token, got nil")
+	}
+}
+
+func TestValidateToken_StaleTokenVersion(t *testing.T) {
+	svc, mr := newTestAuthService(t, "test-secret-123")
+	adminID := uuid.New()
+	now := time.Now()
+
+	// Sign token with tv=0
+	tok := signTestToken("test-secret-123", AccessClaims{
+		AdminID:      adminID,
+		Role:         "admin",
+		TokenVersion: 0,
+		RegisteredClaims: jwt.RegisteredClaims{
+			ID:        uuid.New().String(),
+			IssuedAt:  jwt.NewNumericDate(now),
+			ExpiresAt: jwt.NewNumericDate(now.Add(15 * time.Minute)),
+		},
+	})
+
+	// Set stored version to 1 (simulates admin revoke)
+	mr.Set("user:"+adminID.String()+":tv", "1")
+
+	_, err := svc.ValidateToken(context.Background(), tok)
+	if err == nil {
+		t.Fatal("expected error for stale token version, got nil")
 	}
 }

@@ -2,9 +2,11 @@ package repository
 
 import (
 	"context"
-	"gorm.io/gorm"
 	"time"
 	"weddingdb/internal/models"
+
+	"github.com/google/uuid"
+	"gorm.io/gorm"
 )
 
 type TokenRepo struct{ db *gorm.DB }
@@ -29,4 +31,9 @@ func (r *TokenRepo) DeleteByToken(ctx context.Context, token string) error {
 
 func (r *TokenRepo) DeleteExpired(ctx context.Context) error {
 	return r.db.WithContext(ctx).Where("expires_at < ?", time.Now()).Delete(&models.RefreshToken{}).Error
+}
+
+// DeleteByAdminID deletes all refresh tokens for the given admin user.
+func (r *TokenRepo) DeleteByAdminID(adminID uuid.UUID) error {
+	return r.db.Where("admin_id = ?", adminID).Delete(&models.RefreshToken{}).Error
 }

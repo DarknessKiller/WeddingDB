@@ -25,6 +25,10 @@ func AuthMiddleware(authService *services.AuthService) func(http.Handler) http.H
 				http.Error(w, `{"error":"Missing token"}`, http.StatusUnauthorized)
 				return
 			}
+
+			// ValidateToken now handles blacklist + token_version checks via Redis.
+			// Uses r.Context() for cancellation safety — if the client disconnects,
+			// Redis calls respect context cancellation and the request is rejected.
 			claims, err := authService.ValidateToken(r.Context(), token)
 			if err != nil {
 				http.Error(w, `{"error":"Invalid token"}`, http.StatusUnauthorized)

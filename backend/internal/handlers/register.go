@@ -21,7 +21,7 @@ func RegisterRoutes(
 	adminRepo *repository.AdminRepo,
 ) {
 	authHandler := NewAuthHandler(authService, adminRepo)
-	adminHandler := NewAdminHandler(adminRepo)
+	adminHandler := NewAdminHandler(adminRepo, authService)
 	guestHandler := NewGuestHandler(guestService)
 	tableHandler := NewTableHandler(tableService)
 	weddingHandler := NewWeddingHandler(weddingService, adminRepo)
@@ -64,6 +64,7 @@ func RegisterRoutes(
 	fuego.Get(api, "/users/{id}/weddings", adminHandler.GetUserWeddings)
 	fuego.Post(api, "/users/{id}/reset-password", adminHandler.ResetPassword)
 	fuego.Put(api, "/users/{id}/role", adminHandler.UpdateRole)
+	fuego.Put(api, "/users/{id}/revoke", adminHandler.RevokeUser)
 
 	// Wedding CRUD
 	fuego.Get(api, "/weddings", weddingHandler.List)

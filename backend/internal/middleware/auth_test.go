@@ -6,8 +6,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/alicebob/miniredis/v2"
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/google/uuid"
+	"github.com/redis/go-redis/v9"
 	"weddingdb/internal/services"
 )
 
@@ -28,12 +30,15 @@ func signToken(secret string, adminID uuid.UUID, role string, wid *uuid.UUID, ex
 	return s
 }
 
-func newAuthService(secret string) *services.AuthService {
-	return services.NewAuthService(nil, nil, nil, secret)
+func newAuthService(t *testing.T, secret string) *services.AuthService {
+	t.Helper()
+	mr := miniredis.RunT(t)
+	rdb := redis.NewClient(&redis.Options{Addr: mr.Addr()})
+	return services.NewAuthService(nil, nil, nil, secret, rdb)
 }
 
 func TestAuthMiddleware_MissingToken(t *testing.T) {
-	mw := AuthMiddleware(newAuthService("secret"))
+	mw := AuthMiddleware(newAuthService(t, "secret"))
 	handler := mw(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	}))
@@ -48,7 +53,7 @@ func TestAuthMiddleware_MissingToken(t *testing.T) {
 }
 
 func TestAuthMiddleware_InvalidToken(t *testing.T) {
-	mw := AuthMiddleware(newAuthService("secret"))
+	mw := AuthMiddleware(newAuthService(t, "secret"))
 	handler := mw(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	}))
@@ -65,7 +70,7 @@ func TestAuthMiddleware_InvalidToken(t *testing.T) {
 
 func TestAuthMiddleware_ExpiredToken(t *testing.T) {
 	secret := "test-secret"
-	mw := AuthMiddleware(newAuthService(secret))
+	mw := AuthMiddleware(newAuthService(t, secret))
 	handler := mw(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	}))
@@ -85,7 +90,7 @@ func TestAuthMiddleware_ValidToken(t *testing.T) {
 	secret := "test-secret"
 	adminID := uuid.New()
 	wid := uuid.New()
-	mw := AuthMiddleware(newAuthService(secret))
+	mw := AuthMiddleware(newAuthService(t, secret))
 
 	var capturedAdminID uuid.UUID
 	handler := mw(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -110,7 +115,7 @@ func TestAuthMiddleware_ValidToken(t *testing.T) {
 }
 
 func TestAuthMiddleware_WrongBearerFormat(t *testing.T) {
-	mw := AuthMiddleware(newAuthService("secret"))
+	mw := AuthMiddleware(newAuthService(t, "secret"))
 	handler := mw(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	}))

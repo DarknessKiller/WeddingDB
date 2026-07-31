@@ -3,16 +3,20 @@ package handlers
 import (
 	"weddingdb/internal/models"
 	"weddingdb/internal/repository"
+	"weddingdb/internal/services"
 
 	"github.com/go-fuego/fuego"
 	"github.com/google/uuid"
 	"golang.org/x/crypto/bcrypt"
 )
 
-type AdminHandler struct{ adminRepo *repository.AdminRepo }
+type AdminHandler struct {
+	adminRepo   *repository.AdminRepo
+	authService *services.AuthService
+}
 
-func NewAdminHandler(adminRepo *repository.AdminRepo) *AdminHandler {
-	return &AdminHandler{adminRepo: adminRepo}
+func NewAdminHandler(adminRepo *repository.AdminRepo, authService *services.AuthService) *AdminHandler {
+	return &AdminHandler{adminRepo: adminRepo, authService: authService}
 }
 
 type AdminRequest struct {
@@ -238,4 +242,33 @@ func (h *AdminHandler) UpdateRole(c fuego.ContextWithBody[UpdateRoleRequest]) (a
 		return nil, fuego.InternalServerError{Title: "Failed to update role"}
 	}
 	return admin, nil
+}
+
+// RevokeUser bumps the target user's token version in Redis, invalidating all their active tokens.
+func (h *AdminHandler) RevokeUser(c fuego.ContextNoBody) (any, error) {
+	if err := requireAdmin(c.Context()); err != nil {
+		return nil, fuego.UnauthorizedError{Title: err.Error()}
+	}
+
+	callerID := AdminIDFromContext(c.Context())
+	id, err := DecodeID(c.PathParam("id"))
+	if err != nil {
+		return nil, fuego.BadRequestError{Title: "Invalid ID"}
+	}
+
+	// Prevent self-revoke
+	if id == callerID {
+		return nil, fuego.BadRequestError{Title: "Cannot revoke your own tokens"}
+	}
+
+	// Verify user exists
+	if _, err := h.adminRepo.FindByID(id); err != nil {
+		return nil, fuego.NotFoundError{Title: "User not found"}
+	}
+
+	if err := h.authService.RevokeUserTokens(c.Context(), id); err != nil {
+		return nil, fuego.InternalServerError{Title: "Failed to revoke user tokens"}
+	}
+
+	return map[string]any{"message": "User tokens revoked"}, nil
 }
