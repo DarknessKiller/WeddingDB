@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { getDashboardStats, getOccupancy, getRecentActivity } from '$lib/api/dashboard';
+  import { getDashboardData } from '$lib/api/dashboard';
   import { weddingTitle } from '$lib/stores/weddingTitle';
   import { addToast } from '$lib/stores';
   import { get } from 'svelte/store';
@@ -30,10 +30,10 @@
   onMount(async () => {
     try {
       const wid = get(weddingId);
-      const [s, o, a] = await Promise.all([getDashboardStats(wid), getOccupancy(wid), getRecentActivity(wid)]);
-      stats = s;
-      occupancy = o;
-      activity = a;
+      const data = await getDashboardData(wid);
+      stats = data.stats;
+      occupancy = data.occupancy;
+      activity = data.activity;
       loaded = true;
     } catch (e) {
       addToast('Failed to load dashboard data', 'error');
