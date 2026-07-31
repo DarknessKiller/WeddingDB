@@ -24,7 +24,7 @@ Chinese wedding seating & reservation management system.
 - **Language:** Go 1.22+
 - **HTTP:** Fuego
 - **ORM:** GORM + PostgreSQL
-- **Cache:** Redis (nonce/replay prevention)
+- **Cache:** Redis (nonce/replay prevention, access token blacklist)
 - **Auth:** JWT HS256 + bcrypt + refresh token rotation
 
 ## Getting Started
@@ -85,7 +85,7 @@ Server runs at `http://localhost:8080`.
 | POST | `/api/auth/login` | Login, returns access + refresh tokens |
 | POST | `/api/auth/register` | Register new user account |
 | POST | `/api/auth/refresh` | Refresh access token |
-| POST | `/api/auth/logout` | Revoke refresh token |
+| POST | `/api/auth/logout` | Revoke refresh and access tokens |
 | POST | `/api/auth/select-wedding` | Select wedding context |
 | POST | `/api/auth/change-password` | Change password |
 | GET | `/api/users` | List admin users |
