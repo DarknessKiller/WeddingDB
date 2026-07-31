@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
+  import { onMount, onDestroy } from 'svelte';
   import { page } from '$app/state';
   import Sidebar from '$lib/components/layout/Sidebar.svelte';
   import Header from '$lib/components/layout/Header.svelte';
@@ -8,9 +8,10 @@
   import { weddingId, setWeddingId } from '$lib/stores/weddingId';
   import { weddingTitle } from '$lib/stores/weddingTitle';
   import { validateToken } from '$lib/utils/auth';
-  import { listGuests } from '$lib/api/guests';
+  import { fetchAllGuests } from '$lib/api/guests';
   import { getWedding } from '$lib/api/weddings';
   import { listTables } from '$lib/api/tables';
+  import { initializeSSE, seedGuests } from '$lib/stores/guestEvents';
   import type { BanquetTable } from '$lib/types';
 
   let { children } = $props();
@@ -20,6 +21,7 @@
   let authChecked = $state(false);
   let guestCount = $state(0);
   let tables = $state<BanquetTable[]>([]);
+  let cleanupSSE: (() => void) | undefined;
 
   onMount(async () => {
     if (!await validateToken()) return;
@@ -27,15 +29,44 @@
       setWeddingId(wid);
     }
     authChecked = true;
-    listGuests($weddingId).then((res) => {
-      guestCount = res.total;
+
+    // Fetch all guests and seed the SSE store.
+    fetchAllGuests($weddingId).then((guests) => {
+      guestCount = guests.length;
+      // Convert GuestResponse[] to Guest[] for the store.
+      seedGuests(guests.map((g) => ({
+        id: g.id,
+        name: g.name,
+        phone: g.phone,
+        email: g.email,
+        rsvp: g.rsvp as any,
+        pax: g.pax,
+        tableId: g.tableId,
+        seatNumber: g.seatNum,
+        checkedIn: !!g.checkedInAt,
+        checkedInAt: g.checkedInAt ? new Date(g.checkedInAt) : undefined,
+        notes: g.notes,
+        dietaryRequirements: g.dietary,
+        isVip: g.isVip,
+        angbaoAmount: g.angbaoAmt ?? undefined,
+        giftItem: g.giftItem ?? undefined,
+        createdAt: new Date(),
+      })));
     }).catch(() => {});
+
+    // Initialize SSE for real-time updates.
+    cleanupSSE = initializeSSE();
+
     listTables($weddingId).then((t) => {
       tables = t;
     }).catch(() => {});
     getWedding(wid).then((w) => {
       weddingTitle.set(w.name || '');
     }).catch(() => {});
+  });
+
+  onDestroy(() => {
+    cleanupSSE?.();
   });
 
   $effect(() => {

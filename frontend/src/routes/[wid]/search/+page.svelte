@@ -1,10 +1,11 @@
 <script lang="ts">
-  import { searchGuests, listGuests, listTables } from '$lib/api/search';
+  import { searchGuests, listTables } from '$lib/api/search';
   import { weddingTitle } from '$lib/stores/weddingTitle';
   import { getLayout } from '$lib/api/layout';
   import { getWedding } from '$lib/api/weddings';
   import { addToast, selectedGuest, isDrawerOpen } from '$lib/stores';
   import { weddingId } from '$lib/stores/weddingId';
+  import { guestList } from '$lib/stores/guestEvents';
   import { get } from 'svelte/store';
   import Badge from '$lib/components/ui/Badge.svelte';
   import { getInitials, cn } from '$lib/utils';
@@ -28,6 +29,11 @@
   let showResults = $state(false);
   let sortCol = $state<string>('name');
   let sortDir = $state<'asc' | 'desc'>('asc');
+
+  // Keep allGuests in sync with the SSE-backed store.
+  $effect(() => {
+    allGuests = $guestList;
+  });
 
   function toggleSort(col: string) {
     if (sortCol === col) sortDir = sortDir === 'asc' ? 'desc' : 'asc';
@@ -63,9 +69,8 @@
   });
 
   async function refreshGuests() {
-    const g = await listGuests().catch(() => [] as Guest[]);
-    allGuests = g;
-    // Also update the store guest if it's still selected
+    // Guests are kept in sync via SSE store — just read the latest.
+    allGuests = get(guestList);
     if ($selectedGuest) {
       const updated = allGuests.find(g => g.id === $selectedGuest!.id);
       if (updated) $selectedGuest = updated;
@@ -82,13 +87,13 @@
     if (initialized) return;
     initialized = true;
     try {
-      const [t, g, layout] = await Promise.all([
+      // Guest list is already seeded by the layout via SSE store.
+      // Only fetch tables and layout here.
+      const [t, layout] = await Promise.all([
         listTables().catch(() => [] as BanquetTable[]),
-        listGuests().catch(() => [] as Guest[]),
         getLayout(get(weddingId)).catch(() => null),
       ]);
       tables = t;
-      allGuests = g;
       if (layout) {
         elements = layout.elements;
         hallWidth = layout.hallWidth;
