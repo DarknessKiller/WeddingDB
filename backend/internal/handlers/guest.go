@@ -103,6 +103,7 @@ func (h *GuestHandler) Create(c fuego.ContextWithBody[GuestCreateRequest]) (any,
 	if err := h.guestService.Create(guest); err != nil {
 		return nil, err
 	}
+	c.SetStatus(201)
 	if body.TableID != nil && *body.TableID != "" {
 		if tid, err := DecodeID(*body.TableID); err == nil {
 			seatNum := 1
@@ -190,6 +191,7 @@ func (h *GuestHandler) Delete(c fuego.ContextWithBody[any]) (any, error) {
 	if err := h.guestService.Delete(id, wid); err != nil {
 		return nil, err
 	}
+	c.SetStatus(204)
 	return nil, nil
 }
 
@@ -245,6 +247,7 @@ func (h *GuestHandler) CheckOut(c fuego.ContextWithBody[any]) (any, error) {
 	if err := h.guestService.CheckOut(id, wid); err != nil {
 		return nil, err
 	}
+	c.SetStatus(204)
 	return nil, nil
 }
 
@@ -347,5 +350,6 @@ func (h *GuestHandler) AssignSeat(c fuego.ContextWithBody[AssignSeatRequest]) (a
 	if err := h.guestService.AssignSeat(guestID, wid, tableID, body.SeatNum); err != nil {
 		return nil, fuego.BadRequestError{Title: err.Error()}
 	}
+	c.SetStatus(204)
 	return nil, nil
 }
