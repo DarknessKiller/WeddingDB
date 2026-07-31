@@ -369,8 +369,8 @@
 
         <!-- RSVP -->
         <div>
-          <label class="block text-sm font-semibold text-gray-700 mb-2">RSVP Status *</label>
-          <div class="flex gap-3 flex-wrap sm:flex-nowrap">
+          <span id="rsvp-label" class="block text-sm font-semibold text-gray-700 mb-2">RSVP Status *</span>
+          <div class="flex gap-3 flex-wrap sm:flex-nowrap" role="radiogroup" aria-labelledby="rsvp-label">
             {#each [
               { value: 'confirmed', label: 'Confirmed', color: 'emerald' },
               { value: 'pending', label: 'Pending', color: 'gold' },
@@ -396,8 +396,8 @@
 
         <!-- Dietary -->
         <div>
-          <label class="block text-sm font-semibold text-gray-700 mb-2">Dietary Restrictions</label>
-          <div class="flex flex-wrap gap-2">
+          <span id="dietary-label" class="block text-sm font-semibold text-gray-700 mb-2">Dietary Restrictions</span>
+          <div class="flex flex-wrap gap-2" role="group" aria-labelledby="dietary-label">
             {#each DIETARY_OPTIONS as opt}
               <button
                 type="button"

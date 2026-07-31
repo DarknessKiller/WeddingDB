@@ -13,14 +13,14 @@
 
   let tableName = $derived(guest ? (tables.find(t => t.id === guest.tableId)?.name ?? guest.tableId ?? '—') : '—');
 
-  let editing = $state(startEditing || createMode);
+  let editToggle = $state(false);
+  let editing = $derived(createMode || editToggle);
   let saving = $state(false);
   let showCheckinModal = $state(false);
   let angbaoAmount = $state('');
   let giftItem = $state('');
 
-  let localGuest = $state(guest);
-  $effect(() => { localGuest = guest; });
+  $effect(() => { editToggle = startEditing; });
 
   async function refreshGuest() {
     if (!guest?.id) return;
@@ -41,7 +41,7 @@
         angbaoAmount: fresh.angbaoAmt ?? undefined,
         giftItem: fresh.giftItem ?? undefined,
       });
-      localGuest = { ...guest };
+      guest = { ...guest };
     } catch {}
   }
 
@@ -151,16 +151,16 @@
   }
 
   let form = $state({
-    name: guest?.name ?? '',
-    phone: guest?.phone ?? '',
-    email: guest?.email ?? '',
-    pax: guest?.pax ?? 1,
-    rsvp: (guest?.rsvp ?? 'pending') as RSVPStatus,
-    isVip: guest?.isVip ?? false,
-    notes: guest?.notes ?? '',
-    dietary: guest?.dietaryRequirements ?? [],
-    angbaoAmt: guest?.angbaoAmount != null ? String(guest.angbaoAmount) : '',
-    giftItem: guest?.giftItem ?? '',
+    name: '',
+    phone: '',
+    email: '',
+    pax: 1,
+    rsvp: 'pending' as RSVPStatus,
+    isVip: false,
+    notes: '',
+    dietary: [] as string[],
+    angbaoAmt: '',
+    giftItem: '',
   });
 
   $effect(() => {
@@ -207,7 +207,7 @@
           angbaoAmt: updated.angbaoAmt != null ? String(updated.angbaoAmt) : '',
           giftItem: updated.giftItem ?? '',
         });
-        editing = false;
+        editToggle = false;
         addToast('Guest updated', 'success');
         await refreshGuest();
       }
@@ -218,7 +218,7 @@
     }
   }
 
-  function cancel() { editing = false; onClose(); }
+  function cancel() { editToggle = false; onClose(); }
 
   function openCheckinModal() {
     if (!guest) return;
@@ -239,7 +239,7 @@
       guest.checkedInAt = new Date();
       if (angbaoAmount) guest.angbaoAmount = Number(angbaoAmount);
       if (giftItem) guest.giftItem = giftItem;
-      localGuest = { ...guest };
+      guest = { ...guest };
       showCheckinModal = false;
       addToast(`${guest.name} checked in`, 'success');
       await refreshGuest();
@@ -255,7 +255,7 @@
       await checkOutGuest(wid, guest.id);
       guest.checkedIn = false;
       guest.checkedInAt = undefined;
-      localGuest = { ...guest };
+      guest = { ...guest };
       addToast(`${guest.name} checked out`, 'success');
       await refreshGuest();
     } catch (e: any) {
@@ -264,15 +264,16 @@
   }
 </script>
 
-<!-- svelte-ignore a11y_no_static_element_interactions -->
 <svelte:window onkeydown={(e) => { if (e.key === 'Escape') onClose(); }} />
-<div class="drawer-overlay" onclick={onClose}>
+<!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
+<div class="drawer-overlay" onclick={onClose} onkeydown={(e) => { if (e.key === 'Enter' || e.key === ' ') onClose(); }} role="button" tabindex="-1">
   <div class="drawer-backdrop" style="opacity: {dragging ? Math.max(0, 1 - dragY / 400) : 1}"></div>
-  <!-- svelte-ignore a11y_no_static_element_interactions -->
-  <div class="drawer-panel" onclick={(e) => e.stopPropagation()}
+  <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
+  <div class="drawer-panel" onclick={(e) => e.stopPropagation()} onkeydown={(e) => e.stopPropagation()}
     ontouchstart={onTouchStart}
     ontouchmove={onTouchMove}
     ontouchend={onTouchEnd}
+    role="dialog" aria-modal="true" tabindex="-1"
     style="transform: translateY({dragY}px); transition: {dragging ? 'none' : 'transform 300ms cubic-bezier(0.2, 0.8, 0.2, 1)'}"
   >
     <div class="drawer-pill flex sm:hidden" onclick={onClose} role="presentation">
@@ -282,7 +283,7 @@
       <h2 class="drawer-title">{createMode ? 'New Guest' : editing ? 'Edit Guest' : 'Guest Details'}</h2>
       <div class="drawer-actions">
         {#if !readonly}
-          <button onclick={() => editing = true} class="drawer-icon-btn flex" aria-label="Edit">
+          <button onclick={() => editToggle = true} class="drawer-icon-btn flex" aria-label="Edit">
             <Pencil class="w-5 h-5" />
           </button>
           <button onclick={onClose} class="drawer-icon-btn hidden sm:flex" aria-label="Close">
@@ -296,29 +297,29 @@
       </div>
     </div>
 
-    <div class="drawer-body" class:drawer-body-view={!editing && localGuest}>
+    <div class="drawer-body" class:drawer-body-view={!editing && guest}>
       {#if editing}
         <div class="form-grid">
           <div class="form-field">
-            <label class="form-label">Name</label>
-            <input bind:value={form.name} class="form-input" />
+            <label for="drawer-name" class="form-label">Name</label>
+            <input id="drawer-name" bind:value={form.name} class="form-input" />
           </div>
           <div class="form-field">
-            <label class="form-label">Phone</label>
-            <input bind:value={form.phone} class="form-input" />
+            <label for="drawer-phone" class="form-label">Phone</label>
+            <input id="drawer-phone" bind:value={form.phone} class="form-input" />
           </div>
           <div class="form-field">
-            <label class="form-label">Email</label>
-            <input bind:value={form.email} class="form-input" />
+            <label for="drawer-email" class="form-label">Email</label>
+            <input id="drawer-email" bind:value={form.email} class="form-input" />
           </div>
           <div class="form-row-2">
             <div class="form-field">
-              <label class="form-label">Pax</label>
-              <input type="number" min="1" bind:value={form.pax} class="form-input" />
+              <label for="drawer-pax" class="form-label">Pax</label>
+              <input id="drawer-pax" type="number" min="1" bind:value={form.pax} class="form-input" />
             </div>
             <div class="form-field">
-              <label class="form-label">RSVP</label>
-              <select bind:value={form.rsvp} class="form-input">
+              <label for="drawer-rsvp" class="form-label">RSVP</label>
+              <select id="drawer-rsvp" bind:value={form.rsvp} class="form-input">
                 <option value="confirmed">Confirmed</option>
                 <option value="pending">Pending</option>
                 <option value="declined">Declined</option>
@@ -332,12 +333,12 @@
             </label>
           </div>
           <div class="form-field">
-            <label class="form-label">Notes</label>
-            <textarea bind:value={form.notes} rows="2" class="form-input form-textarea"></textarea>
+            <label for="drawer-notes" class="form-label">Notes</label>
+            <textarea id="drawer-notes" bind:value={form.notes} rows="2" class="form-input form-textarea"></textarea>
           </div>
           <div class="form-field">
-            <label class="form-label">Dietary</label>
-            <div class="dietary-chips">
+            <span id="drawer-dietary-label" class="form-label">Dietary</span>
+            <div class="dietary-chips" role="group" aria-labelledby="drawer-dietary-label">
               {#each ['Halal', 'Vegetarian', 'Vegan', 'Gluten-Free', 'Nut-Free', 'No Seafood'] as opt}
                 <button type="button"
                   onclick={() => { form.dietary = form.dietary.includes(opt) ? form.dietary.filter(d => d !== opt) : [...form.dietary, opt]; }}
@@ -347,29 +348,29 @@
             </div>
           </div>
           <div class="form-field">
-            <label class="form-label">Angbao Amount (RM)</label>
-            <input type="number" min="0" bind:value={form.angbaoAmt} placeholder="0" class="form-input" />
+            <label for="drawer-angbao" class="form-label">Angbao Amount (RM)</label>
+            <input id="drawer-angbao" type="number" min="0" bind:value={form.angbaoAmt} placeholder="0" class="form-input" />
           </div>
           <div class="form-field">
-            <label class="form-label">Gift Item</label>
-            <input bind:value={form.giftItem} placeholder="e.g. Kitchenware set" class="form-input" />
+            <label for="drawer-gift" class="form-label">Gift Item</label>
+            <input id="drawer-gift" bind:value={form.giftItem} placeholder="e.g. Kitchenware set" class="form-input" />
           </div>
         </div>
-      {:else if localGuest}
+      {:else if guest}
         <!-- View Mode — compact for mobile -->
         <div class="guest-hero">
           <div class={cn(
             "guest-avatar-lg",
-            localGuest.checkedIn ? "avatar-checked" : localGuest.isVip ? "avatar-vip" : "avatar-default"
+            guest.checkedIn ? "avatar-checked" : guest.isVip ? "avatar-vip" : "avatar-default"
           )}>
-            {getInitials(localGuest.name)}
+            {getInitials(guest.name)}
           </div>
           <div class="min-w-0">
-            <h3 class="guest-name-lg">{#if localGuest.isVip}<span class="text-gold">★</span>{/if} {localGuest.name}</h3>
+            <h3 class="guest-name-lg">{#if guest.isVip}<span class="text-gold">★</span>{/if} {guest.name}</h3>
             <div class="flex items-center gap-2 mt-0.5">
-              <Badge status={localGuest.rsvp} />
-              {#if localGuest.pax > 1}
-                <span class="text-xs text-gray-400">{localGuest.pax} pax</span>
+              <Badge status={guest.rsvp} />
+              {#if guest.pax > 1}
+                <span class="text-xs text-gray-400">{guest.pax} pax</span>
               {/if}
             </div>
           </div>
@@ -378,12 +379,12 @@
         <div class="info-rows">
           <div class="info-row">
             <Phone class="info-icon" />
-            <span>{localGuest.phone}</span>
+            <span>{guest.phone}</span>
           </div>
-          {#if localGuest.email}
+          {#if guest.email}
             <div class="info-row">
               <Mail class="info-icon" />
-              <span class="truncate">{localGuest.email}</span>
+              <span class="truncate">{guest.email}</span>
             </div>
           {/if}
         </div>
@@ -394,65 +395,65 @@
             <div class="detail-value">{tableName}</div>
           </div>
           <div class="detail-card">
-            <div class="detail-label">Seat{localGuest.pax > 1 ? 's' : ''}</div>
-            <div class="detail-value">{formatSeatRange(localGuest.seatNumber, localGuest.pax)}</div>
+            <div class="detail-label">Seat{guest.pax > 1 ? 's' : ''}</div>
+            <div class="detail-value">{formatSeatRange(guest.seatNumber, guest.pax)}</div>
           </div>
           <div class="detail-card">
             <div class="detail-label">Party Size</div>
-            <div class="detail-value">{localGuest.pax}</div>
+            <div class="detail-value">{guest.pax}</div>
           </div>
           <div class="detail-card">
             <div class="detail-label">Checked In</div>
-            <div class="detail-value {localGuest.checkedIn ? 'text-emerald-600' : 'text-gray-400'}">
-              {localGuest.checkedIn ? '✓' : '—'}
+            <div class="detail-value {guest.checkedIn ? 'text-emerald-600' : 'text-gray-400'}">
+              {guest.checkedIn ? '✓' : '—'}
             </div>
           </div>
         </div>
 
-        {#if localGuest.isVip}
+        {#if guest.isVip}
           <div class="vip-banner">⭐ VIP Guest</div>
         {/if}
 
-        {#if localGuest.dietaryRequirements.length > 0}
+        {#if guest.dietaryRequirements.length > 0}
           <div class="compact-section">
             <div class="section-header">
               <Utensils class="section-icon" />
               Dietary
             </div>
             <div class="chip-group">
-              {#each localGuest.dietaryRequirements as req}
+              {#each guest.dietaryRequirements as req}
                 <span class="dietary-tag">{req}</span>
               {/each}
             </div>
           </div>
         {/if}
 
-        {#if localGuest.notes}
+        {#if guest.notes}
           <div class="compact-section">
             <div class="section-header">
               <StickyNote class="section-icon" />
               Notes
             </div>
-            <p class="notes-text">{localGuest.notes}</p>
+            <p class="notes-text">{guest.notes}</p>
           </div>
         {/if}
 
-        {#if localGuest.angbaoAmount || localGuest.giftItem}
+        {#if guest.angbaoAmount || guest.giftItem}
           <div class="compact-section">
             <div class="section-header">Gift Details</div>
             <div class="gift-card">
-              {#if localGuest.angbaoAmount}
+              {#if guest.angbaoAmount}
                 <div class="gift-row">
                   <Banknote class="gift-icon text-emerald-600" />
                   <span class="gift-label">Angbao:</span>
-                  <span class="gift-value text-emerald-700">RM {localGuest.angbaoAmount}</span>
+                  <span class="gift-value text-emerald-700">RM {guest.angbaoAmount}</span>
                 </div>
               {/if}
-              {#if localGuest.giftItem}
+              {#if guest.giftItem}
                 <div class="gift-row">
                   <Gift class="gift-icon text-gold" />
                   <span class="gift-label">Gift:</span>
-                  <span class="gift-value text-gold-dark">{localGuest.giftItem}</span>
+                  <span class="gift-value text-gold-dark">{guest.giftItem}</span>
                 </div>
               {/if}
             </div>
@@ -461,7 +462,7 @@
 
         {#if !readonly}
           <div class="pt-1 pb-3 sm:pb-4">
-            {#if localGuest.checkedIn}
+            {#if guest.checkedIn}
               <button onclick={handleCheckOut} class="w-full py-2.5 sm:py-3 bg-emerald-50 text-emerald-700 rounded-xl text-sm font-semibold border border-emerald-200 hover:bg-emerald-100 transition-colors flex items-center justify-center gap-2">
                 <CheckCircle2 class="w-4 h-4" /> Checked In — Tap to Check Out
               </button>

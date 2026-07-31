@@ -142,9 +142,11 @@
           {#each weddings as w (w.id)}
             {@const isSelected = w.id === currentWeddingId}
             <div class="group">
-              <button
+              <div
                 onclick={() => selectWedding(w)}
-                disabled={selecting !== null}
+                onkeydown={(e) => { if (e.key === 'Enter' || e.key === ' ') selectWedding(w); }}
+                role="button"
+                tabindex="0"
                 class="w-full flex items-center gap-3 p-3 rounded-xl border transition-all text-left {isSelected ? 'border-gold bg-gold-50/50' : 'border-gray-200 hover:border-deep-red hover:bg-red-50'}"
               >
                 <div class="w-10 h-10 rounded-lg {isSelected ? 'bg-gold-50 border border-gold-200 text-gold' : 'bg-red-50 border border-red-100 text-red'} flex items-center justify-center flex-shrink-0">
@@ -175,7 +177,7 @@
                     </button>
                   </div>
                 {/if}
-              </button>
+              </div>
             </div>
           {/each}
         </div>

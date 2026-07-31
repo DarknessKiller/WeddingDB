@@ -160,7 +160,7 @@
 
           <!-- Logo -->
           <div>
-            <label class="text-sm font-semibold text-gray-700 mb-1.5 block">Logo</label>
+            <label for="kiosk-logo" class="text-sm font-semibold text-gray-700 mb-1.5 block">Logo</label>
             <ImageEditor
               bind:value={kioskLogoUrl}
               bind:size={kioskLogoSize}
@@ -174,7 +174,7 @@
 
           <!-- Background -->
           <div>
-            <label class="text-sm font-semibold text-gray-700 mb-1.5 block">Background Image</label>
+            <label for="kiosk-bg" class="text-sm font-semibold text-gray-700 mb-1.5 block">Background Image</label>
             <ImageEditor
               bind:value={kioskBackgroundUrl}
               bind:size={kioskBackgroundSize}
@@ -206,9 +206,9 @@
             <p class="text-sm font-semibold text-gray-900">Show Seat Numbers</p>
             <p class="text-xs text-gray-500">Display individual seat numbers on the kiosk and check-in screens</p>
           </div>
-          <button onclick={() => { showSeatNumbers = !showSeatNumbers; }}
+          <button onclick={() => { showSeatNumbers = !showSeatNumbers; }} aria-label="Toggle seat numbers"
             class="relative inline-flex h-6 w-11 items-center rounded-full transition-colors {showSeatNumbers ? 'bg-deep-red' : 'bg-gray-200'}">
-            <span class="inline-block h-4 w-4 transform rounded-full bg-white transition-transform {showSeatNumbers ? 'translate-x-6' : 'translate-x-1'}" />
+            <span class="inline-block h-4 w-4 transform rounded-full bg-white transition-transform {showSeatNumbers ? 'translate-x-6' : 'translate-x-1'}"></span>
           </button>
         </div>
       </div>
