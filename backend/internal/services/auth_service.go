@@ -25,11 +25,11 @@ type AccessClaims struct {
 }
 
 type AuthService struct {
-	adminRepo    *repository.AdminRepo
-	weddingRepo  *repository.WeddingRepo
-	tokenRepo    *repository.TokenRepo
-	secret       []byte
-	redisClient  *redis.Client
+	adminRepo   *repository.AdminRepo
+	weddingRepo *repository.WeddingRepo
+	tokenRepo   *repository.TokenRepo
+	secret      []byte
+	redisClient *redis.Client
 }
 
 func NewAuthService(

@@ -68,16 +68,14 @@ func (s *AuthService) GetTokenVersion(ctx context.Context, userID uuid.UUID) (in
 - Redis key: `"user:" + userID.String() + ":tv"`
 - `GET` the key. If key doesn't exist (redis.Nil), return `0, nil`.
 - Parse value as int. Return it.
-- On error, return `0, err` (fail-open: allow request if Redis is down, matching NonceStore pattern).
+- On error, return `0, err` (fail-closed: caller rejects the request).
 
 ### 1f. Add `BlacklistAccessToken` method
 
 ```go
-func (s *AuthService) BlacklistAccessToken(ctx context.Context, tokenStr string) error
+func (s *AuthService) BlacklistAccessToken(ctx context.Context, claims *AccessClaims) error
 ```
 
-- Parse `tokenStr` with `jwt.ParseUnverified` (token already authenticated, we just need JTI + expiry).
-- Extract `claims.ID` (JTI) and `claims.ExpiresAt`.
 - Compute `ttl = time.Until(claims.ExpiresAt.Time)`. If `ttl <= 0`, return nil (already expired).
 - `SET "blacklist:jti:" + claims.ID` = `"1"` with TTL.
 - Return error from Redis.
@@ -90,7 +88,7 @@ func (s *AuthService) IsTokenBlacklisted(ctx context.Context, jti string) (bool,
 
 - Redis key: `"blacklist:jti:" + jti`
 - `EXISTS` the key. Return `exists > 0, nil`.
-- On Redis error, return `false, err` (fail-open).
+- On Redis error, return `false, err` (fail-closed: caller rejects the request).
 
 ### 1h. Add `RevokeUserTokens` method
 
@@ -98,9 +96,9 @@ func (s *AuthService) IsTokenBlacklisted(ctx context.Context, jti string) (bool,
 func (s *AuthService) RevokeUserTokens(ctx context.Context, userID uuid.UUID) error
 ```
 
+- Call `s.tokenRepo.DeleteByAdminID(userID)` to nuke all refresh tokens in Postgres first (closes TOCTOU race).
 - Redis key: `"user:" + userID.String() + ":tv"`
 - `INCR` the key (creates with value 1 if absent — satisfies lazy init).
-- Call `s.tokenRepo.DeleteByAdminID(userID)` to nuke all refresh tokens in Postgres.
 - Return first error encountered.
 
 ### 1i. Modify `generateAccessToken` signature
@@ -128,6 +126,21 @@ to:
 s.generateAccessToken(ctx, admin, weddingID)
 ```
 
+### 1j2. Modify `Refresh` signature
+
+**Before:**
+```go
+func (s *AuthService) Refresh(ctx context.Context, refreshTokenStr string) (*LoginResult, error)
+```
+
+**After:**
+```go
+func (s *AuthService) Refresh(ctx context.Context, refreshTokenStr string, oldAccessToken string) (*LoginResult, error)
+```
+
+- After creating new tokens and deleting old refresh token, blacklist old access token's JTI if `oldAccessToken != ""`.
+- Parse old token via `parseTokenUnsafe`, call `BlacklistAccessToken`.
+
 ### 1k. Modify `ValidateToken` signature
 
 **Before:**
@@ -143,9 +156,18 @@ func (s *AuthService) ValidateToken(ctx context.Context, tokenStr string) (*Acce
 After parsing + validating the JWT, **add two checks**:
 
 1. **Blacklist check:** `s.IsTokenBlacklisted(ctx, claims.ID)` → if true, return error `"token has been revoked"`.
-2. **Token version check:** `s.GetTokenVersion(ctx, claims.AdminID)` → if `currentTV > claims.TokenVersion`, return error `"token version outdated"`.
+2. **Token version check:** `s.GetTokenVersion(ctx, claims.AdminID)` → if `claims.TokenVersion < storedTV`, return error `"token version is stale"`.
 
-### 1l. Modify `Logout` signature
+### 1l. Add `parseTokenUnsafe` helper
+
+```go
+func (s *AuthService) parseTokenUnsafe(tokenStr string) (*AccessClaims, error)
+```
+
+- Parses JWT without blacklist/tv checks — used only for extracting claims during logout and refresh token rotation.
+- Same `jwt.ParseWithClaims` logic as `ValidateToken` but returns claims without Redis checks.
+
+### 1m. Modify `Logout` signature
 
 **Before:**
 ```go
@@ -157,9 +179,9 @@ func (s *AuthService) Logout(refreshToken string) error
 func (s *AuthService) Logout(ctx context.Context, refreshToken string, accessToken string) error
 ```
 
-- Call `s.BlacklistAccessToken(ctx, accessToken)` (ignore error — best-effort).
+- Call `s.BlacklistAccessToken(ctx, accessToken)`. If error, return it (fail-closed).
 - Call `s.tokenRepo.DeleteByToken(refreshToken)`.
-- Return the delete error.
+- Return the error.
 
 ---
 
@@ -182,6 +204,22 @@ No other changes needed. The middleware already has `r.Context()` and passes it 
 ---
 
 ## File 3: `backend/internal/handlers/auth.go`
+
+### 3b. Modify `Refresh` handler
+
+- Extract old access token from Authorization header via `extractBearer(c.Request())`.
+- Pass it to `h.authService.Refresh(c.Context(), body.RefreshToken, oldAccessToken)`.
+- The service blacklists the old token's JTI after rotation.
+
+### 3c. Add `extractBearer` helper
+
+```go
+func extractBearer(r *http.Request) string
+```
+
+- Gets `Authorization` header, strips `"Bearer "` prefix via `strings.CutPrefix`.
+- Returns empty string if not present or not Bearer scheme.
+- Add imports for `"net/http"` and `"strings"`.
 
 ### 3a. Modify `Logout` handler
 
@@ -242,14 +280,16 @@ Store `authService` in struct.
 ### 4d. Add `RevokeUser` method
 
 ```go
-func (h *AdminHandler) RevokeUser(c fuego.ContextWithBody[any]) (any, error)
+func (h *AdminHandler) RevokeUser(c fuego.ContextNoBody) (any, error)
 ```
 
 - Call `requireAdmin(c.Context())` — admin-only guard.
 - Decode path param `"id"` via `DecodeID(c.PathParam("id"))`.
+- Prevent self-revoke: if `id == callerID`, return `fuego.BadRequestError`.
+- Verify user exists: `h.adminRepo.FindByID(id)`, return `fuego.NotFoundError` if not found.
 - Call `h.authService.RevokeUserTokens(c.Context(), id)`.
 - On error, return `fuego.InternalServerError`.
-- Set status 204, return `nil, nil`.
+- Return `map[string]any{"message": "User tokens revoked"}`.
 
 ---
 
@@ -334,8 +374,9 @@ Client → POST /api/auth/logout {refreshToken: "..."} + Authorization: Bearer <
     → extract Bearer from header
     → authService.Logout(ctx, refreshToken, accessToken)
       → BlacklistAccessToken(ctx, accessToken)
-        → parse unverified → extract JTI + expiry
+        → parse claims → extract JTI + expiry
         → SET blacklist:jti:{jti} = "1" EX {remaining seconds}
+        → if Redis error → return error (fail-closed)
       → tokenRepo.DeleteByToken(refreshToken)  [Postgres]
   → 204
 ```
@@ -347,10 +388,11 @@ Client → PUT /api/users/{id}/revoke + Authorization: Bearer <admin-token>
   → AuthMiddleware validates admin token (blacklist + tv checks pass)
   → AdminHandler.RevokeUser
     → requireAdmin(ctx) guard
+    → DecodeID, prevent self-revoke, verify user exists
     → authService.RevokeUserTokens(ctx, userID)
+      → tokenRepo.DeleteByAdminID(userID)  [Postgres, nukes all refresh tokens first]
       → INCR user:{id}:tv  [Redis, creates if absent]
-      → tokenRepo.DeleteByAdminID(userID)  [Postgres, nukes all refresh tokens]
-  → 204
+  → 200 {"message": "User tokens revoked"}
 ```
 
 ## Data Flow: Middleware Check (every auth-protected request)
@@ -365,7 +407,7 @@ Request → AuthMiddleware
       → if exists → reject "token has been revoked"
     → GetTokenVersion(ctx, claims.AdminID)
       → GET user:{id}:tv → parse int (default 0)
-      → if currentTV > claims.TokenVersion → reject "token version outdated"
+      → if currentTV > claims.TokenVersion → reject "token version is stale"
   → set context values → next handler
 ```
 
@@ -373,7 +415,7 @@ Request → AuthMiddleware
 
 ## Edge Cases & Failure Modes
 
-1. **Redis down during middleware check:** `GetTokenVersion` returns `0, err`. `IsTokenBlacklisted` returns `false, err`. Fail-open: log warning, allow request. Matches the existing NonceStore resilience pattern.
+1. **Redis down during middleware check:** `GetTokenVersion` returns `0, err`. `IsTokenBlacklisted` returns `false, err`. Fail-closed: reject request with "service temporarily unavailable".
 
 2. **Redis down during blacklist write (logout):** `BlacklistAccessToken` returns error. Logout still proceeds (refresh token deleted from Postgres). Access token lives until 15min expiry. Acceptable tradeoff.
 

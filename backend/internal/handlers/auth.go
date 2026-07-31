@@ -1,8 +1,8 @@
 package handlers
 
 import (
-	"net/mail"
 	"net/http"
+	"net/mail"
 	"strings"
 	"unicode"
 	"weddingdb/internal/middleware"
@@ -235,8 +235,8 @@ func (h *AuthHandler) Register(c fuego.ContextWithBody[RegisterRequest]) (any, e
 // extractBearer pulls the Bearer token from the Authorization header on an http.Request.
 func extractBearer(r *http.Request) string {
 	auth := r.Header.Get("Authorization")
-	if strings.HasPrefix(auth, "Bearer ") {
-		return strings.TrimPrefix(auth, "Bearer ")
+	if token, ok := strings.CutPrefix(auth, "Bearer "); ok {
+		return token
 	}
 	return ""
 }
