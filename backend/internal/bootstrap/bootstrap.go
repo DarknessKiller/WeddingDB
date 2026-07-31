@@ -30,7 +30,7 @@ type App struct {
 	AuthService *services.AuthService
 }
 
-func Init(env config.Env) *App {
+func Init(env config.Env, version string) *App {
 	dbURL := env.DatabaseURL
 	if dbURL == "" {
 		dbURL = os.Getenv("DATABASE_URL")
@@ -121,7 +121,7 @@ func Init(env config.Env) *App {
 	layoutService := services.NewLayoutService(layoutRepo)
 	reportService := services.NewReportService(guestRepo, tableRepo, weddingRepo)
 
-	server := config.NewFuegoServer(env)
+	server := config.NewFuegoServer(env, version)
 
 	fuego.Use(server, middleware.ProxyAwareMiddleware)
 	fuego.Use(server, middleware.CORSMiddleware)

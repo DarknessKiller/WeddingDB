@@ -126,6 +126,7 @@ func (h *UploadHandler) Upload(c fuego.ContextWithBody[any]) (any, error) {
 		f.Close()
 	}
 
+	c.SetStatus(201)
 	return map[string]any{
 		"url":      "/uploads/" + filename,
 		"filename": filename,

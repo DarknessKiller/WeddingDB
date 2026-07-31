@@ -55,6 +55,7 @@ func (h *TableHandler) Create(c fuego.ContextWithBody[TableRequest]) (any, error
 	if err := h.tableService.Create(table); err != nil {
 		return nil, err
 	}
+	c.SetStatus(201)
 	return table, nil
 }
 
@@ -99,5 +100,6 @@ func (h *TableHandler) Delete(c fuego.ContextWithBody[any]) (any, error) {
 	if err := h.tableService.Delete(id, wid); err != nil {
 		return nil, err
 	}
+	c.SetStatus(204)
 	return nil, nil
 }

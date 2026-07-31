@@ -150,7 +150,11 @@ func (h *AuthHandler) Logout(c fuego.ContextWithBody[RefreshRequest]) (any, erro
 	if err != nil {
 		return nil, fuego.BadRequestError{Title: "Invalid request"}
 	}
-	h.authService.Logout(body.RefreshToken)
+
+	if err := h.authService.Logout(body.RefreshToken); err != nil {
+		return nil, fuego.InternalServerError{Title: "Failed to logout"}
+	}
+	c.SetStatus(204)
 	return nil, nil
 }
 
@@ -215,5 +219,6 @@ func (h *AuthHandler) Register(c fuego.ContextWithBody[RegisterRequest]) (any, e
 	if err := h.adminRepo.Create(admin); err != nil {
 		return nil, fuego.InternalServerError{Title: "Failed to create account"}
 	}
+	c.SetStatus(201)
 	return map[string]any{"id": admin.ID.String(), "email": admin.Email, "name": admin.Name, "role": admin.Role}, nil
 }

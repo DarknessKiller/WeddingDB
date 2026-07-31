@@ -60,6 +60,7 @@ Server runs at `http://localhost:8080`.
 | `REDIS_URL` | Redis connection string | `redis://localhost:6379` |
 | `JWT_SECRET` | Secret for JWT signing (required) | — |
 | `PORT` | Server port | `8080` |
+| `PUBLIC_URL` | Public server URL (used in OpenAPI spec) | `http://localhost:{PORT}` |
 | `CORS_ORIGIN` | Allowed CORS origin | `http://localhost:5173` |
 
 ## Pages
