@@ -24,8 +24,8 @@ Chinese wedding seating & reservation management system.
 - **Language:** Go 1.22+
 - **HTTP:** Fuego
 - **ORM:** GORM + PostgreSQL
-- **Cache:** Redis (nonce/replay prevention)
-- **Auth:** JWT HS256 + bcrypt + refresh token rotation
+- **Cache:** Redis (nonce/replay prevention, token revocation)
+- **Auth:** JWT HS256 + bcrypt + refresh token rotation + Redis token blacklisting
 
 ## Getting Started
 
@@ -86,7 +86,7 @@ Server runs at `http://localhost:8080`.
 | POST | `/api/auth/login` | Login, returns access + refresh tokens |
 | POST | `/api/auth/register` | Register new user account |
 | POST | `/api/auth/refresh` | Refresh access token |
-| POST | `/api/auth/logout` | Revoke refresh token |
+| POST | `/api/auth/logout` | Revoke refresh + blacklist access token |
 | POST | `/api/auth/select-wedding` | Select wedding context |
 | POST | `/api/auth/change-password` | Change password |
 | GET | `/api/users` | List admin users |
@@ -96,6 +96,7 @@ Server runs at `http://localhost:8080`.
 | PUT | `/api/users/{id}/weddings` | Assign weddings to user |
 | PUT | `/api/users/{id}/role` | Update user role |
 | POST | `/api/users/{id}/reset-password` | Reset user password |
+| PUT | `/api/users/{id}/revoke` | Revoke all user tokens (admin only) |
 | GET | `/api/weddings` | List weddings |
 | POST | `/api/weddings` | Create wedding |
 | GET | `/api/weddings/{id}` | Get wedding |

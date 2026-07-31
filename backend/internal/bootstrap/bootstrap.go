@@ -114,7 +114,7 @@ func Init(env config.Env, version string) *App {
 	tokenRepo := repository.NewTokenRepo(db)
 	layoutRepo := repository.NewLayoutRepo(db)
 
-	authService := services.NewAuthService(adminRepo, weddingRepo, tokenRepo, env.JWTSecret)
+	authService := services.NewAuthService(adminRepo, weddingRepo, tokenRepo, env.JWTSecret, rdb)
 	tableService := services.NewTableService(tableRepo)
 	guestService := services.NewGuestService(guestRepo, tableRepo)
 	weddingService := services.NewWeddingService(weddingRepo)
