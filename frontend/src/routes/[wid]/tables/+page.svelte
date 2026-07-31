@@ -222,8 +222,8 @@
 
 <svelte:head> <title>{$weddingTitle ? `${$weddingTitle} – Tables` : 'Tables – WeddingDB'}</title></svelte:head>
 
-<!-- svelte-ignore a11y_no_static_element_interactions -->
-<div class="p-4 sm:p-7 max-w-[1400px]" onclick={() => contextMenu = null}>
+<!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
+<div class="p-4 sm:p-7 max-w-[1400px]" onclick={() => contextMenu = null} onkeydown={(e) => { if (e.key === 'Escape') contextMenu = null; }} role="main">
   <div class="flex items-center justify-between mb-6">
     <div>
       <h1 class="text-xl font-bold text-gray-900" style="letter-spacing: -0.02em;">Banquet Tables</h1>
@@ -295,10 +295,11 @@
     <div class="grid {gridCols} gap-4">
       {#each sortedTables as table (table.id)}
         {@const occ = getOcc(table.id)}
-        <!-- svelte-ignore a11y_no_static_element_interactions -->
+        <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
         <div
           onclick={() => goto(`/${$weddingId}/seating?table=${table.id}`)}
           oncontextmenu={(e) => handleCtx(e, table)}
+          onkeydown={(e) => { if (e.key === 'Enter') goto(`/${$weddingId}/seating?table=${table.id}`); }}
           class={cn(
             "bg-white/90 backdrop-blur-xl border rounded-2xl p-3 sm:p-5 flex flex-col items-center gap-2 sm:gap-3 transition-all cursor-pointer group relative",
             table.isVip ? "border-gold-200 hover:border-gold hover:shadow-lg hover:-translate-y-0.5" : "border-black/[0.06] hover:border-gold/30 hover:shadow-lg hover:-translate-y-0.5"
@@ -356,9 +357,9 @@
 <!-- Context Menu -->
 {#if contextMenu}
   <div class="fixed inset-0 z-[599]" onclick={() => contextMenu = null} role="presentation"></div>
-  <!-- svelte-ignore a11y_no_static_element_interactions -->
+  <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
   <div class="fixed z-[600] bg-white/95 backdrop-blur-xl border border-black/[0.06] rounded-xl shadow-xl py-1.5 min-w-[180px]"
-    style={getMenuStyle(contextMenu.x, contextMenu.y)} onclick={(e) => e.stopPropagation()}>
+    style={getMenuStyle(contextMenu.x, contextMenu.y)} onclick={(e) => e.stopPropagation()} onkeydown={(e) => e.stopPropagation()} role="menu" tabindex="-1">
     <button class="w-full flex items-center gap-2.5 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50" onclick={() => openEdit(contextMenu!.table)}>
       <Pencil class="w-4 h-4" /> Edit
     </button>

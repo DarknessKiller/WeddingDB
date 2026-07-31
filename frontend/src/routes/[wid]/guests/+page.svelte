@@ -523,8 +523,8 @@
 </script>
 
 <svelte:head> <title>{$weddingTitle ? `${$weddingTitle} – Guests` : 'Guests – WeddingDB'}</title></svelte:head>
-<!-- svelte-ignore a11y_no_static_element_interactions -->
-<div class="p-4 sm:p-7 max-w-[1400px]" onclick={() => contextMenu = null}>
+<!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
+<div class="p-4 sm:p-7 max-w-[1400px]" onclick={() => contextMenu = null} onkeydown={(e) => { if (e.key === 'Escape') contextMenu = null; }} role="main">
   <!-- Toolbar -->
   <div class="flex items-center justify-between gap-2 sm:gap-4 mb-5 flex-wrap">
     <div class="relative flex-1 min-w-[160px] sm:min-w-[200px] max-w-md">
@@ -674,13 +674,15 @@
 
 <!-- Bulk Move Table Modal -->
 {#if showBulkMoveModal}
-  <div class="fixed inset-0 z-[700] flex items-center justify-center bg-black/30 backdrop-blur-md" onclick={() => showBulkMoveModal = false}>
-    <div class="bg-white/95 backdrop-blur-xl rounded-2xl shadow-2xl w-full max-w-md p-6" onclick={(e) => e.stopPropagation()}>
-      <h3 class="text-lg font-semibold text-gray-900 mb-4">Move {selectedIds.size} Guests</h3>
-      <div class="space-y-3 mb-6">
-        <div>
-          <label class="block text-xs font-medium text-gray-500 mb-1">New Table</label>
-          <select bind:value={bulkMoveTableId} onchange={() => { bulkMoveSeatStart = getNextBulkSeatNum(); }} class="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm bg-white focus:border-gold outline-none">
+  <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
+<div class="fixed inset-0 z-[700] flex items-center justify-center bg-black/30 backdrop-blur-md" onclick={() => showBulkMoveModal = false} onkeydown={(e) => { if (e.key === 'Escape') showBulkMoveModal = false; }} role="dialog" aria-modal="true" tabindex="-1">
+  <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
+  <div class="bg-white/95 backdrop-blur-xl rounded-2xl shadow-2xl w-full max-w-md p-6" onclick={(e) => e.stopPropagation()} onkeydown={(e) => e.stopPropagation()} role="document">
+    <h3 class="text-lg font-semibold text-gray-900 mb-4">Move {selectedIds.size} Guests</h3>
+    <div class="space-y-3 mb-6">
+      <div>
+        <label for="bulk-move-table" class="block text-xs font-medium text-gray-500 mb-1">New Table</label>
+        <select id="bulk-move-table" bind:value={bulkMoveTableId} onchange={() => { bulkMoveSeatStart = getNextBulkSeatNum(); }} class="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm bg-white focus:border-gold outline-none">
             {#each tables as t}
               <option value={String(t.id)}>{t.name}</option>
             {/each}
@@ -688,8 +690,8 @@
         </div>
         {#if bulkMoveTableId}
           <div>
-            <label class="block text-xs font-medium text-gray-500 mb-1">Starting Seat Number (1–{getBulkTableCapacity()})</label>
-            <input type="number" min="1" max={getBulkTableCapacity()} bind:value={bulkMoveSeatStart}
+            <label for="bulk-move-seat" class="block text-xs font-medium text-gray-500 mb-1">Starting Seat Number (1–{getBulkTableCapacity()})</label>
+            <input id="bulk-move-seat" type="number" min="1" max={getBulkTableCapacity()} bind:value={bulkMoveSeatStart}
               class="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm bg-white focus:border-gold focus:ring-2 focus:ring-gold/15 outline-none transition-all" />
           </div>
           <div class="text-xs text-gray-400">
@@ -712,9 +714,9 @@
 <!-- Context Menu -->
 {#if contextMenu}
   <div class="fixed inset-0 z-[599]" onclick={() => contextMenu = null} role="presentation"></div>
-  <!-- svelte-ignore a11y_no_static_element_interactions -->
+  <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
   <div class="fixed z-[600] bg-white/95 backdrop-blur-xl border border-black/[0.06] rounded-xl shadow-xl py-1.5 min-w-[180px]"
-    style={getMenuStyle(contextMenu.x, contextMenu.y)} onclick={(e) => e.stopPropagation()}>
+    style={getMenuStyle(contextMenu.x, contextMenu.y)} onclick={(e) => e.stopPropagation()} onkeydown={(e) => e.stopPropagation()} role="menu" tabindex="-1">
     <button class="w-full flex items-center gap-2.5 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50" onclick={() => { $drawerStartEditing = true; openGuest(contextMenu!.guest); contextMenu = null; }}>
       <Pencil class="w-4 h-4" /> Edit
     </button>
@@ -730,27 +732,29 @@
 
 <!-- Move Table Modal -->
 {#if showMoveModal && moveGuest}
-  <div class="fixed inset-0 z-[700] flex items-center justify-center bg-black/30 backdrop-blur-md" onclick={() => showMoveModal = false}>
-    <div class="bg-white/95 backdrop-blur-xl rounded-2xl shadow-2xl w-full max-w-md p-6" onclick={(e) => e.stopPropagation()}>
-      <h3 class="text-lg font-semibold text-gray-900 mb-4">Move Table</h3>
-      <div class="space-y-3 mb-6">
+  <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
+<div class="fixed inset-0 z-[700] flex items-center justify-center bg-black/30 backdrop-blur-md" onclick={() => showMoveModal = false} onkeydown={(e) => { if (e.key === 'Escape') showMoveModal = false; }} role="dialog" aria-modal="true" tabindex="-1">
+  <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
+  <div class="bg-white/95 backdrop-blur-xl rounded-2xl shadow-2xl w-full max-w-md p-6" onclick={(e) => e.stopPropagation()} onkeydown={(e) => e.stopPropagation()} role="document">
+    <h3 class="text-lg font-semibold text-gray-900 mb-4">Move Table</h3>
+    <div class="space-y-3 mb-6">
+      <div>
+        <span class="block text-xs font-medium text-gray-500 mb-1">Guest</span>
+        <div class="px-3 py-2 bg-gray-50 rounded-lg text-sm text-gray-900 font-medium">{moveGuest.name}</div>
+      </div>
+      <div class="grid grid-cols-2 gap-3">
         <div>
-          <label class="block text-xs font-medium text-gray-500 mb-1">Guest</label>
-          <div class="px-3 py-2 bg-gray-50 rounded-lg text-sm text-gray-900 font-medium">{moveGuest.name}</div>
-        </div>
-        <div class="grid grid-cols-2 gap-3">
-          <div>
-            <label class="block text-xs font-medium text-gray-500 mb-1">Current Table</label>
-            <div class="px-3 py-2 bg-gray-50 rounded-lg text-sm text-gray-700">{tables.find(t => moveGuest && t.id === moveGuest.tableId)?.name || (moveGuest?.tableId ?? '—')}</div>
-          </div>
-          <div>
-            <label class="block text-xs font-medium text-gray-500 mb-1">Current Seat</label>
-            <div class="px-3 py-2 bg-gray-50 rounded-lg text-sm text-gray-700">{moveGuest.seatNum ?? '—'}</div>
-          </div>
+          <span class="block text-xs font-medium text-gray-500 mb-1">Current Table</span>
+          <div class="px-3 py-2 bg-gray-50 rounded-lg text-sm text-gray-700">{tables.find(t => moveGuest && t.id === moveGuest.tableId)?.name || (moveGuest?.tableId ?? '—')}</div>
         </div>
         <div>
-          <label class="block text-xs font-medium text-gray-500 mb-1">New Table</label>
-          <select bind:value={moveTableId} onchange={() => { moveSeatNum = getNextSeatNum(); }} class="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm bg-white focus:border-gold outline-none">
+          <span class="block text-xs font-medium text-gray-500 mb-1">Current Seat</span>
+          <div class="px-3 py-2 bg-gray-50 rounded-lg text-sm text-gray-700">{moveGuest.seatNum ?? '—'}</div>
+        </div>
+      </div>
+      <div>
+        <label for="move-table" class="block text-xs font-medium text-gray-500 mb-1">New Table</label>
+        <select id="move-table" bind:value={moveTableId} onchange={() => { moveSeatNum = getNextSeatNum(); }} class="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm bg-white focus:border-gold outline-none">
             {#each moveTables as t}
               <option value={String(t.id)}>{t.name}</option>
             {/each}
@@ -758,8 +762,8 @@
         </div>
         {#if moveTableId}
           <div>
-            <label class="block text-xs font-medium text-gray-500 mb-1">Seat Number (1–{getTableCapacity()})</label>
-            <input type="number" min="1" max={getTableCapacity()} bind:value={moveSeatNum}
+            <label for="move-seat" class="block text-xs font-medium text-gray-500 mb-1">Seat Number (1–{getTableCapacity()})</label>
+            <input id="move-seat" type="number" min="1" max={getTableCapacity()} bind:value={moveSeatNum}
               class="w-full px-3 py-2 border rounded-lg text-sm bg-white outline-none transition-all {isSeatOccupied(moveSeatNum) ? 'border-red focus:ring-2 focus:ring-red/15' : 'border-gray-200 focus:border-gold focus:ring-2 focus:ring-gold/15'}" />
             {#if isSeatOccupied(moveSeatNum)}
               <p class="mt-1 text-xs text-red flex items-center gap-1">⚠ Seat {moveSeatNum} is occupied</p>

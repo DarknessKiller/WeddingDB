@@ -7,6 +7,16 @@ export default defineConfig({
 		tailwindcss(),
 		sveltekit()
 	],
+	build: {
+		rollupOptions: {
+			output: {
+				manualChunks(id) {
+					if (id.includes('konva') || id.includes('svelte-konva')) return 'konva';
+					if (id.includes('node_modules/zod')) return 'zod';
+				}
+			}
+		}
+	},
 	server: {
 		host: '0.0.0.0',
 		proxy: {

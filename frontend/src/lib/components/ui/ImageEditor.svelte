@@ -95,20 +95,20 @@
         <!-- Position -->
         <div class="grid grid-cols-2 gap-3">
           <div>
-            <label class="flex items-center justify-between text-xs font-medium text-gray-600 mb-1">
+            <label for="image-pos-x" class="flex items-center justify-between text-xs font-medium text-gray-600 mb-1">
               <span class="flex items-center gap-1"><Move class="w-3 h-3" /> Position X</span>
               <span class="text-gray-400">{posX}</span>
             </label>
-            <input type="range" min="0" max="100" step="1" value={parseInt(posX) || 50}
+            <input id="image-pos-x" type="range" min="0" max="100" step="1" value={parseInt(posX) || 50}
               oninput={(e) => posX = `${(e.target as HTMLInputElement).value}%`}
               class="w-full h-1.5 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-red" />
           </div>
           <div>
-            <label class="flex items-center justify-between text-xs font-medium text-gray-600 mb-1">
+            <label for="image-pos-y" class="flex items-center justify-between text-xs font-medium text-gray-600 mb-1">
               <span class="flex items-center gap-1"><Move class="w-3 h-3" /> Position Y</span>
               <span class="text-gray-400">{posY}</span>
             </label>
-            <input type="range" min="0" max="100" step="1" value={parseInt(posY) || 50}
+            <input id="image-pos-y" type="range" min="0" max="100" step="1" value={parseInt(posY) || 50}
               oninput={(e) => posY = `${(e.target as HTMLInputElement).value}%`}
               class="w-full h-1.5 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-red" />
           </div>
@@ -117,11 +117,11 @@
         <!-- Blur -->
         {#if showBlur}
           <div>
-            <label class="flex items-center justify-between text-xs font-medium text-gray-600 mb-1">
+            <label for="image-blur" class="flex items-center justify-between text-xs font-medium text-gray-600 mb-1">
               <span>Blur</span>
               <span class="text-gray-400">{blur}px</span>
             </label>
-            <input type="range" min="0" max="20" step="1" bind:value={blur}
+            <input id="image-blur" type="range" min="0" max="20" step="1" bind:value={blur}
               class="w-full h-1.5 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-red" />
           </div>
         {/if}
