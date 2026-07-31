@@ -3,7 +3,6 @@ package handlers
 import (
 	"fmt"
 	"net/http"
-	"strings"
 	"weddingdb/internal/services"
 
 	"github.com/google/uuid"
@@ -36,14 +35,8 @@ func (h *SSEHandler) StreamHandler() http.HandlerFunc {
 		}
 
 		// Extract wedding ID from path: /api/weddings/{wid}/events
-		path := r.URL.Path
-		parts := strings.Split(path, "/")
-		// Expected: ["", "api", "weddings", "{wid}", "events"]
-		if len(parts) < 4 {
-			http.Error(w, "invalid path", http.StatusBadRequest)
-			return
-		}
-		wid, err := uuid.Parse(parts[3])
+		widStr := r.PathValue("wid")
+		wid, err := uuid.Parse(widStr)
 		if err != nil {
 			http.Error(w, "invalid wedding ID", http.StatusBadRequest)
 			return

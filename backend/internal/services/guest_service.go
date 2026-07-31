@@ -33,7 +33,7 @@ func (s *GuestService) Create(ctx context.Context, g *models.GuestRecord) error 
 	if err := s.guestRepo.Create(ctx, g); err != nil {
 		return err
 	}
-	s.publishEvent(ctx, "create", g, g.WeddingID)
+	s.publishEvent("create", g, g.WeddingID)
 	return nil
 }
 
@@ -41,7 +41,7 @@ func (s *GuestService) Update(ctx context.Context, g *models.GuestRecord) error 
 	if err := s.guestRepo.Update(ctx, g); err != nil {
 		return err
 	}
-	s.publishEvent(ctx, "update", g, g.WeddingID)
+	s.publishEvent("update", g, g.WeddingID)
 	return nil
 }
 
@@ -52,7 +52,7 @@ func (s *GuestService) Delete(ctx context.Context, id, weddingID uuid.UUID) erro
 		return err
 	}
 	if guest != nil {
-		s.publishEvent(ctx, "delete", guest, weddingID)
+		s.publishEvent("delete", guest, weddingID)
 	}
 	return nil
 }
@@ -95,7 +95,7 @@ func (s *GuestService) AssignSeat(ctx context.Context, guestID, weddingID, table
 	if err := s.guestRepo.Update(ctx, guest); err != nil {
 		return err
 	}
-	s.publishEvent(ctx, "seat_assign", guest, weddingID)
+	s.publishEvent("seat_assign", guest, weddingID)
 	return nil
 }
 
@@ -114,7 +114,7 @@ func (s *GuestService) CheckIn(ctx context.Context, id, weddingID uuid.UUID) err
 	if err := s.guestRepo.Update(ctx, guest); err != nil {
 		return err
 	}
-	s.publishEvent(ctx, "checkin", guest, weddingID)
+	s.publishEvent("checkin", guest, weddingID)
 	return nil
 }
 
@@ -127,7 +127,7 @@ func (s *GuestService) CheckOut(ctx context.Context, id, weddingID uuid.UUID) er
 	if err := s.guestRepo.Update(ctx, guest); err != nil {
 		return err
 	}
-	s.publishEvent(ctx, "checkout", guest, weddingID)
+	s.publishEvent("checkout", guest, weddingID)
 	return nil
 }
 
@@ -140,7 +140,7 @@ func (s *GuestService) BulkCreate(ctx context.Context, guests []models.GuestReco
 			if err := s.guestRepo.Create(ctx, g); err != nil {
 				return created, err
 			}
-			s.publishEvent(ctx, "create", g, g.WeddingID)
+			s.publishEvent("create", g, g.WeddingID)
 			created++
 			continue
 		}
@@ -166,7 +166,7 @@ func (s *GuestService) BulkCreate(ctx context.Context, guests []models.GuestReco
 		if err := s.guestRepo.Create(ctx, g); err != nil {
 			return created, err
 		}
-		s.publishEvent(ctx, "create", g, g.WeddingID)
+		s.publishEvent("create", g, g.WeddingID)
 		created++
 	}
 	return created, nil
@@ -179,7 +179,7 @@ func (s *GuestService) Occupancy(ctx context.Context, weddingID uuid.UUID) ([]re
 // publishEvent broadcasts a guest mutation to all connected SSE clients via Redis.
 // Uses context.Background() because the service layer does not yet propagate request
 // context. The goroutine ensures publishing never blocks the caller.
-func (s *GuestService) publishEvent(ctx context.Context, eventType string, guest *models.GuestRecord, weddingID uuid.UUID) {
+func (s *GuestService) publishEvent(eventType string, guest *models.GuestRecord, weddingID uuid.UUID) {
 	if s.sseHub == nil {
 		return
 	}
@@ -196,7 +196,7 @@ func (s *GuestService) publishEvent(ctx context.Context, eventType string, guest
 	// context.Background() is intentional here — the service layer has no request
 	// context to propagate. When context propagation is added to the service
 	// methods, this should switch to the passed-through ctx.
-	go s.sseHub.Publish(ctx, weddingID, event)
+	go s.sseHub.Publish(context.Background(), weddingID, event)
 }
 
 func guestToEventData(g *models.GuestRecord) *GuestEventData {
