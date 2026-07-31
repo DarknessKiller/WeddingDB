@@ -262,7 +262,7 @@ func (h *AdminHandler) RevokeUser(c fuego.ContextNoBody) (any, error) {
 	}
 
 	// Verify user exists
-	if _, err := h.adminRepo.FindByID(id); err != nil {
+	if _, err := h.adminRepo.FindByID(c.Context(), id); err != nil {
 		return nil, fuego.NotFoundError{Title: "User not found"}
 	}
 

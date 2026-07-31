@@ -33,7 +33,7 @@ type AccessClaims struct {
 
 ### 1c. Modify `AuthService` struct
 
-**Add** `client *redis.Client` field:
+**Add** `redisClient *redis.Client` field:
 
 ```go
 type AuthService struct {
@@ -41,7 +41,7 @@ type AuthService struct {
     weddingRepo *repository.WeddingRepo
     tokenRepo   *repository.TokenRepo
     secret      []byte
-    client      *redis.Client
+    redisClient *redis.Client
 }
 ```
 
@@ -54,10 +54,10 @@ func NewAuthService(adminRepo *repository.AdminRepo, weddingRepo *repository.Wed
 
 **After:**
 ```go
-func NewAuthService(adminRepo *repository.AdminRepo, weddingRepo *repository.WeddingRepo, tokenRepo *repository.TokenRepo, secret string, client *redis.Client) *AuthService
+func NewAuthService(adminRepo *repository.AdminRepo, weddingRepo *repository.WeddingRepo, tokenRepo *repository.TokenRepo, secret string, redisClient *redis.Client) *AuthService
 ```
 
-Store `client` in struct.
+Store `redisClient` in struct.
 
 ### 1e. Add `GetTokenVersion` method
 
@@ -96,7 +96,7 @@ func (s *AuthService) IsTokenBlacklisted(ctx context.Context, jti string) (bool,
 func (s *AuthService) RevokeUserTokens(ctx context.Context, userID uuid.UUID) error
 ```
 
-- Call `s.tokenRepo.DeleteByAdminID(userID)` to nuke all refresh tokens in Postgres first (closes TOCTOU race).
+- Call `s.tokenRepo.DeleteByAdminID(ctx, userID)` to nuke all refresh tokens in Postgres first (closes TOCTOU race).
 - Redis key: `"user:" + userID.String() + ":tv"`
 - `INCR` the key (creates with value 1 if absent — satisfies lazy init).
 - Return first error encountered.
@@ -139,7 +139,7 @@ func (s *AuthService) Refresh(ctx context.Context, refreshTokenStr string, oldAc
 ```
 
 - After creating new tokens and deleting old refresh token, blacklist old access token's JTI if `oldAccessToken != ""`.
-- Parse old token via `parseTokenUnsafe`, call `BlacklistAccessToken`.
+- Parse old token via `parseTokenClaims`, call `BlacklistAccessToken`.
 
 ### 1k. Modify `ValidateToken` signature
 
@@ -158,10 +158,10 @@ After parsing + validating the JWT, **add two checks**:
 1. **Blacklist check:** `s.IsTokenBlacklisted(ctx, claims.ID)` → if true, return error `"token has been revoked"`.
 2. **Token version check:** `s.GetTokenVersion(ctx, claims.AdminID)` → if `claims.TokenVersion < storedTV`, return error `"token version is stale"`.
 
-### 1l. Add `parseTokenUnsafe` helper
+### 1l. Add `parseTokenClaims` helper
 
 ```go
-func (s *AuthService) parseTokenUnsafe(tokenStr string) (*AccessClaims, error)
+func (s *AuthService) parseTokenClaims(tokenStr string) (*AccessClaims, error)
 ```
 
 - Parses JWT without blacklist/tv checks — used only for extracting claims during logout and refresh token rotation.
@@ -179,7 +179,7 @@ func (s *AuthService) Logout(refreshToken string) error
 func (s *AuthService) Logout(ctx context.Context, refreshToken string, accessToken string) error
 ```
 
-- Call `s.BlacklistAccessToken(ctx, accessToken)`. If error, return it (fail-closed).
+- Call `s.BlacklistAccessToken(ctx, accessToken)`. Best-effort: ignore error (don't block logout on Redis failure).
 - Call `s.tokenRepo.DeleteByToken(refreshToken)`.
 - Return the error.
 
@@ -340,11 +340,11 @@ authService := services.NewAuthService(adminRepo, weddingRepo, tokenRepo, env.JW
 ### 7a. Add `DeleteByAdminID` method
 
 ```go
-func (r *TokenRepo) DeleteByAdminID(adminID uuid.UUID) error
+func (r *TokenRepo) DeleteByAdminID(ctx context.Context, adminID uuid.UUID) error
 ```
 
 - `WHERE admin_id = ?`, delete all matching `RefreshToken` rows.
-- Add import for `"github.com/google/uuid"`.
+- Add import for `"github.com/google/uuid"` and `"context"`.
 
 ---
 
@@ -376,7 +376,7 @@ Client → POST /api/auth/logout {refreshToken: "..."} + Authorization: Bearer <
       → BlacklistAccessToken(ctx, accessToken)
         → parse claims → extract JTI + expiry
         → SET blacklist:jti:{jti} = "1" EX {remaining seconds}
-        → if Redis error → return error (fail-closed)
+        → if Redis error → best-effort (ignored, logout continues)
       → tokenRepo.DeleteByToken(refreshToken)  [Postgres]
   → 204
 ```
@@ -390,7 +390,7 @@ Client → PUT /api/users/{id}/revoke + Authorization: Bearer <admin-token>
     → requireAdmin(ctx) guard
     → DecodeID, prevent self-revoke, verify user exists
     → authService.RevokeUserTokens(ctx, userID)
-      → tokenRepo.DeleteByAdminID(userID)  [Postgres, nukes all refresh tokens first]
+      → tokenRepo.DeleteByAdminID(ctx, userID)  [Postgres, nukes all refresh tokens first]
       → INCR user:{id}:tv  [Redis, creates if absent]
   → 200 {"message": "User tokens revoked"}
 ```
