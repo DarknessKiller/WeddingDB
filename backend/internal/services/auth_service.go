@@ -134,8 +134,9 @@ func (s *AuthService) Refresh(ctx context.Context, refreshTokenStr string, oldAc
 	// Blacklist old access token JTI to prevent concurrent use after rotation
 	if oldAccessToken != "" {
 		if oldClaims, err := s.parseTokenUnsafe(oldAccessToken); err == nil && oldClaims != nil {
-			// Best-effort: if blacklist fails, token still expires in <=15min
-			_ = s.BlacklistAccessToken(ctx, oldClaims)
+			if err := s.BlacklistAccessToken(ctx, oldClaims); err != nil {
+				return nil, fmt.Errorf("failed to blacklist old access token: %w", err)
+			}
 		}
 	}
 
