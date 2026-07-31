@@ -93,7 +93,7 @@ func (s *AuthService) Login(ctx context.Context, email, password string) (*Login
 }
 
 // SelectWedding generates a new access token with the selected wedding embedded.
-func (s *AuthService) SelectWedding(ctx context.Context, adminID uuid.UUID, weddingID uuid.UUID) (string, error) {
+func (s *AuthService) SelectWedding(ctx context.Context, adminID uuid.UUID, weddingID uuid.UUID, oldJTI string) (string, error) {
 	admin, err := s.adminRepo.FindByID(adminID)
 	if err != nil {
 		return "", errors.New("admin not found")
@@ -104,6 +104,10 @@ func (s *AuthService) SelectWedding(ctx context.Context, adminID uuid.UUID, wedd
 		if err != nil || !hasAccess {
 			return "", errors.New("no access to this wedding")
 		}
+	}
+	// Revoke old access token
+	if s.revoker != nil && oldJTI != "" {
+		s.revoker.Revoke(ctx, oldJTI, 15*time.Minute)
 	}
 	return s.generateAccessToken(admin, &weddingID)
 }

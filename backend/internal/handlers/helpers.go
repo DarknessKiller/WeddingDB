@@ -25,6 +25,12 @@ func RoleFromContext(ctx context.Context) string {
 	return v
 }
 
+// TokenJTIFromContext extracts the current token's JTI from the request context.
+func TokenJTIFromContext(ctx context.Context) string {
+	v, _ := ctx.Value(middleware.TokenJTIKey).(string)
+	return v
+}
+
 // DecodeWID parses a UUID from the path param "wid", supporting base64-encoded IDs.
 func DecodeWID(c interface{ PathParam(string) string }) (uuid.UUID, error) {
 	return middleware.DecodeWIDString(c.PathParam("wid"))
