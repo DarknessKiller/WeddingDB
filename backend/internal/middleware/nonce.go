@@ -22,3 +22,20 @@ func (s *NonceStore) IsUsed(ctx context.Context, jti string) bool {
 	exists, err := s.client.Exists(ctx, "nonce:"+jti).Result()
 	return err == nil && exists > 0
 }
+
+type TokenBlacklist struct {
+	client *redis.Client
+}
+
+func NewTokenBlacklist(client *redis.Client) *TokenBlacklist {
+	return &TokenBlacklist{client: client}
+}
+
+func (b *TokenBlacklist) Revoke(ctx context.Context, jti string, ttl time.Duration) error {
+	return b.client.Set(ctx, "bl:"+jti, "1", ttl).Err()
+}
+
+func (b *TokenBlacklist) IsRevoked(ctx context.Context, jti string) bool {
+	exists, err := b.client.Exists(ctx, "bl:"+jti).Result()
+	return err == nil && exists > 0
+}

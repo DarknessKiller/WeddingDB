@@ -114,7 +114,8 @@ func Init(env config.Env) *App {
 	tokenRepo := repository.NewTokenRepo(db)
 	layoutRepo := repository.NewLayoutRepo(db)
 
-	authService := services.NewAuthService(adminRepo, weddingRepo, tokenRepo, env.JWTSecret)
+	blacklist := middleware.NewTokenBlacklist(rdb)
+	authService := services.NewAuthService(adminRepo, weddingRepo, tokenRepo, blacklist, env.JWTSecret)
 	tableService := services.NewTableService(tableRepo)
 	guestService := services.NewGuestService(guestRepo, tableRepo)
 	weddingService := services.NewWeddingService(weddingRepo)

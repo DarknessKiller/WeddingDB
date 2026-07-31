@@ -29,7 +29,7 @@ func signToken(secret string, adminID uuid.UUID, role string, wid *uuid.UUID, ex
 }
 
 func newAuthService(secret string) *services.AuthService {
-	return services.NewAuthService(nil, nil, nil, secret)
+	return services.NewAuthService(nil, nil, nil, nil, secret)
 }
 
 func TestAuthMiddleware_MissingToken(t *testing.T) {
