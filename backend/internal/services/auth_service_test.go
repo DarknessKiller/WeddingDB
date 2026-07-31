@@ -343,9 +343,9 @@ func TestParseTokenUnsafe_ExtractsClaims(t *testing.T) {
 		},
 	})
 
-	claims, err := svc.parseTokenUnsafe(tok)
+	claims, err := svc.parseTokenClaims(tok)
 	if err != nil {
-		t.Fatalf("parseTokenUnsafe failed: %v", err)
+		t.Fatalf("parseTokenClaims failed: %v", err)
 	}
 	if claims.ID != jti {
 		t.Errorf("JTI = %q, want %q", claims.ID, jti)

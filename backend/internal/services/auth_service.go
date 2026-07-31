@@ -121,6 +121,16 @@ func (s *AuthService) Refresh(ctx context.Context, refreshTokenStr string, oldAc
 	if err != nil {
 		return nil, errors.New("admin not found")
 	}
+
+	// Blacklist old access token JTI first — failure here leaves no token state mutated
+	if oldAccessToken != "" {
+		if oldClaims, err := s.parseTokenClaims(oldAccessToken); err == nil && oldClaims != nil {
+			if err := s.BlacklistAccessToken(ctx, oldClaims); err != nil {
+				return nil, fmt.Errorf("failed to blacklist old access token: %w", err)
+			}
+		}
+	}
+
 	accessToken, err := s.generateAccessToken(ctx, admin, token.WeddingID)
 	if err != nil {
 		return nil, err
@@ -130,15 +140,6 @@ func (s *AuthService) Refresh(ctx context.Context, refreshTokenStr string, oldAc
 		return nil, err
 	}
 	s.tokenRepo.DeleteByToken(ctx, refreshTokenStr)
-
-	// Blacklist old access token JTI to prevent concurrent use after rotation
-	if oldAccessToken != "" {
-		if oldClaims, err := s.parseTokenUnsafe(oldAccessToken); err == nil && oldClaims != nil {
-			if err := s.BlacklistAccessToken(ctx, oldClaims); err != nil {
-				return nil, fmt.Errorf("failed to blacklist old access token: %w", err)
-			}
-		}
-	}
 
 	var weddings []models.WeddingEvent
 	if admin.Role == "admin" {
@@ -160,14 +161,12 @@ func (s *AuthService) Refresh(ctx context.Context, refreshTokenStr string, oldAc
 }
 
 // Logout deletes the refresh token and blacklists the access token's JTI.
+// Blacklisting is best-effort: a Redis failure does not prevent refresh token deletion.
 func (s *AuthService) Logout(ctx context.Context, refreshToken string, accessToken string) error {
-	// Blacklist the access token JTI if provided
+	// Blacklist the access token JTI (best-effort — don't block logout on Redis failure)
 	if accessToken != "" {
-		claims, err := s.parseTokenUnsafe(accessToken)
-		if err == nil && claims != nil {
-			if err := s.BlacklistAccessToken(ctx, claims); err != nil {
-				return fmt.Errorf("failed to blacklist access token: %w", err)
-			}
+		if claims, err := s.parseTokenClaims(accessToken); err == nil && claims != nil {
+			s.BlacklistAccessToken(ctx, claims)
 		}
 	}
 	return s.tokenRepo.DeleteByToken(ctx, refreshToken)
@@ -250,19 +249,29 @@ func (s *AuthService) GetTokenVersion(ctx context.Context, userID uuid.UUID) (in
 func (s *AuthService) RevokeUserTokens(ctx context.Context, userID uuid.UUID) error {
 	// Step 1: Delete refresh tokens from Postgres first.
 	// Any concurrent Refresh call after this point will fail at FindByToken.
-	if err := s.tokenRepo.DeleteByAdminID(userID); err != nil {
+	if err := s.tokenRepo.DeleteByAdminID(ctx, userID); err != nil {
 		return fmt.Errorf("failed to delete refresh tokens: %w", err)
 	}
 	// Step 2: Bump token version. Any existing access token with old tv is now rejected by middleware.
+	// Retry on transient Redis failures — can't undo the Postgres delete.
 	key := fmt.Sprintf("user:%s:tv", userID.String())
-	if err := s.redisClient.Incr(ctx, key).Err(); err != nil {
-		return fmt.Errorf("failed to increment token version: %w", err)
+	var lastErr error
+	for attempt := 0; attempt < 3; attempt++ {
+		if err := s.redisClient.Incr(ctx, key).Err(); err != nil {
+			lastErr = err
+			continue
+		}
+		lastErr = nil
+		break
+	}
+	if lastErr != nil {
+		return fmt.Errorf("failed to increment token version after retries: %w", lastErr)
 	}
 	return nil
 }
 
-// parseTokenUnsafe parses a JWT without blacklist/tv checks — used only for extracting claims during logout.
-func (s *AuthService) parseTokenUnsafe(tokenStr string) (*AccessClaims, error) {
+// parseTokenClaims parses a JWT without blacklist/tv checks — used only for extracting claims during logout.
+func (s *AuthService) parseTokenClaims(tokenStr string) (*AccessClaims, error) {
 	token, err := jwt.ParseWithClaims(tokenStr, &AccessClaims{}, func(t *jwt.Token) (interface{}, error) {
 		return s.secret, nil
 	})

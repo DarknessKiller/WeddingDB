@@ -34,6 +34,6 @@ func (r *TokenRepo) DeleteExpired(ctx context.Context) error {
 }
 
 // DeleteByAdminID deletes all refresh tokens for the given admin user.
-func (r *TokenRepo) DeleteByAdminID(adminID uuid.UUID) error {
-	return r.db.Where("admin_id = ?", adminID).Delete(&models.RefreshToken{}).Error
+func (r *TokenRepo) DeleteByAdminID(ctx context.Context, adminID uuid.UUID) error {
+	return r.db.WithContext(ctx).Where("admin_id = ?", adminID).Delete(&models.RefreshToken{}).Error
 }
