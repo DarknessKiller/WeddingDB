@@ -161,7 +161,7 @@ func (s *AuthService) Logout(ctx context.Context, refreshToken string) error {
 	return s.tokenRepo.DeleteByToken(refreshToken)
 }
 
-func (s *AuthService) ValidateToken(tokenStr string) (*AccessClaims, error) {
+func (s *AuthService) ValidateToken(ctx context.Context, tokenStr string) (*AccessClaims, error) {
 	token, err := jwt.ParseWithClaims(tokenStr, &AccessClaims{}, func(t *jwt.Token) (interface{}, error) {
 		return s.secret, nil
 	})
@@ -173,7 +173,7 @@ func (s *AuthService) ValidateToken(tokenStr string) (*AccessClaims, error) {
 		return nil, errors.New("invalid token")
 	}
 	// Check blacklist (fail closed: if revoker exists and reports revoked, reject)
-	if s.revoker != nil && claims.ID != "" && s.revoker.IsRevoked(context.Background(), claims.ID) {
+	if s.revoker != nil && claims.ID != "" && s.revoker.IsRevoked(ctx, claims.ID) {
 		return nil, errors.New("token revoked")
 	}
 	return claims, nil

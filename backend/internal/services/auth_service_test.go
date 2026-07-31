@@ -65,7 +65,7 @@ func TestValidateToken_Valid(t *testing.T) {
 		},
 	})
 
-	claims, err := svc.ValidateToken(tok)
+	claims, err := svc.ValidateToken(context.Background(), tok)
 	if err != nil {
 		t.Fatalf("ValidateToken failed: %v", err)
 	}
@@ -94,7 +94,7 @@ func TestValidateToken_Expired(t *testing.T) {
 		},
 	})
 
-	_, err := svc.ValidateToken(tok)
+	_, err := svc.ValidateToken(context.Background(), tok)
 	if err == nil {
 		t.Fatal("expected error for expired token, got nil")
 	}
@@ -114,7 +114,7 @@ func TestValidateToken_WrongSecret(t *testing.T) {
 		},
 	})
 
-	_, err := svc.ValidateToken(tok)
+	_, err := svc.ValidateToken(context.Background(), tok)
 	if err == nil {
 		t.Fatal("expected error for wrong-secret token, got nil")
 	}
@@ -123,7 +123,7 @@ func TestValidateToken_WrongSecret(t *testing.T) {
 func TestValidateToken_Malformed(t *testing.T) {
 	svc := newTestAuthService("test-secret-123")
 
-	_, err := svc.ValidateToken("not.a.jwt")
+	_, err := svc.ValidateToken(context.Background(), "not.a.jwt")
 	if err == nil {
 		t.Fatal("expected error for malformed token, got nil")
 	}
@@ -146,7 +146,7 @@ func TestValidateToken_Revoked(t *testing.T) {
 	})
 
 	// Token is valid before revocation
-	_, err := svc.ValidateToken(tok)
+	_, err := svc.ValidateToken(context.Background(), tok)
 	if err != nil {
 		t.Fatalf("expected valid token before revocation, got: %v", err)
 	}
@@ -157,7 +157,7 @@ func TestValidateToken_Revoked(t *testing.T) {
 	}
 
 	// Now ValidateToken should reject it
-	_, err = svc.ValidateToken(tok)
+	_, err = svc.ValidateToken(context.Background(), tok)
 	if err == nil {
 		t.Fatal("expected error for revoked token, got nil")
 	}
@@ -180,7 +180,7 @@ func TestValidateToken_NilRevoker(t *testing.T) {
 		},
 	})
 
-	claims, err := svc.ValidateToken(tok)
+	claims, err := svc.ValidateToken(context.Background(), tok)
 	if err != nil {
 		t.Fatalf("ValidateToken failed: %v", err)
 	}
@@ -204,7 +204,7 @@ func TestValidateToken_NilWeddingID(t *testing.T) {
 		},
 	})
 
-	claims, err := svc.ValidateToken(tok)
+	claims, err := svc.ValidateToken(context.Background(), tok)
 	if err != nil {
 		t.Fatalf("ValidateToken failed: %v", err)
 	}
