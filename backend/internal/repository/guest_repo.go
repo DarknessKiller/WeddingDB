@@ -118,7 +118,7 @@ func (r *GuestRepo) TableOccupancy(ctx context.Context, weddingID uuid.UUID) ([]
 	}
 	result := make([]TableOccupancy, 0, len(rows))
 	for _, row := range rows {
-		result = append(result, TableOccupancy{TableID: row.TableID, Pax: row.Pax})
+		result = append(result, TableOccupancy(row))
 	}
 	return result, nil
 }
