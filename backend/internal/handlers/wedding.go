@@ -75,6 +75,7 @@ func (h *WeddingHandler) Create(c fuego.ContextWithBody[WeddingRequest]) (any, e
 	if adminID != uuid.Nil {
 		h.adminRepo.AddUserWedding(adminID, w.ID)
 	}
+	c.SetStatus(201)
 	return w, nil
 }
 
@@ -165,7 +166,11 @@ func (h *WeddingHandler) Delete(c fuego.ContextWithBody[any]) (any, error) {
 	if err != nil {
 		return nil, fuego.BadRequestError{Title: "Invalid ID"}
 	}
-	return nil, h.weddingService.Delete(id)
+	if err := h.weddingService.Delete(id); err != nil {
+		return nil, err
+	}
+	c.SetStatus(204)
+	return nil, nil
 }
 
 // sanitizeURL strips any value that isn't a safe URL prefix or a relative path.

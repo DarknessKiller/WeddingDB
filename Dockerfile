@@ -8,11 +8,12 @@ RUN npm run build
 
 # Stage 2: Build backend
 FROM golang:1.26-alpine AS backend-build
+ARG VERSION=dev
 WORKDIR /app/backend
 COPY backend/go.mod backend/go.sum ./
 RUN go mod download
 COPY backend/ ./
-RUN CGO_ENABLED=0 go build -o server ./cmd/server/
+RUN CGO_ENABLED=0 go build -ldflags "-X main.version=${VERSION}" -o server ./cmd/server/
 
 # Stage 3: Runtime
 FROM alpine:3.22
