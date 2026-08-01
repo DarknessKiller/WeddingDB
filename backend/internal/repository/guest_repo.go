@@ -79,7 +79,7 @@ func (r *GuestRepo) SearchByWedding(ctx context.Context, weddingID uuid.UUID, qu
 			fmt.Sprintf("'%s'", strings.ReplaceAll(lowerQ, "'", "''")),
 			fmt.Sprintf("'%s%%'", strings.ReplaceAll(lowerQ, "'", "''")),
 			fmt.Sprintf("'%%%s%%'", strings.ReplaceAll(lowerQ, "'", "''")))).
-		Limit(20).Find(&guests).Error
+		Limit(20).Find(&guests).Order("name ASC").Error
 	return guests, err
 }
 
