@@ -7,6 +7,7 @@ import (
 	"log"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/redis/go-redis/v9"
@@ -55,6 +56,9 @@ type SSEHub struct {
 	pubsub  *redis.PubSub
 	ctx     context.Context
 	cancel  context.CancelFunc
+	// ponytail: closed after PSubscribe ACKs so the first Publish is not lost during Redis warm-up.
+	// Race B (client joins SSE mid-publish) is not addressed here — fix needs a per-wedding replay buffer.
+	ready chan struct{}
 }
 
 // NewSSEHub creates a new SSEHub and starts the Redis subscriber.
@@ -65,15 +69,24 @@ func NewSSEHub(rdb *redis.Client) *SSEHub {
 		redis:   rdb,
 		ctx:     ctx,
 		cancel:  cancel,
+		ready:   make(chan struct{}),
 	}
 	go hub.subscribeRedis()
+	// ponytail: block up to 5s on PSubscribe ACK so the first Publish lands on a live subscription.
+	// On timeout, hub is returned in not-ready state; Publish will return an error until ready closes.
+	select {
+	case <-hub.ready:
+	case <-time.After(5 * time.Second):
+		log.Printf("SSE: PSubscribe not ready after 5s; Publish will error until Redis recovers")
+	}
 	return hub
 }
 
 // subscribeRedis listens on the wildcard Redis channel and fans out to local clients.
 func (h *SSEHub) subscribeRedis() {
 	h.pubsub = h.redis.PSubscribe(h.ctx, "wedding:*:guests")
-
+	// ponytail: PSubscribe is synchronous in go-redis v9 — returns only after Redis ACKs.
+	close(h.ready)
 	ch := h.pubsub.Channel()
 	for {
 		select {
@@ -139,7 +152,13 @@ func (h *SSEHub) Unsubscribe(client *SSEClient) {
 
 // Publish sends a guest event to Redis for cross-instance broadcasting.
 // The provided ctx is propagated to Redis for cancellation/deadline support.
+// Returns an error if the hub is not yet ready (PSubscribe has not ACKed).
 func (h *SSEHub) Publish(ctx context.Context, weddingID uuid.UUID, event GuestEvent) error {
+	select {
+	case <-h.ready:
+	default:
+		return fmt.Errorf("SSE hub not ready")
+	}
 	data, err := json.Marshal(event)
 	if err != nil {
 		return fmt.Errorf("marshal guest event: %w", err)

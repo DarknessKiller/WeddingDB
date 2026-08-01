@@ -3,6 +3,7 @@ package services
 import (
 	"context"
 	"encoding/json"
+	"strings"
 	"testing"
 	"time"
 
@@ -89,6 +90,22 @@ func TestSSEHub_FanOut(t *testing.T) {
 		case <-time.After(100 * time.Millisecond):
 			t.Errorf("client %d: timed out waiting for event", i)
 		}
+	}
+}
+
+func TestSSEHub_PublishBeforeReady(t *testing.T) {
+	hub := &SSEHub{
+		clients: make(map[uuid.UUID]map[string]*SSEClient),
+		ctx:     context.Background(),
+		ready:   make(chan struct{}),
+	}
+
+	err := hub.Publish(context.Background(), uuid.New(), GuestEvent{Type: "test"})
+	if err == nil {
+		t.Fatal("Publish before ready should error, got nil")
+	}
+	if !strings.Contains(err.Error(), "not ready") {
+		t.Errorf("expected not-ready error, got: %v", err)
 	}
 }
 
