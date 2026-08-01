@@ -28,7 +28,8 @@ func (h *SSEHandler) StreamHandler() http.HandlerFunc {
 			http.Error(w, `{"error":"Missing token"}`, http.StatusUnauthorized)
 			return
 		}
-		if _, err := h.authService.ValidateToken(r.Context(), token); err != nil {
+		claims, err := h.authService.ValidateToken(r.Context(), token)
+		if err != nil {
 			http.Error(w, `{"error":"Invalid token"}`, http.StatusUnauthorized)
 			return
 		}
@@ -39,6 +40,14 @@ func (h *SSEHandler) StreamHandler() http.HandlerFunc {
 		if err != nil {
 			http.Error(w, "invalid wedding ID", http.StatusBadRequest)
 			return
+		}
+
+		// Verify wedding scope: non-admin users must have a JWT scoped to the requested wedding.
+		if claims.Role != "admin" {
+			if claims.WeddingID == nil || *claims.WeddingID != wid {
+				http.Error(w, `{"error":"Access denied"}`, http.StatusForbidden)
+				return
+			}
 		}
 
 		w.Header().Set("Content-Type", "text/event-stream")
