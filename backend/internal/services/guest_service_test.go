@@ -8,6 +8,7 @@ import (
 
 	"github.com/google/uuid"
 	"weddingdb/internal/models"
+	"weddingdb/internal/utils"
 )
 
 func TestErrAlreadyCheckedIn_IsSentinel(t *testing.T) {
@@ -55,8 +56,8 @@ func TestGuestToEventData_FullGuest(t *testing.T) {
 
 	d := guestToEventData(guest)
 
-	if d.ID != gid.String() {
-		t.Errorf("ID = %q, want %q", d.ID, gid)
+	if d.ID != utils.EncodeUUID(gid) {
+		t.Errorf("ID = %q, want %q (base64-encoded)", d.ID, utils.EncodeUUID(gid))
 	}
 	if d.Name != "张三" {
 		t.Errorf("Name = %q, want %q", d.Name, "张三")
@@ -67,8 +68,8 @@ func TestGuestToEventData_FullGuest(t *testing.T) {
 	if !d.IsVip {
 		t.Error("IsVip should be true")
 	}
-	if d.TableID == nil || *d.TableID != tableID.String() {
-		t.Errorf("TableID = %v, want %v", d.TableID, tableID)
+	if d.TableID == nil || *d.TableID != utils.EncodeUUID(tableID) {
+		t.Errorf("TableID = %v, want %v (base64-encoded)", d.TableID, utils.EncodeUUID(tableID))
 	}
 	if d.SeatNum == nil || *d.SeatNum != 5 {
 		t.Errorf("SeatNum = %v, want 5", d.SeatNum)
