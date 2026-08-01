@@ -176,7 +176,7 @@ func Init(env config.Env, version string) *App {
 			Password:            string(hash),
 			Name:                "Admin",
 			Role:                "admin",
-			ForcePasswordChange: true,
+			ForcePasswordChange: false,
 		}
 		if err := adminRepo.Create(context.Background(), admin); err != nil {
 			log.Println("Warning: failed to seed admin:", err)

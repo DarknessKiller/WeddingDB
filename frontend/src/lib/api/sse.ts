@@ -73,7 +73,6 @@ class SSEClient {
 			clearTimeout(this.reconnectTimeout);
 			this.reconnectTimeout = null;
 		}
-		this.handlers.clear();
 		this.reconnectDelay = 1000;
 	}
 

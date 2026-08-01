@@ -3,8 +3,9 @@
   import { weddingTitle } from '$lib/stores/weddingTitle';
   import { selectedGuest, isDrawerOpen, drawerStartEditing, drawerCreateMode, addToast } from '$lib/stores';
   import { weddingId } from '$lib/stores/weddingId';
+  import { guestList } from '$lib/stores/guestEvents';
   import { goto } from '$app/navigation';
-  import { listGuests, deleteGuest as apiDeleteGuest, searchGuests, assignSeat, bulkImportGuests } from '$lib/api/guests';
+  import { deleteGuest as apiDeleteGuest, searchGuests, assignSeat, bulkImportGuests } from '$lib/api/guests';
   import type { GuestResponse, GuestImportData } from '$lib/api/guests';
   import { listTables } from '$lib/api/tables';
   import type { BanquetTable } from '$lib/types';
@@ -21,19 +22,19 @@
   let rsvpFilter = $state<RSVPStatus | 'all'>('all');
   let currentPage = $state(0);
   let pageSize = $state(20);
-  let totalGuests = $state(0);
-  let nextCursor = $state<string | null>(null);
-  let cursors = $state<string[]>([]);
   let sortCol = $state<string>('name');
   let sortDir = $state<'asc' | 'desc'>('asc');
   let selectedIds = $state<Set<string>>(new Set());
   let contextMenu = $state<{ x: number; y: number; guest: GuestResponse } | null>(null);
   let menuWidth = 180;
   let menuHeight = 200;
-  let guests = $state<GuestResponse[]>([]);
   let loading = $state(true);
   let errored = $state(false);
   let error = $state<string | null>(null);
+
+  // Derive guest list from SSE store — updates in real time.
+  let allGuests = $derived($guestList);
+  let totalGuests = $derived(allGuests.length);
 
   let showMoveModal = $state(false);
   let moveGuest = $state<GuestResponse | null>(null);
@@ -57,12 +58,6 @@
     const isOpen = $isDrawerOpen;
     if (prevDrawerOpen && !isOpen) {
       currentPage = 0;
-      cursors = [];
-      if (searchQuery.trim()) {
-        handleSearch();
-      } else {
-        loadGuests();
-      }
     }
     prevDrawerOpen = isOpen;
   });
@@ -70,7 +65,8 @@
   let tables = $state<BanquetTable[]>([]);
 
   onMount(() => {
-    Promise.all([loadGuests(), loadTables()]);
+    loadTables();
+    loading = false;
     function onKey(e: KeyboardEvent) {
       if (e.key === 'Escape') {
         contextMenu = null;
@@ -87,66 +83,46 @@
     } catch {}
   }
 
-  async function loadGuests(cursor?: string) {
-    loading = true;
-    errored = false;
-    error = null;
-    try {
-      const data = await listGuests(wid, { limit: pageSize, cursor });
-      guests = data.guests;
-      totalGuests = data.total;
-      nextCursor = data.nextCursor;
-    } catch (e: any) {
-      errored = true;
-      error = e.message ?? 'Failed to load guests';
-      addToast(error!, 'error');
-    } finally {
-      loading = false;
-    }
-  }
+  // Paginated slice of allGuests — client-side pagination from SSE store.
+  let guests = $derived(allGuests.slice(currentPage * pageSize, (currentPage + 1) * pageSize));
+  let hasNextPage = $derived((currentPage + 1) * pageSize < allGuests.length);
 
   function nextPage() {
-    if (!nextCursor) return;
-    cursors[currentPage] = nextCursor;
+    if (!hasNextPage) return;
     currentPage++;
-    loadGuests(nextCursor);
   }
 
   function prevPage() {
     if (currentPage === 0) return;
     currentPage--;
-    const prevCursor = currentPage === 0 ? undefined : cursors[currentPage - 1];
-    loadGuests(prevCursor);
   }
 
-  async function handleSearch() {
-    if (!searchQuery.trim()) {
-      await loadGuests();
-      return;
-    }
-    loading = true;
-    try {
-      guests = await searchGuests(wid, searchQuery);
-      currentPage = 0;
-      cursors = [];
-      totalGuests = guests.length;
-      nextCursor = null;
-    } catch (e: any) {
-      addToast(e.message ?? 'Search failed', 'error');
-    } finally {
-      loading = false;
-    }
-  }
+  // Search is now client-side filtered from the SSE-backed store.
+  let searchResults = $derived.by(() => {
+    const q = searchQuery.trim().toLowerCase();
+    if (!q) return null; // null means no active search
+    return allGuests.filter(g =>
+      g.name.toLowerCase().includes(q) ||
+      g.phone?.toLowerCase().includes(q) ||
+      g.email?.toLowerCase().includes(q)
+    );
+  });
+
+  // Display list: search results if searching, otherwise paginated slice.
+  let displayGuests = $derived(
+    searchResults !== null
+      ? searchResults.slice(currentPage * pageSize, (currentPage + 1) * pageSize)
+      : guests
+  );
+  let displayTotal = $derived(searchResults !== null ? searchResults.length : totalGuests);
 
   $effect(() => {
     const q = searchQuery.trim();
     let timer: ReturnType<typeof setTimeout>;
     if (q) {
-      timer = setTimeout(() => handleSearch(), 300);
+      timer = setTimeout(() => { currentPage = 0; }, 300);
     } else {
       currentPage = 0;
-      cursors = [];
-      loadGuests();
     }
     return () => clearTimeout(timer);
   });
@@ -203,7 +179,7 @@
     return r;
   });
 
-  let totalPages = $derived(Math.ceil(totalGuests / pageSize));
+  let totalPages = $derived(Math.ceil(displayTotal / pageSize));
 
   function exportCSV() {
     const headers = ['Name', 'Phone', 'Email', 'Table', 'Seat', 'Pax', 'RSVP', 'VIP', 'Checked In', 'Angbao', 'Gift', 'Notes'];
@@ -262,7 +238,7 @@
   async function deleteGuest(guest: GuestResponse) {
     try {
       await apiDeleteGuest(wid, guest.id);
-      guests = guests.filter(g => g.id !== guest.id);
+      // SSE will update the store automatically.
       addToast(`${guest.name} deleted`, 'info');
     } catch (e: any) {
       addToast(e.message ?? 'Delete failed', 'error');
@@ -336,10 +312,7 @@
     moveSaving = true;
     try {
       await assignSeat(wid, moveGuest.id, moveTableId, moveSeatNum);
-      guests = guests.map(g => g.id === moveGuest!.id
-        ? { ...g, tableId: moveTableId, seatNum: moveSeatNum }
-        : g
-      );
+      // SSE will update the store automatically.
       addToast(`${moveGuest.name} moved to table`, 'success');
       showMoveModal = false;
     } catch (e: any) {
@@ -430,7 +403,7 @@
       showImportModal = false;
       importPreview = [];
       importFile = null;
-      await loadGuests();
+      // SSE will update the store with new guests automatically.
     } catch (e: any) {
       addToast(e.message || 'Import failed', 'error');
     } finally {
@@ -448,7 +421,7 @@
     const ids = [...selectedIds];
     try {
       await Promise.all(ids.map(id => apiDeleteGuest(wid, id)));
-      guests = guests.filter(g => !selectedIds.has(g.id));
+      // SSE will update the store automatically.
       addToast(`Deleted ${ids.length} guests`, 'info');
       selectedIds = new Set();
     } catch (e: any) {
@@ -572,7 +545,7 @@
       </div>
       <p class="text-red font-medium">Failed to load guests</p>
       <p class="text-sm text-gray-500 mt-1 mb-4">{error}</p>
-      <button onclick={() => loadGuests()} class="px-4 py-2 bg-red text-white rounded-xl text-sm font-semibold hover:bg-red-light transition-colors">
+      <button onclick={() => { currentPage = 0; }} class="px-4 py-2 bg-red text-white rounded-xl text-sm font-semibold hover:bg-red-light transition-colors">
         Retry
       </button>
     </div>
@@ -656,14 +629,14 @@
       <!-- Pagination -->
       <div class="px-5 py-4 border-t border-gray-100 flex items-center justify-between text-sm">
         <span class="text-gray-500">
-          Page {currentPage + 1}{totalPages > 0 ? ` of ${totalPages}` : ''} · {totalGuests} guests
+          Page {currentPage + 1}{totalPages > 0 ? ` of ${totalPages}` : ''} · {displayTotal} guests
         </span>
         <div class="flex items-center gap-2">
           <button onclick={prevPage} disabled={currentPage === 0}
             class="p-2 rounded-lg border border-gray-200 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed" aria-label="Previous page">
             <ChevronLeft class="w-4 h-4" />
           </button>
-          <button onclick={nextPage} disabled={!nextCursor}
+          <button onclick={nextPage} disabled={!hasNextPage}
             class="p-2 rounded-lg border border-gray-200 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed" aria-label="Next page">
             <ChevronRight class="w-4 h-4" />
           </button>

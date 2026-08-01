@@ -3,9 +3,8 @@ package handlers
 import (
 	"fmt"
 	"net/http"
+	"weddingdb/internal/middleware"
 	"weddingdb/internal/services"
-
-	"github.com/google/uuid"
 )
 
 // SSEHandler provides raw HTTP handlers for SSE streaming.
@@ -36,7 +35,7 @@ func (h *SSEHandler) StreamHandler() http.HandlerFunc {
 
 		// Extract wedding ID from path: /api/weddings/{wid}/events
 		widStr := r.PathValue("wid")
-		wid, err := uuid.Parse(widStr)
+		wid, err := middleware.DecodeWIDString(widStr)
 		if err != nil {
 			http.Error(w, "invalid wedding ID", http.StatusBadRequest)
 			return

@@ -30,10 +30,12 @@
     }
     authChecked = true;
 
-    // Fetch all guests and seed the SSE store.
-    fetchAllGuests($weddingId).then((guests) => {
+    // Fetch all guests and seed the store FIRST, then start SSE.
+    // This prevents SSE events from appending guests that seedGuests
+    // would then overwrite, which causes duplicates.
+    try {
+      const guests = await fetchAllGuests($weddingId);
       guestCount = guests.length;
-      // Convert GuestResponse[] to Guest[] for the store.
       seedGuests(guests.map((g) => ({
         id: g.id,
         name: g.name,
@@ -46,15 +48,16 @@
         checkedIn: !!g.checkedInAt,
         checkedInAt: g.checkedInAt ? new Date(g.checkedInAt) : undefined,
         notes: g.notes,
-        dietaryRequirements: g.dietary,
+        dietaryRequirements: g.dietary ?? [],
         isVip: g.isVip,
         angbaoAmount: g.angbaoAmt ?? undefined,
         giftItem: g.giftItem ?? undefined,
         createdAt: new Date(),
       })));
-    }).catch(() => {});
+    } catch {}
 
-    // Initialize SSE for real-time updates.
+    // Now start SSE — any events arriving after this point will
+    // upsert into the already-seeded list, no duplicates.
     cleanupSSE = initializeSSE();
 
     listTables($weddingId).then((t) => {
