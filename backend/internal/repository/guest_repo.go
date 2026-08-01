@@ -38,7 +38,7 @@ func (r *GuestRepo) ListByWedding(ctx context.Context, weddingID uuid.UUID, curs
 	guests := make([]models.GuestRecord, 0)
 	var total int64
 	r.db.WithContext(ctx).Model(&models.GuestRecord{}).Where("wedding_id = ?", weddingID).Count(&total)
-	q := r.db.WithContext(ctx).Where("wedding_id = ?", weddingID).Order("id ASC").Limit(limit + 1)
+	q := r.db.WithContext(ctx).Where("wedding_id = ?", weddingID).Order("name ASC").Limit(limit + 1)
 	if cursor != "" {
 		if cid, err := parseCursorID(cursor); err == nil {
 			q = q.Where("id > ?", cid)

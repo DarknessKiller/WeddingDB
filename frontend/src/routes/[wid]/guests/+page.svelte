@@ -159,7 +159,7 @@
   ] as const;
 
   let filtered = $derived.by(() => {
-    let r = [...guests];
+    let r = [...displayGuests];
     if (rsvpFilter !== 'all') r = r.filter(g => g.rsvp === rsvpFilter);
     r.sort((a, b) => {
       let av: string | number | null, bv: string | number | null;
