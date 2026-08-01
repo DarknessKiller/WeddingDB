@@ -9,6 +9,7 @@ import (
 	"github.com/google/uuid"
 	"weddingdb/internal/models"
 	"weddingdb/internal/repository"
+	"weddingdb/internal/utils"
 )
 
 type GuestService struct {
@@ -201,7 +202,7 @@ func (s *GuestService) publishEvent(eventType string, guest *models.GuestRecord,
 
 func guestToEventData(g *models.GuestRecord) *GuestEventData {
 	d := &GuestEventData{
-		ID:      g.ID.String(),
+		ID:      utils.EncodeUUID(g.ID),
 		Name:    g.Name,
 		Phone:   g.Phone,
 		Email:   g.Email,
@@ -212,7 +213,7 @@ func guestToEventData(g *models.GuestRecord) *GuestEventData {
 		Dietary: []string(g.Dietary),
 	}
 	if g.TableID != nil {
-		id := g.TableID.String()
+		id := utils.EncodeUUID(*g.TableID)
 		d.TableID = &id
 	}
 	if g.SeatNum != nil {
