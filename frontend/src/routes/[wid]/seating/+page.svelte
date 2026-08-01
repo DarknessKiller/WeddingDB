@@ -3,8 +3,9 @@
   import { weddingTitle } from '$lib/stores/weddingTitle';
   import { selectedGuest, isDrawerOpen, addToast } from '$lib/stores';
   import { weddingId } from '$lib/stores/weddingId';
+  import { guestList } from '$lib/stores/guestEvents';
   import { goto } from '$app/navigation';
-  import { fetchAllGuests, assignSeat, checkInGuest, checkOutGuest, type GuestResponse } from '$lib/api/guests';
+  import { assignSeat, checkInGuest, checkOutGuest } from '$lib/api/guests';
   import { getOccupancy, listTables } from '$lib/api/tables';
   import { getLayout, saveLayout } from '$lib/api/layout';
   import Badge from '$lib/components/ui/Badge.svelte';
@@ -16,7 +17,6 @@
   import { get } from 'svelte/store';
   import type { BanquetTable, Guest, RSVPStatus, TableOccupancy, HallElement } from '$lib/types';
 
-  let allGuests = $state<Guest[]>([]);
   let allTables = $state<BanquetTable[]>([]);
   let elements = $state<HallElement[]>([]);
   let hallWidth = $state(860);
@@ -30,7 +30,6 @@
   let selectedTableId = $state<string | null>(null);
   let showMobilePanel = $state(false);
   let guestSearch = $state('');
-  let unassignedGuests = $state<Guest[]>([]);
   let assigningSeat = $state<number | null>(null);
   let showCheckinModal = $state(false);
 
@@ -61,46 +60,16 @@
   let angbaoAmount = $state('');
   let giftItem = $state('');
 
-  function mapGuest(r: GuestResponse): Guest {
-    return {
-      id: r.id,
-      name: r.name,
-      phone: r.phone,
-      email: r.email,
-      rsvp: (r.rsvp as RSVPStatus) ?? 'no_response',
-      pax: r.pax,
-      tableId: r.tableId ?? null,
-      seatNumber: r.seatNum,
-      checkedIn: r.checkedInAt !== null,
-      checkedInAt: r.checkedInAt ? new Date(r.checkedInAt) : undefined,
-      notes: r.notes,
-      dietaryRequirements: r.dietary ?? [],
-      isVip: r.isVip,
-      angbaoAmount: r.angbaoAmt ?? undefined,
-      giftItem: r.giftItem ?? undefined,
-      createdAt: new Date(r.createdAt),
-    };
-  }
-
-  let prevDrawerOpen = $state(false);
-  $effect(() => {
-    const isOpen = $isDrawerOpen;
-    if (prevDrawerOpen && !isOpen) {
-      // Drawer just closed — refresh data
-      loadData();
-    }
-    prevDrawerOpen = isOpen;
-  });
+  // Derive from SSE-backed store — updates in real time.
+  let allGuests = $derived($guestList);
+  let unassignedGuests = $derived(allGuests.filter(g => g.tableId === null));
 
   async function loadData() {
     const wid = get(weddingId);
-    const [guestRows, rawOcc, layout] = await Promise.all([
-      fetchAllGuests(wid).catch(() => []),
+    const [rawOcc, layout] = await Promise.all([
       getOccupancy(wid).catch(() => []),
       getLayout(wid).catch(() => null),
     ]);
-    allGuests = guestRows.map(mapGuest);
-    unassignedGuests = allGuests.filter(g => g.tableId === null);
     if (layout) {
       allTables = layout.tables ?? [];
       elements = layout.elements ?? [];
