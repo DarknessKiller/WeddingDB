@@ -7,7 +7,7 @@
   import { formatSeatRange } from '$lib/utils/seat';
   import { addToast } from '$lib/stores';
   import { weddingId } from '$lib/stores/weddingId';
-  import { updateGuest, createGuest, checkInGuest, checkOutGuest, getGuest } from '$lib/api/guests';
+  import { updateGuest, createGuest, checkInGuest, checkOutGuest, getGuest, ConflictError } from '$lib/api/guests';
   import { get } from 'svelte/store';
   let { guest, tables = [], onClose, startEditing = false, createMode = false, readonly = false }: { guest?: Guest; tables?: BanquetTable[]; onClose: () => void; startEditing?: boolean; createMode?: boolean; readonly?: boolean } = $props();
 
@@ -242,9 +242,14 @@
       localGuest = { ...guest };
       showCheckinModal = false;
       addToast(`${guest.name} checked in`, 'success');
-      await refreshGuest();
     } catch (e: any) {
-      addToast(e.message ?? 'Check-in failed', 'error');
+      if (e instanceof ConflictError) {
+        addToast(`${guest.name} was already checked in by another receptionist`, 'error');
+        showCheckinModal = false;
+        // SSE will deliver the updated guest state automatically.
+      } else {
+        addToast(e.message ?? 'Check-in failed', 'error');
+      }
     }
   }
 

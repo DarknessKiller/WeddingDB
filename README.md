@@ -24,7 +24,7 @@ Chinese wedding seating & reservation management system.
 - **Language:** Go 1.22+
 - **HTTP:** Fuego
 - **ORM:** GORM + PostgreSQL
-- **Cache:** Redis (nonce/replay prevention, token revocation)
+- **Cache/Pub-Sub:** Redis (nonce/replay prevention, token revocation, SSE cross-instance broadcasting)
 - **Auth:** JWT HS256 + bcrypt + refresh token rotation + Redis token blacklisting
 
 ## Getting Started
@@ -122,6 +122,7 @@ Server runs at `http://localhost:8080`.
 | GET | `/api/weddings/{wid}/layout` | Get hall layout (tables + elements with positions) |
 | PATCH | `/api/weddings/{wid}/layout` | Save hall layout (atomic replace) |
 | GET | `/api/weddings/{wid}/reports/angpao?format=csv\|xlsx` | Export angpao report (CSV or Excel) |
+| GET | `/api/weddings/{wid}/events` | SSE stream for real-time guest events (auth via `?token=`) |
 
 ### Public Endpoints (no auth required)
 

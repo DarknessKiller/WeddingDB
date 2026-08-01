@@ -28,6 +28,7 @@ type App struct {
 	DB          *gorm.DB
 	Redis       *redis.Client
 	AuthService *services.AuthService
+	SSEHub      *services.SSEHub
 }
 
 func Init(env config.Env, version string) *App {
@@ -114,9 +115,11 @@ func Init(env config.Env, version string) *App {
 	tokenRepo := repository.NewTokenRepo(db)
 	layoutRepo := repository.NewLayoutRepo(db)
 
+	sseHub := services.NewSSEHub(rdb)
+
 	authService := services.NewAuthService(adminRepo, weddingRepo, tokenRepo, env.JWTSecret, rdb)
 	tableService := services.NewTableService(tableRepo)
-	guestService := services.NewGuestService(guestRepo, tableRepo)
+	guestService := services.NewGuestService(guestRepo, tableRepo, sseHub)
 	weddingService := services.NewWeddingService(weddingRepo)
 	layoutService := services.NewLayoutService(layoutRepo)
 	reportService := services.NewReportService(guestRepo, tableRepo, weddingRepo)
@@ -138,6 +141,10 @@ func Init(env config.Env, version string) *App {
 	})
 
 	handlers.RegisterRoutes(server, authService, guestService, tableService, weddingService, layoutService, reportService, adminRepo)
+
+	// SSE endpoint for real-time guest event streaming (raw handler, bypasses Fuego).
+	sseHandler := handlers.NewSSEHandler(sseHub, authService)
+	server.Mux.HandleFunc("GET /api/weddings/{wid}/events", sseHandler.StreamHandler())
 
 	// Serve static frontend (SPA fallback to index.html)
 	staticDir := getEnv("STATIC_DIR", "./static")
@@ -183,6 +190,7 @@ func Init(env config.Env, version string) *App {
 		DB:          db,
 		Redis:       rdb,
 		AuthService: authService,
+		SSEHub:      sseHub,
 	}
 }
 

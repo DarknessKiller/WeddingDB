@@ -1,9 +1,10 @@
 <script lang="ts">
-  import { getDashboardStats, getOccupancy, getRecentActivity } from '$lib/api/dashboard';
+  import { getOccupancy, getRecentActivity } from '$lib/api/dashboard';
   import { weddingTitle } from '$lib/stores/weddingTitle';
   import { addToast } from '$lib/stores';
   import { get } from 'svelte/store';
   import { weddingId } from '$lib/stores/weddingId';
+  import { guestList } from '$lib/stores/guestEvents';
   import {
     Users, UserCheck, Clock, XCircle, CheckCircle, TrendingUp,
     ArrowUpRight, ArrowDownRight, LayoutGrid, Monitor, Copy, ExternalLink
@@ -15,11 +16,31 @@
 
   dayjs.extend(relativeTime);
 
-  let stats: DashboardStats = $state({ totalGuests: 0, confirmedGuests: 0, pendingRsvp: 0, declined: 0, checkedIn: 0, totalPax: 0, totalTables: 0, occupiedTables: 0, averageOccupancy: 0 });
   let occupancy: TableOccupancy[] = $state([]);
   let activity: ActivityItem[] = $state([]);
   let loading = $state(true);
   let loaded = $state(false);
+
+  // Derive stats from the SSE-backed guestList store — updates in real time.
+  let stats = $derived.by(() => {
+    const guests = $guestList;
+    const confirmed = guests.filter(g => g.rsvp === 'confirmed').length;
+    const pending = guests.filter(g => g.rsvp === 'pending').length;
+    const declined = guests.filter(g => g.rsvp === 'declined').length;
+    const checkedIn = guests.filter(g => g.checkedIn).length;
+    const totalPax = guests.reduce((s, g) => s + g.pax, 0);
+    return {
+      totalGuests: guests.length,
+      confirmedGuests: confirmed,
+      pendingRsvp: pending,
+      declined,
+      checkedIn,
+      totalPax,
+      totalTables: 0,
+      occupiedTables: 0,
+      averageOccupancy: 0
+    };
+  });
 
   let totalGuests = $derived(stats.totalGuests || 1);
   let confirmedPct = $derived(stats.confirmedGuests / totalGuests);
@@ -30,8 +51,7 @@
   onMount(async () => {
     try {
       const wid = get(weddingId);
-      const [s, o, a] = await Promise.all([getDashboardStats(wid), getOccupancy(wid), getRecentActivity(wid)]);
-      stats = s;
+      const [o, a] = await Promise.all([getOccupancy(wid), getRecentActivity(wid)]);
       occupancy = o;
       activity = a;
       loaded = true;

@@ -2,6 +2,13 @@ import { apiFetch } from './client';
 import { get } from 'svelte/store';
 import { weddingId } from '$lib/stores/weddingId';
 
+export class ConflictError extends Error {
+	constructor(message: string) {
+		super(message);
+		this.name = 'ConflictError';
+	}
+}
+
 export interface GuestImportData {
   name: string;
   phone?: string;
@@ -109,6 +116,10 @@ export async function checkInGuest(weddingId: string, guestId: string, body?: { 
 		method: 'POST',
 		body: body ? JSON.stringify(body) : undefined,
 	});
+	if (res.status === 409) {
+		const err = await res.json().catch(() => ({ title: 'Guest already checked in' }));
+		throw new ConflictError(err.title || 'Guest already checked in');
+	}
 	if (!res.ok) throw new Error(`Failed to check in guest: ${res.status}`);
 }
 
