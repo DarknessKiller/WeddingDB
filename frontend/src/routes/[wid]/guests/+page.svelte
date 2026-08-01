@@ -25,7 +25,7 @@
   let sortCol = $state<string>('name');
   let sortDir = $state<'asc' | 'desc'>('asc');
   let selectedIds = $state<Set<string>>(new Set());
-  let contextMenu = $state<{ x: number; y: number; guest: GuestResponse } | null>(null);
+  let contextMenu = $state<{ x: number; y: number; guest: Guest } | null>(null);
   let menuWidth = 180;
   let menuHeight = 200;
   let loading = $state(true);
@@ -37,7 +37,7 @@
   let totalGuests = $derived(allGuests.length);
 
   let showMoveModal = $state(false);
-  let moveGuest = $state<GuestResponse | null>(null);
+  let moveGuest = $state<Guest | null>(null);
   let moveTableId = $state('');
   let moveSeatNum = $state(1);
   let moveTables = $state<BanquetTable[]>([]);
@@ -169,8 +169,8 @@
         case 'rsvp': av = a.rsvp; bv = b.rsvp; break;
         case 'pax': av = a.pax; bv = b.pax; break;
         case 'tableId': av = a.tableId ?? ''; bv = b.tableId ?? ''; break;
-        case 'seatNum': av = a.seatNum ?? 0; bv = b.seatNum ?? 0; break;
-        case 'checkedInAt': av = a.checkedInAt ?? ''; bv = b.checkedInAt ?? ''; break;
+        case 'seatNum': av = a.seatNumber ?? 0; bv = b.seatNumber ?? 0; break;
+        case 'checkedInAt': av = a.checkedInAt?.getTime() ?? 0; bv = b.checkedInAt?.getTime() ?? 0; break;
         default: av = a.name; bv = b.name;
       }
       const cmp = av < bv ? -1 : av > bv ? 1 : 0;
@@ -190,12 +190,12 @@
         g.phone,
         g.email || '',
         table?.name || '',
-        g.seatNum ?? '',
+        g.seatNumber ?? '',
         g.pax,
         g.rsvp,
         g.isVip ? 'Yes' : 'No',
-        g.checkedInAt ? new Date(g.checkedInAt).toLocaleString() : '',
-        g.angbaoAmt ?? '',
+        g.checkedInAt ? g.checkedInAt.toLocaleString() : '',
+        g.angbaoAmount ?? '',
         g.giftItem || '',
         (g.notes || '').replace(/,/g, ';')
       ];
@@ -225,17 +225,17 @@
     selectedIds = n;
   }
 
-  function openGuest(guest: GuestResponse) {
-    $selectedGuest = toGuest(guest);
+  function openGuest(guest: Guest) {
+    $selectedGuest = guest;
     $isDrawerOpen = true;
   }
 
-  function handleCtx(e: MouseEvent, guest: GuestResponse) {
+  function handleCtx(e: MouseEvent, guest: Guest) {
     e.preventDefault();
     contextMenu = { x: e.clientX, y: e.clientY, guest };
   }
 
-  async function deleteGuest(guest: GuestResponse) {
+  async function deleteGuest(guest: Guest) {
     try {
       await apiDeleteGuest(wid, guest.id);
       // SSE will update the store automatically.
@@ -254,7 +254,7 @@
     return `left: ${Math.max(0, left)}px; top: ${Math.max(0, top)}px;`;
   }
 
-  async function openMoveTable(guest: GuestResponse) {
+  async function openMoveTable(guest: Guest) {
     moveGuest = guest;
     contextMenu = null;
     try {
@@ -273,7 +273,7 @@
     if (!moveTableId) return 1;
     const occ = guests.filter(g => g.tableId === moveTableId && g.id !== moveGuest?.id);
     if (!occ.length) return 1;
-    const maxSeat = Math.max(...occ.map(g => g.seatNum ?? 0));
+    const maxSeat = Math.max(...occ.map(g => g.seatNumber ?? 0));
     return maxSeat + 1;
   }
 
@@ -281,9 +281,9 @@
     if (!moveTableId) return new Set();
     return new Set(
       guests
-        .filter(g => g.tableId === moveTableId && g.id !== moveGuest?.id && g.seatNum != null)
+        .filter(g => g.tableId === moveTableId && g.id !== moveGuest?.id && g.seatNumber != null)
         .flatMap(g => {
-          const start = g.seatNum!;
+          const start = g.seatNumber!;
           return Array.from({ length: g.pax }, (_, i) => start + i);
         })
     );
@@ -440,7 +440,7 @@
     if (!bulkMoveTableId) return 1;
     const occ = guests.filter(g => g.tableId === bulkMoveTableId && !selectedIds.has(g.id));
     if (!occ.length) return 1;
-    const maxSeat = Math.max(...occ.map(g => g.seatNum ?? 0));
+    const maxSeat = Math.max(...occ.map(g => g.seatNumber ?? 0));
     return maxSeat + 1;
   }
 
@@ -448,9 +448,9 @@
     if (!bulkMoveTableId) return new Set();
     return new Set(
       guests
-        .filter(g => g.tableId === bulkMoveTableId && !selectedIds.has(g.id) && g.seatNum != null)
+        .filter(g => g.tableId === bulkMoveTableId && !selectedIds.has(g.id) && g.seatNumber != null)
         .flatMap(g => {
-          const start = g.seatNum!;
+          const start = g.seatNumber!;
           return Array.from({ length: g.pax }, (_, i) => start + i);
         })
     );
@@ -481,7 +481,7 @@
         const g = guests.find(g => g.id === id);
         if (!g) continue;
         await assignSeat(wid, id, bulkMoveTableId, seat);
-        guests = guests.map(gg => gg.id === id ? { ...gg, tableId: bulkMoveTableId, seatNum: seat } : gg);
+        guests = guests.map(gg => gg.id === id ? { ...gg, tableId: bulkMoveTableId, seatNumber: seat } : gg);
         seat += g.pax;
       }
       addToast(`Moved ${ids.length} guests to table`, 'success');
@@ -603,7 +603,7 @@
                 <td class="px-4 py-3.5"><Badge status={guest.rsvp as RSVPStatus} /></td>
                 <td class="px-4 py-3.5 text-gray-700 font-medium">{guest.pax}</td>
                 <td class="px-4 py-3.5 text-gray-700 font-medium">{tables.find(t => t.id === guest.tableId)?.name || (guest.tableId ?? '—')}</td>
-                <td class="px-4 py-3.5 text-gray-700 font-medium">{guest.seatNum ?? '—'}</td>
+                <td class="px-4 py-3.5 text-gray-700 font-medium">{guest.seatNumber ?? '—'}</td>
                 <td class="px-4 py-3.5">
                   {#if guest.checkedInAt}
                     <span class="inline-flex items-center gap-1 px-2 py-0.5 bg-emerald-50 text-emerald-700 rounded-full text-xs font-semibold border border-emerald-200">
@@ -718,7 +718,7 @@
           </div>
           <div>
             <label class="block text-xs font-medium text-gray-500 mb-1">Current Seat</label>
-            <div class="px-3 py-2 bg-gray-50 rounded-lg text-sm text-gray-700">{moveGuest.seatNum ?? '—'}</div>
+            <div class="px-3 py-2 bg-gray-50 rounded-lg text-sm text-gray-700">{moveGuest.seatNumber ?? '—'}</div>
           </div>
         </div>
         <div>
