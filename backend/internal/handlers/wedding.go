@@ -111,7 +111,8 @@ func (h *WeddingHandler) Update(c fuego.ContextWithBody[WeddingRequest]) (any, e
 }
 
 type KioskSettingsRequest struct {
-	KioskTitle          string `json:"kioskTitle"`
+	VenueName           string `json:"venueName"`
+	VenueAddress        string `json:"venueAddress"`
 	KioskDescription    string `json:"kioskDescription"`
 	KioskLogoUrl        string `json:"kioskLogoUrl"`
 	KioskBackgroundUrl  string `json:"kioskBackgroundUrl"`
@@ -142,7 +143,8 @@ func (h *WeddingHandler) UpdateKioskSettings(c fuego.ContextWithBody[KioskSettin
 	if err != nil {
 		return nil, fuego.NotFoundError{Title: "Wedding not found"}
 	}
-	w.KioskTitle = body.KioskTitle
+	w.VenueName = strings.TrimSpace(body.VenueName)
+	w.VenueAddress = strings.TrimSpace(body.VenueAddress)
 	w.KioskDescription = body.KioskDescription
 	w.KioskLogoUrl = sanitizeURL(body.KioskLogoUrl)
 	w.KioskBackgroundUrl = sanitizeURL(body.KioskBackgroundUrl)

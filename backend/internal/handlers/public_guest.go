@@ -92,7 +92,8 @@ func (h *PublicKioskHandler) GetKioskSettings(c fuego.ContextNoBody) (any, error
 		return nil, fuego.NotFoundError{Title: "Wedding not found"}
 	}
 	return map[string]any{
-		"kioskTitle":          w.KioskTitle,
+		"venueName":           w.VenueName,
+		"venueAddress":        w.VenueAddress,
 		"kioskDescription":    w.KioskDescription,
 		"kioskLogoUrl":        w.KioskLogoUrl,
 		"kioskBackgroundUrl":  w.KioskBackgroundUrl,
@@ -104,6 +105,7 @@ func (h *PublicKioskHandler) GetKioskSettings(c fuego.ContextNoBody) (any, error
 		"kioskLogoPosX":       w.KioskLogoPosX,
 		"kioskLogoPosY":       w.KioskLogoPosY,
 		"showSeatNumbers":     w.ShowSeatNumbers,
+		"weddingName":         w.Name,
 		"name":                w.Name,
 		"date":                w.Date,
 	}, nil

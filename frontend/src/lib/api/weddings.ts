@@ -55,7 +55,8 @@ export async function deleteWedding(id: string): Promise<void> {
 }
 
 export interface KioskSettings {
-	kioskTitle: string;
+	venueName: string;
+	venueAddress: string;
 	kioskDescription: string;
 	kioskLogoUrl: string;
 	kioskBackgroundUrl: string;

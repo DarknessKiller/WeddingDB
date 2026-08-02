@@ -4,8 +4,8 @@
   import { addToast } from '$lib/stores';
   import { weddingId } from '$lib/stores/weddingId';
   import { get } from 'svelte/store';
-  import { getWedding, updateKioskSettings, type Wedding, type KioskSettings } from '$lib/api/weddings';
-  import { Monitor, Save, Loader2, ExternalLink, Copy, Image, Type, FileText, Upload } from 'lucide-svelte';
+  import { getWedding, updateKioskSettings, updateWedding, type Wedding, type KioskSettings } from '$lib/api/weddings';
+  import { Monitor, Save, Loader2, ExternalLink, Copy, Image, Type, FileText, Upload, MapPin } from 'lucide-svelte';
   import ImageEditor from '$lib/components/ui/ImageEditor.svelte';
   import { uploadFile } from '$lib/api/client';
 
@@ -13,7 +13,6 @@
   let loading = $state(true);
   let saving = $state(false);
 
-  let kioskTitle = $state('');
   let kioskDescription = $state('');
   let kioskLogoUrl = $state('');
   let kioskBackgroundUrl = $state('');
@@ -25,14 +24,17 @@
   let kioskLogoPosX = $state('50%');
   let kioskLogoPosY = $state('50%');
   let kioskLogoBlur = $state(0);
+  let weddingNameEdit = $state('');
   let showSeatNumbers = $state(true);
+  let venueName = $state('');
+  let venueAddress = $state('');
 
   onMount(async () => {
     try {
       const wid = get(weddingId);
       wedding = await getWedding(wid).catch(() => null);
       if (wedding) {
-        kioskTitle = (wedding as any).kioskTitle ?? '';
+        weddingNameEdit = wedding?.name ?? '';
         kioskDescription = (wedding as any).kioskDescription ?? '';
         kioskLogoUrl = (wedding as any).kioskLogoUrl ?? '';
         kioskBackgroundUrl = (wedding as any).kioskBackgroundUrl ?? '';
@@ -44,6 +46,8 @@
         if ((wedding as any).kioskLogoPosX) kioskLogoPosX = (wedding as any).kioskLogoPosX;
         if ((wedding as any).kioskLogoPosY) kioskLogoPosY = (wedding as any).kioskLogoPosY;
         showSeatNumbers = (wedding as any).showSeatNumbers ?? true;
+        venueName = (wedding as any).venueName ?? '';
+        venueAddress = (wedding as any).venueAddress ?? '';
       }
     } catch {
       addToast('Failed to load settings', 'error');
@@ -57,7 +61,8 @@
     saving = true;
     try {
       await updateKioskSettings(wedding.id, {
-        kioskTitle,
+        venueName,
+        venueAddress,
         kioskDescription,
         kioskLogoUrl,
         kioskBackgroundUrl,
@@ -70,6 +75,7 @@
         kioskLogoPosY,
         showSeatNumbers,
       });
+      await updateWedding(wedding.id, { name: weddingNameEdit, date: wedding.date.split('T')[0] });
       addToast('Kiosk settings saved', 'success');
     } catch (e: any) {
       addToast(e.message ?? 'Failed to save', 'error');
@@ -137,15 +143,37 @@
         <h3 class="font-bold text-gray-900 mb-5" style="letter-spacing: -0.01em;">Kiosk Display Settings</h3>
 
         <div class="space-y-5">
-          <!-- Title -->
+          <!-- Wedding Name -->
           <div>
-            <label for="kiosk-title" class="flex items-center gap-1.5 text-sm font-semibold text-gray-700 mb-1.5">
-              <Type class="w-4 h-4 text-gray-400" /> Title
+            <label for="wedding-name" class="flex items-center gap-1.5 text-sm font-semibold text-gray-700 mb-1.5">
+              <Type class="w-4 h-4 text-gray-400" /> Wedding Name
             </label>
-            <input id="kiosk-title" type="text" bind:value={kioskTitle}
-              placeholder="e.g. Find Your Seat"
+            <input id="wedding-name" type="text" bind:value={weddingNameEdit}
+              placeholder="e.g. Sarah & John's Wedding"
               class="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm bg-white focus:border-red focus:ring-2 focus:ring-red/15 outline-none transition-all" />
-            <p class="text-xs text-gray-400 mt-1">Shown as the main heading on the kiosk screen</p>
+            <p class="text-xs text-gray-400 mt-1">Name displayed in the kiosk header</p>
+          </div>
+
+          <!-- Venue Name -->
+          <div>
+            <label for="venue-name" class="flex items-center gap-1.5 text-sm font-semibold text-gray-700 mb-1.5">
+              <MapPin class="w-4 h-4 text-gray-400" /> Venue Name
+            </label>
+            <input id="venue-name" type="text" bind:value={venueName}
+              placeholder="e.g. Grand Ballroom"
+              class="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm bg-white focus:border-red focus:ring-2 focus:ring-red/15 outline-none transition-all" />
+            <p class="text-xs text-gray-400 mt-1">Name of the venue or hall</p>
+          </div>
+
+          <!-- Venue Address -->
+          <div>
+            <label for="venue-address" class="flex items-center gap-1.5 text-sm font-semibold text-gray-700 mb-1.5">
+              <MapPin class="w-4 h-4 text-gray-400" /> Venue Address
+            </label>
+            <input id="venue-address" type="text" bind:value={venueAddress}
+              placeholder="e.g. 123 Main Street, City"
+              class="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm bg-white focus:border-red focus:ring-2 focus:ring-red/15 outline-none transition-all" />
+            <p class="text-xs text-gray-400 mt-1">Address shown on the kiosk screen</p>
           </div>
 
           <!-- Description -->

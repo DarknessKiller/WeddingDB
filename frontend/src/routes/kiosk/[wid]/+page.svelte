@@ -25,7 +25,6 @@
   let abortController: AbortController | null = null;
 
   // Kiosk customization
-  let kioskTitle = $state('Find Your Seat');
   let kioskDescription = $state('Enter your name to find your table and seat');
   let kioskLogoUrl = $state('');
   let kioskBackgroundUrl = $state('');
@@ -35,6 +34,8 @@
   let showSeatNumbers = $state(true);
   let weddingDate = $state<string>('');
   let weddingName = $state('');
+  let venueName = $state('');
+  let venueAddress = $state('');
 
   // Bottom sheet drag state
   let sheetY = $state(0);
@@ -100,7 +101,6 @@
     getPublicLayout(wid).then(l => { tables = l.tables; elements = l.elements; hallWidth = l.hallWidth; hallHeight = l.hallHeight; }).catch(() => {});
     fetch(`/api/public/weddings/${wid}/kiosk`).then(r => r.ok ? r.json() : null).then(data => {
       if (data) {
-        if (data.kioskTitle) kioskTitle = data.kioskTitle;
         if (data.kioskDescription) kioskDescription = data.kioskDescription;
         if (data.kioskLogoUrl) kioskLogoUrl = data.kioskLogoUrl;
         if (data.kioskBackgroundUrl) kioskBackgroundUrl = data.kioskBackgroundUrl;
@@ -110,6 +110,8 @@
         if (data.showSeatNumbers !== undefined) showSeatNumbers = data.showSeatNumbers;
         if (data.date) weddingDate = data.date;
         if (data.name) weddingName = data.name;
+        venueName = data.venueName ?? '';
+        venueAddress = data.venueAddress ?? '';
       }
     }).catch(() => {});
   });
@@ -278,7 +280,7 @@
 </script>
 
 <svelte:head>
-  <title>{kioskTitle ? `${kioskTitle} – Kiosk` : 'Kiosk – WeddingDB'}</title>
+  <title>{weddingName ? `${weddingName} – Kiosk` : 'Kiosk – WeddingDB'}</title>
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
@@ -301,7 +303,7 @@
         {:else}
           <div class="top-bar-brand">
             <Monitor class="icon-sm text-red" />
-            <span class="top-bar-wedding-name text-align-left">{kioskTitle}</span>
+            <span class="top-bar-wedding-name text-align-left">{weddingName || 'Wedding'}</span>
           </div>
         {/if}
       </div>
@@ -309,7 +311,7 @@
       <!-- Center: always show kiosk title -->
       <div class="top-bar-center">
         {#if selectedGuest}
-          <span class="top-bar-wedding-name">{kioskTitle}</span>
+          <span class="top-bar-wedding-name">{weddingName || 'Wedding'}</span>
         {/if}
       </div>
 
@@ -440,10 +442,23 @@
           {:else}
             <div class="hero-icon">囍</div>
           {/if}
+          <h1 class="hero-title">{weddingName || 'Wedding'}</h1>
           {#if weddingDate}
             <p class="hero-date">{formatWeddingDate(weddingDate)}</p>
           {/if}
-          <h1 class="hero-title">{kioskTitle}</h1>
+          {#if venueName || venueAddress}
+            <div class="hero-venue">
+              <MapPin class="icon-sm hero-venue-icon" />
+              <div class="hero-venue-text">
+                {#if venueName}
+                  <span class="hero-venue-name">{venueName}</span>
+                {/if}
+                {#if venueAddress}
+                  <span class="hero-venue-address">{venueAddress}</span>
+                {/if}
+              </div>
+            </div>
+          {/if}
           {#if kioskDescription}
             <p class="hero-subtitle">{kioskDescription}</p>
           {/if}
@@ -1031,6 +1046,50 @@
   .hero-subtitle {
     color: #6b7280;
     font-size: 0.9375rem;
+  }
+
+  .hero-venue {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    margin-top: 0.75rem;
+    margin-bottom: 1rem;
+    padding: 0.5rem 0.75rem;
+    background: rgba(0, 0, 0, 0.03);
+    border-radius: 0.5rem;
+    max-width: 28rem;
+    margin-left: auto;
+    margin-right: auto;
+  }
+
+  .hero-venue-icon {
+    color: #9ca3af;
+    flex-shrink: 0;
+  }
+
+  .hero-venue-text {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.125rem;
+    min-width: 0;
+  }
+
+  .hero-venue-name {
+    font-size: 0.8125rem;
+    font-weight: 600;
+    color: #374151;
+    line-height: 1.3;
+    text-align: center;
+  }
+
+  .hero-venue-address {
+    font-size: 0.75rem;
+    color: #9ca3af;
+    line-height: 1.4;
+    text-align: center;
+    overflow-wrap: break-word;
   }
 
   /* ---------- Search Input ---------- */
