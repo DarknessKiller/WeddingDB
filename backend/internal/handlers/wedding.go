@@ -94,16 +94,22 @@ func (h *WeddingHandler) Update(c fuego.ContextWithBody[WeddingRequest]) (any, e
 	if err != nil {
 		return nil, fuego.BadRequestError{Title: "Invalid request"}
 	}
-	d, err := time.Parse("2006-01-02", body.Date)
-	if err != nil {
-		return nil, fuego.BadRequestError{Title: "Invalid date format, use YYYY-MM-DD"}
-	}
 	w, err := h.weddingService.Get(ctx, id)
 	if err != nil {
 		return nil, fuego.NotFoundError{Title: "Wedding not found"}
 	}
-	w.Name = body.Name
-	w.Date = d
+	name := strings.TrimSpace(body.Name)
+	if name == "" {
+		return nil, fuego.BadRequestError{Title: "Name is required"}
+	}
+	w.Name = name
+	if body.Date != "" {
+		d, err := time.Parse("2006-01-02", body.Date)
+		if err != nil {
+			return nil, fuego.BadRequestError{Title: "Invalid date format, use YYYY-MM-DD"}
+		}
+		w.Date = d
+	}
 	if err := h.weddingService.Update(ctx, w); err != nil {
 		return nil, err
 	}
@@ -111,7 +117,8 @@ func (h *WeddingHandler) Update(c fuego.ContextWithBody[WeddingRequest]) (any, e
 }
 
 type KioskSettingsRequest struct {
-	VenueName           string `json:"venueName"`
+	Name                *string `json:"name"` // nil = unchanged (dirty-only from frontend)
+	VenueName           string  `json:"venueName"`
 	VenueAddress        string `json:"venueAddress"`
 	KioskDescription    string `json:"kioskDescription"`
 	KioskLogoUrl        string `json:"kioskLogoUrl"`
@@ -143,16 +150,23 @@ func (h *WeddingHandler) UpdateKioskSettings(c fuego.ContextWithBody[KioskSettin
 	if err != nil {
 		return nil, fuego.NotFoundError{Title: "Wedding not found"}
 	}
+	if body.Name != nil {
+		name := strings.TrimSpace(*body.Name)
+		if name == "" {
+			return nil, fuego.BadRequestError{Title: "Name is required"}
+		}
+		w.Name = name
+	}
 	w.VenueName = strings.TrimSpace(body.VenueName)
 	w.VenueAddress = strings.TrimSpace(body.VenueAddress)
-	w.KioskDescription = body.KioskDescription
+	w.KioskDescription = strings.TrimSpace(body.KioskDescription)
 	w.KioskLogoUrl = sanitizeURL(body.KioskLogoUrl)
 	w.KioskBackgroundUrl = sanitizeURL(body.KioskBackgroundUrl)
-	w.KioskBackgroundBlur = body.KioskBackgroundBlur
+	w.KioskBackgroundBlur = max(0, min(20, body.KioskBackgroundBlur))
 	w.KioskBackgroundSize = validateCSSValue(body.KioskBackgroundSize, validBackgroundSizes, "cover")
 	w.KioskBackgroundPosX = validateCSSValue(body.KioskBackgroundPosX, validPositionsX, "center")
 	w.KioskBackgroundPosY = validateCSSValue(body.KioskBackgroundPosY, validPositionsY, "center")
-	w.KioskLogoSize = body.KioskLogoSize
+	w.KioskLogoSize = validateCSSValue(body.KioskLogoSize, validBackgroundSizes, "contain")
 	w.KioskLogoPosX = validateCSSValue(body.KioskLogoPosX, validPositionsX, "center")
 	w.KioskLogoPosY = validateCSSValue(body.KioskLogoPosY, validPositionsY, "center")
 	if body.ShowSeatNumbers != nil {

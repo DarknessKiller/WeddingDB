@@ -105,7 +105,6 @@ func (h *PublicKioskHandler) GetKioskSettings(c fuego.ContextNoBody) (any, error
 		"kioskLogoPosX":       w.KioskLogoPosX,
 		"kioskLogoPosY":       w.KioskLogoPosY,
 		"showSeatNumbers":     w.ShowSeatNumbers,
-		"weddingName":         w.Name,
 		"name":                w.Name,
 		"date":                w.Date,
 	}, nil

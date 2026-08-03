@@ -1053,14 +1053,11 @@
     align-items: center;
     justify-content: center;
     gap: 0.5rem;
-    margin-top: 0.75rem;
-    margin-bottom: 1rem;
+    margin: 0.75rem auto 1rem;
     padding: 0.5rem 0.75rem;
     background: rgba(0, 0, 0, 0.03);
     border-radius: 0.5rem;
     max-width: 28rem;
-    margin-left: auto;
-    margin-right: auto;
   }
 
   .hero-venue-icon {

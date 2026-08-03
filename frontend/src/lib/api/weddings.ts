@@ -4,6 +4,18 @@ export interface Wedding {
 	id: string;
 	name: string;
 	date: string;
+	venueName: string;
+	venueAddress: string;
+	kioskDescription: string;
+	kioskLogoUrl: string;
+	kioskBackgroundUrl: string;
+	kioskBackgroundBlur: number;
+	kioskBackgroundSize: string;
+	kioskBackgroundPosX: string;
+	kioskBackgroundPosY: string;
+	kioskLogoSize: string;
+	kioskLogoPosX: string;
+	kioskLogoPosY: string;
 	showSeatNumbers: boolean;
 	createdAt: string;
 	updatedAt: string;
@@ -55,6 +67,7 @@ export async function deleteWedding(id: string): Promise<void> {
 }
 
 export interface KioskSettings {
+	name?: string;
 	venueName: string;
 	venueAddress: string;
 	kioskDescription: string;
