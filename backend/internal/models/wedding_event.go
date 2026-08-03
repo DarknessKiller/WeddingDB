@@ -12,7 +12,8 @@ type WeddingEvent struct {
 	ID                  uuid.UUID `gorm:"type:uuid;primaryKey;default:gen_random_uuid()" json:"id"`
 	Name                string    `gorm:"size:255;not null" json:"name"`
 	Date                time.Time `json:"date"`
-	KioskTitle          string    `gorm:"size:255" json:"kioskTitle"`
+	VenueName           string    `gorm:"size:255" json:"venueName"`
+	VenueAddress        string    `gorm:"size:500" json:"venueAddress"`
 	KioskDescription    string    `gorm:"type:text" json:"kioskDescription"`
 	KioskLogoUrl        string    `gorm:"size:500" json:"kioskLogoUrl"`
 	KioskBackgroundUrl  string    `gorm:"size:500" json:"kioskBackgroundUrl"`
