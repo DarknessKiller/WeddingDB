@@ -175,7 +175,7 @@
     </div>
   </div>
 {:else}
-<!-- svelte-ignore a11y_no_static_element_interactions -->
+<!-- svelte-ignore a11y_no_static_element_interactions a11y_click_events_have_key_events -->
 <div
   class="flex flex-col h-full"
   onclick={(e) => {
@@ -186,10 +186,11 @@
   }}
 >
   <!-- Search Toolbar -->
-  <!-- svelte-ignore a11y_no_static_element_interactions -->
+  <!-- svelte-ignore a11y_no_static_element_interactions a11y_click_events_have_key_events -->
   <div data-search-area class="relative bg-white/90 backdrop-blur-xl border-b border-black/[0.06] px-4 py-3 z-30 flex-shrink-0" onclick={(e) => e.stopPropagation()}>
     <div class="relative max-w-xl mx-auto">
       <Search class="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400 pointer-events-none" />
+      <!-- svelte-ignore a11y_autofocus -->
       <input
         type="text"
         placeholder="Search by name or phone number..."

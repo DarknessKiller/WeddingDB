@@ -117,11 +117,11 @@
         <!-- Blur -->
         {#if showBlur}
           <div>
-            <label class="flex items-center justify-between text-xs font-medium text-gray-600 mb-1">
+            <label for="blur-range" class="flex items-center justify-between text-xs font-medium text-gray-600 mb-1">
               <span>Blur</span>
               <span class="text-gray-400">{blur}px</span>
             </label>
-            <input type="range" min="0" max="20" step="1" bind:value={blur}
+            <input id="blur-range" type="range" min="0" max="20" step="1" bind:value={blur}
               class="w-full h-1.5 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-red" />
           </div>
         {/if}
@@ -129,7 +129,7 @@
     </div>
   {:else}
     <!-- Upload area -->
-    <label class="flex flex-col items-center justify-center h-32 border-2 border-dashed border-gray-200 rounded-xl cursor-pointer hover:border-red/50 hover:bg-red-50/30 transition-colors">
+    <label for="image-upload" class="flex flex-col items-center justify-center h-32 border-2 border-dashed border-gray-200 rounded-xl cursor-pointer hover:border-red/50 hover:bg-red-50/30 transition-colors">
       {#if uploading}
         <div class="w-6 h-6 border-2 border-red/30 border-t-red rounded-full animate-spin mb-2"></div>
         <span class="text-xs text-gray-500">Uploading...</span>
@@ -138,7 +138,7 @@
         <span class="text-xs text-gray-500">Click or drag to upload {label}</span>
         <span class="text-[10px] text-gray-400 mt-0.5">or paste a URL below</span>
       {/if}
-      <input type="file" {accept} class="hidden" onchange={handleFile} />
+      <input id="image-upload" type="file" {accept} class="hidden" onchange={handleFile} />
     </label>
 
     <!-- URL input fallback -->

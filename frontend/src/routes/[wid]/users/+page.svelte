@@ -329,21 +329,21 @@
       </div>
       <div class="p-5 space-y-4">
         <div>
-          <label class="text-sm font-semibold text-gray-700 mb-1.5 block">Name</label>
-          <input bind:value={formName} class="w-full px-4 py-2.5 border border-black/[0.08] rounded-xl text-sm bg-white/80 focus:border-red focus:ring-2 focus:ring-red/10 outline-none transition-all min-h-[44px]" placeholder="Full name" />
+          <label for="create-name" class="text-sm font-semibold text-gray-700 mb-1.5 block">Name</label>
+          <input id="create-name" bind:value={formName} class="w-full px-4 py-2.5 border border-black/[0.08] rounded-xl text-sm bg-white/80 focus:border-red focus:ring-2 focus:ring-red/10 outline-none transition-all min-h-[44px]" placeholder="Full name" />
         </div>
         <div>
-          <label class="text-sm font-semibold text-gray-700 mb-1.5 block">Email</label>
-          <input type="email" bind:value={formEmail} class="w-full px-4 py-2.5 border border-black/[0.08] rounded-xl text-sm bg-white/80 focus:border-red focus:ring-2 focus:ring-red/10 outline-none transition-all min-h-[44px]" placeholder="email@example.com" />
+          <label for="create-email" class="text-sm font-semibold text-gray-700 mb-1.5 block">Email</label>
+          <input id="create-email" type="email" bind:value={formEmail} class="w-full px-4 py-2.5 border border-black/[0.08] rounded-xl text-sm bg-white/80 focus:border-red focus:ring-2 focus:ring-red/10 outline-none transition-all min-h-[44px]" placeholder="email@example.com" />
         </div>
         <div>
-          <label class="text-sm font-semibold text-gray-700 mb-1.5 block">Password</label>
-          <input type="password" bind:value={formPassword} minlength="8" class="w-full px-4 py-2.5 border border-black/[0.08] rounded-xl text-sm bg-white/80 focus:border-red focus:ring-2 focus:ring-red/10 outline-none transition-all min-h-[44px]" placeholder="Min 8 characters" />
+          <label for="create-password" class="text-sm font-semibold text-gray-700 mb-1.5 block">Password</label>
+          <input id="create-password" type="password" bind:value={formPassword} minlength="8" class="w-full px-4 py-2.5 border border-black/[0.08] rounded-xl text-sm bg-white/80 focus:border-red focus:ring-2 focus:ring-red/10 outline-none transition-all min-h-[44px]" placeholder="Min 8 characters" />
           <PasswordRequirements password={formPassword} />
         </div>
         <div>
-          <label class="text-sm font-semibold text-gray-700 mb-1.5 block">Confirm Password</label>
-          <input type="password" bind:value={formConfirmPassword} minlength="8"
+          <label for="create-confirm-password" class="text-sm font-semibold text-gray-700 mb-1.5 block">Confirm Password</label>
+          <input id="create-confirm-password" type="password" bind:value={formConfirmPassword} minlength="8"
             class="w-full px-4 py-2.5 border border-black/[0.08] rounded-xl text-sm bg-white/80 focus:border-red focus:ring-2 focus:ring-red/10 outline-none transition-all min-h-[44px] {createPasswordMismatch ? 'border-red !shadow-[0_0_0_3px_rgba(239,68,68,0.1)]' : ''}"
             placeholder="Repeat password" />
           {#if createPasswordMismatch}
@@ -351,8 +351,8 @@
           {/if}
         </div>
         <div>
-          <label class="text-sm font-semibold text-gray-700 mb-1.5 block">Role</label>
-          <select bind:value={formRole} class="w-full px-4 py-2.5 border border-black/[0.08] rounded-xl text-sm bg-white/80 focus:border-red focus:ring-2 focus:ring-red/10 outline-none transition-all min-h-[44px]">
+          <label for="create-role" class="text-sm font-semibold text-gray-700 mb-1.5 block">Role</label>
+          <select id="create-role" bind:value={formRole} class="w-full px-4 py-2.5 border border-black/[0.08] rounded-xl text-sm bg-white/80 focus:border-red focus:ring-2 focus:ring-red/10 outline-none transition-all min-h-[44px]">
             <option value="user">User</option>
             <option value="admin">Admin</option>
           </select>
@@ -424,15 +424,15 @@
       <div class="p-5 space-y-4">
         <p class="text-sm text-gray-600">Set new password for <strong>{resetTarget.name}</strong></p>
         <div>
-          <label class="text-sm font-semibold text-gray-700 mb-1.5 block">New Password</label>
-          <input type="password" bind:value={resetPassword_} minlength="8"
+          <label for="reset-password" class="text-sm font-semibold text-gray-700 mb-1.5 block">New Password</label>
+          <input id="reset-password" type="password" bind:value={resetPassword_} minlength="8"
             class="w-full px-4 py-2.5 border border-black/[0.08] rounded-xl text-sm bg-white/80 focus:border-red focus:ring-2 focus:ring-red/10 outline-none transition-all min-h-[44px]"
             placeholder="Min 8 characters" />
           <PasswordRequirements password={resetPassword_} />
         </div>
         <div>
-          <label class="text-sm font-semibold text-gray-700 mb-1.5 block">Confirm Password</label>
-          <input type="password" bind:value={resetConfirmPassword} minlength="8"
+          <label for="reset-confirm-password" class="text-sm font-semibold text-gray-700 mb-1.5 block">Confirm Password</label>
+          <input id="reset-confirm-password" type="password" bind:value={resetConfirmPassword} minlength="8"
             class="w-full px-4 py-2.5 border border-black/[0.08] rounded-xl text-sm bg-white/80 focus:border-red focus:ring-2 focus:ring-red/10 outline-none transition-all min-h-[44px] {resetPasswordMismatch ? 'border-red !shadow-[0_0_0_3px_rgba(239,68,68,0.1)]' : ''}"
             placeholder="Repeat password" />
           {#if resetPasswordMismatch}
