@@ -359,7 +359,7 @@
 {#if contextMenu}
   <!-- svelte-ignore a11y_click_events_have_key_events -->
   <div class="fixed inset-0 z-[599]" onclick={() => contextMenu = null} role="presentation"></div>
-  <!-- svelte-ignore a11y-no-static-element-interactions a11y-click-events-have-key-events -->
+  <!-- svelte-ignore a11y_no_static_element_interactions a11y_click_events_have_key_events -->
   <div onclick={(e) => e.stopPropagation()}
     class="fixed z-[600] bg-white/95 backdrop-blur-xl border border-black/[0.06] rounded-xl shadow-xl py-1.5 min-w-[180px]"
     style={getMenuStyle(contextMenu.x, contextMenu.y)}>

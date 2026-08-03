@@ -705,16 +705,19 @@
       <h3 class="text-lg font-semibold text-gray-900 mb-4">Move Table</h3>
       <div class="space-y-3 mb-6">
         <div>
-          <label for="move-guest-display" class="block text-xs font-medium text-gray-500 mb-1">Guest</label>
+          <!-- svelte-ignore a11y_label_has_associated_control -->
+          <label class="block text-xs font-medium text-gray-500 mb-1">Guest</label>
           <div id="move-guest-display" class="px-3 py-2 bg-gray-50 rounded-lg text-sm text-gray-900 font-medium">{moveGuest.name}</div>
         </div>
         <div class="grid grid-cols-2 gap-3">
           <div>
-            <label for="move-current-table" class="block text-xs font-medium text-gray-500 mb-1">Current Table</label>
+            <!-- svelte-ignore a11y_label_has_associated_control -->
+            <label class="block text-xs font-medium text-gray-500 mb-1">Current Table</label>
             <div id="move-current-table" class="px-3 py-2 bg-gray-50 rounded-lg text-sm text-gray-700">{tables.find(t => moveGuest && t.id === moveGuest.tableId)?.name || (moveGuest?.tableId ?? '—')}</div>
           </div>
           <div>
-            <label for="move-current-seat" class="block text-xs font-medium text-gray-500 mb-1">Current Seat</label>
+            <!-- svelte-ignore a11y_label_has_associated_control -->
+            <label class="block text-xs font-medium text-gray-500 mb-1">Current Seat</label>
             <div id="move-current-seat" class="px-3 py-2 bg-gray-50 rounded-lg text-sm text-gray-700">{moveGuest.seatNumber ?? '—'}</div>
           </div>
         </div>
