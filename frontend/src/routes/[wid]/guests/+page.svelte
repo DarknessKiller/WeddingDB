@@ -83,9 +83,38 @@
     } catch {}
   }
 
-  // Paginated slice of allGuests — client-side pagination from SSE store.
-  let guests = $derived(allGuests.slice(currentPage * pageSize, (currentPage + 1) * pageSize));
-  let hasNextPage = $derived((currentPage + 1) * pageSize < allGuests.length);
+  // Search and status filters apply before client-side pagination.
+  let filtered = $derived.by(() => {
+    const q = searchQuery.trim().toLowerCase();
+    let r = q
+      ? allGuests.filter(g =>
+          g.name.toLowerCase().includes(q) ||
+          g.phone?.toLowerCase().includes(q) ||
+          g.email?.toLowerCase().includes(q)
+        )
+      : [...allGuests];
+    if (rsvpFilter !== 'all') r = r.filter(g => g.rsvp === rsvpFilter);
+    r.sort((a, b) => {
+      let av: string | number | null, bv: string | number | null;
+      switch (sortCol) {
+        case 'name': av = a.name; bv = b.name; break;
+        case 'phone': av = a.phone; bv = b.phone; break;
+        case 'rsvp': av = a.rsvp; bv = b.rsvp; break;
+        case 'pax': av = a.pax; bv = b.pax; break;
+        case 'tableId': av = a.tableId ?? ''; bv = b.tableId ?? ''; break;
+        case 'seatNum': av = a.seatNumber ?? 0; bv = b.seatNumber ?? 0; break;
+        case 'checkedInAt': av = a.checkedInAt?.getTime() ?? 0; bv = b.checkedInAt?.getTime() ?? 0; break;
+        default: av = a.name; bv = b.name;
+      }
+      const cmp = av < bv ? -1 : av > bv ? 1 : 0;
+      return sortDir === 'asc' ? cmp : -cmp;
+    });
+    return r;
+  });
+
+  // Paginated slice of the already-filtered list.
+  let guests = $derived(filtered.slice(currentPage * pageSize, (currentPage + 1) * pageSize));
+  let hasNextPage = $derived((currentPage + 1) * pageSize < filtered.length);
 
   function nextPage() {
     if (!hasNextPage) return;
@@ -97,35 +126,9 @@
     currentPage--;
   }
 
-  // Search is now client-side filtered from the SSE-backed store.
-  let searchResults = $derived.by(() => {
-    const q = searchQuery.trim().toLowerCase();
-    if (!q) return null; // null means no active search
-    return allGuests.filter(g =>
-      g.name.toLowerCase().includes(q) ||
-      g.phone?.toLowerCase().includes(q) ||
-      g.email?.toLowerCase().includes(q)
-    );
-  });
-
-  // Display list: search results if searching, otherwise paginated slice.
-  let displayGuests = $derived(
-    searchResults !== null
-      ? searchResults.slice(currentPage * pageSize, (currentPage + 1) * pageSize)
-      : guests
-  );
-  let displayTotal = $derived(searchResults !== null ? searchResults.length : totalGuests);
-
-  $effect(() => {
-    const q = searchQuery.trim();
-    let timer: ReturnType<typeof setTimeout>;
-    if (q) {
-      timer = setTimeout(() => { currentPage = 0; }, 300);
-    } else {
-      currentPage = 0;
-    }
-    return () => clearTimeout(timer);
-  });
+  let displayGuests = $derived(guests);
+  let displayTotal = $derived(filtered.length);
+  let totalPages = $derived(Math.ceil(displayTotal / pageSize));
 
   function toGuest(r: GuestResponse): Guest {
     return {
@@ -158,28 +161,17 @@
     { key: 'checkedInAt', label: 'Check In' },
   ] as const;
 
-  let filtered = $derived.by(() => {
-    let r = [...guests];
-    if (rsvpFilter !== 'all') r = r.filter(g => g.rsvp === rsvpFilter);
-    r.sort((a, b) => {
-      let av: string | number | null, bv: string | number | null;
-      switch (sortCol) {
-        case 'name': av = a.name; bv = b.name; break;
-        case 'phone': av = a.phone; bv = b.phone; break;
-        case 'rsvp': av = a.rsvp; bv = b.rsvp; break;
-        case 'pax': av = a.pax; bv = b.pax; break;
-        case 'tableId': av = a.tableId ?? ''; bv = b.tableId ?? ''; break;
-        case 'seatNum': av = a.seatNumber ?? 0; bv = b.seatNumber ?? 0; break;
-        case 'checkedInAt': av = a.checkedInAt?.getTime() ?? 0; bv = b.checkedInAt?.getTime() ?? 0; break;
-        default: av = a.name; bv = b.name;
-      }
-      const cmp = av < bv ? -1 : av > bv ? 1 : 0;
-      return sortDir === 'asc' ? cmp : -cmp;
-    });
-    return r;
+  $effect(() => {
+    const q = searchQuery.trim();
+    const filter = rsvpFilter;
+    const sort = `${sortCol}:${sortDir}`;
+    let timer: ReturnType<typeof setTimeout>;
+    if (q) timer = setTimeout(() => { currentPage = 0; }, 300);
+    else currentPage = 0;
+    void filter;
+    void sort;
+    return () => clearTimeout(timer);
   });
-
-  let totalPages = $derived(Math.ceil(displayTotal / pageSize));
 
   function exportCSV() {
     const headers = ['Name', 'Phone', 'Email', 'Table', 'Seat', 'Pax', 'RSVP', 'VIP', 'Checked In', 'Angbao', 'Gift', 'Notes'];
@@ -583,7 +575,7 @@
             </tr>
           </thead>
           <tbody>
-            {#each filtered as guest (guest.id)}
+            {#each displayGuests as guest (guest.id)}
               <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
               <tr
                 class="border-b border-gray-100 hover:bg-gray-50 cursor-pointer transition-colors {selectedIds.has(guest.id) ? 'bg-red-50' : ''}"
