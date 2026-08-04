@@ -43,6 +43,7 @@ export interface TableOccupancy {
   occupied: number;
   capacity: number;
   percentage: number;
+  isVip?: boolean;
 }
 
 export interface DashboardStats {

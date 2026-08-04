@@ -16,7 +16,10 @@ func NewTableRepo(db *gorm.DB) *TableRepo {
 
 func (r *TableRepo) ListByWedding(ctx context.Context, weddingID uuid.UUID) ([]models.BanquetTable, error) {
 	tables := make([]models.BanquetTable, 0)
-	err := r.db.WithContext(ctx).Where("wedding_id = ?", weddingID).Find(&tables).Error
+	err := r.db.WithContext(ctx).
+		Where("wedding_id = ?", weddingID).
+		Order("is_vip DESC, name ASC, id ASC").
+		Find(&tables).Error
 	return tables, err
 }
 
