@@ -369,6 +369,7 @@
 
         <!-- RSVP -->
         <div>
+          <!-- svelte-ignore a11y_label_has_associated_control -->
           <label class="block text-sm font-semibold text-gray-700 mb-2">RSVP Status *</label>
           <div class="flex gap-3 flex-wrap sm:flex-nowrap">
             {#each [
@@ -396,6 +397,7 @@
 
         <!-- Dietary -->
         <div>
+          <!-- svelte-ignore a11y_label_has_associated_control -->
           <label class="block text-sm font-semibold text-gray-700 mb-2">Dietary Restrictions</label>
           <div class="flex flex-wrap gap-2">
             {#each DIETARY_OPTIONS as opt}

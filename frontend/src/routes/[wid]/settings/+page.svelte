@@ -186,6 +186,7 @@
 
           <!-- Logo -->
           <div>
+            <!-- svelte-ignore a11y_label_has_associated_control -->
             <label class="text-sm font-semibold text-gray-700 mb-1.5 block">Logo</label>
             <ImageEditor
               bind:value={kioskLogoUrl}
@@ -200,6 +201,7 @@
 
           <!-- Background -->
           <div>
+            <!-- svelte-ignore a11y_label_has_associated_control -->
             <label class="text-sm font-semibold text-gray-700 mb-1.5 block">Background Image</label>
             <ImageEditor
               bind:value={kioskBackgroundUrl}
@@ -233,8 +235,9 @@
             <p class="text-xs text-gray-500">Display individual seat numbers on the kiosk and check-in screens</p>
           </div>
           <button onclick={() => { showSeatNumbers = !showSeatNumbers; }}
+            aria-label="Toggle seat numbers"
             class="relative inline-flex h-6 w-11 items-center rounded-full transition-colors {showSeatNumbers ? 'bg-deep-red' : 'bg-gray-200'}">
-            <span class="inline-block h-4 w-4 transform rounded-full bg-white transition-transform {showSeatNumbers ? 'translate-x-6' : 'translate-x-1'}" />
+            <span class="inline-block h-4 w-4 transform rounded-full bg-white transition-transform {showSeatNumbers ? 'translate-x-6' : 'translate-x-1'}"></span>
           </button>
         </div>
       </div>

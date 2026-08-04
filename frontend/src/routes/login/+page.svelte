@@ -281,12 +281,7 @@
     padding: 1rem 0;
   }
 
-  .empty-icon {
-    width: 2.5rem;
-    height: 2.5rem;
-    color: #d1d5db;
-    margin: 0 auto 0.75rem;
-  }
+
 
   .empty-text {
     font-size: 0.875rem;
@@ -350,10 +345,5 @@
     color: #6b7280;
   }
 
-  .wedding-chevron {
-    width: 1rem;
-    height: 1rem;
-    color: #d1d5db;
-    flex-shrink: 0;
-  }
+
 </style>
