@@ -109,10 +109,11 @@ func (r *GuestRepo) TableOccupancy(ctx context.Context, weddingID uuid.UUID) ([]
 		Pax     int
 	}
 	rows := make([]row, 0)
-	err := r.db.WithContext(ctx).Model(&models.GuestRecord{}).
-		Select("table_id, SUM(pax) as pax").
-		Where("wedding_id = ? AND table_id IS NOT NULL", weddingID).
-		Group("table_id").Find(&rows).Error
+	err := r.db.WithContext(ctx).Model(&models.BanquetTable{}).
+		Select("banquet_tables.id as table_id, COALESCE(SUM(guest_records.pax), 0) as pax").
+		Joins("LEFT JOIN guest_records ON guest_records.table_id = banquet_tables.id AND guest_records.wedding_id = ?", weddingID).
+		Where("banquet_tables.wedding_id = ?", weddingID).
+		Group("banquet_tables.id").Find(&rows).Error
 	if err != nil {
 		return nil, err
 	}

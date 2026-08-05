@@ -35,16 +35,13 @@
     return 'grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5';
   });
 
-  // Sort tables by position to match hallmap layout (top-to-bottom, left-to-right)
+  const tableNameCollator = new Intl.Collator(undefined, { numeric: true, sensitivity: 'base' });
+
+  // Keep hall-map coordinates untouched; only sort the cards for display.
   let sortedTables = $derived(
     [...tables].sort((a, b) => {
-      const aY = a.y ?? 50;
-      const bY = b.y ?? 50;
-      const aX = a.x ?? 50;
-      const bX = b.x ?? 50;
-      // Sort by Y first (rows), then by X (columns)
-      if (Math.abs(aY - bY) > 5) return aY - bY;
-      return aX - bX;
+      if (a.isVip !== b.isVip) return a.isVip ? -1 : 1;
+      return tableNameCollator.compare(a.name, b.name);
     })
   );
 

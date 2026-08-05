@@ -168,7 +168,7 @@
       <div class="bg-white/90 backdrop-blur-xl border border-black/[0.06] rounded-2xl p-6 shadow-sm">
         <h3 class="text-base font-bold text-gray-800 mb-5" style="letter-spacing: -0.01em;">Table Occupancy</h3>
         <div class="space-y-3">
-          {#each occupancy.slice(0, 10) as t}
+          {#each occupancy as t}
             <div class="flex items-center gap-3">
               <span class="w-20 text-right text-xs font-semibold text-gray-700 truncate">{t.tableName}</span>
               <div class="flex-1 h-2.5 bg-gray-100 rounded-full overflow-hidden">
