@@ -21,6 +21,7 @@
   let authChecked = $state(false);
   let guestCount = $state(0);
   let tables = $state<BanquetTable[]>([]);
+  let showSeatNumbers = $state(true);
   let cleanupSSE: (() => void) | undefined;
 
   onMount(async () => {
@@ -65,6 +66,7 @@
     }).catch(() => {});
     getWedding(wid).then((w) => {
       weddingTitle.set(w.name || '');
+      showSeatNumbers = w.showSeatNumbers ?? true;
     }).catch(() => {});
   });
 
@@ -111,7 +113,7 @@
 
 {#if $isDrawerOpen && ($selectedGuest || $drawerCreateMode)}
   {#key `${$drawerStartEditing}-${$drawerCreateMode}`}
-    <Drawer guest={$selectedGuest ?? undefined} tables={tables} startEditing={$drawerStartEditing} createMode={$drawerCreateMode} onClose={() => { $isDrawerOpen = false; $selectedGuest = null; $drawerStartEditing = false; $drawerCreateMode = false; }} />
+    <Drawer guest={$selectedGuest ?? undefined} tables={tables} {showSeatNumbers} startEditing={$drawerStartEditing} createMode={$drawerCreateMode} onClose={() => { $isDrawerOpen = false; $selectedGuest = null; $drawerStartEditing = false; $drawerCreateMode = false; }} />
   {/key}
 {/if}
 

@@ -7,6 +7,7 @@
   import { goto } from '$app/navigation';
   import { deleteGuest as apiDeleteGuest, searchGuests, assignSeat, bulkImportGuests } from '$lib/api/guests';
   import type { GuestResponse, GuestImportData } from '$lib/api/guests';
+  import { getWedding } from '$lib/api/weddings';
   import { listTables } from '$lib/api/tables';
   import type { BanquetTable } from '$lib/types';
   import Badge from '$lib/components/ui/Badge.svelte';
@@ -62,10 +63,12 @@
     prevDrawerOpen = isOpen;
   });
 
+  let showSeatNumbers = $state(true);
   let tables = $state<BanquetTable[]>([]);
 
   onMount(() => {
     loadTables();
+    getWedding(wid).then(w => { showSeatNumbers = w.showSeatNumbers ?? true; }).catch(() => {});
     loading = false;
     function onKey(e: KeyboardEvent) {
       if (e.key === 'Escape') {
@@ -151,7 +154,7 @@
     };
   }
 
-  const columns = [
+  const allColumns = [
     { key: 'name', label: 'Name' },
     { key: 'phone', label: 'Phone' },
     { key: 'rsvp', label: 'RSVP' },
@@ -160,6 +163,10 @@
     { key: 'seatNum', label: 'Seat' },
     { key: 'checkedInAt', label: 'Check In' },
   ] as const;
+
+  let columns = $derived(
+    showSeatNumbers ? allColumns : allColumns.filter(c => c.key !== 'seatNum')
+  );
 
   $effect(() => {
     const q = searchQuery.trim();
@@ -595,7 +602,9 @@
                 <td class="px-4 py-3.5"><Badge status={guest.rsvp as RSVPStatus} /></td>
                 <td class="px-4 py-3.5 text-gray-700 font-medium">{guest.pax}</td>
                 <td class="px-4 py-3.5 text-gray-700 font-medium">{tables.find(t => t.id === guest.tableId)?.name || (guest.tableId ?? '—')}</td>
-                <td class="px-4 py-3.5 text-gray-700 font-medium">{guest.seatNumber ?? '—'}</td>
+                {#if showSeatNumbers}
+                  <td class="px-4 py-3.5 text-gray-700 font-medium">{guest.seatNumber ?? '—'}</td>
+                {/if}
                 <td class="px-4 py-3.5">
                   {#if guest.checkedInAt}
                     <span class="inline-flex items-center gap-1 px-2 py-0.5 bg-emerald-50 text-emerald-700 rounded-full text-xs font-semibold border border-emerald-200">

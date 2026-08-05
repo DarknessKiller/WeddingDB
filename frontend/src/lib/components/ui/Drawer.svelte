@@ -9,7 +9,7 @@
   import { weddingId } from '$lib/stores/weddingId';
   import { updateGuest, createGuest, checkInGuest, checkOutGuest, getGuest, ConflictError } from '$lib/api/guests';
   import { get } from 'svelte/store';
-  let { guest, tables = [], onClose, startEditing = false, createMode = false, readonly = false }: { guest?: Guest; tables?: BanquetTable[]; onClose: () => void; startEditing?: boolean; createMode?: boolean; readonly?: boolean } = $props();
+  let { guest, tables = [], onClose, startEditing = false, createMode = false, readonly = false, showSeatNumbers = true }: { guest?: Guest; tables?: BanquetTable[]; onClose: () => void; startEditing?: boolean; createMode?: boolean; readonly?: boolean; showSeatNumbers?: boolean } = $props();
 
   let tableName = $derived(guest ? (tables.find(t => t.id === guest.tableId)?.name ?? guest.tableId ?? '—') : '—');
 
@@ -398,10 +398,12 @@
             <div class="detail-label">Table</div>
             <div class="detail-value">{tableName}</div>
           </div>
-          <div class="detail-card">
-            <div class="detail-label">Seat{localGuest.pax > 1 ? 's' : ''}</div>
-            <div class="detail-value">{formatSeatRange(localGuest.seatNumber, localGuest.pax)}</div>
-          </div>
+          {#if showSeatNumbers}
+            <div class="detail-card">
+              <div class="detail-label">Seat{localGuest.pax > 1 ? 's' : ''}</div>
+              <div class="detail-value">{formatSeatRange(localGuest.seatNumber, localGuest.pax)}</div>
+            </div>
+          {/if}
           <div class="detail-card">
             <div class="detail-label">Party Size</div>
             <div class="detail-value">{localGuest.pax}</div>
