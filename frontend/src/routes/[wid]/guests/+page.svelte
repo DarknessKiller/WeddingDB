@@ -36,17 +36,30 @@
   // Server-side search results (pinyin-aware)
   let searchResults = $state<Guest[] | null>(null);
   let searching = $state(false);
+  let searchSeq = 0; // ponytail: stale-response guard, monotonically increasing
 
   // Derive guest list from SSE store — updates in real time.
   let allGuests = $derived($guestList);
   let totalGuests = $derived(allGuests.length);
 
+  async function doSearch(q: string) {
+    const seq = ++searchSeq;
+    try {
+      const results = await searchGuests(wid, q);
+      if (seq !== searchSeq) return; // stale — discard
+      searchResults = results.map(toGuest);
+    } catch {
+      if (seq !== searchSeq) return;
+      searchResults = [];
+    } finally {
+      if (seq === searchSeq) searching = false;
+    }
+  }
+
   // Server-side search with debounce (pinyin support)
   let searchTimer: ReturnType<typeof setTimeout> | undefined;
-  let searchRequest = 0;
   $effect(() => {
     const q = searchQuery.trim();
-    const request = ++searchRequest;
     clearTimeout(searchTimer);
     if (!q) {
       searchResults = null;
@@ -55,19 +68,7 @@
       return;
     }
     searching = true;
-    searchTimer = setTimeout(async () => {
-      try {
-        const results = await searchGuests(wid, q);
-        if (request === searchRequest) searchResults = results.map(toGuest);
-      } catch {
-        if (request === searchRequest) searchResults = [];
-      } finally {
-        if (request === searchRequest) {
-          searching = false;
-          currentPage = 0;
-        }
-      }
-    }, 300);
+    searchTimer = setTimeout(() => { doSearch(q); }, 300);
     return () => clearTimeout(searchTimer);
   });
 
