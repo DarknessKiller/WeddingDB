@@ -195,7 +195,6 @@
     showSeatNumbers ? allColumns : allColumns.filter(c => c.key !== 'seatNum')
   );
 
-
   function exportCSV() {
     const headers = ['Name', 'Phone', 'Email', 'Table', 'Seat', 'Pax', 'RSVP', 'VIP', 'Checked In', 'Angbao', 'Gift', 'Notes'];
     const rows = guests.map(g => {
