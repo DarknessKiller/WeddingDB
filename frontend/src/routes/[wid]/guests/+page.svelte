@@ -195,13 +195,6 @@
     showSeatNumbers ? allColumns : allColumns.filter(c => c.key !== 'seatNum')
   );
 
-  $effect(() => {
-    const q = searchQuery.trim();
-    const filter = rsvpFilter;
-    const sort = `${sortCol}:${sortDir}`;
-    void filter;
-    void sort;
-  });
 
   function exportCSV() {
     const headers = ['Name', 'Phone', 'Email', 'Table', 'Seat', 'Pax', 'RSVP', 'VIP', 'Checked In', 'Angbao', 'Gift', 'Notes'];
