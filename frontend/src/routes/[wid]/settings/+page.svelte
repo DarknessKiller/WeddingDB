@@ -232,7 +232,7 @@
         <div class="flex items-center justify-between py-1">
           <div>
             <p class="text-sm font-semibold text-gray-900">Show Seat Numbers</p>
-            <p class="text-xs text-gray-500">Display individual seat numbers on the kiosk and check-in screens</p>
+            <p class="text-xs text-gray-500">Display individual seat numbers on the kiosk, check-in, and admin screens</p>
           </div>
           <button onclick={() => { showSeatNumbers = !showSeatNumbers; }}
             aria-label="Toggle seat numbers"
