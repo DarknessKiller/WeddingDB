@@ -48,6 +48,7 @@
       const results = await searchGuests(wid, q);
       if (seq !== searchSeq) return; // stale — discard
       searchResults = results.map(toGuest);
+      currentPage = 0;
     } catch {
       if (seq !== searchSeq) return;
       searchResults = [];
@@ -123,7 +124,10 @@
 
   // Search and status filters apply before client-side pagination.
   let filtered = $derived.by(() => {
-    let r = searchResults ?? [...allGuests];
+    const latest = new Map(allGuests.map(g => [g.id, g]));
+    let r = searchResults
+      ? searchResults.map(g => latest.get(g.id) ?? g)
+      : [...allGuests];
     if (rsvpFilter !== 'all') r = r.filter(g => g.rsvp === rsvpFilter);
     r.sort((a, b) => {
       let av: string | number | null, bv: string | number | null;
