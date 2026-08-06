@@ -33,9 +33,39 @@
   let errored = $state(false);
   let error = $state<string | null>(null);
 
+  // Server-side search results (pinyin-aware)
+  let searchResults = $state<Guest[] | null>(null);
+  let searching = $state(false);
+
   // Derive guest list from SSE store — updates in real time.
   let allGuests = $derived($guestList);
   let totalGuests = $derived(allGuests.length);
+
+  // Server-side search with debounce (pinyin support)
+  let searchTimer: ReturnType<typeof setTimeout> | undefined;
+  $effect(() => {
+    const q = searchQuery.trim();
+    clearTimeout(searchTimer);
+    if (!q) {
+      searchResults = null;
+      searching = false;
+      currentPage = 0;
+      return;
+    }
+    searching = true;
+    searchTimer = setTimeout(async () => {
+      try {
+        const results = await searchGuests(wid, q);
+        searchResults = results.map(toGuest);
+      } catch {
+        searchResults = [];
+      } finally {
+        searching = false;
+        currentPage = 0;
+      }
+    }, 300);
+    return () => clearTimeout(searchTimer);
+  });
 
   let showMoveModal = $state(false);
   let moveGuest = $state<Guest | null>(null);
@@ -88,14 +118,7 @@
 
   // Search and status filters apply before client-side pagination.
   let filtered = $derived.by(() => {
-    const q = searchQuery.trim().toLowerCase();
-    let r = q
-      ? allGuests.filter(g =>
-          g.name.toLowerCase().includes(q) ||
-          g.phone?.toLowerCase().includes(q) ||
-          g.email?.toLowerCase().includes(q)
-        )
-      : [...allGuests];
+    let r = searchResults ?? [...allGuests];
     if (rsvpFilter !== 'all') r = r.filter(g => g.rsvp === rsvpFilter);
     r.sort((a, b) => {
       let av: string | number | null, bv: string | number | null;
@@ -172,12 +195,8 @@
     const q = searchQuery.trim();
     const filter = rsvpFilter;
     const sort = `${sortCol}:${sortDir}`;
-    let timer: ReturnType<typeof setTimeout>;
-    if (q) timer = setTimeout(() => { currentPage = 0; }, 300);
-    else currentPage = 0;
     void filter;
     void sort;
-    return () => clearTimeout(timer);
   });
 
   function exportCSV() {
@@ -500,7 +519,7 @@
   <!-- Toolbar -->
   <div class="flex items-center justify-between gap-2 sm:gap-4 mb-5 flex-wrap">
     <div class="relative flex-1 min-w-[160px] sm:min-w-[200px] max-w-md">
-      <Search class="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 sm:w-[18px] sm:h-[18px] text-gray-400 pointer-events-none" />
+      <Search class="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 sm:w-[18px] sm:h-[18px] text-gray-400 pointer-events-none {searching ? 'animate-pulse' : ''}" />
       <input
         type="text" placeholder="Search guests..." bind:value={searchQuery}
         class="w-full pl-10 sm:pl-11 pr-3 sm:pr-4 py-2.5 sm:py-3 border border-gray-200 rounded-xl text-sm bg-white focus:border-red focus:ring-2 focus:ring-red/10 outline-none transition-all min-h-[44px]"

@@ -1,7 +1,6 @@
 <script lang="ts">
   import type { Guest, BanquetTable, RSVPStatus } from '$lib/types';
   import { X, Phone, Mail, Utensils, StickyNote, Banknote, Gift, Pencil, Check, UserCheck, CheckCircle2 } from 'lucide-svelte';
-  import CheckInModal from './CheckInModal.svelte';
   import Badge from './Badge.svelte';
   import { getInitials, cn } from '$lib/utils';
   import { formatSeatRange } from '$lib/utils/seat';
@@ -15,9 +14,6 @@
 
   let editing = $state(startEditing || createMode);
   let saving = $state(false);
-  let showCheckinModal = $state(false);
-  let angbaoAmount = $state('');
-  let giftItem = $state('');
 
   let localGuest = $state(guest);
   $effect(() => { localGuest = guest; });
@@ -220,33 +216,18 @@
 
   function cancel() { editing = false; onClose(); }
 
-  function openCheckinModal() {
-    if (!guest) return;
-    angbaoAmount = guest.angbaoAmount != null ? String(guest.angbaoAmount) : '';
-    giftItem = guest.giftItem ?? '';
-    showCheckinModal = true;
-  }
-
-  async function confirmCheckIn() {
+  async function handleCheckIn() {
     if (!guest) return;
     const wid = get(weddingId);
     try {
-      const body: { angbaoAmt?: number; giftItem?: string } = {};
-      if (angbaoAmount) body.angbaoAmt = Number(angbaoAmount);
-      if (giftItem) body.giftItem = giftItem;
-      await checkInGuest(wid, guest.id, Object.keys(body).length ? body : undefined);
+      await checkInGuest(wid, guest.id);
       guest.checkedIn = true;
       guest.checkedInAt = new Date();
-      if (angbaoAmount) guest.angbaoAmount = Number(angbaoAmount);
-      if (giftItem) guest.giftItem = giftItem;
       localGuest = { ...guest };
-      showCheckinModal = false;
       addToast(`${guest.name} checked in`, 'success');
     } catch (e: any) {
       if (e instanceof ConflictError) {
-        addToast(`${guest.name} was already checked in by another receptionist`, 'error');
-        showCheckinModal = false;
-        // SSE will deliver the updated guest state automatically.
+        addToast(`${guest.name} was already checked in`, 'info');
       } else {
         addToast(e.message ?? 'Check-in failed', 'error');
       }
@@ -473,7 +454,7 @@
                 <CheckCircle2 class="w-4 h-4" /> Checked In — Tap to Check Out
               </button>
             {:else}
-              <button onclick={openCheckinModal} class="w-full py-2.5 sm:py-3 bg-red text-white rounded-xl text-sm font-semibold hover:bg-red-light transition-colors flex items-center justify-center gap-2">
+              <button onclick={handleCheckIn} class="w-full py-2.5 sm:py-3 bg-red text-white rounded-xl text-sm font-semibold hover:bg-red-light transition-colors flex items-center justify-center gap-2">
                 <UserCheck class="w-4 h-4" /> Check In
               </button>
             {/if}
@@ -492,16 +473,6 @@
     {/if}
   </div>
 </div>
-
-{#if showCheckinModal && guest}
-  <CheckInModal
-    guestName={guest.name}
-    bind:angbaoAmount
-    bind:giftItem
-    onConfirm={confirmCheckIn}
-    onClose={() => showCheckinModal = false}
-  />
-{/if}
 
 <style>
   .drawer-overlay {
