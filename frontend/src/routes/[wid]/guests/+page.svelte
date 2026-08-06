@@ -36,18 +36,37 @@
   // Server-side search results (pinyin-aware)
   let searchResults = $state<Guest[] | null>(null);
   let searching = $state(false);
+  let searchError = $state<string | null>(null);
+  let searchSeq = 0; // ponytail: stale-response guard, monotonically increasing
 
   // Derive guest list from SSE store — updates in real time.
   let allGuests = $derived($guestList);
   let totalGuests = $derived(allGuests.length);
 
+  async function doSearch(q: string) {
+    const seq = ++searchSeq;
+    try {
+      const results = await searchGuests(wid, q);
+      if (seq !== searchSeq) return; // stale — discard
+      searchResults = results.map(toGuest);
+      searchError = null;
+      currentPage = 0;
+    } catch (cause) {
+      if (seq !== searchSeq) return;
+      searchResults = [];
+      searchError = cause instanceof Error ? cause.message : 'Failed to search guests';
+    } finally {
+      if (seq === searchSeq) searching = false;
+    }
+  }
+
   // Server-side search with debounce (pinyin support)
   let searchTimer: ReturnType<typeof setTimeout> | undefined;
-  let searchRequest = 0;
   $effect(() => {
     const q = searchQuery.trim();
-    const request = ++searchRequest;
     clearTimeout(searchTimer);
+    ++searchSeq;
+    searchError = null;
     if (!q) {
       searchResults = null;
       searching = false;
@@ -55,19 +74,7 @@
       return;
     }
     searching = true;
-    searchTimer = setTimeout(async () => {
-      try {
-        const results = await searchGuests(wid, q);
-        if (request === searchRequest) searchResults = results.map(toGuest);
-      } catch {
-        if (request === searchRequest) searchResults = [];
-      } finally {
-        if (request === searchRequest) {
-          searching = false;
-          currentPage = 0;
-        }
-      }
-    }, 300);
+    searchTimer = setTimeout(() => { doSearch(q); }, 300);
     return () => clearTimeout(searchTimer);
   });
 
@@ -122,7 +129,10 @@
 
   // Search and status filters apply before client-side pagination.
   let filtered = $derived.by(() => {
-    let r = searchResults ?? [...allGuests];
+    const latest = new Map(allGuests.map(g => [g.id, g]));
+    let r = searchResults
+      ? searchResults.filter(g => latest.has(g.id)).map(g => latest.get(g.id)!)
+      : [...allGuests];
     if (rsvpFilter !== 'all') r = r.filter(g => g.rsvp === rsvpFilter);
     r.sort((a, b) => {
       let av: string | number | null, bv: string | number | null;
@@ -194,7 +204,6 @@
   let columns = $derived(
     showSeatNumbers ? allColumns : allColumns.filter(c => c.key !== 'seatNum')
   );
-
 
   function exportCSV() {
     const headers = ['Name', 'Phone', 'Email', 'Table', 'Seat', 'Pax', 'RSVP', 'VIP', 'Checked In', 'Angbao', 'Gift', 'Notes'];
@@ -563,6 +572,12 @@
       <button onclick={() => { currentPage = 0; }} class="px-4 py-2 bg-red text-white rounded-xl text-sm font-semibold hover:bg-red-light transition-colors">
         Retry
       </button>
+    </div>
+  {:else if searchError}
+    <div class="flex flex-col items-center justify-center py-20 text-center">
+      <AlertCircle class="w-8 h-8 text-red mb-4" />
+      <p class="text-red font-medium">Search failed</p>
+      <p class="text-sm text-gray-500 mt-1">{searchError}</p>
     </div>
   {:else if guests.length === 0}
     <div class="flex flex-col items-center justify-center py-20 text-center">
