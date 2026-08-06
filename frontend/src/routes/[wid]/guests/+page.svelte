@@ -43,8 +43,10 @@
 
   // Server-side search with debounce (pinyin support)
   let searchTimer: ReturnType<typeof setTimeout> | undefined;
+  let searchRequest = 0;
   $effect(() => {
     const q = searchQuery.trim();
+    const request = ++searchRequest;
     clearTimeout(searchTimer);
     if (!q) {
       searchResults = null;
@@ -56,12 +58,14 @@
     searchTimer = setTimeout(async () => {
       try {
         const results = await searchGuests(wid, q);
-        searchResults = results.map(toGuest);
+        if (request === searchRequest) searchResults = results.map(toGuest);
       } catch {
-        searchResults = [];
+        if (request === searchRequest) searchResults = [];
       } finally {
-        searching = false;
-        currentPage = 0;
+        if (request === searchRequest) {
+          searching = false;
+          currentPage = 0;
+        }
       }
     }, 300);
     return () => clearTimeout(searchTimer);
