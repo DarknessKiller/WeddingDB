@@ -36,6 +36,7 @@
   // Server-side search results (pinyin-aware)
   let searchResults = $state<Guest[] | null>(null);
   let searching = $state(false);
+  let searchError = $state<string | null>(null);
   let searchSeq = 0; // ponytail: stale-response guard, monotonically increasing
 
   // Derive guest list from SSE store — updates in real time.
@@ -48,10 +49,12 @@
       const results = await searchGuests(wid, q);
       if (seq !== searchSeq) return; // stale — discard
       searchResults = results.map(toGuest);
+      searchError = null;
       currentPage = 0;
-    } catch {
+    } catch (cause) {
       if (seq !== searchSeq) return;
       searchResults = [];
+      searchError = cause instanceof Error ? cause.message : 'Failed to search guests';
     } finally {
       if (seq === searchSeq) searching = false;
     }
@@ -62,6 +65,8 @@
   $effect(() => {
     const q = searchQuery.trim();
     clearTimeout(searchTimer);
+    ++searchSeq;
+    searchError = null;
     if (!q) {
       searchResults = null;
       searching = false;
@@ -126,7 +131,7 @@
   let filtered = $derived.by(() => {
     const latest = new Map(allGuests.map(g => [g.id, g]));
     let r = searchResults
-      ? searchResults.map(g => latest.get(g.id) ?? g)
+      ? searchResults.filter(g => latest.has(g.id)).map(g => latest.get(g.id)!)
       : [...allGuests];
     if (rsvpFilter !== 'all') r = r.filter(g => g.rsvp === rsvpFilter);
     r.sort((a, b) => {
@@ -567,6 +572,12 @@
       <button onclick={() => { currentPage = 0; }} class="px-4 py-2 bg-red text-white rounded-xl text-sm font-semibold hover:bg-red-light transition-colors">
         Retry
       </button>
+    </div>
+  {:else if searchError}
+    <div class="flex flex-col items-center justify-center py-20 text-center">
+      <AlertCircle class="w-8 h-8 text-red mb-4" />
+      <p class="text-red font-medium">Search failed</p>
+      <p class="text-sm text-gray-500 mt-1">{searchError}</p>
     </div>
   {:else if guests.length === 0}
     <div class="flex flex-col items-center justify-center py-20 text-center">
