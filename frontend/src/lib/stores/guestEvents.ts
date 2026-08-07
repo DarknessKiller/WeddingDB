@@ -17,14 +17,20 @@ export const tableOccupancy = writable<Map<string, number>>(new Map());
 export const sseConnected = writable(false);
 
 let initialized = false;
+let syncing = false;
+let queuedEvents: GuestEvent[] = [];
+let resync: (() => Promise<Guest[]>) | undefined;
 
 /**
  * Initialize the SSE connection and start handling events.
  * Call once from the wedding layout. Returns a cleanup function.
  */
-export function initializeSSE(): (() => void) | undefined {
+export function initializeSSE(onResync?: () => Promise<Guest[]>): (() => void) | undefined {
 	if (initialized) return undefined;
 	initialized = true;
+	syncing = true;
+	queuedEvents = [];
+	resync = onResync;
 
 	const wid = get(weddingId);
 	if (!wid) {
@@ -33,17 +39,27 @@ export function initializeSSE(): (() => void) | undefined {
 	}
 
 	const client = connectSSE(wid);
-	sseConnected.set(true);
-
+	const unsubscribeStatus = client.onStatus((status, reconnect) => {
+		sseConnected.set(status === 'connected');
+		if (status === 'connected' && reconnect && resync) {
+			syncing = true;
+			resync().then(seedGuests).catch(() => { syncing = false; });
+		}
+	});
 	const unsubscribe = client.onEvent((event: GuestEvent) => {
-		handleGuestEvent(event);
+		if (syncing) queuedEvents.push(event);
+		else handleGuestEvent(event);
 	});
 
 	return () => {
 		unsubscribe();
+		unsubscribeStatus();
 		disconnectSSE();
 		sseConnected.set(false);
 		initialized = false;
+		syncing = false;
+		queuedEvents = [];
+		resync = undefined;
 	};
 }
 
@@ -58,6 +74,12 @@ export function seedGuests(guests: Guest[]) {
 	}
 	guestMap.set(map);
 	recalculateOccupancy();
+	if (syncing) {
+		syncing = false;
+		const pending = queuedEvents;
+		queuedEvents = [];
+		pending.forEach(handleGuestEvent);
+	}
 }
 
 function handleGuestEvent(event: GuestEvent) {

@@ -24,10 +24,12 @@ export interface GuestEvent {
 }
 
 type EventHandler = (event: GuestEvent) => void;
+type StatusHandler = (status: 'connected' | 'reconnecting', reconnect: boolean) => void;
 
 class SSEClient {
 	private eventSource: EventSource | null = null;
 	private handlers: Set<EventHandler> = new Set();
+	private statusHandlers: Set<StatusHandler> = new Set();
 	private reconnectTimeout: ReturnType<typeof setTimeout> | null = null;
 	private reconnectDelay = 1000;
 	private maxReconnectDelay = 30000;
@@ -48,6 +50,12 @@ class SSEClient {
 
 		const url = `/api/weddings/${weddingId}/events?token=${encodeURIComponent(accessToken)}`;
 		this.eventSource = new EventSource(url);
+
+		this.eventSource.onopen = () => {
+			const reconnect = this.reconnectDelay > 1000;
+			this.reconnectDelay = 1000;
+			this.statusHandlers.forEach((handler) => handler('connected', reconnect));
+		};
 
 		this.eventSource.onmessage = (event) => {
 			try {

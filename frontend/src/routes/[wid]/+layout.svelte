@@ -31,35 +31,22 @@
     }
     authChecked = true;
 
-    // Fetch all guests and seed the store FIRST, then start SSE.
-    // This prevents SSE events from appending guests that seedGuests
-    // would then overwrite, which causes duplicates.
-    try {
-      const guests = await fetchAllGuests($weddingId);
-      guestCount = guests.length;
-      seedGuests(guests.map((g) => ({
-        id: g.id,
-        name: g.name,
-        phone: g.phone,
-        email: g.email,
-        rsvp: g.rsvp as any,
-        pax: g.pax,
-        tableId: g.tableId,
-        seatNumber: g.seatNum,
-        checkedIn: !!g.checkedInAt,
-        checkedInAt: g.checkedInAt ? new Date(g.checkedInAt) : undefined,
-        notes: g.notes,
-        dietaryRequirements: g.dietary ?? [],
-        isVip: g.isVip,
-        angbaoAmount: g.angbaoAmt ?? undefined,
-        giftItem: g.giftItem ?? undefined,
-        createdAt: new Date(),
-      })));
-    } catch {}
+    const toGuest = (g: any) => ({
+      id: g.id, name: g.name, phone: g.phone, email: g.email,
+      rsvp: g.rsvp as any, pax: g.pax, tableId: g.tableId, seatNumber: g.seatNum,
+      checkedIn: !!g.checkedInAt, checkedInAt: g.checkedInAt ? new Date(g.checkedInAt) : undefined,
+      notes: g.notes, dietaryRequirements: g.dietary ?? [], isVip: g.isVip,
+      angbaoAmount: g.angbaoAmt ?? undefined, giftItem: g.giftItem ?? undefined, createdAt: new Date(),
+    });
+    const loadGuests = async () => (await fetchAllGuests($weddingId)).map(toGuest);
 
-    // Now start SSE — any events arriving after this point will
-    // upsert into the already-seeded list, no duplicates.
-    cleanupSSE = initializeSSE();
+    // Subscribe before the snapshot; guestEvents queues mutations until seeding completes.
+    cleanupSSE = initializeSSE(loadGuests);
+    try {
+      const guests = await loadGuests();
+      guestCount = guests.length;
+      seedGuests(guests);
+    } catch {}
 
     listTables($weddingId).then((t) => {
       tables = t;

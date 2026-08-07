@@ -46,6 +46,7 @@ type SSEClient struct {
 	WeddingID uuid.UUID
 	Chan      chan []byte
 	Done      chan struct{}
+	doneOnce  sync.Once
 }
 
 // SSEHub manages SSE connections per wedding and Redis pub/sub.
@@ -64,16 +65,8 @@ type SSEHub struct {
 // NewSSEHub creates a new SSEHub and starts the Redis subscriber.
 func NewSSEHub(rdb *redis.Client) *SSEHub {
 	ctx, cancel := context.WithCancel(context.Background())
-	hub := &SSEHub{
-		clients: make(map[uuid.UUID]map[string]*SSEClient),
-		redis:   rdb,
-		ctx:     ctx,
-		cancel:  cancel,
-		ready:   make(chan struct{}),
-	}
+	hub := &SSEHub{clients: make(map[uuid.UUID]map[string]*SSEClient), redis: rdb, ctx: ctx, cancel: cancel, ready: make(chan struct{})}
 	go hub.subscribeRedis()
-	// ponytail: block up to 5s on PSubscribe ACK so the first Publish lands on a live subscription.
-	// On timeout, hub is returned in not-ready state; Publish will return an error until ready closes.
 	select {
 	case <-hub.ready:
 	case <-time.After(5 * time.Second):
@@ -85,7 +78,6 @@ func NewSSEHub(rdb *redis.Client) *SSEHub {
 // subscribeRedis listens on the wildcard Redis channel and fans out to local clients.
 func (h *SSEHub) subscribeRedis() {
 	h.pubsub = h.redis.PSubscribe(h.ctx, "wedding:*:guests")
-	// ponytail: PSubscribe is synchronous in go-redis v9 — returns only after Redis ACKs.
 	close(h.ready)
 	ch := h.pubsub.Channel()
 	for {
@@ -100,16 +92,18 @@ func (h *SSEHub) subscribeRedis() {
 			if wid == uuid.Nil {
 				continue
 			}
-
 			h.mu.RLock()
-			clients := h.clients[wid]
+			clients := make([]*SSEClient, 0, len(h.clients[wid]))
+			for _, client := range h.clients[wid] {
+				clients = append(clients, client)
+			}
 			h.mu.RUnlock()
-
 			for _, client := range clients {
 				select {
 				case client.Chan <- []byte(msg.Payload):
 				default:
-					// Client buffer full, drop event to avoid blocking.
+					// A dropped event leaves the snapshot stale; force reconnect/resync instead.
+					h.Unsubscribe(client)
 				}
 			}
 		}
@@ -118,20 +112,13 @@ func (h *SSEHub) subscribeRedis() {
 
 // Subscribe registers a new SSE client for a wedding.
 func (h *SSEHub) Subscribe(weddingID uuid.UUID) *SSEClient {
-	client := &SSEClient{
-		ID:        uuid.New().String(),
-		WeddingID: weddingID,
-		Chan:      make(chan []byte, 64),
-		Done:      make(chan struct{}),
-	}
-
+	client := &SSEClient{ID: uuid.New().String(), WeddingID: weddingID, Chan: make(chan []byte, 64), Done: make(chan struct{})}
 	h.mu.Lock()
 	if h.clients[weddingID] == nil {
 		h.clients[weddingID] = make(map[string]*SSEClient)
 	}
 	h.clients[weddingID][client.ID] = client
 	h.mu.Unlock()
-
 	log.Printf("SSE: client %s connected for wedding %s", client.ID, weddingID)
 	return client
 }
@@ -146,13 +133,11 @@ func (h *SSEHub) Unsubscribe(client *SSEClient) {
 		}
 	}
 	h.mu.Unlock()
-	close(client.Done)
+	client.doneOnce.Do(func() { close(client.Done) })
 	log.Printf("SSE: client %s disconnected from wedding %s", client.ID, client.WeddingID)
 }
 
 // Publish sends a guest event to Redis for cross-instance broadcasting.
-// The provided ctx is propagated to Redis for cancellation/deadline support.
-// Returns an error if the hub is not yet ready (PSubscribe has not ACKed).
 func (h *SSEHub) Publish(ctx context.Context, weddingID uuid.UUID, event GuestEvent) error {
 	select {
 	case <-h.ready:
@@ -163,9 +148,7 @@ func (h *SSEHub) Publish(ctx context.Context, weddingID uuid.UUID, event GuestEv
 	if err != nil {
 		return fmt.Errorf("marshal guest event: %w", err)
 	}
-
-	channel := fmt.Sprintf("wedding:%s:guests", weddingID.String())
-	return h.redis.Publish(ctx, channel, data).Err()
+	return h.redis.Publish(ctx, fmt.Sprintf("wedding:%s:guests", weddingID.String()), data).Err()
 }
 
 // Shutdown gracefully stops the Redis subscriber.
@@ -177,7 +160,6 @@ func (h *SSEHub) Shutdown() {
 }
 
 func extractWeddingID(channel string) uuid.UUID {
-	// Channel format: "wedding:{wid}:guests"
 	parts := strings.Split(channel, ":")
 	if len(parts) != 3 {
 		return uuid.Nil
