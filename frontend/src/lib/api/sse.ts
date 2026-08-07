@@ -39,8 +39,12 @@ class SSEClient {
 		if (this.eventSource) this.disconnect();
 		this.wid = weddingId;
 		const { accessToken } = getAuth();
-		if (!accessToken) return;
-		this.eventSource = new EventSource(`/api/weddings/${weddingId}/events?token=${encodeURIComponent(accessToken)}`);
+		if (!accessToken) {
+			console.warn('SSE: No access token available');
+			return;
+		}
+		const url = `/api/weddings/${weddingId}/events?token=${encodeURIComponent(accessToken)}`;
+		this.eventSource = new EventSource(url);
 		this.eventSource.onopen = () => {
 			const reconnect = this.reconnectDelay > 1000;
 			this.reconnectDelay = 1000;
