@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log"
 	"time"
 
 	"github.com/google/uuid"
@@ -193,11 +194,11 @@ func (s *GuestService) publishEvent(eventType string, guest *models.GuestRecord,
 		Timestamp: time.Now().UnixMilli(),
 	}
 
-	// Fire-and-forget: publish in a goroutine so the caller is never blocked.
-	// context.Background() is intentional here — the service layer has no request
-	// context to propagate. When context propagation is added to the service
-	// methods, this should switch to the passed-through ctx.
-	go s.sseHub.Publish(context.Background(), weddingID, event)
+	go func() {
+		if err := s.sseHub.Publish(context.Background(), weddingID, event); err != nil {
+			log.Printf("SSE: publish %s for guest %s in wedding %s: %v", eventType, guest.ID, weddingID, err)
+		}
+	}()
 }
 
 func guestToEventData(g *models.GuestRecord) *GuestEventData {
