@@ -60,22 +60,24 @@ func (r *AdminRepo) GetUserWeddings(ctx context.Context, userID uuid.UUID) ([]mo
 	return weddings, err
 }
 
-// SetUserWeddings replaces a user's wedding associations.
+// SetUserWeddings replaces a user's wedding associations in a single transaction.
 func (r *AdminRepo) SetUserWeddings(ctx context.Context, userID uuid.UUID, weddingIDs []uuid.UUID) error {
-	// Delete existing
-	r.db.WithContext(ctx).Where("user_id = ?", userID).Delete(&models.UserWedding{})
-	// Insert new
-	for _, wid := range weddingIDs {
-		uw := models.UserWedding{
-			ID:        uuid.New(),
-			UserID:    userID,
-			WeddingID: wid,
-		}
-		if err := r.db.WithContext(ctx).Create(&uw).Error; err != nil {
+	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Where("user_id = ?", userID).Delete(&models.UserWedding{}).Error; err != nil {
 			return err
 		}
-	}
-	return nil
+		for _, wid := range weddingIDs {
+			uw := models.UserWedding{
+				ID:        uuid.New(),
+				UserID:    userID,
+				WeddingID: wid,
+			}
+			if err := tx.Create(&uw).Error; err != nil {
+				return err
+			}
+		}
+		return nil
+	})
 }
 
 // HasWeddingAccess checks if a user has access to a specific wedding.
@@ -89,7 +91,10 @@ func (r *AdminRepo) HasWeddingAccess(ctx context.Context, userID, weddingID uuid
 
 // AddUserWedding adds a wedding association if it doesn't already exist.
 func (r *AdminRepo) AddUserWedding(ctx context.Context, userID, weddingID uuid.UUID) error {
-	exists, _ := r.HasWeddingAccess(ctx, userID, weddingID)
+	exists, err := r.HasWeddingAccess(ctx, userID, weddingID)
+	if err != nil {
+		return err
+	}
 	if exists {
 		return nil
 	}

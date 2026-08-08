@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+	"time"
 
 	"weddingdb/internal/models"
 	"weddingdb/internal/utils"
@@ -13,6 +14,9 @@ import (
 	"github.com/google/uuid"
 	"gorm.io/gorm"
 )
+
+// ErrAlreadyCheckedIn is returned by ConditionalCheckIn when the guest was already checked in.
+var ErrAlreadyCheckedIn = fmt.Errorf("already checked in")
 
 type GuestRepo struct{ db *gorm.DB }
 
@@ -90,11 +94,48 @@ func (r *GuestRepo) Create(ctx context.Context, g *models.GuestRecord) error {
 
 func (r *GuestRepo) Update(ctx context.Context, g *models.GuestRecord) error {
 	g.NamePinyin = models.GenerateNamePinyin(g.Name)
-	return r.db.WithContext(ctx).Save(g).Error
+	return r.db.WithContext(ctx).Model(g).Where("id = ? AND wedding_id = ?", g.ID, g.WeddingID).Updates(map[string]interface{}{
+		"name":         g.Name,
+		"name_pinyin":  g.NamePinyin,
+		"phone":        g.Phone,
+		"email":        g.Email,
+		"pax":          g.Pax,
+		"table_id":     g.TableID,
+		"seat_num":     g.SeatNum,
+		"rsvp":         g.RSVP,
+		"checked_in_at": g.CheckedInAt,
+		"notes":        g.Notes,
+		"dietary":      g.Dietary,
+		"is_vip":       g.IsVip,
+		"angbao_amt":   g.AngbaoAmt,
+		"gift_item":    g.GiftItem,
+	}).Error
 }
 
 func (r *GuestRepo) Delete(ctx context.Context, id, weddingID uuid.UUID) error {
 	return r.db.WithContext(ctx).Where("id = ? AND wedding_id = ?", id, weddingID).Delete(&models.GuestRecord{}).Error
+}
+
+// UnassignByTable clears table_id and seat_num for all guests at a given table.
+func (r *GuestRepo) UnassignByTable(ctx context.Context, weddingID, tableID uuid.UUID) error {
+	return r.db.WithContext(ctx).Model(&models.GuestRecord{}).
+		Where("wedding_id = ? AND table_id = ?", weddingID, tableID).
+		Updates(map[string]interface{}{"table_id": nil, "seat_num": nil}).Error
+}
+
+// ConditionalCheckIn atomically checks in a guest only if not already checked in.
+// Returns ErrAlreadyCheckedIn if the guest was already checked in.
+func (r *GuestRepo) ConditionalCheckIn(ctx context.Context, id, weddingID uuid.UUID, now time.Time) error {
+	result := r.db.WithContext(ctx).Model(&models.GuestRecord{}).
+		Where("id = ? AND wedding_id = ? AND checked_in_at IS NULL", id, weddingID).
+		Update("checked_in_at", now)
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected == 0 {
+		return ErrAlreadyCheckedIn
+	}
+	return nil
 }
 
 func (r *GuestRepo) ListAllByWedding(ctx context.Context, weddingID uuid.UUID) ([]models.GuestRecord, error) {
