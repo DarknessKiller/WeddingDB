@@ -262,7 +262,7 @@
   async function deleteGuest(guest: Guest) {
     try {
       await apiDeleteGuest(wid, guest.id);
-      // SSE will update the store automatically.
+      guestList.update(list => list.filter(g => g.id !== guest.id));
       addToast(`${guest.name} deleted`, 'info');
     } catch (e: any) {
       addToast(e.message ?? 'Delete failed', 'error');
@@ -445,7 +445,7 @@
     const ids = [...selectedIds];
     try {
       await Promise.all(ids.map(id => apiDeleteGuest(wid, id)));
-      // SSE will update the store automatically.
+      guestList.update(list => list.filter(g => !selectedIds.has(g.id)));
       addToast(`Deleted ${ids.length} guests`, 'info');
       selectedIds = new Set();
     } catch (e: any) {
