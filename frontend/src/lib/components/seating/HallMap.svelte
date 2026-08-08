@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
+  import { onMount, onDestroy } from 'svelte';
   import BanquetTableComponent from './BanquetTable.svelte';
   import HallElementNode from './HallElementNode.svelte';
   import EditToolbar from './EditToolbar.svelte';
@@ -121,6 +121,7 @@
 
   onMount(() => {
     let ro: ResizeObserver | null = null;
+    const canvasListeners: Array<[string, EventListener, any]> = [];
 
     if (containerEl) {
       ro = new ResizeObserver(entries => {
@@ -146,12 +147,14 @@
         const canvas = containerEl?.querySelector('canvas');
         if (!canvas) { requestAnimationFrame(attachHandlers); return; }
 
-        // Wheel zoom (desktop)
-        canvas.addEventListener('wheel', (e: WheelEvent) => {
+        // ponytail: store listeners for cleanup on destroy
+        const onWheel = (e: Event) => {
           e.preventDefault();
-          const delta = e.deltaY > 0 ? -0.08 : 0.08;
+          const delta = (e as WheelEvent).deltaY > 0 ? -0.08 : 0.08;
           zoom = Math.max(0.3, Math.min(3, zoom + delta));
-        }, { passive: false });
+        };
+        canvas.addEventListener('wheel', onWheel, { passive: false });
+        canvasListeners.push(['wheel', onWheel as EventListener, { passive: false }]);
 
         // Mobile: touch-based pan + tap detection + pinch zoom
         // These handlers fire BEFORE Konva's internal handlers and take over
@@ -241,8 +244,15 @@
       requestAnimationFrame(attachHandlers);
     })();
 
-    return () => {
+      return () => {
       ro?.disconnect();
+      // Clean up canvas event listeners
+      const canvas = containerEl?.querySelector('canvas');
+      if (canvas) {
+        for (const [event, handler, opts] of canvasListeners) {
+          canvas.removeEventListener(event, handler, opts);
+        }
+      }
     };
   });
 

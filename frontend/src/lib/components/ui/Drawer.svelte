@@ -23,7 +23,9 @@
     const wid = get(weddingId);
     try {
       const fresh = await getGuest(wid, guest.id);
-      Object.assign(guest, {
+      // Build updated guest without mutating the prop directly
+      localGuest = {
+        ...guest,
         name: fresh.name,
         phone: fresh.phone,
         email: fresh.email,
@@ -36,8 +38,7 @@
         checkedInAt: fresh.checkedInAt ? new Date(fresh.checkedInAt) : undefined,
         angbaoAmount: fresh.angbaoAmt ?? undefined,
         giftItem: fresh.giftItem ?? undefined,
-      });
-      localGuest = { ...guest };
+      } as Guest;
     } catch {}
   }
 

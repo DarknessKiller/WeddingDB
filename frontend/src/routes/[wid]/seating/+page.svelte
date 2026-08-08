@@ -11,7 +11,7 @@
   import Badge from '$lib/components/ui/Badge.svelte';
   import { cn } from '$lib/utils';
   import { page } from '$app/state';
-  import { onMount } from 'svelte';
+  import { onMount, onDestroy } from 'svelte';
   import { Users, Star, X, Search, AlertCircle, Plus, UserCheck, CheckCircle2, Banknote, Gift } from 'lucide-svelte';
   import CheckInModal from '$lib/components/ui/CheckInModal.svelte';
   import { get } from 'svelte/store';
@@ -59,10 +59,16 @@
   let checkinGuest = $state<Guest | null>(null);
   let angbaoAmount = $state('');
   let giftItem = $state('');
+  let unsubGuests: (() => void) | null = null;
 
-  // Derive from SSE-backed store — updates in real time.
-  let allGuests = $derived($guestList);
+  // Local state derived from SSE-backed store — updates in real time.
+  let allGuests = $state<Guest[]>([]);
   let unassignedGuests = $derived(allGuests.filter(g => g.tableId === null));
+
+  // Initialize from store on mount
+  function syncGuestsFromStore(list: Guest[]) {
+    allGuests = list;
+  }
 
   async function loadData() {
     const wid = get(weddingId);
@@ -84,6 +90,8 @@
   }
 
   onMount(async () => {
+    // Subscribe to SSE-backed guest list
+    unsubGuests = guestList.subscribe(list => syncGuestsFromStore(list));
     try {
       await loadData();
       errored = false;
@@ -102,6 +110,10 @@
         }
       }
     }
+  });
+
+  onDestroy(() => {
+    unsubGuests?.();
   });
 
   let selectedTable = $derived(selectedTableId ? allTables.find(t => t.id === selectedTableId) ?? null : null);
@@ -164,7 +176,6 @@
         ? { ...g, tableId: selectedTable.id, seatNumber: seatNum }
         : g
       );
-      unassignedGuests = unassignedGuests.filter(g => g.id !== guest.id);
       assigningSeat = null;
       guestSearch = '';
       addToast(`${guest.name} assigned to seat ${seatNum}`, 'success');
