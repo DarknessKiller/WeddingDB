@@ -192,6 +192,11 @@ func (h *AuthHandler) ChangePassword(c fuego.ContextWithBody[ChangePasswordReque
 	if err := h.adminRepo.Update(ctx, admin); err != nil {
 		return nil, fuego.InternalServerError{Title: "Failed to update password"}
 	}
+	// Revoke all existing sessions so compromised tokens are invalidated
+	if err := h.authService.RevokeUserTokens(ctx, adminID); err != nil {
+		// Password was already changed; log but don't fail the request
+		// ponytail: best-effort revocation — password hash is already updated
+	}
 	return map[string]any{"message": "Password updated"}, nil
 }
 

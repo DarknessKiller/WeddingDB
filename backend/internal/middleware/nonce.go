@@ -14,11 +14,11 @@ func NewNonceStore(client *redis.Client) *NonceStore {
 	return &NonceStore{client: client}
 }
 
-func (s *NonceStore) MarkUsed(ctx context.Context, jti string, ttl time.Duration) error {
-	return s.client.Set(ctx, "nonce:"+jti, "1", ttl).Err()
-}
-
-func (s *NonceStore) IsUsed(ctx context.Context, jti string) bool {
-	exists, err := s.client.Exists(ctx, "nonce:"+jti).Result()
-	return err == nil && exists > 0
+// MarkUsed atomically marks a nonce as used. Returns true if this is the first use
+// (nonce is valid), false if already used (replay detected).
+func (s *NonceStore) MarkUsed(ctx context.Context, jti string, ttl time.Duration) (bool, error) {
+	if jti == "" {
+		return false, nil
+	}
+	return s.client.SetNX(ctx, "nonce:"+jti, "1", ttl).Result()
 }
