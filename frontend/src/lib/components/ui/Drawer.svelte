@@ -5,6 +5,7 @@
   import { getInitials, cn } from '$lib/utils';
   import { formatSeatRange } from '$lib/utils/seat';
   import { addToast } from '$lib/stores';
+  import { track } from '$lib/analytics';
   import { weddingId } from '$lib/stores/weddingId';
   import { updateGuest, createGuest, checkInGuest, checkOutGuest, getGuest, ConflictError } from '$lib/api/guests';
   import { get } from 'svelte/store';
@@ -185,6 +186,7 @@
           giftItem: form.giftItem || null,
         });
         addToast(`${created.name} created`, 'success');
+        track('guest_created', { wedding_id: wid });
         onClose();
       } else {
         const updated = await updateGuest(wid, guest!.id, {
@@ -205,6 +207,7 @@
         });
         editing = false;
         addToast('Guest updated', 'success');
+        track('guest_updated', { wedding_id: wid });
         await refreshGuest();
       }
     } catch (e: any) {
@@ -225,6 +228,7 @@
       guest.checkedInAt = new Date();
       localGuest = { ...guest };
       addToast(`${guest.name} checked in`, 'success');
+      track('guest_checked_in', { wedding_id: wid });
     } catch (e: any) {
       if (e instanceof ConflictError) {
         addToast(`${guest.name} was already checked in`, 'info');
@@ -243,6 +247,7 @@
       guest.checkedInAt = undefined;
       localGuest = { ...guest };
       addToast(`${guest.name} checked out`, 'success');
+      track('guest_checked_out', { wedding_id: wid });
       await refreshGuest();
     } catch (e: any) {
       addToast(e.message ?? 'Check-out failed', 'error');

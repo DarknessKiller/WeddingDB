@@ -3,6 +3,7 @@
   import { weddingTitle } from '$lib/stores/weddingTitle';
   import { weddingId } from '$lib/stores/weddingId';
   import { exportAngpaoReport } from '$lib/api/reports';
+  import { track } from '$lib/analytics';
   import { Download, FileSpreadsheet, FileText, Loader2 } from 'lucide-svelte';
 
   let exporting = $state<'csv' | 'xlsx' | null>(null);
@@ -13,6 +14,7 @@
     error = '';
     try {
       await exportAngpaoReport($weddingId, format);
+      track('report_exported', { wedding_id: $weddingId, format });
     } catch (e: any) {
       error = e.message ?? 'Export failed';
     } finally {

@@ -9,6 +9,7 @@
   import { listTables } from '$lib/api/tables';
   import { getLayout } from '$lib/api/layout';
   import { weddingId } from '$lib/stores/weddingId';
+  import { track } from '$lib/analytics';
   import { get } from 'svelte/store';
   import { onMount } from 'svelte';
   import type { BanquetTable, Guest, HallElement, RSVPStatus } from '$lib/types';
@@ -232,6 +233,7 @@
       });
       
       addToast(`Reservation for ${form.name} saved successfully`, 'success');
+      track('reservation_updated', { wedding_id: wid });
       goto(`/${wid}/guests`);
     } catch (e) {
       addToast('Failed to save reservation', 'error');
