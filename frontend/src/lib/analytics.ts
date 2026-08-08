@@ -9,6 +9,7 @@ function client(): OpenPanel | undefined {
 
 	op ??= new OpenPanel({
 		clientId: env.PUBLIC_OPENPANEL_CLIENT_ID,
+		...(env.PUBLIC_OPENPANEL_API_URL ? { apiUrl: env.PUBLIC_OPENPANEL_API_URL } : {}),
 		trackScreenViews: true,
 		trackOutgoingLinks: true,
 		trackAttributes: true
