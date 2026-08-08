@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net/http"
 	"strconv"
+	"strings"
 
 	"weddingdb/internal/services"
 )
@@ -48,7 +49,9 @@ func (h *ReportHandler) ExportAngpao(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/octet-stream")
-	w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="%s"`, filename))
+	// Sanitize filename: strip control chars, use RFC 5987 encoding for non-ASCII
+	safeFilename := sanitizeContentDisposition(filename)
+	w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="%s"`, safeFilename))
 	w.Header().Set("Content-Length", strconv.Itoa(len(data)))
 	w.WriteHeader(http.StatusOK)
 	w.Write(data)
@@ -61,4 +64,28 @@ type rawPathParams struct {
 
 func (p rawPathParams) PathParam(name string) string {
 	return p.r.PathValue(name)
+}
+
+// sanitizeContentDisposition strips control characters from filenames
+// to prevent HTTP header injection via Content-Disposition.
+func sanitizeContentDisposition(name string) string {
+	// Strip all control characters (CR, LF, NUL, etc.)
+	cleaned := make([]rune, 0, len(name))
+	for _, r := range name {
+		if r >= 32 && r != 127 {
+			cleaned = append(cleaned, r)
+		}
+	}
+	name = string(cleaned)
+	// Replace path separators
+	name = strings.ReplaceAll(name, `/`, `-`)
+	name = strings.ReplaceAll(name, `\`, `-`)
+	name = strings.TrimSpace(name)
+	if len(name) > 50 {
+		name = name[:50]
+	}
+	if name == "" {
+		name = "report"
+	}
+	return name
 }

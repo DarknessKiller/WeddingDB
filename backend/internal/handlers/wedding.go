@@ -50,7 +50,7 @@ func (h *WeddingHandler) Get(c fuego.ContextNoBody) (any, error) {
 	}
 	ctx := c.Context()
 	if err := requireWeddingAccess(ctx, id); err != nil {
-		return nil, fuego.UnauthorizedError{Title: err.Error()}
+		return nil, fuego.ForbiddenError{Title: err.Error()}
 	}
 	return h.weddingService.Get(ctx, id)
 }
@@ -68,7 +68,10 @@ func (h *WeddingHandler) Create(c fuego.ContextWithBody[WeddingRequest]) (any, e
 	if err != nil {
 		return nil, fuego.BadRequestError{Title: "Invalid date format, use YYYY-MM-DD"}
 	}
-	w := &models.WeddingEvent{Name: body.Name, Date: d}
+	w := &models.WeddingEvent{Name: strings.TrimSpace(body.Name), Date: d}
+	if w.Name == "" {
+		return nil, fuego.BadRequestError{Title: "Name is required"}
+	}
 	if err := h.weddingService.Create(ctx, w); err != nil {
 		return nil, err
 	}
@@ -88,7 +91,7 @@ func (h *WeddingHandler) Update(c fuego.ContextWithBody[WeddingRequest]) (any, e
 	}
 	ctx := c.Context()
 	if err := requireWeddingAccess(ctx, id); err != nil {
-		return nil, fuego.UnauthorizedError{Title: err.Error()}
+		return nil, fuego.ForbiddenError{Title: err.Error()}
 	}
 	body, err := c.Body()
 	if err != nil {
@@ -140,7 +143,7 @@ func (h *WeddingHandler) UpdateKioskSettings(c fuego.ContextWithBody[KioskSettin
 	}
 	ctx := c.Context()
 	if err := requireWeddingAccess(ctx, id); err != nil {
-		return nil, fuego.UnauthorizedError{Title: err.Error()}
+		return nil, fuego.ForbiddenError{Title: err.Error()}
 	}
 	body, err := c.Body()
 	if err != nil {
