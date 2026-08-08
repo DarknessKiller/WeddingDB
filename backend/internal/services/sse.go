@@ -78,6 +78,10 @@ func NewSSEHub(rdb *redis.Client) *SSEHub {
 // subscribeRedis listens on the wildcard Redis channel and fans out to local clients.
 func (h *SSEHub) subscribeRedis() {
 	h.pubsub = h.redis.PSubscribe(h.ctx, "wedding:*:guests")
+	// Wait for Redis to confirm the subscription is active
+	if err := h.pubsub.Ping(h.ctx); err != nil {
+		log.Printf("SSE: PSubscribe ping failed: %v", err)
+	}
 	close(h.ready)
 	ch := h.pubsub.Channel()
 	for {
