@@ -44,6 +44,9 @@ func (h *GuestHandler) List(c fuego.ContextNoBody) (any, error) {
 			limit = n
 		}
 	}
+	if limit > 500 {
+		limit = 500
+	}
 	guests, total, err := h.guestService.List(ctx, wid, cursor, limit)
 	if err != nil {
 		return nil, err
@@ -171,10 +174,11 @@ func (h *GuestHandler) Update(c fuego.ContextWithBody[GuestCreateRequest]) (any,
 			if body.SeatNum != nil {
 				seatNum = *body.SeatNum
 			}
-			if err := h.guestService.AssignSeat(ctx, guest.ID, wid, tid, seatNum); err == nil {
-				guest.TableID = &tid
-				guest.SeatNum = &seatNum
+			if err := h.guestService.AssignSeat(ctx, guest.ID, wid, tid, seatNum); err != nil {
+				return nil, fuego.BadRequestError{Title: err.Error()}
 			}
+			guest.TableID = &tid
+			guest.SeatNum = &seatNum
 		}
 	}
 	// else: tableId not provided — preserve existing seat assignment
@@ -311,6 +315,16 @@ func (h *GuestHandler) BulkImport(c fuego.ContextWithBody[BulkImportRequest]) (a
 	}
 	var guests []models.GuestRecord
 	for _, g := range body.Guests {
+		if g.Name == "" {
+			continue
+		}
+		if g.Pax < 1 {
+			g.Pax = 1
+		}
+		validRSVP := map[string]bool{"confirmed": true, "pending": true, "declined": true, "no_response": true}
+		if g.RSVP != "" && !validRSVP[g.RSVP] {
+			g.RSVP = "no_response"
+		}
 		gr := models.GuestRecord{
 			WeddingID: wid,
 			Name:      g.Name,
@@ -334,7 +348,7 @@ func (h *GuestHandler) BulkImport(c fuego.ContextWithBody[BulkImportRequest]) (a
 	}
 	count, err := h.guestService.BulkCreate(ctx, guests)
 	if err != nil {
-		return nil, fuego.BadRequestError{Title: err.Error()}
+		return nil, fuego.BadRequestError{Title: "Bulk import failed"}
 	}
 	return map[string]any{"imported": count}, nil
 }

@@ -17,11 +17,12 @@ RUN CGO_ENABLED=0 go build -ldflags "-X main.version=${VERSION}" -o server ./cmd
 
 # Stage 3: Runtime
 FROM alpine:3.22
-RUN apk add --no-cache ca-certificates
+RUN apk add --no-cache ca-certificates && adduser -D -u 1001 appuser
 WORKDIR /app
 COPY --from=backend-build /app/backend/server ./server
 COPY --from=frontend-build /app/frontend/build ./static
-RUN mkdir -p uploads
+RUN mkdir -p uploads && chown -R appuser:appuser /app
+USER appuser
 EXPOSE 8080
 ENV PORT=8080
 ENV STATIC_DIR=./static

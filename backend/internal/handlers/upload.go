@@ -70,7 +70,9 @@ func (h *UploadHandler) Upload(c fuego.ContextWithBody[any]) (any, error) {
 
 	// Create uploads directory
 	uploadDir := "./uploads"
-	os.MkdirAll(uploadDir, 0755)
+	if err := os.MkdirAll(uploadDir, 0755); err != nil {
+		return nil, fuego.InternalServerError{Title: "Failed to create upload directory"}
+	}
 
 	// Compute SHA256 hash of file content
 	hasher := sha256.New()
@@ -121,7 +123,9 @@ func (h *UploadHandler) Upload(c fuego.ContextWithBody[any]) (any, error) {
 		defer syscall.Flock(int(lockFile.Fd()), syscall.LOCK_UN)
 	}
 	f, err := os.OpenFile(indexPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
-	if err == nil {
+	if err != nil {
+		// ponytail: index write failure is non-critical — file is already saved
+	} else {
 		fmt.Fprintf(f, "%s %s\n", hash, filename)
 		f.Close()
 	}

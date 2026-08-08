@@ -72,6 +72,9 @@ func (s *GuestService) AssignSeat(ctx context.Context, guestID, weddingID, table
 	if err != nil {
 		return errors.New("table not found")
 	}
+	if guest.Pax < 1 {
+		return errors.New("guest pax must be at least 1")
+	}
 	if seatNum < 1 || seatNum+guest.Pax-1 > table.Capacity {
 		return errors.New("seat range exceeds table capacity")
 	}
@@ -104,19 +107,18 @@ func (s *GuestService) AssignSeat(ctx context.Context, guestID, weddingID, table
 // CheckIn marks a guest as checked in. Returns ErrAlreadyCheckedIn if the guest
 // was already checked in by another receptionist (FIFO conflict).
 func (s *GuestService) CheckIn(ctx context.Context, id, weddingID uuid.UUID) error {
-	guest, err := s.guestRepo.FindByID(ctx, id, weddingID)
-	if err != nil {
-		return err
-	}
-	if guest.CheckedInAt != nil {
-		return ErrAlreadyCheckedIn
-	}
 	now := time.Now()
-	guest.CheckedInAt = &now
-	if err := s.guestRepo.Update(ctx, guest); err != nil {
+	// Atomic conditional update: only check in if not already checked in
+	if err := s.guestRepo.ConditionalCheckIn(ctx, id, weddingID, now); err != nil {
+		if errors.Is(err, repository.ErrAlreadyCheckedIn) {
+			return ErrAlreadyCheckedIn
+		}
 		return err
 	}
-	s.publishEvent("checkin", guest, weddingID)
+	guest, _ := s.guestRepo.FindByID(ctx, id, weddingID)
+	if guest != nil {
+		s.publishEvent("checkin", guest, weddingID)
+	}
 	return nil
 }
 
@@ -136,8 +138,13 @@ func (s *GuestService) CheckOut(ctx context.Context, id, weddingID uuid.UUID) er
 func (s *GuestService) BulkCreate(ctx context.Context, guests []models.GuestRecord) (int, error) {
 	created := 0
 	existing := make(map[uuid.UUID][]models.GuestRecord)
+	// Cache table lookups for this batch
+	tableCache := make(map[uuid.UUID]*models.BanquetTable)
 	for i := range guests {
 		g := &guests[i]
+		if g.Pax < 1 {
+			g.Pax = 1
+		}
 		if g.TableID == nil || g.SeatNum == nil {
 			if err := s.guestRepo.Create(ctx, g); err != nil {
 				return created, err
@@ -147,6 +154,19 @@ func (s *GuestService) BulkCreate(ctx context.Context, guests []models.GuestReco
 			continue
 		}
 		tid := *g.TableID
+		// Validate table exists and belongs to this wedding
+		if _, ok := tableCache[tid]; !ok {
+			t, err := s.tableRepo.FindByID(ctx, tid, g.WeddingID)
+			if err != nil {
+				return created, fmt.Errorf("table %s not found", tid.String())
+			}
+			tableCache[tid] = t
+		}
+		table := tableCache[tid]
+		guestEnd := *g.SeatNum + g.Pax - 1
+		if *g.SeatNum < 1 || guestEnd > table.Capacity {
+			return created, fmt.Errorf("seat %d-%d on table %s exceeds capacity %d", *g.SeatNum, guestEnd, table.Name, table.Capacity)
+		}
 		if _, ok := existing[tid]; !ok {
 			rows, err := s.guestRepo.FindByTable(ctx, g.WeddingID, tid)
 			if err != nil {
@@ -154,7 +174,6 @@ func (s *GuestService) BulkCreate(ctx context.Context, guests []models.GuestReco
 			}
 			existing[tid] = rows
 		}
-		guestEnd := *g.SeatNum + g.Pax - 1
 		for _, e := range existing[tid] {
 			if e.SeatNum == nil {
 				continue

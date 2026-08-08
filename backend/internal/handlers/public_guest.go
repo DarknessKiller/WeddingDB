@@ -2,7 +2,6 @@ package handlers
 
 import (
 	"strconv"
-	"time"
 	"weddingdb/internal/services"
 	"weddingdb/internal/utils"
 
@@ -10,15 +9,12 @@ import (
 )
 
 type publicGuest struct {
-	ID          string     `json:"id"`
-	Name        string     `json:"name"`
-	Phone       string     `json:"phone"`
-	Rsvp        string     `json:"rsvp"`
-	TableID     *string    `json:"tableId"`
-	SeatNum     *int       `json:"seatNum"`
-	Pax         int        `json:"pax"`
-	IsVip       bool       `json:"isVip"`
-	CheckedInAt *time.Time `json:"checkedInAt"`
+	ID      string  `json:"id"`
+	Name    string  `json:"name"`
+	Rsvp    string  `json:"rsvp"`
+	TableID *string `json:"tableId"`
+	SeatNum *int    `json:"seatNum"`
+	Pax     int     `json:"pax"`
 }
 
 type PublicGuestHandler struct {
@@ -42,6 +38,9 @@ func (h *PublicGuestHandler) List(c fuego.ContextNoBody) (any, error) {
 			limit = n
 		}
 	}
+	if limit > 200 {
+		limit = 200
+	}
 	guests, _, err := h.guestService.List(ctx, wid, cursor, limit+1)
 	if err != nil {
 		return nil, err
@@ -59,15 +58,12 @@ func (h *PublicGuestHandler) List(c fuego.ContextNoBody) (any, error) {
 			tid = &s
 		}
 		out = append(out, publicGuest{
-			ID:          utils.EncodeUUID(g.ID),
-			Name:        g.Name,
-			Phone:       g.Phone,
-			Rsvp:        g.RSVP,
-			TableID:     tid,
-			SeatNum:     g.SeatNum,
-			Pax:         g.Pax,
-			IsVip:       g.IsVip,
-			CheckedInAt: g.CheckedInAt,
+			ID:      utils.EncodeUUID(g.ID),
+			Name:    g.Name,
+			Rsvp:    g.RSVP,
+			TableID: tid,
+			SeatNum: g.SeatNum,
+			Pax:     g.Pax,
 		})
 	}
 	return map[string]any{"guests": out, "nextCursor": nextCursor}, nil
@@ -117,9 +113,15 @@ func (h *PublicGuestHandler) Search(c fuego.ContextNoBody) (any, error) {
 		return nil, fuego.BadRequestError{Title: "Invalid wedding ID"}
 	}
 	query := c.QueryParam("q")
+	if len(query) > 100 {
+		query = query[:100]
+	}
 	guests, err := h.guestService.Search(ctx, wid, query)
 	if err != nil {
 		return nil, err
+	}
+	if len(guests) > 50 {
+		guests = guests[:50]
 	}
 	out := make([]publicGuest, 0, len(guests))
 	for _, g := range guests {
@@ -129,15 +131,12 @@ func (h *PublicGuestHandler) Search(c fuego.ContextNoBody) (any, error) {
 			tid = &s
 		}
 		out = append(out, publicGuest{
-			ID:          utils.EncodeUUID(g.ID),
-			Name:        g.Name,
-			Phone:       g.Phone,
-			Rsvp:        g.RSVP,
-			TableID:     tid,
-			SeatNum:     g.SeatNum,
-			Pax:         g.Pax,
-			IsVip:       g.IsVip,
-			CheckedInAt: g.CheckedInAt,
+			ID:      utils.EncodeUUID(g.ID),
+			Name:    g.Name,
+			Rsvp:    g.RSVP,
+			TableID: tid,
+			SeatNum: g.SeatNum,
+			Pax:     g.Pax,
 		})
 	}
 	return out, nil

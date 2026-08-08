@@ -35,5 +35,12 @@ func (r *WeddingRepo) Update(ctx context.Context, w *models.WeddingEvent) error 
 }
 
 func (r *WeddingRepo) Delete(ctx context.Context, id uuid.UUID) error {
-	return r.db.WithContext(ctx).Delete(&models.WeddingEvent{}, id).Error
+	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		// Cascade: remove guests, tables, hall elements, and user associations
+		tx.Where("wedding_id = ?", id).Delete(&models.GuestRecord{})
+		tx.Where("wedding_id = ?", id).Delete(&models.BanquetTable{})
+		tx.Where("wedding_id = ?", id).Delete(&models.HallElement{})
+		tx.Where("wedding_id = ?", id).Delete(&models.UserWedding{})
+		return tx.Delete(&models.WeddingEvent{}, id).Error
+	})
 }

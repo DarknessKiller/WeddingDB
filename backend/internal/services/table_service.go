@@ -9,11 +9,12 @@ import (
 )
 
 type TableService struct {
-	tableRepo *repository.TableRepo
+	tableRepo  *repository.TableRepo
+	guestRepo *repository.GuestRepo
 }
 
-func NewTableService(tableRepo *repository.TableRepo) *TableService {
-	return &TableService{tableRepo: tableRepo}
+func NewTableService(tableRepo *repository.TableRepo, guestRepo *repository.GuestRepo) *TableService {
+	return &TableService{tableRepo: tableRepo, guestRepo: guestRepo}
 }
 
 func (s *TableService) List(ctx context.Context, weddingID uuid.UUID) ([]models.BanquetTable, error) {
@@ -33,5 +34,7 @@ func (s *TableService) Update(ctx context.Context, t *models.BanquetTable) error
 }
 
 func (s *TableService) Delete(ctx context.Context, id, weddingID uuid.UUID) error {
+	// Unassign guests from this table before deleting
+	s.guestRepo.UnassignByTable(ctx, weddingID, id)
 	return s.tableRepo.Delete(ctx, id, weddingID)
 }

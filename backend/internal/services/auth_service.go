@@ -139,7 +139,10 @@ func (s *AuthService) Refresh(ctx context.Context, refreshTokenStr string, oldAc
 	if err != nil {
 		return nil, err
 	}
-	s.tokenRepo.DeleteByToken(ctx, refreshTokenStr)
+	// Atomically consume the old refresh token — if 0 rows deleted, it was already used (replay)
+	if err := s.tokenRepo.DeleteByToken(ctx, refreshTokenStr); err != nil {
+		return nil, fmt.Errorf("failed to consume refresh token: %w", err)
+	}
 
 	var weddings []models.WeddingEvent
 	if admin.Role == "admin" {
@@ -175,6 +178,10 @@ func (s *AuthService) Logout(ctx context.Context, refreshToken string, accessTok
 // ValidateToken parses and validates a JWT, then checks blacklist and token version.
 func (s *AuthService) ValidateToken(ctx context.Context, tokenStr string) (*AccessClaims, error) {
 	token, err := jwt.ParseWithClaims(tokenStr, &AccessClaims{}, func(t *jwt.Token) (interface{}, error) {
+		// Reject anything that isn't HMAC-SHA256
+		if _, ok := t.Method.(*jwt.SigningMethodHMAC); !ok {
+			return nil, fmt.Errorf("unexpected signing method: %v", t.Header["alg"])
+		}
 		return s.secret, nil
 	})
 	if err != nil {
@@ -183,6 +190,20 @@ func (s *AuthService) ValidateToken(ctx context.Context, tokenStr string) (*Acce
 	claims, ok := token.Claims.(*AccessClaims)
 	if !ok || !token.Valid {
 		return nil, errors.New("invalid token")
+	}
+
+	// Enforce required claims
+	if claims.AdminID == uuid.Nil {
+		return nil, errors.New("token missing admin ID")
+	}
+	if claims.Role == "" {
+		return nil, errors.New("token missing role")
+	}
+	if claims.ID == "" {
+		return nil, errors.New("token missing JTI")
+	}
+	if claims.ExpiresAt == nil {
+		return nil, errors.New("token missing expiration")
 	}
 
 	// Check blacklist (targeted, time-bounded check — do this first)
@@ -210,6 +231,9 @@ func (s *AuthService) ValidateToken(ctx context.Context, tokenStr string) (*Acce
 
 // BlacklistAccessToken adds the JTI to the Redis blacklist with TTL = remaining token life.
 func (s *AuthService) BlacklistAccessToken(ctx context.Context, claims *AccessClaims) error {
+	if claims.ExpiresAt == nil || claims.ID == "" {
+		return errors.New("cannot blacklist token: missing expiration or JTI")
+	}
 	ttl := time.Until(claims.ExpiresAt.Time)
 	if ttl <= 0 {
 		// Token already expired, no need to blacklist
@@ -273,6 +297,9 @@ func (s *AuthService) RevokeUserTokens(ctx context.Context, userID uuid.UUID) er
 // parseTokenClaims parses a JWT without blacklist/tv checks — used only for extracting claims during logout.
 func (s *AuthService) parseTokenClaims(tokenStr string) (*AccessClaims, error) {
 	token, err := jwt.ParseWithClaims(tokenStr, &AccessClaims{}, func(t *jwt.Token) (interface{}, error) {
+		if _, ok := t.Method.(*jwt.SigningMethodHMAC); !ok {
+			return nil, fmt.Errorf("unexpected signing method: %v", t.Header["alg"])
+		}
 		return s.secret, nil
 	})
 	if err != nil {

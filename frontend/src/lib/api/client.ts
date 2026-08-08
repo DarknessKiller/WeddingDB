@@ -3,9 +3,45 @@ import { setWeddingId } from '$lib/stores/weddingId';
 
 const BASE = '';
 
+// Serialize concurrent refresh attempts — only one refresh in flight at a time.
+let refreshPromise: Promise<boolean> | null = null;
+
 export function getAccessToken(): string {
 	const { accessToken } = getAuth();
 	return accessToken ?? '';
+}
+
+async function doRefresh(): Promise<boolean> {
+	const { refreshToken } = getAuth();
+	if (!refreshToken) return false;
+	try {
+		const refreshRes = await fetch(`${BASE}/api/auth/refresh`, {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({ refreshToken })
+		});
+		if (refreshRes.ok) {
+			const data = await refreshRes.json();
+			if (data.forcePasswordChange) {
+				setAuth(data.accessToken, data.refreshToken, data.role ?? getAuth().role ?? '', data.name ?? getAuth().name ?? '');
+				if (typeof window !== 'undefined') window.location.href = '/change-password';
+				return false;
+			}
+			setAuth(data.accessToken, data.refreshToken, data.role ?? getAuth().role ?? '', data.name ?? getAuth().name ?? '');
+			return true;
+		}
+	} catch {}
+	clearAuth();
+	setWeddingId('');
+	if (typeof window !== 'undefined') window.location.href = '/login';
+	return false;
+}
+
+async function refreshIfNeeded(): Promise<boolean> {
+	if (!refreshPromise) {
+		refreshPromise = doRefresh().finally(() => { refreshPromise = null; });
+	}
+	return refreshPromise;
 }
 
 export async function apiFetch(path: string, opts: RequestInit = {}): Promise<Response> {
@@ -21,46 +57,17 @@ export async function apiFetch(path: string, opts: RequestInit = {}): Promise<Re
 	});
 
 	if (res.status === 401) {
-		const { refreshToken } = getAuth();
-		if (refreshToken) {
-			try {
-				const refreshRes = await fetch(`${BASE}/api/auth/refresh`, {
-					method: 'POST',
-					headers: { 'Content-Type': 'application/json' },
-					body: JSON.stringify({ refreshToken })
-				});
-				if (refreshRes.ok) {
-					const data = await refreshRes.json();
-					if (data.forcePasswordChange) {
-						setAuth(data.accessToken, data.refreshToken, data.role ?? getAuth().role ?? '', data.name ?? getAuth().name ?? '');
-						if (typeof window !== 'undefined') {
-							window.location.href = '/change-password';
-						}
-						return res;
-					}
-					setAuth(data.accessToken, data.refreshToken, data.role ?? getAuth().role ?? '', data.name ?? getAuth().name ?? '');
-					res = await fetch(`${BASE}${path}`, {
-						...opts,
-						headers: {
-							'Content-Type': 'application/json',
-							...opts.headers,
-							Authorization: `Bearer ${data.accessToken}`
-						}
-					});
-				} else {
-					clearAuth();
-					setWeddingId('');
-					if (typeof window !== 'undefined') {
-						window.location.href = '/login';
-					}
+		const refreshed = await refreshIfNeeded();
+		if (refreshed) {
+			const { accessToken: newToken } = getAuth();
+			res = await fetch(`${BASE}${path}`, {
+				...opts,
+				headers: {
+					'Content-Type': 'application/json',
+					...opts.headers,
+					Authorization: `Bearer ${newToken}`
 				}
-			} catch {
-				clearAuth();
-				setWeddingId('');
-				if (typeof window !== 'undefined') {
-					window.location.href = '/login';
-				}
-			}
+			});
 		}
 	}
 	return res;
@@ -79,34 +86,16 @@ export async function uploadFile(file: File): Promise<{ url: string; filename: s
 	});
 
 	if (res.status === 401) {
-		const { refreshToken } = getAuth();
-		if (refreshToken) {
-			try {
-				const refreshRes = await fetch(`${BASE}/api/auth/refresh`, {
-					method: 'POST',
-					headers: { 'Content-Type': 'application/json' },
-					body: JSON.stringify({ refreshToken })
-				});
-				if (refreshRes.ok) {
-					const data = await refreshRes.json();
-					setAuth(data.accessToken, data.refreshToken, data.role ?? getAuth().role ?? '', data.name ?? getAuth().name ?? '');
-					res = await fetch('/api/upload', {
-						method: 'POST',
-						headers: {
-							Authorization: `Bearer ${data.accessToken}`
-						},
-						body: formData
-					});
-				} else {
-					clearAuth();
-					setWeddingId('');
-					if (typeof window !== 'undefined') window.location.href = '/login';
-				}
-			} catch {
-				clearAuth();
-				setWeddingId('');
-				if (typeof window !== 'undefined') window.location.href = '/login';
-			}
+		const refreshed = await refreshIfNeeded();
+		if (refreshed) {
+			const { accessToken: newToken } = getAuth();
+			res = await fetch('/api/upload', {
+				method: 'POST',
+				headers: {
+					Authorization: `Bearer ${newToken}`
+				},
+				body: formData
+			});
 		}
 	}
 
