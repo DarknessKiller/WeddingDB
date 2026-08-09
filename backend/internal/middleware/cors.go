@@ -3,22 +3,16 @@ package middleware
 import (
 	"net/http"
 	"os"
-	"strings"
 )
-
-var defaultAllowedOrigins = []string{}
 
 func CORSMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		allowedOrigins := defaultAllowedOrigins
-		if envOrigin := os.Getenv("CORS_ORIGIN"); envOrigin != "" {
-			allowedOrigins = strings.Split(envOrigin, ",")
+		origin := os.Getenv("CORS_ORIGIN")
+		if origin == "" {
+			origin = r.Header.Get("Origin")
 		}
-
-		origin := r.Header.Get("Origin")
-		if origin != "" && isAllowedOrigin(origin, allowedOrigins) {
+		if origin != "" {
 			w.Header().Set("Access-Control-Allow-Origin", origin)
-			w.Header().Set("Vary", "Origin")
 		}
 		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
 		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
@@ -35,13 +29,4 @@ func CORSMiddleware(next http.Handler) http.Handler {
 		}
 		next.ServeHTTP(w, r)
 	})
-}
-
-func isAllowedOrigin(origin string, allowed []string) bool {
-	for _, a := range allowed {
-		if strings.TrimSpace(a) == origin {
-			return true
-		}
-	}
-	return false
 }
