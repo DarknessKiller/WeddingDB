@@ -45,7 +45,7 @@ export async function publicListGuests(): Promise<Guest[]> {
 	const all: Guest[] = [];
 	let cursor: string | undefined;
 	do {
-		const res = await fetch(`/api/public/weddings/${wid}/guests?limit=100${cursor ? `&cursor=${cursor}` : ''}`);
+		const res = await fetch(`/api/public/weddings/${wid}/guests?limit=1000${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ''}`);
 		if (!res.ok) throw new Error('Failed to list guests');
 		const data = await res.json();
 		all.push(...(data.guests ?? []).map(mapGuest));

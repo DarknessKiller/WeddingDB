@@ -3,7 +3,7 @@
   import { weddingTitle } from '$lib/stores/weddingTitle';
   import { selectedGuest, isDrawerOpen, addToast } from '$lib/stores';
   import { weddingId } from '$lib/stores/weddingId';
-  import { guestList } from '$lib/stores/guestEvents';
+  import { guestList, tableOccupancy } from '$lib/stores/guestEvents';
   import { goto } from '$app/navigation';
   import { assignSeat, checkInGuest, checkOutGuest } from '$lib/api/guests';
   import { getOccupancy, listTables } from '$lib/api/tables';
@@ -130,7 +130,7 @@
   });
   let selectedOccupancy = $derived.by((): TableOccupancy | null => {
     if (!selectedTableId || !selectedTable) return null;
-    const occupied = (selectedTableId ? occupancyData[selectedTableId] : 0) ?? 0;
+    const occupied = $tableOccupancy.get(selectedTableId) ?? 0;
     const capacity = selectedTable.capacity;
     return { tableId: selectedTableId, tableName: selectedTable.name || `Table`, occupied, capacity, percentage: capacity > 0 ? Math.round((occupied / capacity) * 100) : 0 };
   });
