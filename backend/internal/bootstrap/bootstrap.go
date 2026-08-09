@@ -137,6 +137,9 @@ func Init(env config.Env, version string) *App {
 			return
 		}
 		filePath := filepath.Join("./uploads", file)
+		if strings.HasPrefix(file, "kiosk-logo-") {
+			w.Header().Set("Cache-Control", "public, max-age=86400, s-maxage=604800, stale-while-revalidate=86400")
+		}
 		http.ServeFile(w, r, filePath)
 	})
 
