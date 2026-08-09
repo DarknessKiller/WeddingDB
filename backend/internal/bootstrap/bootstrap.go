@@ -155,6 +155,9 @@ func Init(env config.Env, version string) *App {
 		}
 		filePath := filepath.Join(staticDir, path)
 		if info, err := os.Stat(filePath); err == nil && !info.IsDir() {
+			if path == "favicon.svg" {
+				w.Header().Set("Cache-Control", "public, max-age=86400, s-maxage=604800, stale-while-revalidate=86400")
+			}
 			http.ServeFile(w, r, filePath)
 			return
 		}
