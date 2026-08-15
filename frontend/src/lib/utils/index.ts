@@ -13,7 +13,3 @@ export function getInitials(name: string): string {
     .slice(0, 2)
     .toUpperCase();
 }
-
-export function generateId(): string {
-  return crypto.randomUUID?.() ?? Math.random().toString(36).slice(2, 11);
-}

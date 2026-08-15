@@ -12,19 +12,19 @@ import (
 )
 
 func TestErrAlreadyCheckedIn_IsSentinel(t *testing.T) {
-	if ErrAlreadyCheckedIn == nil {
+	if models.ErrAlreadyCheckedIn == nil {
 		t.Fatal("ErrAlreadyCheckedIn should not be nil")
 	}
-	if ErrAlreadyCheckedIn.Error() != "guest already checked in" {
-		t.Errorf("error message = %q", ErrAlreadyCheckedIn.Error())
+	if models.ErrAlreadyCheckedIn.Error() != "guest already checked in" {
+		t.Errorf("error message = %q", models.ErrAlreadyCheckedIn.Error())
 	}
 }
 
 func TestErrAlreadyCheckedIn_WrapsCorrectly(t *testing.T) {
 	// Verify errors.Is works with wrapped errors.
 	wrapped := errors.New("context: ") //nolint:err113
-	err := errors.Join(wrapped, ErrAlreadyCheckedIn)
-	if !errors.Is(err, ErrAlreadyCheckedIn) {
+	err := errors.Join(wrapped, models.ErrAlreadyCheckedIn)
+	if !errors.Is(err, models.ErrAlreadyCheckedIn) {
 		t.Error("errors.Is should match ErrAlreadyCheckedIn through Join")
 	}
 }

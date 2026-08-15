@@ -14,10 +14,6 @@ import (
 	"github.com/google/uuid"
 	"gorm.io/gorm"
 )
-
-// ErrAlreadyCheckedIn is returned by ConditionalCheckIn when the guest was already checked in.
-var ErrAlreadyCheckedIn = fmt.Errorf("already checked in")
-
 type GuestRepo struct{ db *gorm.DB }
 
 func NewGuestRepo(db *gorm.DB) *GuestRepo {
@@ -124,7 +120,7 @@ func (r *GuestRepo) UnassignByTable(ctx context.Context, weddingID, tableID uuid
 }
 
 // ConditionalCheckIn atomically checks in a guest only if not already checked in.
-// Returns ErrAlreadyCheckedIn if the guest was already checked in.
+// Returns models.ErrAlreadyCheckedIn if the guest was already checked in.
 func (r *GuestRepo) ConditionalCheckIn(ctx context.Context, id, weddingID uuid.UUID, now time.Time) error {
 	result := r.db.WithContext(ctx).Model(&models.GuestRecord{}).
 		Where("id = ? AND wedding_id = ? AND checked_in_at IS NULL", id, weddingID).
@@ -133,7 +129,7 @@ func (r *GuestRepo) ConditionalCheckIn(ctx context.Context, id, weddingID uuid.U
 		return result.Error
 	}
 	if result.RowsAffected == 0 {
-		return ErrAlreadyCheckedIn
+		return models.ErrAlreadyCheckedIn
 	}
 	return nil
 }

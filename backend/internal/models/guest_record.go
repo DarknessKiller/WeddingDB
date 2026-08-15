@@ -3,12 +3,16 @@ package models
 import (
 	"database/sql/driver"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"time"
 
 	"github.com/google/uuid"
 	"weddingdb/internal/utils"
 )
+
+// ErrAlreadyCheckedIn is returned when a guest is already checked in (FIFO conflict).
+var ErrAlreadyCheckedIn = errors.New("guest already checked in")
 
 // StringSlice stores a []string as JSON text in a text column.
 type StringSlice []string

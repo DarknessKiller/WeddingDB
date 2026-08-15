@@ -5,8 +5,6 @@ import (
 	"net/http"
 	"strings"
 	"weddingdb/internal/services"
-
-	"github.com/google/uuid"
 )
 
 type contextKey string
@@ -20,7 +18,7 @@ const (
 func AuthMiddleware(authService *services.AuthService) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			token := extractBearer(r)
+			token := ExtractBearer(r)
 			if token == "" {
 				http.Error(w, `{"error":"Missing token"}`, http.StatusUnauthorized)
 				return
@@ -43,16 +41,11 @@ func AuthMiddleware(authService *services.AuthService) func(http.Handler) http.H
 	}
 }
 
-// ParseUUID is a convenience wrapper around uuid.Parse that returns uuid.Nil on error.
-func ParseUUID(s string) uuid.UUID {
-	id, _ := uuid.Parse(s)
-	return id
-}
-
-func extractBearer(r *http.Request) string {
-	h := r.Header.Get("Authorization")
-	if strings.HasPrefix(h, "Bearer ") {
-		return strings.TrimPrefix(h, "Bearer ")
+// ExtractBearer pulls the Bearer token from the Authorization header on an http.Request.
+func ExtractBearer(r *http.Request) string {
+	auth := r.Header.Get("Authorization")
+	if token, ok := strings.CutPrefix(auth, "Bearer "); ok {
+		return token
 	}
 	return ""
 }

@@ -1,9 +1,7 @@
 package handlers
 
 import (
-	"net/http"
 	"net/mail"
-	"strings"
 	"unicode"
 	"weddingdb/internal/middleware"
 	"weddingdb/internal/models"
@@ -134,7 +132,7 @@ func (h *AuthHandler) Refresh(c fuego.ContextWithBody[RefreshRequest]) (TokenRes
 		return TokenResponse{}, fuego.BadRequestError{Title: "Invalid request"}
 	}
 	// Extract old access token from Authorization header for blacklisting on rotation
-	oldAccessToken := extractBearer(c.Request())
+	oldAccessToken := middleware.ExtractBearer(c.Request())
 	result, err := h.authService.Refresh(c.Context(), body.RefreshToken, oldAccessToken)
 	if err != nil {
 		return TokenResponse{}, fuego.UnauthorizedError{Title: err.Error()}
@@ -156,7 +154,7 @@ func (h *AuthHandler) Logout(c fuego.ContextWithBody[RefreshRequest]) (any, erro
 	}
 
 	// Extract access token from Authorization header for blacklisting
-	accessToken := extractBearer(c.Request())
+	accessToken := middleware.ExtractBearer(c.Request())
 
 	if err := h.authService.Logout(c.Context(), body.RefreshToken, accessToken); err != nil {
 		return nil, fuego.InternalServerError{Title: "Failed to logout"}
@@ -235,13 +233,4 @@ func (h *AuthHandler) Register(c fuego.ContextWithBody[RegisterRequest]) (any, e
 	}
 	c.SetStatus(201)
 	return map[string]any{"id": admin.ID.String(), "email": admin.Email, "name": admin.Name, "role": admin.Role}, nil
-}
-
-// extractBearer pulls the Bearer token from the Authorization header on an http.Request.
-func extractBearer(r *http.Request) string {
-	auth := r.Header.Get("Authorization")
-	if token, ok := strings.CutPrefix(auth, "Bearer "); ok {
-		return token
-	}
-	return ""
 }

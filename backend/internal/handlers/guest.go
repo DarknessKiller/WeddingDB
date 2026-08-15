@@ -237,7 +237,7 @@ func (h *GuestHandler) CheckIn(c fuego.ContextWithBody[CheckInRequest]) (any, er
 		}
 	}
 	if err := h.guestService.CheckIn(ctx, id, wid); err != nil {
-		if errors.Is(err, services.ErrAlreadyCheckedIn) {
+		if errors.Is(err, models.ErrAlreadyCheckedIn) {
 			return nil, fuego.ConflictError{Title: "Guest already checked in by another receptionist"}
 		}
 		return nil, err

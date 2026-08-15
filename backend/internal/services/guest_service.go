@@ -110,8 +110,8 @@ func (s *GuestService) CheckIn(ctx context.Context, id, weddingID uuid.UUID) err
 	now := time.Now()
 	// Atomic conditional update: only check in if not already checked in
 	if err := s.guestRepo.ConditionalCheckIn(ctx, id, weddingID, now); err != nil {
-		if errors.Is(err, repository.ErrAlreadyCheckedIn) {
-			return ErrAlreadyCheckedIn
+		if errors.Is(err, models.ErrAlreadyCheckedIn) {
+			return models.ErrAlreadyCheckedIn
 		}
 		return err
 	}
