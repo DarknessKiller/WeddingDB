@@ -172,7 +172,11 @@ func Init(env config.Env, version string) *App {
 	var count int64
 	db.Model(&models.AdminUser{}).Count(&count)
 	if count == 0 {
-		hash, err := bcrypt.GenerateFromPassword([]byte("admin123"), bcrypt.DefaultCost)
+		password := os.Getenv("ADMIN_BOOTSTRAP_PASSWORD")
+		if password == "" {
+			log.Fatal("ADMIN_BOOTSTRAP_PASSWORD is required when creating the first admin")
+		}
+		hash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
 		if err != nil {
 			log.Fatal("Failed to hash seed admin password:", err)
 		}

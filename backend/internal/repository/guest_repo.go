@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -14,6 +15,8 @@ import (
 	"github.com/google/uuid"
 	"gorm.io/gorm"
 )
+
+var ErrInvalidCursor = errors.New("invalid cursor")
 
 // ErrAlreadyCheckedIn is returned by ConditionalCheckIn when the guest was already checked in.
 var ErrAlreadyCheckedIn = fmt.Errorf("already checked in")
@@ -44,9 +47,11 @@ func (r *GuestRepo) ListByWedding(ctx context.Context, weddingID uuid.UUID, curs
 	r.db.WithContext(ctx).Model(&models.GuestRecord{}).Where("wedding_id = ?", weddingID).Count(&total)
 	q := r.db.WithContext(ctx).Where("wedding_id = ?", weddingID).Order("id ASC").Limit(limit + 1)
 	if cursor != "" {
-		if cid, err := parseCursorID(cursor); err == nil {
-			q = q.Where("id > ?", cid)
+		cid, err := parseCursorID(cursor)
+		if err != nil {
+			return nil, 0, fmt.Errorf("%w: %v", ErrInvalidCursor, err)
 		}
+		q = q.Where("id > ?", cid)
 	}
 	err := q.Find(&guests).Error
 	return guests, total, err
@@ -95,20 +100,20 @@ func (r *GuestRepo) Create(ctx context.Context, g *models.GuestRecord) error {
 func (r *GuestRepo) Update(ctx context.Context, g *models.GuestRecord) error {
 	g.NamePinyin = models.GenerateNamePinyin(g.Name)
 	return r.db.WithContext(ctx).Model(g).Where("id = ? AND wedding_id = ?", g.ID, g.WeddingID).Updates(map[string]interface{}{
-		"name":         g.Name,
-		"name_pinyin":  g.NamePinyin,
-		"phone":        g.Phone,
-		"email":        g.Email,
-		"pax":          g.Pax,
-		"table_id":     g.TableID,
-		"seat_num":     g.SeatNum,
-		"rsvp":         g.RSVP,
+		"name":          g.Name,
+		"name_pinyin":   g.NamePinyin,
+		"phone":         g.Phone,
+		"email":         g.Email,
+		"pax":           g.Pax,
+		"table_id":      g.TableID,
+		"seat_num":      g.SeatNum,
+		"rsvp":          g.RSVP,
 		"checked_in_at": g.CheckedInAt,
-		"notes":        g.Notes,
-		"dietary":      g.Dietary,
-		"is_vip":       g.IsVip,
-		"angbao_amt":   g.AngbaoAmt,
-		"gift_item":    g.GiftItem,
+		"notes":         g.Notes,
+		"dietary":       g.Dietary,
+		"is_vip":        g.IsVip,
+		"angbao_amt":    g.AngbaoAmt,
+		"gift_item":     g.GiftItem,
 	}).Error
 }
 

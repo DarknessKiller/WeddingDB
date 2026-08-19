@@ -9,7 +9,7 @@ import (
 )
 
 type TableService struct {
-	tableRepo  *repository.TableRepo
+	tableRepo *repository.TableRepo
 	guestRepo *repository.GuestRepo
 }
 
@@ -35,6 +35,8 @@ func (s *TableService) Update(ctx context.Context, t *models.BanquetTable) error
 
 func (s *TableService) Delete(ctx context.Context, id, weddingID uuid.UUID) error {
 	// Unassign guests from this table before deleting
-	s.guestRepo.UnassignByTable(ctx, weddingID, id)
+	if err := s.guestRepo.UnassignByTable(ctx, weddingID, id); err != nil {
+		return err
+	}
 	return s.tableRepo.Delete(ctx, id, weddingID)
 }

@@ -86,6 +86,12 @@ func (h *TableHandler) Update(c fuego.ContextWithBody[TableRequest]) (any, error
 	if err != nil {
 		return nil, fuego.NotFoundError{Title: "Table not found"}
 	}
+	if strings.TrimSpace(body.Name) == "" {
+		return nil, fuego.BadRequestError{Title: "Name is required"}
+	}
+	if body.Capacity < 1 || body.Capacity > 200 {
+		return nil, fuego.BadRequestError{Title: "Capacity must be between 1 and 200"}
+	}
 	table.Name = body.Name
 	table.Capacity = body.Capacity
 	table.X = body.X

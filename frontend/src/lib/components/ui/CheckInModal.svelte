@@ -42,7 +42,7 @@
   }
 </script>
 
-<div class="fixed inset-0 z-[60] flex items-end sm:items-center justify-center p-0 sm:p-4">
+<div class="fixed inset-0 z-[60] flex items-end sm:items-center justify-center p-0 sm:p-4" role="dialog" aria-modal="true" aria-labelledby="check-in-title">
   <div class="absolute inset-0 bg-black/30 backdrop-blur-md" onclick={onClose} role="presentation"></div>
   <!-- svelte-ignore a11y_no_static_element_interactions -->
   <div
@@ -57,8 +57,8 @@
       <div class="w-10 h-1 bg-gray-300 rounded-full"></div>
     </div>
     <div class="flex items-center justify-between p-5 border-b border-gray-100">
-      <h3 class="font-bold text-gray-900">Check In {guestName}</h3>
-      <button onclick={onClose} class="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-gray-100 transition-colors hidden sm:flex">
+      <h3 id="check-in-title" class="font-bold text-gray-900">Check In {guestName}</h3>
+      <button onclick={onClose} aria-label="Close" class="min-w-[44px] min-h-[44px] rounded-lg flex items-center justify-center hover:bg-gray-100 transition-colors">
         <X class="w-4 h-4 text-gray-400" />
       </button>
     </div>
