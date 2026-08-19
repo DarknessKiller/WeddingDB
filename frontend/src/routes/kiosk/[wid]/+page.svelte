@@ -167,7 +167,6 @@
   const SPRING_EASE = 'cubic-bezier(0.2, 0.8, 0.2, 1)';
 
   function onSheetPointerDown(e: PointerEvent) {
-    if (prefersReducedMotion) return;
     e.stopPropagation();
     sheetDragging = true;
     sheetStartY = e.clientY - sheetY;

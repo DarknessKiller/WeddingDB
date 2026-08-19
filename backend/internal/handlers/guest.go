@@ -49,6 +49,9 @@ func (h *GuestHandler) List(c fuego.ContextNoBody) (any, error) {
 	}
 	guests, total, err := h.guestService.List(ctx, wid, cursor, limit)
 	if err != nil {
+		if errors.Is(err, repository.ErrInvalidCursor) {
+			return nil, fuego.BadRequestError{Title: "Invalid cursor"}
+		}
 		return nil, err
 	}
 	var nextCursor string
@@ -112,16 +115,21 @@ func (h *GuestHandler) Create(c fuego.ContextWithBody[GuestCreateRequest]) (any,
 	}
 	c.SetStatus(201)
 	if body.TableID != nil && *body.TableID != "" {
-		if tid, err := DecodeID(*body.TableID); err == nil {
-			seatNum := 1
-			if body.SeatNum != nil {
-				seatNum = *body.SeatNum
-			}
-			if err := h.guestService.AssignSeat(ctx, guest.ID, wid, tid, seatNum); err == nil {
-				guest.TableID = &tid
-				guest.SeatNum = &seatNum
-			}
+		tid, err := DecodeID(*body.TableID)
+		if err != nil {
+			_ = h.guestService.Delete(ctx, guest.ID, wid)
+			return nil, fuego.BadRequestError{Title: "Invalid table ID"}
 		}
+		seatNum := 1
+		if body.SeatNum != nil {
+			seatNum = *body.SeatNum
+		}
+		if err := h.guestService.AssignSeat(ctx, guest.ID, wid, tid, seatNum); err != nil {
+			_ = h.guestService.Delete(ctx, guest.ID, wid)
+			return nil, fuego.BadRequestError{Title: err.Error()}
+		}
+		guest.TableID = &tid
+		guest.SeatNum = &seatNum
 	}
 	return guest, nil
 }
@@ -169,7 +177,11 @@ func (h *GuestHandler) Update(c fuego.ContextWithBody[GuestCreateRequest]) (any,
 			// Explicitly clearing seat
 			guest.TableID = nil
 			guest.SeatNum = nil
-		} else if tid, err := DecodeID(*body.TableID); err == nil {
+		} else {
+			tid, err := DecodeID(*body.TableID)
+			if err != nil {
+				return nil, fuego.BadRequestError{Title: "Invalid table ID"}
+			}
 			seatNum := 1
 			if body.SeatNum != nil {
 				seatNum = *body.SeatNum

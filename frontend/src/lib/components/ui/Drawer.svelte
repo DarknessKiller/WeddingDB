@@ -253,10 +253,10 @@
 
 <!-- svelte-ignore a11y_no_static_element_interactions -->
 <svelte:window onkeydown={(e) => { if (e.key === 'Escape') onClose(); }} />
-<div class="drawer-overlay" onclick={onClose}>
-  <div class="drawer-backdrop" style="opacity: {dragging ? Math.max(0, 1 - dragY / 400) : 1}"></div>
+<div class="drawer-overlay" onclick={onClose} role="presentation">
+  <div class="drawer-backdrop" style="opacity: {dragging ? Math.max(0, 1 - dragY / 400) : 1}" aria-hidden="true"></div>
   <!-- svelte-ignore a11y_no_static_element_interactions -->
-  <div class="drawer-panel" onclick={(e) => e.stopPropagation()}
+  <div class="drawer-panel" role="dialog" aria-modal="true" aria-labelledby="drawer-title" onclick={(e) => e.stopPropagation()}
     ontouchstart={onTouchStart}
     ontouchmove={onTouchMove}
     ontouchend={onTouchEnd}
@@ -266,7 +266,7 @@
       <div class="drawer-pill-bar"></div>
     </div>
     <div class="drawer-header">
-      <h2 class="drawer-title">{createMode ? 'New Guest' : editing ? 'Edit Guest' : 'Guest Details'}</h2>
+      <h2 id="drawer-title" class="drawer-title">{createMode ? 'New Guest' : editing ? 'Edit Guest' : 'Guest Details'}</h2>
       <div class="drawer-actions">
         {#if !readonly}
           <button onclick={() => editing = true} class="drawer-icon-btn flex" aria-label="Edit">
@@ -287,25 +287,25 @@
       {#if editing}
         <div class="form-grid">
           <div class="form-field">
-            <label class="form-label">Name</label>
-            <input bind:value={form.name} class="form-input" />
+            <label for="guest-name" class="form-label">Name</label>
+            <input id="guest-name" bind:value={form.name} class="form-input" />
           </div>
           <div class="form-field">
-            <label class="form-label">Phone</label>
-            <input bind:value={form.phone} class="form-input" />
+            <label for="guest-phone" class="form-label">Phone</label>
+            <input id="guest-phone" bind:value={form.phone} class="form-input" />
           </div>
           <div class="form-field">
-            <label class="form-label">Email</label>
-            <input bind:value={form.email} class="form-input" />
+            <label for="guest-email" class="form-label">Email</label>
+            <input id="guest-email" bind:value={form.email} class="form-input" />
           </div>
           <div class="form-row-2">
             <div class="form-field">
-              <label class="form-label">Pax</label>
-              <input type="number" min="1" bind:value={form.pax} class="form-input" />
+              <label for="guest-pax" class="form-label">Pax</label>
+              <input id="guest-pax" type="number" min="1" bind:value={form.pax} class="form-input" />
             </div>
             <div class="form-field">
-              <label class="form-label">RSVP</label>
-              <select bind:value={form.rsvp} class="form-input">
+              <label for="guest-rsvp" class="form-label">RSVP</label>
+              <select id="guest-rsvp" bind:value={form.rsvp} class="form-input">
                 <option value="confirmed">Confirmed</option>
                 <option value="pending">Pending</option>
                 <option value="declined">Declined</option>
@@ -319,11 +319,11 @@
             </label>
           </div>
           <div class="form-field">
-            <label class="form-label">Notes</label>
-            <textarea bind:value={form.notes} rows="2" class="form-input form-textarea"></textarea>
+            <label for="guest-notes" class="form-label">Notes</label>
+            <textarea id="guest-notes" bind:value={form.notes} rows="2" class="form-input form-textarea"></textarea>
           </div>
           <div class="form-field">
-            <label class="form-label">Dietary</label>
+            <div class="form-label">Dietary</div>
             <div class="dietary-chips">
               {#each ['Halal', 'Vegetarian', 'Vegan', 'Gluten-Free', 'Nut-Free', 'No Seafood'] as opt}
                 <button type="button"
@@ -334,12 +334,12 @@
             </div>
           </div>
           <div class="form-field">
-            <label class="form-label">Angbao Amount (RM)</label>
-            <input type="number" min="0" bind:value={form.angbaoAmt} placeholder="0" class="form-input" />
+            <label for="guest-angbao" class="form-label">Angbao Amount (RM)</label>
+            <input id="guest-angbao" type="number" min="0" bind:value={form.angbaoAmt} placeholder="0" class="form-input" />
           </div>
           <div class="form-field">
-            <label class="form-label">Gift Item</label>
-            <input bind:value={form.giftItem} placeholder="e.g. Kitchenware set" class="form-input" />
+            <label for="guest-gift" class="form-label">Gift Item</label>
+            <input id="guest-gift" bind:value={form.giftItem} placeholder="e.g. Kitchenware set" class="form-input" />
           </div>
         </div>
       {:else if localGuest}

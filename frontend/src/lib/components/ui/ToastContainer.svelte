@@ -1,6 +1,6 @@
 <script lang="ts">
-  import { toasts, type Toast } from '$lib/stores';
-  import { CheckCircle, XCircle, Info, X } from 'lucide-svelte';
+  import { toasts } from '$lib/stores';
+  import { CheckCircle, XCircle, Info } from 'lucide-svelte';
 </script>
 
 <div class="toast-container" aria-live="polite" role="status">
