@@ -267,7 +267,7 @@ func (s *ReportService) GenerateXLSX(ctx context.Context, weddingID uuid.UUID) (
 
 	filename := fmt.Sprintf("report-%s-%s.xlsx",
 		s.sanitizeFilename(wedding.Name),
-		time.Now().Format("2006-01-02"))
+		time.Now().Local().Format("2006-01-02"))
 
 	return buf.Bytes(), filename, nil
 }

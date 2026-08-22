@@ -81,9 +81,6 @@ func sanitizeContentDisposition(name string) string {
 	name = strings.ReplaceAll(name, `/`, `-`)
 	name = strings.ReplaceAll(name, `\`, `-`)
 	name = strings.TrimSpace(name)
-	if len(name) > 50 {
-		name = name[:50]
-	}
 	if name == "" {
 		name = "report"
 	}

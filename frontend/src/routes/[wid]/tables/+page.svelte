@@ -165,7 +165,7 @@
     try {
       await deleteTable(wid, table.id);
       tables = tables.filter(t => t.id !== table.id);
-      addToast(`Table ${table.id} deleted`, 'info');
+      addToast(`Table ${table.name} deleted`, 'info');
     } catch (e: any) {
       addToast(e.message ?? 'Delete failed', 'error');
     }
