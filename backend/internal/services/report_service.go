@@ -10,10 +10,11 @@ import (
 	"strings"
 	"time"
 
-	"github.com/google/uuid"
-	"github.com/xuri/excelize/v2"
 	"weddingdb/internal/models"
 	"weddingdb/internal/repository"
+
+	"github.com/google/uuid"
+	"github.com/xuri/excelize/v2"
 )
 
 type ReportService struct {
@@ -264,7 +265,7 @@ func (s *ReportService) GenerateXLSX(ctx context.Context, weddingID uuid.UUID) (
 		return nil, "", err
 	}
 
-	filename := fmt.Sprintf("angpao-report-%s-%s.xlsx",
+	filename := fmt.Sprintf("report-%s-%s.xlsx",
 		s.sanitizeFilename(wedding.Name),
 		time.Now().Format("2006-01-02"))
 
@@ -307,7 +308,7 @@ func (s *ReportService) buildRows(guests []models.GuestRecord, tableMap map[uuid
 
 		checkedInStr := "No"
 		if g.CheckedInAt != nil {
-			checkedInStr = "Yes (" + g.CheckedInAt.Format("2006-01-02 15:04") + ")"
+			checkedInStr = "Yes (" + g.CheckedInAt.Local().Format("2006-01-02 15:04") + ")"
 			summary.CheckedInGuests++
 		}
 
