@@ -9,6 +9,7 @@ services:
       REDIS_URL: "redis://redis:6379"
       JWT_SECRET: "${JWT_SECRET:-change-me-in-production}"
       STATIC_DIR: "./static"
+      TZ: Asia/Kuala_Lumpur
     volumes:
       - uploads:/app/uploads
     depends_on:
