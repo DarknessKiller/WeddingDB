@@ -21,7 +21,7 @@ Chinese wedding seating & reservation management system.
 - **Theme:** Deep Red (#A11217), Gold (#D4AF37), White, Light Beige
 
 ### Backend
-- **Language:** Go 1.22+
+- **Language:** Go 1.27
 - **HTTP:** Fuego
 - **ORM:** GORM + PostgreSQL
 - **Cache/Pub-Sub:** Redis (nonce/replay prevention, token revocation, SSE cross-instance broadcasting)
