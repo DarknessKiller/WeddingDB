@@ -5,7 +5,7 @@
   import { weddingId } from '$lib/stores/weddingId';
   import { guestList } from '$lib/stores/guestEvents';
   import { goto } from '$app/navigation';
-  import { deleteGuest as apiDeleteGuest, searchGuests, assignSeat, bulkImportGuests } from '$lib/api/guests';
+  import { deleteGuest as apiDeleteGuest, searchGuests, assignSeat, unassignSeat, bulkImportGuests } from '$lib/api/guests';
   import type { GuestResponse, GuestImportData } from '$lib/api/guests';
   import { getWedding } from '$lib/api/weddings';
   import { listTables } from '$lib/api/tables';
@@ -266,6 +266,21 @@
       addToast(`${guest.name} deleted`, 'info');
     } catch (e: any) {
       addToast(e.message ?? 'Delete failed', 'error');
+    }
+    contextMenu = null;
+  }
+
+  async function unassignGuest(guest: Guest) {
+    if (!confirm(`Unassign ${guest.name} from their table?`)) {
+      contextMenu = null;
+      return;
+    }
+    try {
+      await unassignSeat(wid, guest.id);
+      guestList.update(list => list.map(g => g.id === guest.id ? { ...g, tableId: null, seatNumber: null } : g));
+      addToast(`${guest.name} unassigned from table`, 'success');
+    } catch (e: any) {
+      addToast(e.message ?? 'Unassign failed', 'error');
     }
     contextMenu = null;
   }
@@ -729,6 +744,11 @@
     <button class="w-full flex items-center gap-2.5 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50" onclick={() => openMoveTable(contextMenu!.guest)}>
       <ArrowUpDown class="w-4 h-4" /> Move Table
     </button>
+    {#if contextMenu!.guest.tableId}
+      <button class="w-full flex items-center gap-2.5 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50" onclick={() => unassignGuest(contextMenu!.guest)}>
+        <ArrowUpDown class="w-4 h-4" /> Unassign Table
+      </button>
+    {/if}
     <hr class="my-1 border-gray-100" />
     <button class="w-full flex items-center gap-2.5 px-4 py-2 text-sm text-red hover:bg-red-50" onclick={() => deleteGuest(contextMenu!.guest)}>
       <Trash2 class="w-4 h-4" /> Delete

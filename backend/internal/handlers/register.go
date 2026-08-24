@@ -99,6 +99,7 @@ func RegisterRoutes(
 	fuego.Post(scoped, "/guests/{id}/checkin", guestHandler.CheckIn)
 	fuego.Post(scoped, "/guests/{id}/checkout", guestHandler.CheckOut)
 	fuego.Post(scoped, "/guests/{id}/seat", guestHandler.AssignSeat)
+	fuego.Delete(scoped, "/guests/{id}/seat", guestHandler.UnassignSeat)
 	fuego.Get(scoped, "/guests/search", guestHandler.Search,
 		fuego.OptionQuery("q", "Search query"),
 	)

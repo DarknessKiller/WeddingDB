@@ -394,3 +394,26 @@ func (h *GuestHandler) AssignSeat(c fuego.ContextWithBody[AssignSeatRequest]) (a
 	c.SetStatus(204)
 	return nil, nil
 }
+
+func (h *GuestHandler) UnassignSeat(c fuego.ContextNoBody) (any, error) {
+	ctx := c.Context()
+	wid, err := DecodeWID(c)
+	if err != nil {
+		return nil, fuego.BadRequestError{Title: "Invalid wedding ID"}
+	}
+	guestID, err := DecodeID(c.PathParam("id"))
+	if err != nil {
+		return nil, fuego.BadRequestError{Title: "Invalid ID"}
+	}
+	guest, err := h.guestService.Get(ctx, guestID, wid)
+	if err != nil {
+		return nil, fuego.NotFoundError{Title: "Guest not found"}
+	}
+	guest.TableID = nil
+	guest.SeatNum = nil
+	if err := h.guestService.Update(ctx, guest); err != nil {
+		return nil, err
+	}
+	c.SetStatus(204)
+	return nil, nil
+}
