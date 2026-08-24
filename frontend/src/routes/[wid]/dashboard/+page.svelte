@@ -120,8 +120,8 @@
     <!-- Stats -->
     <div class="grid grid-cols-2 lg:grid-cols-6 gap-4">
       {#each [
-        { label: 'Confirmed Guests', value: stats.confirmedGuests, icon: UserCheck, color: 'bg-red-50 text-red' },
-        { label: 'Pending RSVP', value: stats.pendingRsvp, icon: Clock, color: 'bg-gold-50 text-gold-dark' },
+        { label: 'Confirmed', value: stats.confirmedGuests, icon: UserCheck, color: 'bg-red-50 text-red' },
+        { label: 'Pending', value: stats.pendingRsvp, icon: Clock, color: 'bg-gold-50 text-gold-dark' },
         { label: 'Declined', value: stats.declined, icon: XCircle, color: 'bg-gray-100 text-gray-600' },
         { label: 'Checked In', value: stats.checkedIn, icon: CheckCircle, color: 'bg-emerald-50 text-emerald-600' },
         { label: 'Total Guests', value: stats.totalPax, icon: Users, color: 'bg-blue-50 text-blue-600' },
