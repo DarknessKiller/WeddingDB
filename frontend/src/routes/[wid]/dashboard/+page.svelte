@@ -36,7 +36,7 @@
       declined: declinedPax,
       checkedIn: checkedInPax,
       totalPax,
-      checkInRate: totalPax > 0 ? Math.round((checkedInPax / totalPax) * 100) : 0,
+      checkInRate: confirmedPax > 0 ? Math.round((checkedInPax / confirmedPax) * 100) : 0,
       totalTables: 0,
       occupiedTables: 0,
       averageOccupancy: 0
