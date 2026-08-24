@@ -2,6 +2,7 @@
   import type { Guest, BanquetTable, RSVPStatus } from '$lib/types';
   import { X, Phone, Mail, Utensils, StickyNote, Banknote, Gift, Pencil, Check, UserCheck, CheckCircle2, ArrowUpDown } from 'lucide-svelte';
   import Badge from './Badge.svelte';
+  import ConfirmDialog from './ConfirmDialog.svelte';
   import { getInitials, cn } from '$lib/utils';
   import { formatSeatRange } from '$lib/utils/seat';
   import { addToast } from '$lib/stores';
@@ -17,6 +18,8 @@
 
   let localGuest = $state(guest);
   $effect(() => { localGuest = guest; });
+
+  let showUnassignConfirm = $state(false);
 
   async function refreshGuest() {
     if (!guest?.id) return;
@@ -252,7 +255,12 @@
 
   async function handleUnassign() {
     if (!guest || !localGuest?.tableId) return;
-    if (!confirm(`Unassign ${guest.name} from their table?`)) return;
+    showUnassignConfirm = true;
+  }
+
+  async function confirmUnassign() {
+    if (!guest) return;
+    showUnassignConfirm = false;
     const wid = get(weddingId);
     try {
       await unassignSeat(wid, guest.id);
@@ -494,6 +502,17 @@
     {/if}
   </div>
 </div>
+
+<ConfirmDialog
+  open={showUnassignConfirm}
+  title="Unassign Table"
+  message={`Remove ${guest?.name ?? 'this guest'} from their table? They will no longer have an assigned seat.`}
+  confirmLabel="Unassign"
+  cancelLabel="Cancel"
+  variant="warning"
+  onConfirm={confirmUnassign}
+  onCancel={() => showUnassignConfirm = false}
+/>
 
 <style>
   .drawer-overlay {

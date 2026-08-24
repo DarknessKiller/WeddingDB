@@ -11,6 +11,7 @@
   import { listTables } from '$lib/api/tables';
   import type { BanquetTable } from '$lib/types';
   import Badge from '$lib/components/ui/Badge.svelte';
+  import ConfirmDialog from '$lib/components/ui/ConfirmDialog.svelte';
   import { getInitials } from '$lib/utils';
   import {
     Search, Download, Upload, Plus, ChevronLeft, ChevronRight,
@@ -29,6 +30,8 @@
   let contextMenu = $state<{ x: number; y: number; guest: Guest } | null>(null);
   let menuWidth = 180;
   let menuHeight = 200;
+  let showUnassignConfirm = $state(false);
+  let unassignTarget = $state<Guest | null>(null);
   let loading = $state(true);
   let errored = $state(false);
   let error = $state<string | null>(null);
@@ -271,18 +274,22 @@
   }
 
   async function unassignGuest(guest: Guest) {
-    if (!confirm(`Unassign ${guest.name} from their table?`)) {
-      contextMenu = null;
-      return;
-    }
+    contextMenu = null;
+    unassignTarget = guest;
+    showUnassignConfirm = true;
+  }
+
+  async function confirmUnassign() {
+    if (!unassignTarget) return;
+    showUnassignConfirm = false;
     try {
-      await unassignSeat(wid, guest.id);
-      guestList.update(list => list.map(g => g.id === guest.id ? { ...g, tableId: null, seatNumber: null } : g));
-      addToast(`${guest.name} unassigned from table`, 'success');
+      await unassignSeat(wid, unassignTarget.id);
+      guestList.update(list => list.map(g => g.id === unassignTarget!.id ? { ...g, tableId: null, seatNumber: null } : g));
+      addToast(`${unassignTarget.name} unassigned from table`, 'success');
     } catch (e: any) {
       addToast(e.message ?? 'Unassign failed', 'error');
     }
-    contextMenu = null;
+    unassignTarget = null;
   }
 
   function getMenuStyle(x: number, y: number): string {
@@ -902,3 +909,14 @@
     </div>
   </div>
 {/if}
+
+<ConfirmDialog
+  open={showUnassignConfirm}
+  title="Unassign Table"
+  message={`Remove ${unassignTarget?.name ?? 'this guest'} from their table? They will no longer have an assigned seat.`}
+  confirmLabel="Unassign"
+  cancelLabel="Cancel"
+  variant="warning"
+  onConfirm={confirmUnassign}
+  onCancel={() => { showUnassignConfirm = false; unassignTarget = null; }}
+/>
