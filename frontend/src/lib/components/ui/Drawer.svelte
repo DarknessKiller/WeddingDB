@@ -1,12 +1,13 @@
 <script lang="ts">
   import type { Guest, BanquetTable, RSVPStatus } from '$lib/types';
-  import { X, Phone, Mail, Utensils, StickyNote, Banknote, Gift, Pencil, Check, UserCheck, CheckCircle2 } from 'lucide-svelte';
+  import { X, Phone, Mail, Utensils, StickyNote, Banknote, Gift, Pencil, Check, UserCheck, CheckCircle2, ArrowUpDown } from 'lucide-svelte';
   import Badge from './Badge.svelte';
+  import ConfirmDialog from './ConfirmDialog.svelte';
   import { getInitials, cn } from '$lib/utils';
   import { formatSeatRange } from '$lib/utils/seat';
   import { addToast } from '$lib/stores';
   import { weddingId } from '$lib/stores/weddingId';
-  import { updateGuest, createGuest, checkInGuest, checkOutGuest, getGuest, ConflictError } from '$lib/api/guests';
+  import { updateGuest, createGuest, checkInGuest, checkOutGuest, unassignSeat, getGuest, ConflictError } from '$lib/api/guests';
   import { get } from 'svelte/store';
   let { guest, tables = [], onClose, startEditing = false, createMode = false, readonly = false, showSeatNumbers = true }: { guest?: Guest; tables?: BanquetTable[]; onClose: () => void; startEditing?: boolean; createMode?: boolean; readonly?: boolean; showSeatNumbers?: boolean } = $props();
 
@@ -17,6 +18,8 @@
 
   let localGuest = $state(guest);
   $effect(() => { localGuest = guest; });
+
+  let showUnassignConfirm = $state(false);
 
   async function refreshGuest() {
     if (!guest?.id) return;
@@ -249,6 +252,26 @@
       addToast(e.message ?? 'Check-out failed', 'error');
     }
   }
+
+  async function handleUnassign() {
+    if (!guest || !localGuest?.tableId) return;
+    showUnassignConfirm = true;
+  }
+
+  async function confirmUnassign() {
+    if (!guest) return;
+    showUnassignConfirm = false;
+    const wid = get(weddingId);
+    try {
+      await unassignSeat(wid, guest.id);
+      guest.tableId = null;
+      guest.seatNumber = null;
+      localGuest = { ...guest };
+      addToast(`${guest.name} unassigned from table`, 'success');
+    } catch (e: any) {
+      addToast(e.message ?? 'Unassign failed', 'error');
+    }
+  }
 </script>
 
 <!-- svelte-ignore a11y_no_static_element_interactions -->
@@ -459,6 +482,11 @@
                 <UserCheck class="w-4 h-4" /> Check In
               </button>
             {/if}
+            {#if localGuest.tableId}
+              <button onclick={handleUnassign} class="w-full py-2.5 sm:py-3 bg-white text-gray-600 rounded-xl text-sm font-semibold border border-gray-200 hover:bg-gray-50 transition-colors flex items-center justify-center gap-2 mt-2">
+                <ArrowUpDown class="w-4 h-4" /> Unassign Table
+              </button>
+            {/if}
           </div>
         {/if}
       {/if}
@@ -474,6 +502,17 @@
     {/if}
   </div>
 </div>
+
+<ConfirmDialog
+  open={showUnassignConfirm}
+  title="Unassign Table"
+  message={`Remove ${guest?.name ?? 'this guest'} from their table? They will no longer have an assigned seat.`}
+  confirmLabel="Unassign"
+  cancelLabel="Cancel"
+  variant="warning"
+  onConfirm={confirmUnassign}
+  onCancel={() => showUnassignConfirm = false}
+/>
 
 <style>
   .drawer-overlay {

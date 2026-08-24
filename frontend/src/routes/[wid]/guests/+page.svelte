@@ -5,12 +5,13 @@
   import { weddingId } from '$lib/stores/weddingId';
   import { guestList } from '$lib/stores/guestEvents';
   import { goto } from '$app/navigation';
-  import { deleteGuest as apiDeleteGuest, searchGuests, assignSeat, bulkImportGuests } from '$lib/api/guests';
+  import { deleteGuest as apiDeleteGuest, searchGuests, assignSeat, unassignSeat, bulkImportGuests } from '$lib/api/guests';
   import type { GuestResponse, GuestImportData } from '$lib/api/guests';
   import { getWedding } from '$lib/api/weddings';
   import { listTables } from '$lib/api/tables';
   import type { BanquetTable } from '$lib/types';
   import Badge from '$lib/components/ui/Badge.svelte';
+  import ConfirmDialog from '$lib/components/ui/ConfirmDialog.svelte';
   import { getInitials } from '$lib/utils';
   import {
     Search, Download, Upload, Plus, ChevronLeft, ChevronRight,
@@ -29,6 +30,8 @@
   let contextMenu = $state<{ x: number; y: number; guest: Guest } | null>(null);
   let menuWidth = 180;
   let menuHeight = 200;
+  let showUnassignConfirm = $state(false);
+  let unassignTarget = $state<Guest | null>(null);
   let loading = $state(true);
   let errored = $state(false);
   let error = $state<string | null>(null);
@@ -268,6 +271,25 @@
       addToast(e.message ?? 'Delete failed', 'error');
     }
     contextMenu = null;
+  }
+
+  async function unassignGuest(guest: Guest) {
+    contextMenu = null;
+    unassignTarget = guest;
+    showUnassignConfirm = true;
+  }
+
+  async function confirmUnassign() {
+    if (!unassignTarget) return;
+    showUnassignConfirm = false;
+    try {
+      await unassignSeat(wid, unassignTarget.id);
+      guestList.update(list => list.map(g => g.id === unassignTarget!.id ? { ...g, tableId: null, seatNumber: null } : g));
+      addToast(`${unassignTarget.name} unassigned from table`, 'success');
+    } catch (e: any) {
+      addToast(e.message ?? 'Unassign failed', 'error');
+    }
+    unassignTarget = null;
   }
 
   function getMenuStyle(x: number, y: number): string {
@@ -729,6 +751,11 @@
     <button class="w-full flex items-center gap-2.5 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50" onclick={() => openMoveTable(contextMenu!.guest)}>
       <ArrowUpDown class="w-4 h-4" /> Move Table
     </button>
+    {#if contextMenu!.guest.tableId}
+      <button class="w-full flex items-center gap-2.5 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50" onclick={() => unassignGuest(contextMenu!.guest)}>
+        <ArrowUpDown class="w-4 h-4" /> Unassign Table
+      </button>
+    {/if}
     <hr class="my-1 border-gray-100" />
     <button class="w-full flex items-center gap-2.5 px-4 py-2 text-sm text-red hover:bg-red-50" onclick={() => deleteGuest(contextMenu!.guest)}>
       <Trash2 class="w-4 h-4" /> Delete
@@ -882,3 +909,14 @@
     </div>
   </div>
 {/if}
+
+<ConfirmDialog
+  open={showUnassignConfirm}
+  title="Unassign Table"
+  message={`Remove ${unassignTarget?.name ?? 'this guest'} from their table? They will no longer have an assigned seat.`}
+  confirmLabel="Unassign"
+  cancelLabel="Cancel"
+  variant="warning"
+  onConfirm={confirmUnassign}
+  onCancel={() => { showUnassignConfirm = false; unassignTarget = null; }}
+/>

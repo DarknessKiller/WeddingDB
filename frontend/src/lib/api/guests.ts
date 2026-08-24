@@ -138,6 +138,13 @@ export async function assignSeat(weddingId: string, guestId: string, tableId: st
 	if (!res.ok) throw new Error(`Failed to assign seat: ${res.status}`);
 }
 
+export async function unassignSeat(weddingId: string, guestId: string): Promise<void> {
+	const res = await apiFetch(`/api/weddings/${weddingId}/guests/${guestId}/seat`, {
+		method: 'DELETE',
+	});
+	if (!res.ok) throw new Error(`Failed to unassign seat: ${res.status}`);
+}
+
 export async function searchGuests(weddingId: string, query: string): Promise<GuestResponse[]> {
 	const res = await apiFetch(`/api/weddings/${weddingId}/guests/search?q=${encodeURIComponent(query)}`);
 	if (!res.ok) throw new Error(`Failed to search guests: ${res.status}`);

@@ -37,7 +37,7 @@
         addToast(err.title || 'Registration failed', 'error');
         return;
       }
-      addToast('Account created! Contact mrdarknesskiller@protonmail.com to request a wedding.', 'success');
+      addToast('Account created! Email mrdarknesskiller@protonmail.com to get your wedding set up.', 'success');
       goto('/login', { replaceState: true });
     } catch {
       addToast('Network error', 'error');
@@ -54,7 +54,7 @@
     <div class="auth-hero">
       <div class="auth-logo">囍</div>
       <h1 class="auth-title">WeddingDB</h1>
-      <p class="auth-subtitle">Create your admin account</p>
+      <p class="auth-subtitle">Create your account</p>
     </div>
 
     <form onsubmit={handleRegister} class="auth-form">
@@ -116,7 +116,7 @@
 
     <div class="contact-note">
       <Mail size={14} />
-      <span>Weddings are created by the administrator.<br/>Contact <strong>mrdarknesskiller@protonmail.com</strong> to request one.</span>
+      <span>After registering, email <strong>mrdarknesskiller@protonmail.com</strong> to get your wedding set up.</span>
     </div>
   </div>
 </div>
