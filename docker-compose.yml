@@ -8,6 +8,7 @@ services:
       DATABASE_URL: "postgresql://weddingdb:weddingdb@postgres:5432/weddingdb?sslmode=disable"
       REDIS_URL: "redis://redis:6379"
       JWT_SECRET: "${JWT_SECRET:-change-me-in-production}"
+      ADMIN_BOOTSTRAP_PASSWORD: "${ADMIN_BOOTSTRAP_PASSWORD:-}"
       STATIC_DIR: "./static"
       TZ: Asia/Kuala_Lumpur
     volumes:

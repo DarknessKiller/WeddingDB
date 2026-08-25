@@ -2,6 +2,9 @@
 
 ![Theme](https://img.shields.io/badge/theme-red%20%26%20gold-%23A11217) ![License: AGPL-3.0](https://img.shields.io/badge/license-AGPL--3.0-blue) ![Stack: SvelteKit + Go](https://img.shields.io/badge/stack-SvelteKit%20%2B%20Go-blue)
 
+> **Heads up:** this project is written with AI agents. If you're against agentic coding, you can walk away now — no hard feelings.
+
+
 The night of a Chinese wedding reception runs on a printed spreadsheet. One copy, static, shared by everyone at the door. WeddingDB is that list, made live. A small box runs it, and the people who used to pass around a clipboard check guests in from their phones.
 
 Open source under AGPL-3.0: run it on your own hardware, host it for a venue, change anything you want. No lock-in, no per-guest fees.
