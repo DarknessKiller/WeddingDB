@@ -40,18 +40,61 @@ Chinese wedding seating & reservation management system.
 - Images are published to GitHub Container Registry (`ghcr.io/darknesskiller/weddingdb`) by the Release workflow on `v*` tags (multi-arch: amd64 + arm64). The compose file pulls `ghcr.io/darknesskiller/weddingdb:latest` instead of building locally.
 - CI (`ci.yml`) runs on push/PR to `main`: backend `go test ./...`, frontend `npm run check` + `vitest run` + `npm run build`.
 
-### Production Deploy
+## Deployment (Docker Compose)
+
+The compose stack runs three services: `app` (the WeddingDB image), `postgres`, and `redis` (DragonflyDB). The app image is pulled from `ghcr.io/darknesskiller/weddingdb` — CI builds and publishes it on `v*` tags, so there's no local build step.
+
+### Quick start
 
 ```sh
-# Requires a released image (tagged v*). Latest is pulled automatically.
-JWT_SECRET=<your-secret> docker compose up -d
+# Set a real secret (required)
+export JWT_SECRET=$(openssl rand -hex 32)
+
+docker compose up -d
 ```
 
-Image builds are handled by CI; `docker compose build` is not needed.
+- App: `http://localhost:8080` (serves the SPA + API)
+- Postgres: `localhost:5432` (user/pass/db all `weddingdb`)
+- Redis: `localhost:6379`
+
+### Configuration
+
+| Env var (on `app`) | Default | Notes |
+|---|---|---|
+| `PORT` | `8080` | App listen port |
+| `DATABASE_URL` | compose-provided | Points at the `postgres` service; override to use an external DB |
+| `REDIS_URL` | `redis://redis:6379` | Compose-provided; override for external Redis |
+| `JWT_SECRET` | `change-me-in-production` | **Must set in production** |
+| `TZ` | `Asia/Kuala_Lumpur` | Report timestamps follow this |
+
+### Building locally instead
+
+If you don't want the released image, build from source:
+
+```sh
+docker compose build app
+# then either run that build:
+docker compose up -d
+# or swap the compose file to `build: .` and remove `image:`
+```
+
+### Data & persistence
+
+- `weddingdb_pgdata` volume — PostgreSQL data (survives `down`, removed with `down -v`)
+- `weddingdb_uploads` volume — uploaded kiosk logos/backgrounds, mounted at `/app/uploads`
+- Backups: `./backup-db.sh` dumps the `postgres` container to `./backups/weddingdb_<timestamp>.sql.gz`. Note it expects the container named `weddingdb-postgres-1` (default compose naming).
+
+### Updating
+
+```sh
+docker compose pull app && docker compose up -d
+```
+
+New releases are tagged `v*`; `latest` tracks the newest tag. Pin to a specific version with `ghcr.io/darknesskiller/weddingdb:v0.1.0` for reproducibility.
 
 ---
 
-## Getting Started
+## Getting Started (dev)
 
 ### Frontend
 
