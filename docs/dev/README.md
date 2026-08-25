@@ -57,6 +57,16 @@ docker compose up -d
 - Postgres: `localhost:5432` (user/pass/db all `weddingdb`)
 - Redis: `localhost:6379`
 
+### First login (bootstrap admin)
+
+On first start with an empty database, the app seeds a default admin:
+
+- **Email:** `admin@weddingdb.local`
+- **Password:** whatever you set in `ADMIN_BOOTSTRAP_PASSWORD` (required on first boot; `log.Fatal` if missing)
+- The seeded account is flagged `ForcePasswordChange`, so the first login asks for a new password.
+
+The bootstrap only runs when the admin table is empty. After the first admin exists, `ADMIN_BOOTSTRAP_PASSWORD` is ignored.
+
 ### Configuration
 
 | Env var (on `app`) | Default | Notes |
@@ -65,6 +75,7 @@ docker compose up -d
 | `DATABASE_URL` | compose-provided | Points at the `postgres` service; override to use an external DB |
 | `REDIS_URL` | `redis://redis:6379` | Compose-provided; override for external Redis |
 | `JWT_SECRET` | `change-me-in-production` | **Must set in production** |
+| `ADMIN_BOOTSTRAP_PASSWORD` | — | First-boot admin password (required when DB is empty) |
 | `TZ` | `Asia/Kuala_Lumpur` | Report timestamps follow this |
 
 ### Building locally instead
