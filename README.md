@@ -1,141 +1,51 @@
 # WeddingDB
 
-Chinese wedding seating & reservation management system.
+![Theme](https://img.shields.io/badge/theme-red%20%26%20gold-%23A11217) ![License: AGPL-3.0](https://img.shields.io/badge/license-AGPL--3.0-blue) ![Stack: SvelteKit + Go](https://img.shields.io/badge/stack-SvelteKit%20%2B%20Go-blue)
 
-## Project Structure
+The night of a Chinese wedding reception runs on a printed spreadsheet. One copy, static, shared by everyone at the door. WeddingDB is that list, made live. A small box runs it, and the people who used to pass around a clipboard check guests in from their phones.
 
-```
-├── frontend/       # SvelteKit SPA (Svelte 5 + Tailwind CSS v4)
-├── backend/        # Go REST API (Fuego + GORM + PostgreSQL)
-└── ui-prototype/   # HTML/CSS/JS design preview (gitignored)
-```
+Open source under AGPL-3.0: run it on your own hardware, host it for a venue, change anything you want. No lock-in, no per-guest fees.
 
-## Tech Stack
+## The door is where weddings lose time
 
-### Frontend
-- **Framework:** SvelteKit (SSR disabled, client-only SPA)
-- **UI:** Svelte 5 (runes), Tailwind CSS v4, TypeScript
-- **Validation:** Zod v4
-- **Icons:** Lucide
-- **Fonts:** Inter + Noto Serif SC (Google Fonts)
-- **Theme:** Deep Red (#A11217), Gold (#D4AF37), White, Light Beige
+Two hundred guests arrive in under two hours. Each one needs a welcome, a table number, and their red packet recorded. With a paper list that means one queue at one desk, one pen, and a gift ledger transcribed by hand after everyone leaves.
 
-### Backend
-- **Language:** Go 1.27
-- **HTTP:** Fuego
-- **ORM:** GORM + PostgreSQL
-- **Cache/Pub-Sub:** Redis (nonce/replay prevention, token revocation, SSE cross-instance broadcasting)
-- **Auth:** JWT HS256 + bcrypt + refresh token rotation + Redis token blacklisting
+WeddingDB changes the door:
 
-## Getting Started
+- **Check-in takes seconds, not a line.** The receptionist types part of a name, or the pinyin of a Chinese name, and the guest pops up. One tap checks them in and records the angpao at the same time. No flipping pages, no squinting at handwriting.
+- **The whole team checks in from their pocket.** Anyone with the app finds a guest by name and taps check-in. The reception desk stops being one person with a clipboard.
+- **Angpao is recorded at the same tap.** Name, amount, table. It exports to CSV or Excel after the night, no transcription, no deciphering handwriting.
+- **Seats update live.** Cross off a guest at the door and every screen shows it. A no-show frees a table and a last-minute guest takes it.
 
-### Frontend
+## What You Get
 
-```sh
-cd frontend
-npm install
-npm run dev
-```
+| You're the... | WeddingDB handles |
+|---|---|
+| **Couple / host** | Drag-and-drop banquet hall map, table and seat assignment, live occupancy, real-time updates across all screens |
+| **Reception team** | Guest lookup and check-in at the door, instant table and seat find, CSV/XLSX angpao reports at the end of the night |
+| **Guests** | Self-service kiosk: type your name, see your table and seat, no app install, no asking around |
 
-Server runs at `http://localhost:5173`.
+## The Guest Kiosk
 
-### Backend
+The kiosk removes the door queue entirely. A tablet runs WeddingDB in kiosk mode: guests type their name, get their table and seat, and walk in. No desk, no queue, no "which table am I?"
 
-```sh
-cd backend
-# Copy and configure .env
-cp .env.example .env
-# Edit .env with your database credentials
+It's customizable per wedding: your own logo and background, a welcome message, hall colors.
 
-go run ./cmd/server/
-```
+## Built for One Night, Engineered to Last
 
-Server runs at `http://localhost:8080`.
+- **Interactive hall map** (Konva-based) to draw your actual venue: tables, stage, entrances, obstacles
+- **Bulk import** of up to 1,000 guests from CSV
+- **Angpao reports** as CSV or Excel, ready for thank-you notes
+- **Multi-wedding support** in one deployment, useful for planners and venues
+- **Secure by default** with JWT auth, refresh-token rotation, token revocation, role-based admin, rate-limited login, and per-wedding kiosk settings that never touch admin access
+- **Self-hostable** with Docker Compose; data stays yours (PostgreSQL + DragonflyDB/Redis)
 
-### Environment Variables
+## Under the Hood
 
-| Variable | Description | Default |
-|----------|-------------|---------|
-| `DATABASE_URL` | PostgreSQL connection string | — |
-| `REDIS_URL` | Redis connection string | `redis://localhost:6379` |
-| `JWT_SECRET` | Secret for JWT signing (required) | — |
-| `PORT` | Server port | `8080` |
-| `PUBLIC_URL` | Public server URL (used in OpenAPI spec) | `http://localhost:{PORT}` |
-| `CORS_ORIGIN` | Allowed CORS origin | `http://localhost:5173` |
+Self-hostable, so the data never leaves your machines: Docker Compose runs the whole stack (PostgreSQL + DragonflyDB/Redis) in minutes. Multi-wedding, so one deployment covers planners and venues running many events.
 
-## Pages
+Developers: full setup, environment variables, and the complete API reference live in the [Developer Documentation](docs/dev/README.md).
 
-| Route | Description |
-|-------|-------------|
-| `/dashboard` | Stats overview, recent activity, table occupancy |
-| `/guests` | Guest list with search, filter, status badges |
-| `/seating` | Interactive banquet hall map (most important page) |
-| `/search` | Guest search with check-in workflow |
-| `/reservation` | Guest registration with seat picker |
-| `/tables` | Table overview with capacity bars |
-| `/users` | Admin user management |
-| `/settings` | App settings (placeholder) |
-| `/change-password` | Change password (post-login for forced changes) |
-| `/kiosk` | Standalone guest self-service kiosk |
-| `/reports` | Report exports (CSV/XLSX) for angpao data |
+---
 
-## API Endpoints
-
-| Method | Path | Description |
-|--------|------|-------------|
-| POST | `/api/auth/login` | Login, returns access + refresh tokens |
-| POST | `/api/auth/register` | Register new user account |
-| POST | `/api/auth/refresh` | Refresh access token |
-| POST | `/api/auth/logout` | Revoke refresh + blacklist access token |
-| POST | `/api/auth/select-wedding` | Select wedding context |
-| POST | `/api/auth/change-password` | Change password |
-| GET | `/api/users` | List admin users |
-| POST | `/api/users` | Create admin user |
-| DELETE | `/api/users/{id}` | Delete admin user |
-| GET | `/api/users/{id}/weddings` | Get user wedding assignments |
-| PUT | `/api/users/{id}/weddings` | Assign weddings to user |
-| PUT | `/api/users/{id}/role` | Update user role |
-| POST | `/api/users/{id}/reset-password` | Reset user password |
-| PUT | `/api/users/{id}/revoke` | Revoke all user tokens (admin only) |
-| GET | `/api/weddings` | List weddings |
-| POST | `/api/weddings` | Create wedding |
-| GET | `/api/weddings/{id}` | Get wedding |
-| PUT | `/api/weddings/{id}` | Update wedding |
-| PUT | `/api/weddings/{id}/kiosk` | Update kiosk settings |
-| DELETE | `/api/weddings/{id}` | Delete wedding |
-| POST | `/api/upload` | Upload file (max 5MB, images only) |
-| GET | `/api/weddings/{wid}/tables` | List tables |
-| POST | `/api/weddings/{wid}/tables` | Create table |
-| PUT | `/api/weddings/{wid}/tables/{id}` | Update table |
-| DELETE | `/api/weddings/{wid}/tables/{id}` | Delete table |
-| GET | `/api/weddings/{wid}/guests` | List guests (cursor pagination: `?cursor=&limit=`, returns `nextCursor`) |
-| POST | `/api/weddings/{wid}/guests` | Create guest |
-| GET | `/api/weddings/{wid}/guests/{id}` | Get guest |
-| PUT | `/api/weddings/{wid}/guests/{id}` | Update guest |
-| DELETE | `/api/weddings/{wid}/guests/{id}` | Delete guest |
-| POST | `/api/weddings/{wid}/guests/{id}/checkin` | Check in guest |
-| POST | `/api/weddings/{wid}/guests/{id}/checkout` | Check out guest |
-| POST | `/api/weddings/{wid}/guests/{id}/seat` | Assign seat |
-| POST | `/api/weddings/{wid}/guests/import` | Bulk import guests (max 1000) |
-| GET | `/api/weddings/{wid}/guests/search?q=` | Search guests |
-| GET | `/api/weddings/{wid}/occupancy` | Table occupancy |
-| GET | `/api/weddings/{wid}/layout` | Get hall layout (tables + elements with positions) |
-| PATCH | `/api/weddings/{wid}/layout` | Save hall layout (atomic replace) |
-| GET | `/api/weddings/{wid}/reports/angpao?format=csv\|xlsx` | Export angpao report (CSV or Excel) |
-| GET | `/api/weddings/{wid}/events` | SSE stream for real-time guest events (auth via `?token=`) |
-
-### Public Endpoints (no auth required)
-
-| Method | Path | Description |
-|--------|------|-------------|
-| GET | `/api/public/weddings/{wid}/guests` | List guests (public view) |
-| GET | `/api/public/weddings/{wid}/guests/search?q=` | Search guests (public) |
-| GET | `/api/public/weddings/{wid}/tables` | List tables (public) |
-| GET | `/api/public/weddings/{wid}/kiosk` | Get kiosk settings |
-| GET | `/api/public/weddings/{wid}/layout` | Get hall layout (public view) |
-
-## Background Dev Server
-
-```sh
-nohup sh -c 'cd frontend && npm run dev -- --host 0.0.0.0 --port 5173' > /tmp/weddingdb-dev.log 2>&1 & disown
-```
+*The day should be about the couple, not the paper list.*
