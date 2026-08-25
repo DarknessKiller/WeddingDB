@@ -24,6 +24,7 @@
 		"vitest": "^4.1.10"
 	},
 	"dependencies": {
+		"@openpanel/web": "^1.4.1",
 		"@tailwindcss/vite": "^4.3.3",
 		"@tanstack/svelte-query": "^6.1.38",
 		"class-variance-authority": "^0.7.1",

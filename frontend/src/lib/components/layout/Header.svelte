@@ -4,6 +4,7 @@
   import { setWeddingId } from '$lib/stores/weddingId';
   import { goto } from '$app/navigation';
   import { Menu, X, LogOut } from 'lucide-svelte';
+  import { resetAnalytics, track } from '$lib/analytics';
 
   const TITLES: Record<string, string> = {
     '/dashboard': 'Dashboard',
@@ -39,6 +40,8 @@
     }
     clearAuth();
     setWeddingId('');
+    track('logout_completed');
+    resetAnalytics();
     goto('/login', { replaceState: true });
   }
 </script>
