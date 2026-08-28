@@ -121,6 +121,34 @@ func (r *GuestRepo) Delete(ctx context.Context, id, weddingID uuid.UUID) error {
 	return r.db.WithContext(ctx).Where("id = ? AND wedding_id = ?", id, weddingID).Delete(&models.GuestRecord{}).Error
 }
 
+// SyncCreate creates a guest with explicit CreatedAt/UpdatedAt for offline sync LWW.
+func (r *GuestRepo) SyncCreate(ctx context.Context, g *models.GuestRecord) error {
+	g.NamePinyin = models.GenerateNamePinyin(g.Name)
+	return r.db.WithContext(ctx).Create(g).Error
+}
+
+// SyncUpdate updates a guest and forces UpdatedAt to the provided time for LWW.
+func (r *GuestRepo) SyncUpdate(ctx context.Context, g *models.GuestRecord) error {
+	g.NamePinyin = models.GenerateNamePinyin(g.Name)
+	return r.db.WithContext(ctx).Model(g).Where("id = ? AND wedding_id = ?", g.ID, g.WeddingID).Updates(map[string]interface{}{
+		"name":          g.Name,
+		"name_pinyin":   g.NamePinyin,
+		"phone":         g.Phone,
+		"email":         g.Email,
+		"pax":           g.Pax,
+		"table_id":      g.TableID,
+		"seat_num":      g.SeatNum,
+		"rsvp":          g.RSVP,
+		"checked_in_at": g.CheckedInAt,
+		"notes":         g.Notes,
+		"dietary":       g.Dietary,
+		"is_vip":        g.IsVip,
+		"angbao_amt":    g.AngbaoAmt,
+		"gift_item":     g.GiftItem,
+		"updated_at":    g.UpdatedAt,
+	}).Error
+}
+
 // UnassignByTable clears table_id and seat_num for all guests at a given table.
 func (r *GuestRepo) UnassignByTable(ctx context.Context, weddingID, tableID uuid.UUID) error {
 	return r.db.WithContext(ctx).Model(&models.GuestRecord{}).

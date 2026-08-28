@@ -2,6 +2,7 @@ package services
 
 import (
 	"context"
+	"encoding/base64"
 	"errors"
 	"fmt"
 	"log"
@@ -218,6 +219,234 @@ func (s *GuestService) publishEvent(eventType string, guest *models.GuestRecord,
 			log.Printf("SSE: publish %s for guest %s in wedding %s: %v", eventType, guest.ID, weddingID, err)
 		}
 	}()
+}
+
+// Sync types for offline queue
+
+type SyncOp string
+
+const (
+	SyncOpCreate   SyncOp = "create"
+	SyncOpUpdate   SyncOp = "update"
+	SyncOpDelete   SyncOp = "delete"
+	SyncOpCheckIn  SyncOp = "checkin"
+	SyncOpCheckOut SyncOp = "checkout"
+)
+
+type SyncPayload struct {
+	Name      string   `json:"name"`
+	Phone     string   `json:"phone"`
+	Email     string   `json:"email"`
+	Pax       int      `json:"pax"`
+	RSVP      string   `json:"rsvp"`
+	IsVip     bool     `json:"isVip"`
+	Notes     string   `json:"notes"`
+	Dietary   []string `json:"dietary"`
+	TableID   *string  `json:"tableId"`
+	SeatNum   *int     `json:"seatNum"`
+	AngbaoAmt *int     `json:"angbaoAmt"`
+	GiftItem  *string  `json:"giftItem"`
+}
+
+type SyncMutation struct {
+	MutationID      string       `json:"mutationId"`
+	Op              SyncOp       `json:"op"`
+	GuestID         string       `json:"guestId"`
+	ClientUpdatedAt time.Time    `json:"clientUpdatedAt"`
+	BaseUpdatedAt   *time.Time   `json:"baseUpdatedAt"`
+	Payload         *SyncPayload `json:"payload"`
+}
+
+type SyncResult struct {
+	GuestID      string              `json:"guestId"`
+	Status       string              `json:"status"` // applied | skipped
+	Reason       string              `json:"reason,omitempty"`
+	ServerRecord *models.GuestRecord `json:"serverRecord,omitempty"`
+}
+
+// Sync applies a batch of mutations with newer-time-wins.
+// Mutations are processed in order received, FIFO.
+func (s *GuestService) Sync(ctx context.Context, weddingID uuid.UUID, mutations []SyncMutation) ([]SyncResult, error) {
+	results := make([]SyncResult, 0, len(mutations))
+	for _, m := range mutations {
+		res := s.applySyncMutation(ctx, weddingID, m)
+		results = append(results, res)
+	}
+	return results, nil
+}
+
+func (s *GuestService) applySyncMutation(ctx context.Context, weddingID uuid.UUID, m SyncMutation) SyncResult {
+	gid, err := parseSyncID(m.GuestID)
+	if err != nil {
+		return SyncResult{GuestID: m.GuestID, Status: "skipped", Reason: "invalid guestId"}
+	}
+
+	// Load server record if exists
+	existing, err := s.guestRepo.FindByID(ctx, gid, weddingID)
+	found := err == nil
+
+	switch m.Op {
+	case SyncOpCreate:
+		if found {
+			// treat as update with LWW
+			if !m.ClientUpdatedAt.After(existing.UpdatedAt) {
+				return SyncResult{GuestID: m.GuestID, Status: "skipped", Reason: "older than server", ServerRecord: existing}
+			}
+			if m.Payload != nil {
+				applySyncPayload(existing, m.Payload, &gid)
+			}
+			existing.UpdatedAt = m.ClientUpdatedAt
+			_ = s.guestRepo.SyncUpdate(ctx, existing)
+			s.publishEvent("update", existing, weddingID)
+			return SyncResult{GuestID: m.GuestID, Status: "applied", ServerRecord: existing}
+		}
+		if m.Payload == nil || m.Payload.Name == "" {
+			return SyncResult{GuestID: m.GuestID, Status: "skipped", Reason: "name required"}
+		}
+		if m.Payload.Pax < 1 {
+			m.Payload.Pax = 1
+		}
+		g := &models.GuestRecord{
+			ID:        gid,
+			WeddingID: weddingID,
+			Name:      m.Payload.Name,
+			Phone:     m.Payload.Phone,
+			Email:     m.Payload.Email,
+			Pax:       m.Payload.Pax,
+			RSVP:      m.Payload.RSVP,
+			IsVip:     m.Payload.IsVip,
+			Notes:     m.Payload.Notes,
+			Dietary:   m.Payload.Dietary,
+			AngbaoAmt: m.Payload.AngbaoAmt,
+			GiftItem:  m.Payload.GiftItem,
+			CreatedAt: m.ClientUpdatedAt,
+			UpdatedAt: m.ClientUpdatedAt,
+		}
+		if m.Payload.TableID != nil && *m.Payload.TableID != "" {
+			if tid, err := parseSyncID(*m.Payload.TableID); err == nil {
+				g.TableID = &tid
+			}
+		}
+		g.SeatNum = m.Payload.SeatNum
+		_ = s.guestRepo.SyncCreate(ctx, g)
+		s.publishEvent("create", g, weddingID)
+		return SyncResult{GuestID: m.GuestID, Status: "applied", ServerRecord: g}
+
+	case SyncOpUpdate:
+		if !found {
+			return SyncResult{GuestID: m.GuestID, Status: "skipped", Reason: "not found", ServerRecord: nil}
+		}
+		if !m.ClientUpdatedAt.After(existing.UpdatedAt) {
+			return SyncResult{GuestID: m.GuestID, Status: "skipped", Reason: "older than server", ServerRecord: existing}
+		}
+		if m.Payload != nil {
+			applySyncPayload(existing, m.Payload, nil)
+		}
+		existing.UpdatedAt = m.ClientUpdatedAt
+		_ = s.guestRepo.SyncUpdate(ctx, existing)
+		s.publishEvent("update", existing, weddingID)
+		return SyncResult{GuestID: m.GuestID, Status: "applied", ServerRecord: existing}
+
+	case SyncOpDelete:
+		if !found {
+			return SyncResult{GuestID: m.GuestID, Status: "applied"}
+		}
+		if !m.ClientUpdatedAt.After(existing.UpdatedAt) {
+			return SyncResult{GuestID: m.GuestID, Status: "skipped", Reason: "older than server", ServerRecord: existing}
+		}
+		_ = s.guestRepo.Delete(ctx, gid, weddingID)
+		s.publishEvent("delete", existing, weddingID)
+		return SyncResult{GuestID: m.GuestID, Status: "applied"}
+
+	case SyncOpCheckIn:
+		if !found {
+			return SyncResult{GuestID: m.GuestID, Status: "skipped", Reason: "not found"}
+		}
+		if !m.ClientUpdatedAt.After(existing.UpdatedAt) {
+			return SyncResult{GuestID: m.GuestID, Status: "skipped", Reason: "older than server", ServerRecord: existing}
+		}
+		existing.CheckedInAt = &m.ClientUpdatedAt
+		if m.Payload != nil {
+			if m.Payload.AngbaoAmt != nil {
+				existing.AngbaoAmt = m.Payload.AngbaoAmt
+			}
+			if m.Payload.GiftItem != nil {
+				existing.GiftItem = m.Payload.GiftItem
+			}
+		}
+		existing.UpdatedAt = m.ClientUpdatedAt
+		_ = s.guestRepo.SyncUpdate(ctx, existing)
+		s.publishEvent("checkin", existing, weddingID)
+		return SyncResult{GuestID: m.GuestID, Status: "applied", ServerRecord: existing}
+
+	case SyncOpCheckOut:
+		if !found {
+			return SyncResult{GuestID: m.GuestID, Status: "skipped", Reason: "not found"}
+		}
+		if !m.ClientUpdatedAt.After(existing.UpdatedAt) {
+			return SyncResult{GuestID: m.GuestID, Status: "skipped", Reason: "older than server", ServerRecord: existing}
+		}
+		existing.CheckedInAt = nil
+		existing.UpdatedAt = m.ClientUpdatedAt
+		_ = s.guestRepo.SyncUpdate(ctx, existing)
+		s.publishEvent("checkout", existing, weddingID)
+		return SyncResult{GuestID: m.GuestID, Status: "applied", ServerRecord: existing}
+
+	default:
+		return SyncResult{GuestID: m.GuestID, Status: "skipped", Reason: "unknown op"}
+	}
+}
+
+func applySyncPayload(g *models.GuestRecord, p *SyncPayload, gid *uuid.UUID) {
+	if p.Name != "" {
+		g.Name = p.Name
+	}
+	g.Phone = p.Phone
+	g.Email = p.Email
+	if p.Pax >= 1 {
+		g.Pax = p.Pax
+	}
+	if p.RSVP != "" {
+		g.RSVP = p.RSVP
+	}
+	g.IsVip = p.IsVip
+	g.Notes = p.Notes
+	g.Dietary = p.Dietary
+	g.AngbaoAmt = p.AngbaoAmt
+	g.GiftItem = p.GiftItem
+	if p.TableID != nil {
+		if *p.TableID == "" {
+			g.TableID = nil
+			g.SeatNum = nil
+		} else if tid, err := parseSyncID(*p.TableID); err == nil {
+			g.TableID = &tid
+			g.SeatNum = p.SeatNum
+		}
+	} else if p.SeatNum != nil {
+		g.SeatNum = p.SeatNum
+	}
+	if gid != nil {
+		g.ID = *gid
+	}
+}
+
+func parseSyncID(s string) (uuid.UUID, error) {
+	if id, err := uuid.Parse(s); err == nil {
+		return id, nil
+	}
+	// try base64 url
+	return parseBase64ID(s)
+}
+
+func parseBase64ID(s string) (uuid.UUID, error) {
+	decoded, err := base64.RawURLEncoding.DecodeString(s)
+	if err != nil {
+		decoded, err = base64.URLEncoding.DecodeString(s)
+		if err != nil {
+			return uuid.Nil, err
+		}
+	}
+	return uuid.FromBytes(decoded)
 }
 
 func guestToEventData(g *models.GuestRecord) *GuestEventData {

@@ -103,6 +103,7 @@ func RegisterRoutes(
 	fuego.Get(scoped, "/guests/search", guestHandler.Search,
 		fuego.OptionQuery("q", "Search query"),
 	)
+	fuego.Post(scoped, "/guests/sync", guestHandler.Sync)
 	fuego.Post(scoped, "/guests/import", guestHandler.BulkImport)
 	fuego.Get(scoped, "/occupancy", guestHandler.Occupancy)
 
