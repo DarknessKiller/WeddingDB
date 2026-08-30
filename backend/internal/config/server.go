@@ -24,6 +24,11 @@ func NewFuegoServer(env Env, version string) *fuego.Server {
 		),
 	)
 
+	// SSE streams must stay open indefinitely; WriteTimeout is a whole-response
+	// deadline and fuego's 30s default would kill every stream at 30s, forcing
+	// a reconnect/resync loop. Keepalive pings cannot extend it.
+	s.Server.WriteTimeout = 0
+
 	// Set the public server URL in the OpenAPI spec
 	if env.PublicURL != "" {
 		spec := s.Engine.OutputOpenAPISpec()
