@@ -3,6 +3,8 @@ package handlers
 import (
 	"fmt"
 	"net/http"
+	"time"
+
 	"weddingdb/internal/middleware"
 	"weddingdb/internal/services"
 )
@@ -69,6 +71,10 @@ func (h *SSEHandler) StreamHandler() http.HandlerFunc {
 		fmt.Fprintf(w, ": keepalive\n\n")
 		flusher.Flush()
 
+		// Periodic keepalive: silent streams get killed by proxies/NAT at ~60s idle.
+		keepalive := time.NewTicker(20 * time.Second)
+		defer keepalive.Stop()
+
 		ctx := r.Context()
 		for {
 			select {
@@ -76,11 +82,18 @@ func (h *SSEHandler) StreamHandler() http.HandlerFunc {
 				return
 			case <-client.Done:
 				return
+			case <-keepalive.C:
+				if _, err := fmt.Fprintf(w, ": ping\n\n"); err != nil {
+					return
+				}
+				flusher.Flush()
 			case data, ok := <-client.Chan:
 				if !ok {
 					return
 				}
-				fmt.Fprintf(w, "data: %s\n\n", data)
+				if _, err := fmt.Fprintf(w, "data: %s\n\n", data); err != nil {
+					return
+				}
 				flusher.Flush()
 			}
 		}
