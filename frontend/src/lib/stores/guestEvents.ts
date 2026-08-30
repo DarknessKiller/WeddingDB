@@ -75,6 +75,11 @@ export function seedGuests(guests: Guest[]) {
 	}
 	guestMap.set(map);
 	recalculateOccupancy();
+	// cache for offline reads
+	try {
+		const wid = get(weddingId);
+		if (wid) localStorage.setItem(`offline_cache_${wid}`, JSON.stringify(guests));
+	} catch {}
 	if (syncing) {
 		syncing = false;
 		const pending = queuedEvents;

@@ -23,6 +23,13 @@
   let tables = $state<BanquetTable[]>([]);
   let showSeatNumbers = $state(true);
   let cleanupSSE: (() => void) | undefined;
+  let offline = $state(typeof navigator !== 'undefined' ? !navigator.onLine : false);
+  let queued = $state(0);
+
+  function refreshQueued() {
+    if (typeof window === 'undefined' || !wid) return;
+    try { queued = JSON.parse(localStorage.getItem(`offline_queue_${wid}`) || '[]').length; } catch { queued = 0; }
+  }
 
   onMount(async () => {
     if (!await validateToken()) return;
@@ -38,7 +45,42 @@
       notes: g.notes, dietaryRequirements: g.dietary ?? [], isVip: g.isVip,
       angbaoAmount: g.angbaoAmt ?? undefined, giftItem: g.giftItem ?? undefined, createdAt: new Date(),
     });
-    const loadGuests = async () => (await fetchAllGuests($weddingId)).map(toGuest);
+    const loadGuests = async () => {
+      try {
+        const guests = (await fetchAllGuests($weddingId)).map(toGuest);
+        return guests;
+      } catch {
+        try {
+          const cached = JSON.parse(localStorage.getItem(`offline_cache_${$weddingId}`) || 'null');
+          if (cached) return (cached as any[]).map(toGuest);
+        } catch {}
+        throw new Error('offline');
+      }
+    };
+
+    async function doSync() {
+      if (!wid || typeof window === 'undefined' || !navigator.onLine) return;
+      try {
+        const { syncQueue } = await import('$lib/offline/queue');
+        await syncQueue(wid);
+        const guests = await loadGuests();
+        guestCount = guests.length;
+        seedGuests(guests);
+        refreshQueued();
+      } catch {}
+    }
+
+    const onOnline = () => { offline = false; refreshQueued(); doSync(); };
+    const onOffline = () => { offline = true; };
+    const onVis = () => { if (document.visibilityState === 'visible' && navigator.onLine) doSync(); };
+    window.addEventListener('online', onOnline);
+    window.addEventListener('offline', onOffline);
+    document.addEventListener('visibilitychange', onVis);
+    window.addEventListener('storage', refreshQueued);
+    refreshQueued();
+
+    // initial sync before seed
+    if (navigator.onLine) { try { const { syncQueue } = await import('$lib/offline/queue'); await syncQueue(wid); } catch {} }
 
     // Subscribe before the snapshot; guestEvents queues mutations until seeding completes.
     cleanupSSE = initializeSSE(loadGuests);
@@ -90,6 +132,11 @@
     <Sidebar {currentPath} {guestCount} {wid} />
 
     <div class="main-area">
+      {#if offline}
+        <div class="offline-banner">Offline — changes queued{queued ? ` (${queued})` : ''}</div>
+      {:else if queued}
+        <div class="offline-banner queued">{queued} queued — syncing on reconnect <button onclick={async () => { const { syncQueue } = await import('$lib/offline/queue'); await syncQueue(wid); refreshQueued(); }}>Sync now</button></div>
+      {/if}
       <Header />
       <main class="main-content">
         {@render children()}
@@ -172,4 +219,9 @@
     from { opacity: 0; }
     to { opacity: 1; }
   }
+  .offline-banner {
+    background: #A11217; color: white; text-align: center; padding: 0.35rem; font-size: 0.85rem; z-index: 40;
+  }
+  .offline-banner.queued { background: #7a2b00; }
+  .offline-banner button { margin-left: 0.5rem; background: white; color: #A11217; border: 0; border-radius: 999px; padding: 0.15rem 0.6rem; font-weight: 600; cursor: pointer; }
 </style>
