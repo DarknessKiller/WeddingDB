@@ -27,18 +27,18 @@ export function enqueue(wid: string, m: QueuedMutation) {
 	if (q.length >= 500) q.shift();
 	q.push(m);
 	setQueue(wid, q);
-	updateBadge();
+	notifyChanged();
 }
 
 export function dequeueByIds(wid: string, ids: string[]) {
 	const s = new Set(ids);
 	setQueue(wid, getQueue(wid).filter(x => !s.has(x.mutationId)));
-	updateBadge();
+	notifyChanged();
 }
 
 export function clearQueue(wid: string) {
 	localStorage.removeItem(qkey(wid));
-	updateBadge();
+	notifyChanged();
 }
 
 export function queuedCount(wid: string): number {
@@ -82,14 +82,13 @@ export async function syncQueue(wid: string): Promise<{ applied: number; skipped
 	return { applied, skipped, results: data.results };
 }
 
-function updateBadge() {
-	if (typeof window === 'undefined' || typeof document === 'undefined') return;
-	const wid = localStorage.getItem('weddingId') || '';
-	const n = wid ? queuedCount(wid) : 0;
-	document.documentElement.setAttribute('data-offline-queued', String(n));
+// Same-tab notification that the queue changed (storage events only fire in
+// other tabs). The [wid] layout listens for this to update its banner.
+function notifyChanged() {
+	if (typeof window === 'undefined') return;
+	window.dispatchEvent(new Event('offline-queue-changed'));
 }
 
 if (typeof window !== 'undefined') {
 	(window as unknown as Record<string, unknown>).__offlineQueue = { getQueue, enqueue, syncQueue, queuedCount, clearQueue, cacheGuests, loadCachedGuests };
-	window.addEventListener('storage', updateBadge);
 }
