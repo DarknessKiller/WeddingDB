@@ -417,3 +417,27 @@ func (h *GuestHandler) UnassignSeat(c fuego.ContextNoBody) (any, error) {
 	c.SetStatus(204)
 	return nil, nil
 }
+
+type SyncRequest struct {
+	Mutations []services.SyncMutation `json:"mutations"`
+}
+
+func (h *GuestHandler) Sync(c fuego.ContextWithBody[SyncRequest]) (any, error) {
+	ctx := c.Context()
+	wid, err := DecodeWID(c)
+	if err != nil {
+		return nil, fuego.BadRequestError{Title: "Invalid wedding ID"}
+	}
+	body, err := c.Body()
+	if err != nil {
+		return nil, fuego.BadRequestError{Title: "Invalid request"}
+	}
+	if len(body.Mutations) > 500 {
+		return nil, fuego.BadRequestError{Title: "Too many mutations (max 500)"}
+	}
+	results, err := h.guestService.Sync(ctx, wid, body.Mutations)
+	if err != nil {
+		return nil, err
+	}
+	return map[string]any{"results": results}, nil
+}
