@@ -1,6 +1,7 @@
 import { apiFetch } from './client';
 import { get } from 'svelte/store';
 import { weddingId } from '$lib/stores/weddingId';
+import { applyGuestResponse } from '$lib/stores/guestEvents';
 
 export class ConflictError extends Error {
 	constructor(message: string) {
@@ -92,7 +93,9 @@ export async function createGuest(weddingId: string, data: GuestCreateData): Pro
 		body: JSON.stringify(data),
 	});
 	if (!res.ok) throw new Error(`Failed to create guest: ${res.status}`);
-	return res.json();
+	const resp: GuestResponse = await res.json();
+	applyGuestResponse(resp);
+	return resp;
 }
 
 export async function updateGuest(weddingId: string, guestId: string, data: GuestCreateData): Promise<GuestResponse> {
@@ -101,7 +104,9 @@ export async function updateGuest(weddingId: string, guestId: string, data: Gues
 		body: JSON.stringify(data),
 	});
 	if (!res.ok) throw new Error(`Failed to update guest: ${res.status}`);
-	return res.json();
+	const resp: GuestResponse = await res.json();
+	applyGuestResponse(resp);
+	return resp;
 }
 
 export async function deleteGuest(weddingId: string, guestId: string): Promise<void> {

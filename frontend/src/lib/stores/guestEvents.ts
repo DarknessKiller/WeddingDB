@@ -3,6 +3,7 @@ import { selectedGuest } from '$lib/stores';
 import { connectSSE, disconnectSSE, type GuestEvent } from '$lib/api/sse';
 import { weddingId } from '$lib/stores/weddingId';
 import type { Guest, RSVPStatus } from '$lib/types';
+import type { GuestResponse } from '$lib/api/guests';
 
 // All guests for the current wedding, kept in sync via SSE.
 export const guestList = writable<Guest[]>([]);
@@ -134,6 +135,47 @@ function recalculateOccupancy() {
 		}
 	}
 	tableOccupancy.set(occ);
+}
+
+/**
+ * Cheap belt-and-brace: after a mutation API call succeeds, merge the server
+ * response into the stores. SSE normally delivers the event first, so this is
+ * usually a same-state replace; it only heals gaps when an event was dropped
+ * (SSE hiccup, reconnect race) instead of waiting for a manual refresh.
+ */
+export function applyGuestResponse(resp: GuestResponse) {
+	const guest: Guest = {
+		id: resp.id,
+		name: resp.name,
+		phone: resp.phone,
+		email: resp.email,
+		rsvp: resp.rsvp as RSVPStatus,
+		pax: resp.pax,
+		tableId: resp.tableId,
+		seatNumber: resp.seatNum,
+		checkedIn: !!resp.checkedInAt,
+		checkedInAt: resp.checkedInAt ? new Date(resp.checkedInAt) : undefined,
+		notes: resp.notes,
+		dietaryRequirements: resp.dietary,
+		isVip: resp.isVip,
+		angbaoAmount: resp.angbaoAmt ?? undefined,
+		giftItem: resp.giftItem ?? undefined,
+		createdAt: new Date(resp.createdAt)
+	};
+
+	guestList.update((list) => {
+		const idx = list.findIndex((g) => g.id === guest.id);
+		if (idx < 0) return [...list, guest];
+		const newList = [...list];
+		guest.createdAt = list[idx].createdAt;
+		newList[idx] = guest;
+		return newList;
+	});
+	guestMap.update((map) => new Map(map).set(guest.id, guest));
+	recalculateOccupancy();
+
+	const current = get(selectedGuest);
+	if (current?.id === guest.id) selectedGuest.set(guest);
 }
 
 function eventGuestToGuest(d: NonNullable<GuestEvent['guest']>): Guest {
