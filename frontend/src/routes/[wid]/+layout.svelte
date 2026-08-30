@@ -77,6 +77,8 @@
     window.addEventListener('offline', onOffline);
     document.addEventListener('visibilitychange', onVis);
     window.addEventListener('storage', refreshQueued);
+    // same-tab queue updates: storage events only fire in other tabs
+    window.addEventListener('offline-queue-changed', refreshQueued);
     refreshQueued();
 
     // initial sync before seed
