@@ -1,22 +1,20 @@
 <script lang="ts">
-  import { X, ArrowUpDown, Users } from 'lucide-svelte';
+  import { X, ArrowUpDown } from 'lucide-svelte';
   import { getInitials } from '$lib/utils';
   import type { Guest, BanquetTable } from '$lib/types';
 
   let {
     guest,
     tables = [],
-    occupiedSeats = new Set<number>(),
+    guests = [],
     currentTableName = '—',
-    showSeatNumbers = true,
     onSave,
     onClose,
   }: {
     guest: Guest;
     tables?: BanquetTable[];
-    occupiedSeats?: Set<number>;
+    guests?: Guest[];
     currentTableName?: string;
-    showSeatNumbers?: boolean;
     onSave: (tableId: string, seatNum: number) => void;
     onClose: () => void;
   } = $props();
@@ -24,7 +22,18 @@
   let tableId = $state(guest.tableId != null ? String(guest.tableId) : (tables.length ? String(tables[0].id) : ''));
   let seatNum = $state(guest.seatNumber ?? 1);
 
-  const capacity = $derived(tables.find(t => t.id === tableId)?.capacity ?? 10);
+  const capacity = $derived(tables.find(t => String(t.id) === tableId)?.capacity ?? 10);
+
+  // Occupancy of the SELECTED table (the guest being moved isn't seated there yet)
+  const occupiedSeats = $derived.by((): Set<number> => {
+    if (!tableId) return new Set();
+    return new Set(
+      guests
+        .filter(g => String(g.tableId) === tableId && g.id !== guest.id && g.seatNumber != null)
+        .flatMap(g => Array.from({ length: g.pax }, (_, i) => g.seatNumber! + i))
+    );
+  });
+
   const available = $derived.by(() => {
     const free: number[] = [];
     for (let s = 1; s <= capacity; s++) {
@@ -34,12 +43,11 @@
   });
   const freeCount = $derived(available.length);
 
-  // Auto-select the lowest empty seat (respecting the guest's party size)
-  function refreshSeat() {
+  // Auto-select the lowest empty seat that fits the party size
+  $effect(() => {
     if (!tableId) return;
     let best: number | null = null;
     for (const s of available) {
-      // consecutive run of free seats long enough for pax
       let ok = true;
       for (let k = 1; k < guest.pax; k++) {
         if (occupiedSeats.has(s + k) || s + k > capacity) { ok = false; break; }
@@ -47,10 +55,8 @@
       if (ok) { best = s; break; }
     }
     seatNum = best ?? (capacity > 0 ? capacity + 1 : 1);
-  }
-  $effect(() => { refreshSeat(); });
+  });
 
-  // error state: requested seat or party-size range isn't free
   const rangeOk = $derived.by(() => {
     if (seatNum < 1) return false;
     if (seatNum + guest.pax - 1 > capacity) return false;

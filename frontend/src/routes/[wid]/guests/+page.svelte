@@ -311,20 +311,6 @@
     showMoveModal = true;
   }
 
-  let occupiedSeats = $derived.by((): Set<number> => {
-    if (!moveGuest) return new Set();
-    const tid = moveGuest.tableId != null ? String(moveGuest.tableId) : '';
-    if (!tid) return new Set();
-    return new Set(
-      guests
-        .filter(g => g.tableId === tid && g.id !== moveGuest?.id && g.seatNumber != null)
-        .flatMap(g => {
-          const start = g.seatNumber!;
-          return Array.from({ length: g.pax }, (_, i) => start + i);
-        })
-    );
-  });
-
   async function confirmMoveTable(tableId: string, seatNum: number) {
     if (!moveGuest) return;
     const target = moveTables.find(t => String(t.id) === tableId);
@@ -758,7 +744,7 @@
   <MoveGuestDrawer
     guest={g}
     tables={moveTables}
-    occupiedSeats={occupiedSeats}
+    guests={guests}
     currentTableName={tables.find(t => t.id === g.tableId)?.name ?? '—'}
     onSave={confirmMoveTable}
     onClose={() => { showMoveModal = false; moveGuest = null; }}
