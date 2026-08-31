@@ -526,7 +526,6 @@
     .drawer-body-view { gap: 1rem; }
   }
 
-  /* View mode */
   .guest-hero {
     display: flex;
     align-items: center;

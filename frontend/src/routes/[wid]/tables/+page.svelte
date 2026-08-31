@@ -60,6 +60,8 @@
   let formVip = $state(false);
   let saving = $state(false);
 
+  const drawerOccupied = $derived(editingTable ? getOcc(editingTable.id).occupied : 0);
+
   let prevDrawerOpen = $state(false);
   $effect(() => {
     const isOpen = $isDrawerOpen;
@@ -382,7 +384,9 @@
     bind:name={formName}
     bind:capacity={formCapacity}
     bind:isVip={formVip}
+    occupied={drawerOccupied}
     {saving}
+    startEditing={!editingTable}
     onSave={handleSave}
     onClose={closeDrawer}
   />
