@@ -12,6 +12,7 @@
   import type { BanquetTable } from '$lib/types';
   import Badge from '$lib/components/ui/Badge.svelte';
   import ConfirmDialog from '$lib/components/ui/ConfirmDialog.svelte';
+  import MoveGuestDrawer from '$lib/components/ui/MoveGuestDrawer.svelte';
   import { getInitials } from '$lib/utils';
   import {
     Search, Download, Upload, Plus, ChevronLeft, ChevronRight,
@@ -83,8 +84,6 @@
 
   let showMoveModal = $state(false);
   let moveGuest = $state<Guest | null>(null);
-  let moveTableId = $state('');
-  let moveSeatNum = $state(1);
   let moveTables = $state<BanquetTable[]>([]);
   let moveSaving = $state(false);
 
@@ -309,25 +308,16 @@
       addToast(e.message ?? 'Failed to load tables', 'error');
       return;
     }
-    // pre-select current table if guest has one
-    moveTableId = guest.tableId != null ? String(guest.tableId) : (moveTables.length ? String(moveTables[0].id) : '');
-    moveSeatNum = getNextSeatNum();
     showMoveModal = true;
   }
 
-  function getNextSeatNum(): number {
-    if (!moveTableId) return 1;
-    const occ = guests.filter(g => g.tableId === moveTableId && g.id !== moveGuest?.id);
-    if (!occ.length) return 1;
-    const maxSeat = Math.max(...occ.map(g => g.seatNumber ?? 0));
-    return maxSeat + 1;
-  }
-
   let occupiedSeats = $derived.by((): Set<number> => {
-    if (!moveTableId) return new Set();
+    if (!moveGuest) return new Set();
+    const tid = moveGuest.tableId != null ? String(moveGuest.tableId) : '';
+    if (!tid) return new Set();
     return new Set(
       guests
-        .filter(g => g.tableId === moveTableId && g.id !== moveGuest?.id && g.seatNumber != null)
+        .filter(g => g.tableId === tid && g.id !== moveGuest?.id && g.seatNumber != null)
         .flatMap(g => {
           const start = g.seatNumber!;
           return Array.from({ length: g.pax }, (_, i) => start + i);
@@ -335,29 +325,17 @@
     );
   });
 
-  function isSeatOccupied(seatNum: number): boolean {
-    return occupiedSeats.has(seatNum);
-  }
-
-  function getTableCapacity(): number {
-    if (!moveTableId) return 10;
-    const t = moveTables.find(t => t.id === moveTableId);
-    return t?.capacity ?? 10;
-  }
-
-  async function confirmMoveTable() {
-    if (!moveGuest || !moveTableId) return;
-    if (isSeatOccupied(moveSeatNum)) {
-      addToast(`Seat ${moveSeatNum} is already occupied`, 'error');
-      return;
-    }
-    if (moveSeatNum < 1 || moveSeatNum > getTableCapacity()) {
-      addToast(`Seat must be between 1 and ${getTableCapacity()}`, 'error');
+  async function confirmMoveTable(tableId: string, seatNum: number) {
+    if (!moveGuest) return;
+    const target = moveTables.find(t => String(t.id) === tableId);
+    const cap = target?.capacity ?? 10;
+    if (seatNum < 1 || seatNum + moveGuest.pax - 1 > cap) {
+      addToast(`No room for ${moveGuest.pax} pax starting at seat ${seatNum}`, 'error');
       return;
     }
     moveSaving = true;
     try {
-      await assignSeat(wid, moveGuest.id, moveTableId, moveSeatNum);
+      await assignSeat(wid, moveGuest.id, tableId, seatNum);
       // SSE will update the store automatically.
       addToast(`${moveGuest.name} moved to table`, 'success');
       showMoveModal = false;
@@ -484,10 +462,13 @@
 
   function getNextBulkSeatNum(): number {
     if (!bulkMoveTableId) return 1;
-    const occ = guests.filter(g => g.tableId === bulkMoveTableId && !selectedIds.has(g.id));
-    if (!occ.length) return 1;
-    const maxSeat = Math.max(...occ.map(g => g.seatNumber ?? 0));
-    return maxSeat + 1;
+    const cap = getBulkTableCapacity();
+    const occ = guests.filter(g => g.tableId === bulkMoveTableId && !selectedIds.has(g.id) && g.seatNumber != null)
+      .flatMap(g => Array.from({ length: g.pax }, (_, i) => g.seatNumber! + i));
+    for (let s = 1; s <= cap; s++) {
+      if (!occ.includes(s)) return s;
+    }
+    return cap + 1;
   }
 
   let bulkOccupiedSeats = $derived.by((): Set<number> => {
@@ -516,9 +497,17 @@
       const g = guests.find(g => g.id === id);
       return sum + (g?.pax ?? 1);
     }, 0);
+    // reject unless every pax fits after the starting seat
     if (bulkMoveSeatStart + seatsNeeded - 1 > capacity) {
       addToast(`Not enough seats. Need ${seatsNeeded}, available from seat ${bulkMoveSeatStart}: ${capacity - bulkMoveSeatStart + 1}`, 'error');
       return;
+    }
+    // reject if any seat in the run is occupied
+    for (let s = bulkMoveSeatStart; s < bulkMoveSeatStart + seatsNeeded; s++) {
+      if (bulkOccupiedSeats.has(s)) {
+        addToast(`Seat ${s} is occupied; pick a free starting seat`, 'error');
+        return;
+      }
     }
     bulkMoveSaving = true;
     try {
@@ -763,62 +752,17 @@
   </div>
 {/if}
 
-<!-- Move Table Modal -->
+<!-- Move Table Drawer -->
 {#if showMoveModal && moveGuest}
-  <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
-  <div class="fixed inset-0 z-[700] flex items-center justify-center bg-black/30 backdrop-blur-md" onclick={() => showMoveModal = false}>
-    <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
-    <div class="bg-white/95 backdrop-blur-xl rounded-2xl shadow-2xl w-full max-w-md p-6" onclick={(e) => e.stopPropagation()}>
-      <h3 class="text-lg font-semibold text-gray-900 mb-4">Move Table</h3>
-      <div class="space-y-3 mb-6">
-        <div>
-          <!-- svelte-ignore a11y_label_has_associated_control -->
-          <label class="block text-xs font-medium text-gray-500 mb-1">Guest</label>
-          <div id="move-guest-display" class="px-3 py-2 bg-gray-50 rounded-lg text-sm text-gray-900 font-medium">{moveGuest.name}</div>
-        </div>
-        <div class="grid grid-cols-2 gap-3">
-          <div>
-            <!-- svelte-ignore a11y_label_has_associated_control -->
-            <label class="block text-xs font-medium text-gray-500 mb-1">Current Table</label>
-            <div id="move-current-table" class="px-3 py-2 bg-gray-50 rounded-lg text-sm text-gray-700">{tables.find(t => moveGuest && t.id === moveGuest.tableId)?.name || (moveGuest?.tableId ?? '—')}</div>
-          </div>
-          <div>
-            <!-- svelte-ignore a11y_label_has_associated_control -->
-            <label class="block text-xs font-medium text-gray-500 mb-1">Current Seat</label>
-            <div id="move-current-seat" class="px-3 py-2 bg-gray-50 rounded-lg text-sm text-gray-700">{moveGuest.seatNumber ?? '—'}</div>
-          </div>
-        </div>
-        <div>
-          <label for="move-new-table" class="block text-xs font-medium text-gray-500 mb-1">New Table</label>
-          <select id="move-new-table" bind:value={moveTableId} onchange={() => { moveSeatNum = getNextSeatNum(); }} class="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm bg-white focus:border-gold outline-none">
-            {#each moveTables as t}
-              <option value={String(t.id)}>{t.name}</option>
-            {/each}
-          </select>
-        </div>
-        {#if moveTableId}
-          <div>
-            <label for="move-seat" class="block text-xs font-medium text-gray-500 mb-1">Seat Number (1–{getTableCapacity()})</label>
-            <input id="move-seat" type="number" min="1" max={getTableCapacity()} bind:value={moveSeatNum}
-              class="w-full px-3 py-2 border rounded-lg text-sm bg-white outline-none transition-all {isSeatOccupied(moveSeatNum) ? 'border-red focus:ring-2 focus:ring-red/15' : 'border-gray-200 focus:border-gold focus:ring-2 focus:ring-gold/15'}" />
-            {#if isSeatOccupied(moveSeatNum)}
-              <p class="mt-1 text-xs text-red flex items-center gap-1">⚠ Seat {moveSeatNum} is occupied</p>
-            {/if}
-          </div>
-          <div class="text-xs text-gray-400">
-            Occupied: {occupiedSeats.size}/{getTableCapacity()} seats
-          </div>
-        {/if}
-      </div>
-      <div class="flex justify-end gap-2">
-        <button onclick={() => showMoveModal = false} class="px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 rounded-lg">Cancel</button>
-        <button onclick={confirmMoveTable} disabled={!moveTableId || moveSaving || isSeatOccupied(moveSeatNum) || moveSeatNum < 1 || moveSeatNum > getTableCapacity()}
-          class="px-4 py-2 text-sm font-medium text-white bg-red rounded-lg hover:bg-red-light disabled:opacity-50 transition-colors">
-          {moveSaving ? 'Moving...' : 'Move Guest'}
-        </button>
-      </div>
-    </div>
-  </div>
+  {@const g = moveGuest}
+  <MoveGuestDrawer
+    guest={g}
+    tables={moveTables}
+    occupiedSeats={occupiedSeats}
+    currentTableName={tables.find(t => t.id === g.tableId)?.name ?? '—'}
+    onSave={confirmMoveTable}
+    onClose={() => { showMoveModal = false; moveGuest = null; }}
+  />
 {/if}
 
 {#if showImportModal}
