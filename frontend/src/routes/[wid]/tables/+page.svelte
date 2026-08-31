@@ -4,7 +4,8 @@
   import { goto } from '$app/navigation';
   import { cn } from '$lib/utils';
   import { addToast, isDrawerOpen } from '$lib/stores';
-  import { Star, Users, Plus, MoreVertical, Pencil, Trash2, X, AlertCircle, Map } from 'lucide-svelte';
+  import TableDrawer from '$lib/components/ui/TableDrawer.svelte';
+  import { Star, Users, Plus, MoreVertical, Pencil, Trash2, AlertCircle, Map } from 'lucide-svelte';
   import { listTables, createTable, updateTable, deleteTable, getOccupancy } from '$lib/api/tables';
   import { getLayout, saveLayout } from '$lib/api/layout';
   import { defaultSlot } from '$lib/utils/layout';
@@ -18,6 +19,7 @@
   const RING_R = 24;
   const RING_CIRCUM = 2 * Math.PI * RING_R;
 
+  // ponytail: computed unused; kept only as the delete-guard sentinel for the old modal
   let tables = $state<BanquetTable[]>([]);
   let elements = $state<HallElement[]>([]);
   let hallWidth = $state(860);
@@ -50,13 +52,15 @@
   const menuWidth = 180;
   const menuHeight = 120;
 
-  // Modal state
-  let showModal = $state(false);
+  // Drawer state
+  let showDrawer = $state(false);
   let editingTable = $state<BanquetTable | null>(null);
   let formName = $state('');
   let formCapacity = $state(10);
   let formVip = $state(false);
   let saving = $state(false);
+
+  const drawerOccupied = $derived(editingTable ? getOcc(editingTable.id).occupied : 0);
 
   let prevDrawerOpen = $state(false);
   $effect(() => {
@@ -89,7 +93,8 @@
     occupancy = occMap;
   }
 
-  let previewTable = $derived.by(() => {
+  // ponytail: previously the modal's live preview; no longer rendered
+  let _previewTable = $derived.by(() => {
     const pos = defaultSlot(tables);
     return {
       id: '',
@@ -101,6 +106,8 @@
       isVip: formVip,
     };
   });
+
+  void _previewTable;
 
   const wid = get(weddingId);
 
@@ -115,7 +122,7 @@
     formName = '';
     formCapacity = 10;
     formVip = false;
-    showModal = true;
+    showDrawer = true;
   }
 
   function openEdit(table: BanquetTable) {
@@ -123,12 +130,12 @@
     formName = table.name;
     formCapacity = table.capacity;
     formVip = table.isVip;
-    showModal = true;
+    showDrawer = true;
     contextMenu = null;
   }
 
-  function closeModal() {
-    showModal = false;
+  function closeDrawer() {
+    showDrawer = false;
     editingTable = null;
   }
 
@@ -153,7 +160,7 @@
         tables = [...tables, created];
         addToast('Table created', 'success');
       }
-      closeModal();
+      closeDrawer();
     } catch (e: any) {
       addToast(e.message ?? 'Save failed', 'error');
     } finally {
@@ -370,62 +377,17 @@
   </div>
 {/if}
 
-<!-- Add/Edit Modal -->
-{#if showModal}
-  <div class="fixed inset-0 z-50 flex items-center justify-center p-4">
-    <div class="absolute inset-0 bg-black/30 backdrop-blur-md" onclick={closeModal} role="presentation"></div>
-    <div class="relative bg-white/95 backdrop-blur-xl rounded-2xl shadow-2xl w-full max-w-md max-h-[90vh] overflow-y-auto">
-      <div class="flex items-center justify-between p-5 border-b border-gray-100">
-        <h3 class="font-bold text-gray-900">{editingTable ? 'Edit Table' : 'Add Table'}</h3>
-        <button onclick={closeModal} class="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-gray-100 transition-colors">
-          <X class="w-4 h-4 text-gray-400" />
-        </button>
-      </div>
-
-      <div class="p-5 space-y-4">
-        <div>
-          <label for="table-name" class="text-sm font-semibold text-gray-700 mb-1.5 block">Table Name</label>
-          <input
-            id="table-name"
-            type="text"
-            bind:value={formName}
-            placeholder="e.g. Table 1, VIP A, 圆桌"
-            class="w-full px-4 py-3 border border-black/[0.08] rounded-xl text-sm bg-white/80 focus:border-red focus:ring-2 focus:ring-red/10 outline-none transition-all min-h-[48px]"
-          />
-        </div>
-
-        <div>
-          <label for="table-capacity" class="text-sm font-semibold text-gray-700 mb-1.5 block">Capacity</label>
-          <input
-            id="table-capacity"
-            type="number"
-            min="1"
-            bind:value={formCapacity}
-            class="w-full px-4 py-3 border border-black/[0.08] rounded-xl text-sm bg-white/80 focus:border-red focus:ring-2 focus:ring-red/10 outline-none transition-all min-h-[48px]"
-          />
-        </div>
-
-        <label class="flex items-center gap-2 cursor-pointer p-3 rounded-xl hover:bg-gray-50 transition-colors">
-          <input type="checkbox" bind:checked={formVip} class="rounded" />
-          <span class="text-sm font-semibold text-gray-700">VIP Table</span>
-        </label>
-      </div>
-
-      <div class="flex gap-3 p-5 pt-0 sticky bottom-0 bg-white/95 backdrop-blur-xl">
-        <button
-          onclick={handleSave}
-          disabled={saving}
-          class="flex-1 py-2.5 bg-red text-white rounded-xl text-sm font-semibold hover:bg-red-light transition-colors disabled:opacity-50"
-        >
-          {saving ? 'Saving...' : editingTable ? 'Save Changes' : 'Create Table'}
-        </button>
-        <button
-          onclick={closeModal}
-          class="px-5 py-2.5 border border-black/[0.06] bg-white/90 rounded-xl text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors"
-        >
-          Cancel
-        </button>
-      </div>
-    </div>
-  </div>
+<!-- Add/Edit Drawer -->
+{#if showDrawer}
+  <TableDrawer
+    title={editingTable ? 'Edit Table' : 'Add Table'}
+    bind:name={formName}
+    bind:capacity={formCapacity}
+    bind:isVip={formVip}
+    occupied={drawerOccupied}
+    {saving}
+    startEditing={!editingTable}
+    onSave={handleSave}
+    onClose={closeDrawer}
+  />
 {/if}
