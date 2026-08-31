@@ -33,6 +33,8 @@
   let menuHeight = 200;
   let showUnassignConfirm = $state(false);
   let unassignTarget = $state<Guest | null>(null);
+  let showDeleteConfirm = $state(false);
+  let deleteTarget = $state<Guest | null>(null);
   let loading = $state(true);
   let errored = $state(false);
   let error = $state<string | null>(null);
@@ -270,6 +272,19 @@
       addToast(e.message ?? 'Delete failed', 'error');
     }
     contextMenu = null;
+  }
+
+  function requestDelete(guest: Guest) {
+    contextMenu = null;
+    deleteTarget = guest;
+    showDeleteConfirm = true;
+  }
+
+  async function confirmDelete() {
+    if (!deleteTarget) return;
+    showDeleteConfirm = false;
+    await deleteGuest(deleteTarget);
+    deleteTarget = null;
   }
 
   async function unassignGuest(guest: Guest) {
@@ -732,7 +747,7 @@
       </button>
     {/if}
     <hr class="my-1 border-gray-100" />
-    <button class="w-full flex items-center gap-2.5 px-4 py-2 text-sm text-red hover:bg-red-50" onclick={() => deleteGuest(contextMenu!.guest)}>
+    <button class="w-full flex items-center gap-2.5 px-4 py-2 text-sm text-red hover:bg-red-50" onclick={() => requestDelete(contextMenu!.guest)}>
       <Trash2 class="w-4 h-4" /> Delete
     </button>
   </div>
@@ -849,4 +864,15 @@
   variant="warning"
   onConfirm={confirmUnassign}
   onCancel={() => { showUnassignConfirm = false; unassignTarget = null; }}
+/>
+
+<ConfirmDialog
+  open={showDeleteConfirm}
+  title="Delete Guest"
+  message={`Delete ${deleteTarget?.name ?? 'this guest'}? This cannot be undone.`}
+  confirmLabel="Delete"
+  cancelLabel="Cancel"
+  variant="danger"
+  onConfirm={confirmDelete}
+  onCancel={() => { showDeleteConfirm = false; deleteTarget = null; }}
 />
