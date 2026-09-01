@@ -4,12 +4,14 @@
 package tracing
 
 import (
+	"bytes"
 	"context"
+	"io"
 	"log"
 	"net/http"
 	"os"
+	"strings"
 
-	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
@@ -63,20 +65,84 @@ func Setup(version string) (func(context.Context) error, bool) {
 	return tp.Shutdown, true
 }
 
-// Middleware wraps next with an otelhttp span-per-request handler. Span name
-// uses the ServeMux route pattern when known (e.g. "GET /api/weddings/{wid}/guests"),
-// falling back to "METHOD path".
+// maxBodyLog caps captured request/response bodies; larger payloads record a
+// truncation marker instead.
+const maxBodyLog = 8 * 1024
+
+// Middleware creates a span per request. Span name is the ServeMux route
+// pattern (e.g. "GET /api/weddings/{wid}/guests"), set at request end when
+// the mux has populated r.Pattern; fallback "METHOD path". With
+// OTEL_LOG_BODY=all, JSON request/response bodies are recorded on the span
+// (capped at 8KB). SSE endpoints are never body-captured.
 func Middleware(next http.Handler) http.Handler {
-	return otelhttp.NewHandler(next, "weddingdb",
-		otelhttp.WithSpanNameFormatter(spanName),
-	)
+	logBody := os.Getenv("OTEL_LOG_BODY") == "all"
+	tracer := otel.Tracer(tracerName)
+	prop := otel.GetTextMapPropagator()
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		ctx := prop.Extract(r.Context(), propagation.HeaderCarrier(r.Header))
+		ctx, span := tracer.Start(ctx, r.Method+" "+r.URL.Path)
+		defer span.End()
+
+		reqAttrs := []attribute.KeyValue{
+			attribute.String("http.request.path", r.URL.Path),
+		}
+		if logBody && !strings.Contains(r.URL.Path, "/events") && isJSONContentType(r.Header.Get("Content-Type")) {
+			body, _ := io.ReadAll(io.LimitReader(r.Body, maxBodyLog+1))
+			r.Body = io.NopCloser(bytes.NewReader(body))
+			reqAttrs = append(reqAttrs, bodyAttr("http.request.body", body))
+		}
+
+		rec := &recorder{ResponseWriter: w}
+		next.ServeHTTP(rec, r.WithContext(ctx))
+
+		if r.Pattern != "" {
+			span.SetName(r.Pattern)
+			reqAttrs = append(reqAttrs, attribute.String("http.route", r.Pattern))
+		}
+		span.SetAttributes(reqAttrs...)
+		span.SetAttributes(attribute.Int("http.response.status_code", rec.status))
+		if logBody && rec.buf.Len() > 0 && isJSONContentType(rec.Header().Get("Content-Type")) {
+			span.SetAttributes(bodyAttr("http.response.body", rec.buf.Bytes()))
+		}
+		if rec.status >= 500 {
+			span.SetStatus(codes.Error, http.StatusText(rec.status))
+		}
+	})
 }
 
-func spanName(_ string, r *http.Request) string {
-	if r.Pattern != "" {
-		return r.Pattern
+func bodyAttr(key string, body []byte) attribute.KeyValue {
+	if len(body) > maxBodyLog {
+		return attribute.String(key, string(body[:maxBodyLog])+"...[truncated]")
 	}
-	return r.Method + " " + r.URL.Path
+	return attribute.String(key, string(body))
+}
+
+func isJSONContentType(ct string) bool {
+	return strings.Contains(ct, "json")
+}
+
+// recorder captures the response status and written bytes for the span.
+type recorder struct {
+	http.ResponseWriter
+	status int
+	buf    bytes.Buffer
+}
+
+func (r *recorder) WriteHeader(code int) {
+	if r.status == 0 {
+		r.status = code
+	}
+	r.ResponseWriter.WriteHeader(code)
+}
+
+func (r *recorder) Write(b []byte) (int, error) {
+	if r.status == 0 {
+		r.status = http.StatusOK
+	}
+	if r.buf.Len() < maxBodyLog {
+		r.buf.Write(b)
+	}
+	return r.ResponseWriter.Write(b)
 }
 
 // GormPlugin creates a "gorm.query" span per DB query. Statement text is only
@@ -116,9 +182,6 @@ func (p *GormPlugin) before(db *gorm.DB) {
 	attrs := []attribute.KeyValue{
 		semconv.DBSystemNamePostgreSQL,
 	}
-	if p.logSQL {
-		attrs = append(attrs, semconv.DBQueryText(db.Statement.SQL.String()))
-	}
 	ctx, span := p.tracer.Start(db.Statement.Context, "gorm.query", trace.WithAttributes(attrs...))
 	db.Statement.Context = ctx
 	db.InstanceSet("tracing:span", span)
@@ -135,6 +198,9 @@ func (p *GormPlugin) after(db *gorm.DB) {
 	}
 	defer span.End()
 	span.SetAttributes(semconv.DBResponseReturnedRows(int(db.Statement.RowsAffected)))
+	if p.logSQL && db.Statement.SQL.Len() > 0 {
+		span.SetAttributes(semconv.DBQueryText(db.Statement.SQL.String()))
+	}
 	if err := db.Statement.Error; err != nil {
 		span.SetStatus(codes.Error, err.Error())
 		span.RecordError(err)

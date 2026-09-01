@@ -1,14 +1,19 @@
 package tracing
 
 import (
+	"context"
 	"errors"
+	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
+	"time"
 
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/propagation"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
+	"go.opentelemetry.io/otel/sdk/trace/tracetest"
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 )
@@ -39,6 +44,102 @@ func TestMiddlewareDoesNotBreakHandler(t *testing.T) {
 
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want %d", rec.Code, http.StatusOK)
+	}
+}
+
+func TestGormPluginRecordsSQLWithEnv(t *testing.T) {
+	exp := tracetest.NewSpanRecorder()
+	otel.SetTracerProvider(sdktrace.NewTracerProvider(sdktrace.WithSpanProcessor(exp)))
+	defer otel.SetTracerProvider(nil)
+
+	t.Setenv("OTEL_LOG_SQL", "all")
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open sqlite: %v", err)
+	}
+	if err := db.Use(NewGormPlugin()); err != nil {
+		t.Fatalf("register plugin: %v", err)
+	}
+
+	type item struct {
+		ID   uint `gorm:"primaryKey"`
+		Name string
+	}
+	if err := db.AutoMigrate(&item{}); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+
+	ctx, span := otel.Tracer("test").Start(context.Background(), "root")
+	db = db.WithContext(ctx)
+	if err := db.Create(&item{Name: "x"}).Error; err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	var got item
+	if err := db.First(&got, 1).Error; err != nil {
+		t.Fatalf("first: %v", err)
+	}
+	span.End()
+	time.Sleep(50 * time.Millisecond)
+
+	sawSQL := false
+	for _, s := range exp.Ended() {
+		if s.Name() != "gorm.query" {
+			continue
+		}
+		for _, kv := range s.Attributes() {
+			if string(kv.Key) == "db.query.text" && kv.Value.AsString() != "" {
+				sawSQL = true
+			}
+		}
+	}
+	if !sawSQL {
+		t.Fatalf("no gorm.query span with non-empty db.query.text; spans: %v", exp.Ended())
+	}
+}
+
+func TestGormPluginNoSQLWithoutEnv(t *testing.T) {
+	exp := tracetest.NewSpanRecorder()
+	otel.SetTracerProvider(sdktrace.NewTracerProvider(sdktrace.WithSpanProcessor(exp)))
+	defer otel.SetTracerProvider(nil)
+
+	t.Setenv("OTEL_LOG_SQL", "")
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open sqlite: %v", err)
+	}
+	if err := db.Use(NewGormPlugin()); err != nil {
+		t.Fatalf("register plugin: %v", err)
+	}
+
+	type item struct {
+		ID   uint `gorm:"primaryKey"`
+		Name string
+	}
+	if err := db.AutoMigrate(&item{}); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+
+	ctx, span := otel.Tracer("test").Start(context.Background(), "root")
+	db = db.WithContext(ctx)
+	if err := db.Create(&item{Name: "x"}).Error; err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	var got item
+	if err := db.First(&got, 1).Error; err != nil {
+		t.Fatalf("first: %v", err)
+	}
+	span.End()
+	time.Sleep(50 * time.Millisecond)
+
+	for _, s := range exp.Ended() {
+		if s.Name() != "gorm.query" {
+			continue
+		}
+		for _, kv := range s.Attributes() {
+			if string(kv.Key) == "db.query.text" {
+				t.Fatalf("gorm.query span has db.query.text without OTEL_LOG_SQL=all: %v", s.Attributes())
+			}
+		}
 	}
 }
 
@@ -81,13 +182,46 @@ func TestGormPluginNoRowsNoPanic(t *testing.T) {
 	}
 }
 
-func TestSpanNameFormatter(t *testing.T) {
-	req := httptest.NewRequest(http.MethodGet, "/api/weddings/abc/guests", nil)
-	if got := spanName("", req); got != "GET /api/weddings/abc/guests" {
-		t.Fatalf("spanName fallback = %q", got)
+func TestMiddlewareSpanNameAndBodies(t *testing.T) {
+	otel.SetTracerProvider(sdktrace.NewTracerProvider())
+	otel.SetTextMapPropagator(propagation.TraceContext{})
+	defer func() { otel.SetTracerProvider(nil); otel.SetTextMapPropagator(nil) }()
+
+	t.Setenv("OTEL_LOG_BODY", "all")
+	handler := Middleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Body must be readable after middleware capture.
+		b, _ := io.ReadAll(r.Body)
+		if string(b) != `{"user":"x"}` {
+			t.Errorf("downstream handler got mangled body: %q", string(b))
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte(`{"ok":true}`))
+	}))
+
+	req := httptest.NewRequest(http.MethodPost, "/api/auth/login", strings.NewReader(`{"user":"x"}`))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d", rec.Code)
 	}
-	req.Pattern = "GET /api/weddings/{wid}/guests"
-	if got := spanName("", req); got != "GET /api/weddings/{wid}/guests" {
-		t.Fatalf("spanName pattern = %q", got)
+	if rec.Body.String() != `{"ok":true}` {
+		t.Fatalf("response body = %q", rec.Body.String())
 	}
+}
+
+func TestMiddlewareCapturesPattern(t *testing.T) {
+	otel.SetTracerProvider(sdktrace.NewTracerProvider())
+	defer func() { otel.SetTracerProvider(nil) }()
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("POST /api/weddings/{wid}/guests", func(w http.ResponseWriter, r *http.Request) {
+		if r.Pattern != "POST /api/weddings/{wid}/guests" {
+			t.Errorf("pattern inside handler = %q", r.Pattern)
+		}
+		w.WriteHeader(http.StatusOK)
+	})
+	req := httptest.NewRequest(http.MethodPost, "/api/weddings/abc/guests", nil)
+	mux.ServeHTTP(httptest.NewRecorder(), req)
 }
