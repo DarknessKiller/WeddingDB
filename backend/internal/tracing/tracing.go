@@ -104,8 +104,9 @@ func Middleware(next http.Handler) http.Handler {
 		if logBody && rec.buf.Len() > 0 && isJSONContentType(rec.Header().Get("Content-Type")) {
 			span.SetAttributes(bodyAttr("http.response.body", rec.buf.Bytes()))
 		}
-		if rec.status >= 500 {
+		if rec.status >= 400 {
 			span.SetStatus(codes.Error, http.StatusText(rec.status))
+			span.SetAttributes(attribute.Bool("http.error", true))
 		}
 	})
 }
