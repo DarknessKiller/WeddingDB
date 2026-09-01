@@ -157,7 +157,7 @@ docker compose --profile tracing up -d jaeger
 docker compose up -d app
 ```
 
-Jaeger UI at `http://localhost:16686`. Request spans record route pattern, status code, and optionally bodies as span events; every DB query gets a `gorm.query` span with rows returned and, with `OTEL_LOG_SQL=all`, the SQL text as an event. Passwords in captured bodies are masked as `***`.
+Jaeger UI at `http://localhost:16686`. Request spans record route pattern, status code, and optionally bodies as span events; every DB query gets a `gorm.query` span with rows returned and, with `OTEL_LOG_SQL=all`, the SQL text as an event. Passwords in captured bodies are masked as `***`. Traces persist across Jaeger restarts via the Badger storage backend (`weddingdb_jaeger_badger` volume).
 
 ---
 
