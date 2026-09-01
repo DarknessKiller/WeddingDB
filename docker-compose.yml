@@ -10,6 +10,9 @@ services:
       JWT_SECRET: "${JWT_SECRET:-change-me-in-production}"
       ADMIN_BOOTSTRAP_PASSWORD: "${ADMIN_BOOTSTRAP_PASSWORD:-}"
       STATIC_DIR: "./static"
+      # Opt-in tracing: uncomment + run `docker compose --profile tracing up` to enable.
+      # OTEL_ENABLED: "true"
+      # OTEL_EXPORTER_OTLP_ENDPOINT: "http://jaeger:4318/v1/traces"
       TZ: Asia/Kuala_Lumpur
     volumes:
       - uploads:/app/uploads
@@ -42,6 +45,15 @@ services:
       memlock: -1
     ports:
       - "6379:6379"
+
+  jaeger:
+    image: jaegertracing/all-in-one:latest
+    profiles: ["tracing"]
+    environment:
+      SPAN_STORAGE_TYPE: memory
+    ports:
+      - "16686:16686"
+      - "127.0.0.1:4318:4318"
 
 volumes:
   pgdata:
