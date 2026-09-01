@@ -191,6 +191,17 @@
     height: 1.25rem;
     background: #A11217;
     border-radius: 0 3px 3px 0;
+    /* Indicator grows in on route change: state indication, not decoration */
+    animation: indicatorIn 200ms cubic-bezier(0.2, 0.8, 0.2, 1);
+  }
+
+  @keyframes indicatorIn {
+    from { transform: translateY(-50%) scaleY(0); opacity: 0; }
+    to { transform: translateY(-50%) scaleY(1); opacity: 1; }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .nav-active-indicator { animation: none; }
   }
 
   .nav-icon {

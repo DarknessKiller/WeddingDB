@@ -9,6 +9,14 @@
   import { weddingId } from '$lib/stores/weddingId';
   import { updateGuest, createGuest, checkInGuest, checkOutGuest, unassignSeat, getGuest, ConflictError } from '$lib/api/guests';
   import { get } from 'svelte/store';
+  import { fade } from 'svelte/transition';
+  import { slideOut as drawerSlideOut } from '$lib/utils/motion';
+
+  // Exit: WAAPI slide continuing from the panel's current (possibly mid-drag) transform.
+  function outfade(node: HTMLElement) {
+    return { duration: drawerSlideOut(node, { dir: 'y', duration: 300 }) };
+  }
+
   let { guest, tables = [], onClose, startEditing = false, createMode = false, readonly = false, showSeatNumbers = true }: { guest?: Guest; tables?: BanquetTable[]; onClose: () => void; startEditing?: boolean; createMode?: boolean; readonly?: boolean; showSeatNumbers?: boolean } = $props();
 
   let tableName = $derived(guest ? (tables.find(t => t.id === guest.tableId)?.name ?? guest.tableId ?? '—') : '—');
@@ -277,12 +285,13 @@
 <!-- svelte-ignore a11y_no_static_element_interactions -->
 <svelte:window onkeydown={(e) => { if (e.key === 'Escape') onClose(); }} />
 <div class="drawer-overlay" onclick={onClose} role="presentation">
-  <div class="drawer-backdrop" style="opacity: {dragging ? Math.max(0, 1 - dragY / 400) : 1}" aria-hidden="true"></div>
+  <div class="drawer-backdrop" style="opacity: {dragging ? Math.max(0, 1 - dragY / 400) : 1}" aria-hidden="true" transition:fade={{ duration: 250 }}></div>
   <!-- svelte-ignore a11y_no_static_element_interactions -->
   <div class="drawer-panel" role="dialog" aria-modal="true" aria-labelledby="drawer-title" onclick={(e) => e.stopPropagation()}
     ontouchstart={onTouchStart}
     ontouchmove={onTouchMove}
     ontouchend={onTouchEnd}
+    out={outfade}
     style="transform: translateY({dragY}px); transition: {dragging ? 'none' : 'transform 300ms cubic-bezier(0.2, 0.8, 0.2, 1)'}"
   >
     <div class="drawer-pill flex sm:hidden" onclick={onClose} role="presentation">
@@ -732,7 +741,7 @@
     border: 1.5px solid rgba(0, 0, 0, 0.08);
     color: #4b5563;
     background: white;
-    transition: all 150ms ease, transform 100ms ease;
+    transition: border-color 150ms ease, color 150ms ease, background 150ms ease, transform 100ms ease;
   }
 
   .dietary-chip:active { transform: scale(0.95); }

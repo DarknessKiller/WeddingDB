@@ -6,6 +6,7 @@
   import { formatSeatRange } from '$lib/utils/seat';
   import { Maximize, Minimize, Monitor, Search, ArrowLeft, MapPin, Users, Star } from 'lucide-svelte';
   import { onMount, onDestroy } from 'svelte';
+  import { fade, fly } from 'svelte/transition';
   import { page } from '$app/state';
   import { setWeddingId } from '$lib/stores/weddingId';
   import type { Guest, BanquetTable, HallElement } from '$lib/types';
@@ -331,6 +332,8 @@
     <!-- Map View -->
     <div
       class="map-view"
+      in:fly={{ x: 40, duration: 250, delay: 100, easing: (t) => 1 - Math.pow(1 - t, 3) }}
+      out:fade={{ duration: 150 }}
       onpointerdown={onMapPointerDown}
       onpointerup={onMapPointerUp}
     >
@@ -388,7 +391,7 @@
             </div>
 
             {#if !sheetCollapsed}
-              <div class="seat-display">
+              <div class="seat-display" in:fly={{ y: 12, duration: 200 }}>
                 <div class="seat-block">
                   <div class="seat-label">Table</div>
                   <div class="seat-value seat-value-large">{selectedTableName}</div>
@@ -428,7 +431,7 @@
 
   {:else}
     <!-- Search View -->
-    <div class="search-view">
+    <div class="search-view" in:fade={{ duration: 250 }}>
       {#if kioskBackgroundUrl}
         <div class="search-bg" style={`background-image: url(${kioskBackgroundUrl}); background-size: ${kioskBackgroundSize}; background-position: ${kioskBackgroundPosX} ${kioskBackgroundPosY};`}></div>
         <div class="search-bg-overlay"></div>
