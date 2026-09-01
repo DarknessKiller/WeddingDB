@@ -223,6 +223,18 @@
   }
   .offline-banner {
     background: #A11217; color: white; text-align: center; padding: 0.35rem; font-size: 0.85rem; z-index: 40;
+    /* State indication: banner slides down instead of teleporting in */
+    transform: translateY(0);
+    animation: bannerIn 200ms cubic-bezier(0.2, 0.8, 0.2, 1);
+  }
+
+  @keyframes bannerIn {
+    from { transform: translateY(-100%); }
+    to { transform: translateY(0); }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .offline-banner { animation: none; }
   }
   .offline-banner.queued { background: #7a2b00; }
   .offline-banner button { margin-left: 0.5rem; background: white; color: #A11217; border: 0; border-radius: 999px; padding: 0.15rem 0.6rem; font-weight: 600; cursor: pointer; }

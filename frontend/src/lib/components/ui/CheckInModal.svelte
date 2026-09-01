@@ -1,5 +1,11 @@
 <script lang="ts">
   import { X, Banknote, Gift, UserCheck, Loader2 } from 'lucide-svelte';
+  import { fade } from 'svelte/transition';
+  import { slideOut as sheetSlideOut } from '$lib/utils/motion';
+
+  function outfade(node: HTMLElement) {
+    return { duration: sheetSlideOut(node, { dir: 'y', duration: 300 }) };
+  }
 
   let {
     guestName,
@@ -43,10 +49,11 @@
 </script>
 
 <div class="fixed inset-0 z-[60] flex items-end sm:items-center justify-center p-0 sm:p-4" role="dialog" aria-modal="true" aria-labelledby="check-in-title">
-  <div class="absolute inset-0 bg-black/30 backdrop-blur-md" onclick={onClose} role="presentation"></div>
+  <div class="absolute inset-0 bg-black/30 backdrop-blur-md" onclick={onClose} role="presentation" transition:fade={{ duration: 250 }}></div>
   <!-- svelte-ignore a11y_no_static_element_interactions -->
   <div
     class="relative bg-white/95 backdrop-blur-xl rounded-t-2xl sm:rounded-2xl shadow-2xl w-full sm:max-w-md overflow-hidden pb-[env(safe-area-inset-bottom)] sm:pb-0"
+    out={outfade}
     style="transform: translateY({dragY}px); transition: {dragging ? 'none' : 'transform 300ms cubic-bezier(0.2, 0.8, 0.2, 1)'}"
     ontouchstart={onTouchStart}
     ontouchmove={onTouchMove}

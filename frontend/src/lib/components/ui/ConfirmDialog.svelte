@@ -1,6 +1,7 @@
 <script lang="ts">
   import { X, AlertTriangle } from 'lucide-svelte';
   import { onMount } from 'svelte';
+  import { fade } from 'svelte/transition';
 
   let {
     open = false,
@@ -56,13 +57,13 @@
     aria-labelledby="confirm-title"
   >
     <!-- Backdrop -->
-    <div class="absolute inset-0 bg-black/30 backdrop-blur-md"></div>
+    <div class="absolute inset-0 bg-black/30 backdrop-blur-md" transition:fade={{ duration: 200 }}></div>
 
     <!-- Dialog -->
     <!-- svelte-ignore a11y_no_static_element_interactions -->
     <div
       bind:this={dialogEl}
-      class="relative bg-white/95 backdrop-blur-xl rounded-2xl shadow-2xl w-full max-w-sm overflow-hidden"
+      class="relative bg-white/95 backdrop-blur-xl rounded-2xl shadow-2xl w-full max-w-sm overflow-hidden dialog-motion"
       onclick={(e) => e.stopPropagation()}
     >
       <!-- Icon + Content -->
@@ -111,3 +112,26 @@
     </div>
   </div>
 {/if}
+
+<style>
+  /* Modal: exempt from origin rules, stays centered. Entry via @starting-style,
+     exit is instant (confirmation dialogs close on decision — no lingering motion). */
+  .dialog-motion {
+    transition:
+      opacity 200ms cubic-bezier(0.2, 0.8, 0.2, 1),
+      transform 200ms cubic-bezier(0.2, 0.8, 0.2, 1);
+  }
+
+  @starting-style {
+    .dialog-motion {
+      opacity: 0;
+      transform: scale(0.96);
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .dialog-motion {
+      transform: none;
+    }
+  }
+</style>

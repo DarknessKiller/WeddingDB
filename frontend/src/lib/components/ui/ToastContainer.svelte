@@ -1,11 +1,12 @@
 <script lang="ts">
   import { toasts } from '$lib/stores';
   import { CheckCircle, XCircle, Info } from 'lucide-svelte';
+  import { toastOut } from '$lib/utils/motion';
 </script>
 
 <div class="toast-container" aria-live="polite" role="status">
   {#each $toasts as toast (toast.id)}
-    <div class="toast-item toast-{toast.type}">
+    <div class="toast-item toast-{toast.type}" out:toastOut>
       {#if toast.type === 'success'}
         <CheckCircle class="toast-icon toast-icon-success" />
       {:else if toast.type === 'error'}
@@ -41,7 +42,20 @@
     align-items: center;
     gap: 0.75rem;
     min-width: 18rem;
-    animation: toastIn 350ms cubic-bezier(0.2, 0.8, 0.2, 1);
+    /* Transition (not keyframes): rapid successive toasts retarget instead of restarting.
+       Entry via @starting-style; exit handled by the WAAPI out:toastOut. */
+    transition:
+      opacity 350ms cubic-bezier(0.2, 0.8, 0.2, 1),
+      transform 350ms cubic-bezier(0.2, 0.8, 0.2, 1);
+    opacity: 1;
+    transform: translateX(0) scale(1);
+  }
+
+  @starting-style {
+    .toast-item {
+      opacity: 0;
+      transform: translateX(1rem) scale(0.95);
+    }
   }
 
   .toast-success { border-left: 3px solid #059669; }
@@ -62,10 +76,5 @@
     font-size: 0.875rem;
     font-weight: 500;
     color: #374151;
-  }
-
-  @keyframes toastIn {
-    from { opacity: 0; transform: translateX(1rem) scale(0.95); }
-    to { opacity: 1; transform: translateX(0) scale(1); }
   }
 </style>

@@ -13,6 +13,7 @@
   import relativeTime from 'dayjs/plugin/relativeTime';
   import { onMount } from 'svelte';
   import type { DashboardStats, TableOccupancy, ActivityItem } from '$lib/types';
+  import NumberTicker from '$lib/components/ui/NumberTicker.svelte';
 
   dayjs.extend(relativeTime);
 
@@ -127,13 +128,13 @@
         { label: 'Total Guests', value: stats.totalPax, icon: Users, color: 'bg-blue-50 text-blue-600' },
         { label: 'Check-in Rate', value: `${stats.checkInRate}%`, icon: TrendingUp, color: 'bg-emerald-50 text-emerald-600' }
       ] as card}
-        <div class="bg-white/90 backdrop-blur-xl border border-black/[0.06] rounded-2xl p-3 sm:p-5 flex items-start gap-3 sm:gap-4 hover:shadow-md transition-all duration-300" style="transition-timing-function: cubic-bezier(0.2, 0.8, 0.2, 1);">
+        <div class="bg-white/90 backdrop-blur-xl border border-black/[0.06] rounded-2xl p-3 sm:p-5 flex items-start gap-3 sm:gap-4 hover:shadow-md transition-[box-shadow] duration-300" style="transition-timing-function: cubic-bezier(0.2, 0.8, 0.2, 1);">
           <div class="w-10 h-10 sm:w-12 sm:h-12 rounded-xl {card.color} flex items-center justify-center flex-shrink-0">
             <card.icon class="w-5 h-5 sm:w-6 sm:h-6" />
           </div>
           <div class="flex-1 min-w-0">
             <div class="text-[13px] text-gray-500 font-medium">{card.label}</div>
-            <div class="text-[28px] font-extrabold text-gray-900 leading-tight" style="letter-spacing: -0.02em;">{card.value}</div>
+            <div class="text-[28px] font-extrabold text-gray-900 leading-tight tabular-nums" style="letter-spacing: -0.02em;"><NumberTicker value={card.value} /></div>
           </div>
         </div>
       {/each}
