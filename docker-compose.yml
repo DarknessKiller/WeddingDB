@@ -56,7 +56,7 @@ services:
     environment:
       # Badger file storage so traces survive restarts (memory backend wipes them).
       SPAN_STORAGE_TYPE: badger
-      BADGER_EPHEMERAL: "false"
+      BADGER_EPHEMERAL: false
       BADGER_DIRECTORY_VALUE: /badger/data
       BADGER_DIRECTORY_SPAN: /badger/state
     ports:
