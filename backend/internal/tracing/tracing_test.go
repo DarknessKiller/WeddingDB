@@ -86,9 +86,11 @@ func TestGormPluginRecordsSQLWithEnv(t *testing.T) {
 		if s.Name() != "gorm.query" {
 			continue
 		}
-		for _, kv := range s.Attributes() {
-			if string(kv.Key) == "db.query.text" && kv.Value.AsString() != "" {
-				sawSQL = true
+		for _, e := range s.Events() {
+			for _, kv := range e.Attributes {
+				if string(kv.Key) == "db.query.text" && kv.Value.AsString() != "" {
+					sawSQL = true
+				}
 			}
 		}
 	}
@@ -135,9 +137,11 @@ func TestGormPluginNoSQLWithoutEnv(t *testing.T) {
 		if s.Name() != "gorm.query" {
 			continue
 		}
-		for _, kv := range s.Attributes() {
-			if string(kv.Key) == "db.query.text" {
-				t.Fatalf("gorm.query span has db.query.text without OTEL_LOG_SQL=all: %v", s.Attributes())
+		for _, e := range s.Events() {
+			for _, kv := range e.Attributes {
+				if string(kv.Key) == "db.query.text" {
+					t.Fatalf("gorm.query span has db.query.text without OTEL_LOG_SQL=all: %v", e.Attributes)
+				}
 			}
 		}
 	}
@@ -208,6 +212,31 @@ func TestMiddlewareSpanNameAndBodies(t *testing.T) {
 	}
 	if rec.Body.String() != `{"ok":true}` {
 		t.Fatalf("response body = %q", rec.Body.String())
+	}
+}
+
+func TestBodyAttrMasksPassword(t *testing.T) {
+	in := []byte(`{"email":"x@y.z","password":"hunter2"}`)
+	got := maskPassword(in)
+	if strings.Contains(got, "hunter2") {
+		t.Fatalf("password leaked into span body: %s", got)
+	}
+	if !strings.Contains(got, `"password":"***"`) {
+		t.Fatalf("password not masked: %s", got)
+	}
+	if !strings.Contains(got, "x@y.z") {
+		t.Fatalf("other fields lost: %s", got)
+	}
+
+	// Case-insensitive key, nested bodies, non-JSON: pass-through untouched.
+	if got := maskPassword([]byte(`{"PASSWORD":"p"}`)); strings.Contains(got, "p") {
+		t.Fatalf("PASSWORD not masked: %s", got)
+	}
+	if got := maskPassword([]byte(`not json`)); got != "not json" {
+		t.Fatalf("non-JSON body mangled: %s", got)
+	}
+	if got := maskPassword([]byte(`{"name":"x"}`)); got != `{"name":"x"}` {
+		t.Fatalf("JSON without password mangled: %s", got)
 	}
 }
 

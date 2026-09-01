@@ -6,6 +6,7 @@ package tracing
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"io"
 	"log"
 	"net/http"
@@ -69,6 +70,18 @@ func Setup(version string) (func(context.Context) error, bool) {
 // truncation marker instead.
 const maxBodyLog = 8 * 1024
 
+// addBodyEvent records a request/response body as a span event (shows in
+// Jaeger's span detail logs, not as a tag).
+func addBodyEvent(span trace.Span, name string, body []byte) {
+	if len(body) > maxBodyLog {
+		body = append(body[:maxBodyLog:maxBodyLog], []byte("...[truncated]")...)
+	}
+	span.AddEvent(name, trace.WithAttributes(attribute.String("body", maskPassword(body))))
+}
+
+// maskPassword replaces the top-level JSON "password" field with "***"
+// before a body is recorded on a span. Non-JSON or password-free bodies
+// pass through unchanged.
 // Middleware creates a span per request. Span name is the ServeMux route
 // pattern (e.g. "GET /api/weddings/{wid}/guests"), set at request end when
 // the mux has populated r.Pattern; fallback "METHOD path". With
@@ -89,7 +102,7 @@ func Middleware(next http.Handler) http.Handler {
 		if logBody && !strings.Contains(r.URL.Path, "/events") && isJSONContentType(r.Header.Get("Content-Type")) {
 			body, _ := io.ReadAll(io.LimitReader(r.Body, maxBodyLog+1))
 			r.Body = io.NopCloser(bytes.NewReader(body))
-			reqAttrs = append(reqAttrs, bodyAttr("http.request.body", body))
+			addBodyEvent(span, "http.request.body", body)
 		}
 
 		rec := &recorder{ResponseWriter: w}
@@ -102,7 +115,7 @@ func Middleware(next http.Handler) http.Handler {
 		span.SetAttributes(reqAttrs...)
 		span.SetAttributes(attribute.Int("http.response.status_code", rec.status))
 		if logBody && rec.buf.Len() > 0 && isJSONContentType(rec.Header().Get("Content-Type")) {
-			span.SetAttributes(bodyAttr("http.response.body", rec.buf.Bytes()))
+			addBodyEvent(span, "http.response.body", rec.buf.Bytes())
 		}
 		if rec.status >= 400 {
 			span.SetStatus(codes.Error, http.StatusText(rec.status))
@@ -111,11 +124,32 @@ func Middleware(next http.Handler) http.Handler {
 	})
 }
 
-func bodyAttr(key string, body []byte) attribute.KeyValue {
-	if len(body) > maxBodyLog {
-		return attribute.String(key, string(body[:maxBodyLog])+"...[truncated]")
+// maskPassword replaces the top-level JSON "password" field with "***"
+// before a body is recorded on a span. Non-JSON or password-free bodies
+// pass through unchanged.
+func maskPassword(body []byte) string {
+	if !strings.Contains(strings.ToLower(string(body)), "password") {
+		return string(body)
 	}
-	return attribute.String(key, string(body))
+	var m map[string]any
+	if err := json.Unmarshal(body, &m); err != nil {
+		return string(body)
+	}
+	masked := false
+	for k := range m {
+		if strings.EqualFold(k, "password") {
+			m[k] = "***"
+			masked = true
+		}
+	}
+	if !masked {
+		return string(body)
+	}
+	out, err := json.Marshal(m)
+	if err != nil {
+		return string(body)
+	}
+	return string(out)
 }
 
 func isJSONContentType(ct string) bool {
@@ -200,7 +234,7 @@ func (p *GormPlugin) after(db *gorm.DB) {
 	defer span.End()
 	span.SetAttributes(semconv.DBResponseReturnedRows(int(db.Statement.RowsAffected)))
 	if p.logSQL && db.Statement.SQL.Len() > 0 {
-		span.SetAttributes(semconv.DBQueryText(db.Statement.SQL.String()))
+		span.AddEvent("db.query", trace.WithAttributes(semconv.DBQueryText(db.Statement.SQL.String())))
 	}
 	if err := db.Statement.Error; err != nil {
 		span.SetStatus(codes.Error, err.Error())
