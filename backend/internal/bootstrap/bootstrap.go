@@ -136,10 +136,13 @@ func Init(env config.Env, version string) *App {
 
 	server := config.NewFuegoServer(env, version)
 
+	// ProxyAware must run outside tracing: it rewrites RemoteAddr in place, and
+	// both fuego's logger and the tracing span read RemoteAddr afterwards.
+	// Fuego executes middlewares outer-first, so proxy is registered first.
+	fuego.Use(server, middleware.ProxyAwareMiddleware)
 	if tracingEnabled {
 		fuego.Use(server, tracing.Middleware)
 	}
-	fuego.Use(server, middleware.ProxyAwareMiddleware)
 	fuego.Use(server, middleware.CORSMiddleware)
 
 	// Serve uploaded files (block directory listing)

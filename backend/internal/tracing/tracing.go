@@ -9,8 +9,10 @@ import (
 	"encoding/json"
 	"io"
 	"log"
+	"net"
 	"net/http"
 	"os"
+	"strconv"
 	"strings"
 
 	"go.opentelemetry.io/otel"
@@ -98,6 +100,19 @@ func Middleware(next http.Handler) http.Handler {
 
 		reqAttrs := []attribute.KeyValue{
 			attribute.String("http.request.path", r.URL.Path),
+		}
+		// Client address comes from RemoteAddr, which ProxyAwareMiddleware
+		// (registered outside this middleware) has already rewritten from
+		// X-Forwarded-For. That rewrite strips the port, so client.port is
+		// only recorded when a numeric port is present.
+		if host, port, err := net.SplitHostPort(r.RemoteAddr); err == nil {
+			reqAttrs = append(reqAttrs, semconv.ClientAddress(host))
+			if p, err := strconv.Atoi(port); err == nil {
+				reqAttrs = append(reqAttrs, semconv.ClientPort(p))
+			}
+		} else if r.RemoteAddr != "" {
+			// Bare address (no port): record as-is.
+			reqAttrs = append(reqAttrs, semconv.ClientAddress(r.RemoteAddr))
 		}
 		if logBody && !strings.Contains(r.URL.Path, "/events") && isJSONContentType(r.Header.Get("Content-Type")) {
 			body, _ := io.ReadAll(io.LimitReader(r.Body, maxBodyLog+1))
