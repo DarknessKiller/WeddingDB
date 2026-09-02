@@ -41,6 +41,7 @@ It's customizable per wedding: your own logo and background, a welcome message, 
 - **Angpao reports** as CSV or Excel, ready for thank-you notes
 - **Multi-wedding support** in one deployment, useful for planners and venues
 - **Secure by default** with JWT auth, refresh-token rotation, token revocation, role-based admin, rate-limited login, and per-wedding kiosk settings that never touch admin access
+- **Opt-in tracing** with OpenTelemetry and Jaeger for debugging requests and queries end to end
 - **Self-hostable** with Docker Compose; data stays yours (PostgreSQL + DragonflyDB/Redis)
 
 ## Under the Hood

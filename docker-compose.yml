@@ -10,6 +10,12 @@ services:
       JWT_SECRET: "${JWT_SECRET:-change-me-in-production}"
       ADMIN_BOOTSTRAP_PASSWORD: "${ADMIN_BOOTSTRAP_PASSWORD:-}"
       STATIC_DIR: "./static"
+      # Opt-in tracing: uncomment + run `docker compose --profile tracing up` to enable.
+      # OTEL_ENABLED: true
+      # OTEL_EXPORTER_OTLP_ENDPOINT: http://jaeger:4318/v1/traces
+      # Span-event capture (bodies/SQL can contain PII; off by default).
+      # OTEL_LOG_BODY: all
+      # OTEL_LOG_SQL: all
       TZ: Asia/Kuala_Lumpur
     volumes:
       - uploads:/app/uploads
@@ -43,8 +49,26 @@ services:
     ports:
       - "6379:6379"
 
+  jaeger:
+    # Pinned: newer Jaeger UI broke the dark theme.
+    image: jaegertracing/all-in-one:1.57
+    profiles: ["tracing"]
+    environment:
+      # Badger file storage so traces survive restarts (memory backend wipes them).
+      SPAN_STORAGE_TYPE: badger
+      BADGER_EPHEMERAL: false
+      BADGER_DIRECTORY_VALUE: /badger/data
+      BADGER_DIRECTORY_SPAN: /badger/state
+    ports:
+      - "16686:16686"
+      - "127.0.0.1:4318:4318"
+    volumes:
+      - jqdata:/badger
+
 volumes:
   pgdata:
     name: weddingdb_pgdata
   uploads:
     name: weddingdb_uploads
+  jqdata:
+    name: weddingdb_jqdata

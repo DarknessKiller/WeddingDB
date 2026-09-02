@@ -14,6 +14,7 @@ import (
 	"weddingdb/internal/models"
 	"weddingdb/internal/repository"
 	"weddingdb/internal/services"
+	"weddingdb/internal/tracing"
 
 	"github.com/go-fuego/fuego"
 	"github.com/google/uuid"
@@ -24,14 +25,17 @@ import (
 )
 
 type App struct {
-	Server      *fuego.Server
-	DB          *gorm.DB
-	Redis       *redis.Client
-	AuthService *services.AuthService
-	SSEHub      *services.SSEHub
+	Server          *fuego.Server
+	DB              *gorm.DB
+	Redis           *redis.Client
+	AuthService     *services.AuthService
+	SSEHub          *services.SSEHub
+	ShutdownTracing func(context.Context) error
 }
 
 func Init(env config.Env, version string) *App {
+	traceShutdown, tracingEnabled := tracing.Setup(version)
+
 	dbURL := env.DatabaseURL
 	if dbURL == "" {
 		dbURL = os.Getenv("DATABASE_URL")
@@ -50,6 +54,12 @@ func Init(env config.Env, version string) *App {
 	if err != nil {
 		log.Fatal("Failed to connect to database:", err)
 	}
+	if tracingEnabled {
+		if err := db.Use(tracing.NewGormPlugin()); err != nil {
+			log.Println("Warning: failed to register tracing GORM plugin:", err)
+		}
+	}
+
 	if err := db.AutoMigrate(
 		&models.WeddingEvent{},
 		&models.AdminUser{},
@@ -126,7 +136,13 @@ func Init(env config.Env, version string) *App {
 
 	server := config.NewFuegoServer(env, version)
 
+	// ProxyAware must run outside tracing: it rewrites RemoteAddr in place, and
+	// both fuego's logger and the tracing span read RemoteAddr afterwards.
+	// Fuego executes middlewares outer-first, so proxy is registered first.
 	fuego.Use(server, middleware.ProxyAwareMiddleware)
+	if tracingEnabled {
+		fuego.Use(server, tracing.Middleware)
+	}
 	fuego.Use(server, middleware.CORSMiddleware)
 
 	// Serve uploaded files (block directory listing)
@@ -196,11 +212,12 @@ func Init(env config.Env, version string) *App {
 	}
 
 	return &App{
-		Server:      server,
-		DB:          db,
-		Redis:       rdb,
-		AuthService: authService,
-		SSEHub:      sseHub,
+		Server:          server,
+		DB:              db,
+		Redis:           rdb,
+		AuthService:     authService,
+		SSEHub:          sseHub,
+		ShutdownTracing: traceShutdown,
 	}
 }
 
