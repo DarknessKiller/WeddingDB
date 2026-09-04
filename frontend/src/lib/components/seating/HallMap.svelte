@@ -62,6 +62,7 @@
   let editHallWidth = $state(0);
   let editHallHeight = $state(0);
   let selectedId = $state<string | null>(null);
+  let snapEnabled = $state(true);
   let transformerEl = $state<any>(null);
   let nodeRefs = $state<Record<string, any>>({});
 
@@ -269,9 +270,10 @@
     panY = 0;
   }
 
-  // Grid snap: snap to nearest 2.5% increment
+  // Grid snap: snap to nearest 2.5% increment (toggleable)
   const GRID_STEP = 2.5;
   function snapGrid(v: number): number {
+    if (!snapEnabled) return v;
     return Math.round(v / GRID_STEP) * GRID_STEP;
   }
 
@@ -337,6 +339,16 @@
     selectedId = null;
   }
 
+  function handleReorder(dir: 'front' | 'back') {
+    if (!selectedId) return;
+    const item = editElements.find(el => el.id === selectedId);
+    if (!item) return;
+    const others = editElements.filter(el => el.id !== selectedId);
+    const ordered = dir === 'front' ? [...others, item] : [item, ...others];
+    // Renumber zIndex so the order survives save (backend sorts by z_index)
+    editElements = ordered.map((el, i) => ({ ...el, zIndex: i * 10 }));
+  }
+
   async function handleSave() {
     await onSaveLayout?.(editTables, editElements, editHallWidth, editHallHeight);
   }
@@ -362,6 +374,7 @@
     {selectedId}
     {isTableSelected}
     selectedItem={selectedItem}
+    snap={snapEnabled}
     onSave={handleSave}
     onCancel={handleCancel}
     onDelete={handleDeleteSelected}
@@ -369,6 +382,8 @@
     onUpdateSelected={handleUpdateSelected}
     onWidthChange={(w) => editHallWidth = w}
     onHeightChange={(h) => editHallHeight = h}
+    onSnapToggle={() => snapEnabled = !snapEnabled}
+    onReorder={handleReorder}
   />
 {/if}
 
