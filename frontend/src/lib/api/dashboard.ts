@@ -1,5 +1,5 @@
 import { apiFetch } from './client';
-import type { DashboardStats, TableOccupancy, ActivityItem } from '$lib/types';
+import type { DashboardStats, TableOccupancy } from '$lib/types';
 
 interface RawGuest {
   id: string;
@@ -75,21 +75,4 @@ export async function getOccupancy(weddingId: string): Promise<TableOccupancy[]>
       isVip: t?.isVip ?? false
     };
   }).sort((a, b) => a.isVip !== b.isVip ? (a.isVip ? -1 : 1) : tableNameCollator.compare(a.tableName, b.tableName));
-}
-
-export async function getRecentActivity(weddingId: string): Promise<ActivityItem[]> {
-  const data = await fetchJSON<{ guests: RawGuest[] }>(`/api/weddings/${weddingId}/guests?limit=500`);
-  const guests = data.guests ?? [];
-  const recent = [...guests]
-    .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime())
-    .slice(0, 8);
-
-  return recent.map(g => ({
-    id: String(g.id),
-    type: g.checkedInAt ? 'check_in' as const : 'rsvp_update' as const,
-    message: g.checkedInAt ? 'checked in' : `RSVP: ${g.rsvp}`,
-    guestName: g.name,
-    timestamp: new Date(g.updatedAt),
-    icon: g.checkedInAt ? 'check-circle' : 'user-check'
-  }));
 }

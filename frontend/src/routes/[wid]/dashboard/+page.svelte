@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { getOccupancy, getRecentActivity } from '$lib/api/dashboard';
+  import { getOccupancy } from '$lib/api/dashboard';
   import { weddingTitle } from '$lib/stores/weddingTitle';
   import { addToast } from '$lib/stores';
   import { get } from 'svelte/store';
@@ -12,13 +12,12 @@
   import dayjs from 'dayjs';
   import relativeTime from 'dayjs/plugin/relativeTime';
   import { onMount } from 'svelte';
-  import type { DashboardStats, TableOccupancy, ActivityItem } from '$lib/types';
+  import type { DashboardStats, TableOccupancy, ActivityItem, Guest } from '$lib/types';
   import NumberTicker from '$lib/components/ui/NumberTicker.svelte';
 
   dayjs.extend(relativeTime);
 
   let occupancy: TableOccupancy[] = $state([]);
-  let activity: ActivityItem[] = $state([]);
   let loading = $state(true);
   let loaded = $state(false);
 
@@ -44,6 +43,20 @@
     };
   });
 
+  // Recent activity derived from the SSE-backed guestList store — updates in real time.
+  let activity = $derived.by((): ActivityItem[] => {
+    const recent = [...$guestList]
+      .sort((a, b) => (b.checkedInAt?.getTime() ?? 0) - (a.checkedInAt?.getTime() ?? 0))
+      .slice(0, 8);
+    return recent.map((g: Guest) => ({
+      id: g.id,
+      type: g.checkedIn ? 'check_in' as const : 'rsvp_update' as const,
+      message: g.checkedIn ? 'checked in' : `RSVP: ${g.rsvp}`,
+      guestName: g.name,
+      timestamp: g.checkedInAt ?? g.createdAt,
+      icon: g.checkedIn ? 'check-circle' : 'user-check'
+    }));
+  });
   let totalPax = $derived(stats.totalPax || 1);
   let confirmedPct = $derived(stats.confirmedGuests / totalPax);
   let pendingPct = $derived(stats.pendingRsvp / totalPax);
@@ -53,9 +66,7 @@
   onMount(async () => {
     try {
       const wid = get(weddingId);
-      const [o, a] = await Promise.all([getOccupancy(wid), getRecentActivity(wid)]);
-      occupancy = o;
-      activity = a;
+      occupancy = await getOccupancy(wid);
       loaded = true;
     } catch (e) {
       addToast('Failed to load dashboard data', 'error');
@@ -190,11 +201,11 @@
         </div>
       </div>
 
-      <!-- Recent Activity -->
+      <!-- Recent Activity (derived from SSE-backed guestList; updates live) -->
       <div class="bg-white/90 backdrop-blur-xl border border-black/[0.06] rounded-2xl p-6 shadow-sm">
         <h3 class="text-base font-bold text-gray-800 mb-5" style="letter-spacing: -0.01em;">Recent Activity</h3>
         <div class="space-y-4">
-          {#each activity as item}
+          {#each activity as item (item.id)}
             {@const Icon = activityIcons[item.icon] || CheckCircle}
             <div class="flex items-start gap-3">
               <div class="w-8 h-8 rounded-lg bg-gray-50 flex items-center justify-center flex-shrink-0 mt-0.5">
