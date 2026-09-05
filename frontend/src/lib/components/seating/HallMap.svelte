@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onMount, onDestroy } from 'svelte';
+  import { onMount, onDestroy, tick } from 'svelte';
   import BanquetTableComponent from './BanquetTable.svelte';
   import HallElementNode from './HallElementNode.svelte';
   import EditToolbar from './EditToolbar.svelte';
@@ -67,6 +67,22 @@
   let transformerEl = $state<any>(null);
   let nodeRefs = $state<Record<string, any>>({});
 
+  function getTransformerNode() {
+    return transformerEl?.node ?? transformerEl?.getNode?.() ?? transformerEl;
+  }
+
+  function refreshTransformer() {
+    const transformer = getTransformerNode();
+    if (!transformer?.nodes) return;
+    transformer.forceUpdate?.();
+    transformer.getLayer()?.batchDraw();
+  }
+
+  async function refreshTransformerAfterUpdate() {
+    await tick();
+    refreshTransformer();
+  }
+
   $effect(() => {
     if (mode === 'edit') {
       editTables = JSON.parse(JSON.stringify(tables));
@@ -83,7 +99,7 @@
   $effect(() => {
     const _ = selectedId;
     if (transformerEl) {
-      const konvaTransformer = transformerEl.node ?? transformerEl.getNode?.() ?? transformerEl;
+      const konvaTransformer = getTransformerNode();
       if (konvaTransformer?.nodes) {
         if (selectedId) {
           const node = nodeRefs[selectedId];
@@ -315,6 +331,7 @@
       node.scaleX(1);
       node.scaleY(1);
       editElements[eidx] = { ...el, degree: rotation, width: newW, height: newH };
+      void refreshTransformerAfterUpdate();
     }
   }
 
@@ -327,11 +344,13 @@
     const tidx = editTables.findIndex(t => t.id === selectedId);
     if (tidx >= 0) {
       editTables[tidx] = { ...editTables[tidx], ...props };
+      void refreshTransformerAfterUpdate();
       return;
     }
     const eidx = editElements.findIndex(el => el.id === selectedId);
     if (eidx >= 0) {
       editElements[eidx] = { ...editElements[eidx], ...props };
+      void refreshTransformerAfterUpdate();
     }
   }
 
