@@ -4,6 +4,7 @@
   import HallElementNode from './HallElementNode.svelte';
   import EditToolbar from './EditToolbar.svelte';
   import type { BanquetTable as BanquetTableType, HallElement, Guest } from '$lib/types';
+  import { reorderElements } from '$lib/utils/layout';
   import { ZoomIn, ZoomOut, RotateCcw } from 'lucide-svelte';
 
   let {
@@ -341,12 +342,18 @@
 
   function handleReorder(dir: 'front' | 'back') {
     if (!selectedId) return;
-    const item = editElements.find(el => el.id === selectedId);
-    if (!item) return;
-    const others = editElements.filter(el => el.id !== selectedId);
-    const ordered = dir === 'front' ? [...others, item] : [item, ...others];
-    // Renumber zIndex so the order survives save (backend sorts by z_index)
-    editElements = ordered.map((el, i) => ({ ...el, zIndex: i * 10 }));
+    const edge = editElements[dir === 'front' ? editElements.length - 1 : 0];
+    const ordered = reorderElements(editElements, selectedId, dir);
+    if (ordered === editElements) return;
+    editElements = ordered;
+
+    // Keyed Svelte blocks do not reorder the Konva nodes that svelte-konva added on mount.
+    const node = nodeRefs[selectedId];
+    const edgeNode = nodeRefs[edge.id];
+    if (node && edgeNode && node !== edgeNode) {
+      node.zIndex(edgeNode.zIndex());
+      node.getLayer()?.batchDraw();
+    }
   }
 
   async function handleSave() {
