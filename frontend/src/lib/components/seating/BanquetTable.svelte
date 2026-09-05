@@ -52,14 +52,15 @@
   let groupEl = $state<any>(null);
 
   export function getNode() {
-    return groupEl;
+    return groupEl?.node ?? groupEl;
   }
 
-  // Register Konva node with parent for transformer
+  // Register the underlying Konva node with the parent.
   $effect(() => {
-    if (groupEl) {
-      groupEl._tableId = table.id;
-      onrefready?.(groupEl);
+    const node = groupEl?.node ?? groupEl;
+    if (node) {
+      node._tableId = table.id;
+      onrefready?.(node);
     }
   });
 

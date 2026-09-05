@@ -83,7 +83,7 @@
   $effect(() => {
     const _ = selectedId;
     if (transformerEl) {
-      const konvaTransformer = transformerEl.getNode?.() ?? transformerEl;
+      const konvaTransformer = transformerEl.node ?? transformerEl.getNode?.() ?? transformerEl;
       if (konvaTransformer?.nodes) {
         if (selectedId) {
           const node = nodeRefs[selectedId];
