@@ -92,7 +92,7 @@ function handleGuestEvent(event: GuestEvent) {
 	const { type, guest: guestData } = event;
 	if (!guestData) return;
 
-	const guest = eventGuestToGuest(guestData);
+	const guest = eventGuestToGuest(guestData, event.timestamp);
 
 	guestList.update((list) => {
 		const idx = list.findIndex((g) => g.id === guest.id);
@@ -165,7 +165,8 @@ export function applyGuestResponse(resp: GuestResponse) {
 		isVip: resp.isVip,
 		angbaoAmount: resp.angbaoAmt ?? undefined,
 		giftItem: resp.giftItem ?? undefined,
-		createdAt: new Date(resp.createdAt)
+		createdAt: new Date(resp.createdAt),
+		updatedAt: new Date(resp.updatedAt)
 	};
 
 	guestList.update((list) => {
@@ -183,7 +184,8 @@ export function applyGuestResponse(resp: GuestResponse) {
 	if (current?.id === guest.id) selectedGuest.set(guest);
 }
 
-function eventGuestToGuest(d: NonNullable<GuestEvent['guest']>): Guest {
+function eventGuestToGuest(d: NonNullable<GuestEvent['guest']>, eventTimestamp: number): Guest {
+	const updatedAt = eventTimestamp > 0 ? new Date(eventTimestamp) : new Date();
 	return {
 		id: d.id,
 		name: d.name,
@@ -200,6 +202,7 @@ function eventGuestToGuest(d: NonNullable<GuestEvent['guest']>): Guest {
 		isVip: d.isVip,
 		angbaoAmount: d.angbaoAmt ?? undefined,
 		giftItem: d.giftItem ?? undefined,
-		createdAt: new Date()
+		createdAt: updatedAt,
+		updatedAt
 	};
 }

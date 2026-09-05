@@ -18,16 +18,18 @@ function nowIso() { return new Date().toISOString(); }
 function optimisticPatch(op: string, guestId: string, data?: Record<string, unknown>) {
 	try {
 		if (op === 'create' && data) {
-			const g = { id: guestId, name: (data.name as string) || '', phone: (data.phone as string) || '', email: (data.email as string) || '', pax: (data.pax as number) || 1, rsvp: (data.rsvp as string) || 'no_response', isVip: !!data.isVip, notes: (data.notes as string) || '', dietaryRequirements: (data.dietary as string[]) || [], tableId: (data.tableId as string | null) || null, seatNumber: (data.seatNum as number | null) ?? null, checkedIn: false, createdAt: new Date() } as unknown as import('$lib/types').Guest;
+			const now = new Date();
+			const g = { id: guestId, name: (data.name as string) || '', phone: (data.phone as string) || '', email: (data.email as string) || '', pax: (data.pax as number) || 1, rsvp: (data.rsvp as string) || 'no_response', isVip: !!data.isVip, notes: (data.notes as string) || '', dietaryRequirements: (data.dietary as string[]) || [], tableId: (data.tableId as string | null) || null, seatNumber: (data.seatNum as number | null) ?? null, checkedIn: false, createdAt: now, updatedAt: now } as unknown as import('$lib/types').Guest;
 			guestList.update(l => [...l, g]); guestMap.update(m => { const n = new Map(m); n.set(guestId, g); return n; });
 		} else if (op === 'update' && data) {
-			guestList.update(l => l.map(x => x.id === guestId ? { ...x, ...{ name: data.name, phone: data.phone, email: data.email, pax: data.pax, rsvp: data.rsvp, isVip: data.isVip, notes: data.notes, dietaryRequirements: data.dietary, tableId: data.tableId ?? x.tableId, seatNumber: data.seatNum ?? x.seatNumber, angbaoAmount: data.angbaoAmt ?? x.angbaoAmount, giftItem: data.giftItem ?? x.giftItem } } as unknown as import('$lib/types').Guest : x));
+			guestList.update(l => l.map(x => x.id === guestId ? { ...x, ...{ name: data.name, phone: data.phone, email: data.email, pax: data.pax, rsvp: data.rsvp, isVip: data.isVip, notes: data.notes, dietaryRequirements: data.dietary, tableId: data.tableId ?? x.tableId, seatNumber: data.seatNum ?? x.seatNumber, angbaoAmount: data.angbaoAmt ?? x.angbaoAmount, giftItem: data.giftItem ?? x.giftItem, updatedAt: new Date() } } as unknown as import('$lib/types').Guest : x));
 		} else if (op === 'delete') {
 			guestList.update(l => l.filter(x => x.id !== guestId)); guestMap.update(m => { const n = new Map(m); n.delete(guestId); return n; });
 		} else if (op === 'checkin') {
-			guestList.update(l => l.map(x => x.id === guestId ? { ...x, checkedIn: true, checkedInAt: new Date() } as unknown as import('$lib/types').Guest : x));
+			const now = new Date();
+			guestList.update(l => l.map(x => x.id === guestId ? { ...x, checkedIn: true, checkedInAt: now, updatedAt: now } as unknown as import('$lib/types').Guest : x));
 		} else if (op === 'checkout') {
-			guestList.update(l => l.map(x => x.id === guestId ? { ...x, checkedIn: false, checkedInAt: undefined } as unknown as import('$lib/types').Guest : x));
+			guestList.update(l => l.map(x => x.id === guestId ? { ...x, checkedIn: false, checkedInAt: undefined, updatedAt: new Date() } as unknown as import('$lib/types').Guest : x));
 		}
 	} catch {}
 }

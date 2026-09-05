@@ -13,6 +13,7 @@
   import relativeTime from 'dayjs/plugin/relativeTime';
   import { onMount } from 'svelte';
   import type { DashboardStats, TableOccupancy, ActivityItem, Guest } from '$lib/types';
+  import { getActivityTimestamp } from '$lib/utils/activity';
   import NumberTicker from '$lib/components/ui/NumberTicker.svelte';
 
   dayjs.extend(relativeTime);
@@ -46,14 +47,14 @@
   // Recent activity derived from the SSE-backed guestList store — updates in real time.
   let activity = $derived.by((): ActivityItem[] => {
     const recent = [...$guestList]
-      .sort((a, b) => (b.checkedInAt?.getTime() ?? 0) - (a.checkedInAt?.getTime() ?? 0))
+      .sort((a, b) => getActivityTimestamp(b).getTime() - getActivityTimestamp(a).getTime())
       .slice(0, 8);
     return recent.map((g: Guest) => ({
       id: g.id,
       type: g.checkedIn ? 'check_in' as const : 'rsvp_update' as const,
       message: g.checkedIn ? 'checked in' : `RSVP: ${g.rsvp}`,
       guestName: g.name,
-      timestamp: g.checkedInAt ?? g.createdAt,
+      timestamp: getActivityTimestamp(g),
       icon: g.checkedIn ? 'check-circle' : 'user-check'
     }));
   });
