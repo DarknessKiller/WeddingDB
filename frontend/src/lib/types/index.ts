@@ -17,6 +17,7 @@ export interface Guest {
   angbaoAmount?: number;
   giftItem?: string;
   createdAt: Date;
+  updatedAt?: Date;
 }
 
 export interface BanquetTable {

@@ -31,6 +31,7 @@ describe('applyGuestResponse', () => {
 	it('appends a guest missing from the list (heals dropped SSE event)', () => {
 		applyGuestResponse(resp('g1'));
 		expect(get(guestList).map((g) => g.id)).toEqual(['g1']);
+		expect(get(guestList)[0].updatedAt?.toISOString()).toBe('2026-01-01T00:00:00.000Z');
 	});
 
 	it('replaces in place without duplicating on repeated responses', () => {
