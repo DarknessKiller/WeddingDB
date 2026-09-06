@@ -76,8 +76,8 @@ func (r *GuestRepo) SearchByWedding(ctx context.Context, weddingID uuid.UUID, qu
 	q := fmt.Sprintf("%%%s%%", escaped)
 	pinyinQ := fmt.Sprintf("%%%s%%", strings.ToLower(models.GenerateNamePinyin(query)))
 	lowerQ := strings.ToLower(query)
-	err := r.db.WithContext(ctx).Where("wedding_id = ? AND (name ILIKE ? OR name_pinyin ILIKE ? OR phone ILIKE ? OR email ILIKE ?)",
-		weddingID, q, pinyinQ, q, q).
+	err := r.db.WithContext(ctx).Where("wedding_id = ? AND (name ILIKE ? OR name_pinyin ILIKE ?)",
+		weddingID, q, pinyinQ).
 		Order(fmt.Sprintf(`
 			CASE
 				WHEN LOWER(name) = %s THEN 0
