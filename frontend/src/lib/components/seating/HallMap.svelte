@@ -1,9 +1,10 @@
 <script lang="ts">
-  import { onMount, onDestroy } from 'svelte';
+  import { onMount, onDestroy, tick } from 'svelte';
   import BanquetTableComponent from './BanquetTable.svelte';
   import HallElementNode from './HallElementNode.svelte';
   import EditToolbar from './EditToolbar.svelte';
   import type { BanquetTable as BanquetTableType, HallElement, Guest } from '$lib/types';
+  import { reorderElements } from '$lib/utils/layout';
   import { ZoomIn, ZoomOut, RotateCcw } from 'lucide-svelte';
 
   let {
@@ -62,8 +63,25 @@
   let editHallWidth = $state(0);
   let editHallHeight = $state(0);
   let selectedId = $state<string | null>(null);
+  let snapEnabled = $state(true);
   let transformerEl = $state<any>(null);
   let nodeRefs = $state<Record<string, any>>({});
+
+  function getTransformerNode() {
+    return transformerEl?.node ?? transformerEl?.getNode?.() ?? transformerEl;
+  }
+
+  function refreshTransformer() {
+    const transformer = getTransformerNode();
+    if (!transformer?.nodes) return;
+    transformer.forceUpdate?.();
+    transformer.getLayer()?.batchDraw();
+  }
+
+  async function refreshTransformerAfterUpdate() {
+    await tick();
+    refreshTransformer();
+  }
 
   $effect(() => {
     if (mode === 'edit') {
@@ -81,7 +99,7 @@
   $effect(() => {
     const _ = selectedId;
     if (transformerEl) {
-      const konvaTransformer = transformerEl.getNode?.() ?? transformerEl;
+      const konvaTransformer = getTransformerNode();
       if (konvaTransformer?.nodes) {
         if (selectedId) {
           const node = nodeRefs[selectedId];
@@ -269,9 +287,10 @@
     panY = 0;
   }
 
-  // Grid snap: snap to nearest 2.5% increment
+  // Grid snap: snap to nearest 2.5% increment (toggleable)
   const GRID_STEP = 2.5;
   function snapGrid(v: number): number {
+    if (!snapEnabled) return v;
     return Math.round(v / GRID_STEP) * GRID_STEP;
   }
 
@@ -312,6 +331,7 @@
       node.scaleX(1);
       node.scaleY(1);
       editElements[eidx] = { ...el, degree: rotation, width: newW, height: newH };
+      void refreshTransformerAfterUpdate();
     }
   }
 
@@ -324,17 +344,35 @@
     const tidx = editTables.findIndex(t => t.id === selectedId);
     if (tidx >= 0) {
       editTables[tidx] = { ...editTables[tidx], ...props };
+      void refreshTransformerAfterUpdate();
       return;
     }
     const eidx = editElements.findIndex(el => el.id === selectedId);
     if (eidx >= 0) {
       editElements[eidx] = { ...editElements[eidx], ...props };
+      void refreshTransformerAfterUpdate();
     }
   }
 
   function handleDeleteSelected(id: string) {
     editElements = editElements.filter(el => el.id !== id);
     selectedId = null;
+  }
+
+  function handleReorder(dir: 'front' | 'back') {
+    if (!selectedId) return;
+    const edge = editElements[dir === 'front' ? editElements.length - 1 : 0];
+    const ordered = reorderElements(editElements, selectedId, dir);
+    if (ordered === editElements) return;
+    editElements = ordered;
+
+    // Keyed Svelte blocks do not reorder the Konva nodes that svelte-konva added on mount.
+    const node = nodeRefs[selectedId];
+    const edgeNode = nodeRefs[edge.id];
+    if (node && edgeNode && node !== edgeNode) {
+      node.zIndex(edgeNode.zIndex());
+      node.getLayer()?.batchDraw();
+    }
   }
 
   async function handleSave() {
@@ -362,6 +400,7 @@
     {selectedId}
     {isTableSelected}
     selectedItem={selectedItem}
+    snap={snapEnabled}
     onSave={handleSave}
     onCancel={handleCancel}
     onDelete={handleDeleteSelected}
@@ -369,6 +408,8 @@
     onUpdateSelected={handleUpdateSelected}
     onWidthChange={(w) => editHallWidth = w}
     onHeightChange={(h) => editHallHeight = h}
+    onSnapToggle={() => snapEnabled = !snapEnabled}
+    onReorder={handleReorder}
   />
 {/if}
 

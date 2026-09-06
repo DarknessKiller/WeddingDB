@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { Plus, Trash2, Save, X, RotateCw, Maximize2 } from 'lucide-svelte';
+  import { Plus, Trash2, Save, X, RotateCw, Maximize2, Magnet, ChevronsUp, ChevronsDown } from 'lucide-svelte';
   import type { HallElement, ElementType } from '$lib/types';
 
   let {
@@ -8,6 +8,7 @@
     selectedId = null,
     isTableSelected = false,
     selectedItem = null,
+    snap = true,
     onSave,
     onCancel,
     onDelete,
@@ -15,12 +16,15 @@
     onUpdateSelected,
     onWidthChange,
     onHeightChange,
+    onSnapToggle,
+    onReorder,
   }: {
     hallWidth: number;
     hallHeight: number;
     selectedId?: string | null;
     isTableSelected?: boolean;
     selectedItem?: any;
+    snap?: boolean;
     onSave: () => void;
     onCancel: () => void;
     onDelete: (id: string) => void;
@@ -28,6 +32,8 @@
     onUpdateSelected: (props: Record<string, any>) => void;
     onWidthChange: (w: number) => void;
     onHeightChange: (h: number) => void;
+    onSnapToggle?: () => void;
+    onReorder?: (dir: 'front' | 'back') => void;
   } = $props();
 
   const defaults: Record<ElementType, { w: number; h: number; name: string }> = {
@@ -88,6 +94,34 @@
       <Trash2 class="w-3 h-3" /> Delete
     </button>
   {/if}
+
+  {#if selectedId && !isTableSelected}
+    <div class="flex items-center gap-1">
+      <button
+        onclick={() => onReorder?.('front')}
+        class="px-2 py-1 border border-gray-200 rounded-lg hover:bg-gray-50 text-gray-700 font-medium transition-colors flex items-center gap-1"
+        title="Bring to front"
+      >
+        <ChevronsUp class="w-3 h-3" /> Front
+      </button>
+      <button
+        onclick={() => onReorder?.('back')}
+        class="px-2 py-1 border border-gray-200 rounded-lg hover:bg-gray-50 text-gray-700 font-medium transition-colors flex items-center gap-1"
+        title="Send to back"
+      >
+        <ChevronsDown class="w-3 h-3" /> Back
+      </button>
+    </div>
+  {/if}
+
+  <button
+    onclick={() => onSnapToggle?.()}
+    class="px-2 py-1 border rounded-lg font-medium transition-colors flex items-center gap-1 {snap ? 'border-gold bg-gold/10 text-gray-800' : 'border-gray-200 text-gray-400 hover:bg-gray-50'}"
+    title="Snap to grid"
+    aria-pressed={snap}
+  >
+    <Magnet class="w-3 h-3" /> Snap
+  </button>
 
   <!-- Hall size -->
   <div class="flex items-center gap-1 ml-auto">
