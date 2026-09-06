@@ -1,5 +1,13 @@
 @import 'tailwindcss';
 
+@font-face {
+  font-family: 'Noto Serif SC';
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url('/fonts/noto-serif-sc-xi-700.woff2') format('woff2');
+}
+
 @theme {
   --color-red: #A11217;
   --color-red-light: #C62828;
@@ -120,7 +128,7 @@
     font-family: 'Noto Serif SC', 'Songti SC', serif;
     box-shadow: 0 8px 32px rgba(161, 18, 23, 0.25);
   }
-  .auth-title { font-size: 1.5rem; font-weight: 800; color: #111827; letter-spacing: -0.025em; font-family: 'Noto Serif SC', 'Songti SC', serif; }
+  .auth-title { font-size: 1.5rem; font-weight: 800; color: #111827; letter-spacing: -0.025em; }
   .auth-subtitle { font-size: 0.875rem; color: #6b7280; margin-top: 0.25rem; }
   .auth-form {
     background: rgba(255, 255, 255, 0.92); backdrop-filter: blur(20px) saturate(180%);

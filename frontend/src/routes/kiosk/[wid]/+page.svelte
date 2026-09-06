@@ -1003,7 +1003,7 @@
     color: #D4AF37;
     font-size: 2.5rem;
     font-weight: 700;
-    font-family: 'Noto Serif SC', 'Songti SC', serif;
+    font-family: var(--font-serif);
     box-shadow: 0 8px 32px rgba(161, 18, 23, 0.3);
   }
 
