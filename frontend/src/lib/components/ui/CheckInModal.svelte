@@ -11,6 +11,7 @@
     guestName,
     angbaoAmount = $bindable(''),
     giftItem = $bindable(''),
+    updateMode = false,
     onConfirm,
     onClose,
     loading = false,
@@ -18,6 +19,8 @@
     guestName: string;
     angbaoAmount?: string;
     giftItem?: string;
+    /** Already-checked-in guest: modal saves the gift via the guest-update flow instead of checking in. */
+    updateMode?: boolean;
     onConfirm: () => void;
     onClose: () => void;
     loading?: boolean;
@@ -64,7 +67,7 @@
       <div class="w-10 h-1 bg-gray-300 rounded-full"></div>
     </div>
     <div class="flex items-center justify-between p-5 border-b border-gray-100">
-      <h3 id="check-in-title" class="font-bold text-gray-900">Check In {guestName}</h3>
+      <h3 id="check-in-title" class="font-bold text-gray-900">{updateMode ? 'Update Gift — ' : 'Check In '}{guestName}</h3>
       <button onclick={onClose} aria-label="Close" class="min-w-[44px] min-h-[44px] rounded-lg flex items-center justify-center hover:bg-gray-100 transition-colors">
         <X class="w-4 h-4 text-gray-400" />
       </button>
@@ -92,6 +95,8 @@
         class="flex-1 py-3 bg-red text-white rounded-xl text-sm font-semibold hover:bg-red-light transition-colors flex items-center justify-center gap-2 disabled:opacity-50">
         {#if loading}
           <Loader2 class="w-4 h-4 text-white animate-spin" /> Processing...
+        {:else if updateMode}
+          <Gift class="w-4 h-4" /> Save Gift
         {:else}
           <UserCheck class="w-4 h-4" /> Confirm Check In
         {/if}

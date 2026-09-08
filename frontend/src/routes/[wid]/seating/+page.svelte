@@ -5,7 +5,7 @@
   import { weddingId } from '$lib/stores/weddingId';
   import { guestList, tableOccupancy } from '$lib/stores/guestEvents';
   import { goto } from '$app/navigation';
-  import { assignSeat, checkInGuest, checkOutGuest } from '$lib/api/guests';
+  import { assignSeat, checkInGuest, checkOutGuest, updateGuest, ConflictError } from '$lib/api/guests';
   import { getOccupancy, listTables } from '$lib/api/tables';
   import { getLayout, saveLayout } from '$lib/api/layout';
   import Badge from '$lib/components/ui/Badge.svelte';
@@ -57,6 +57,7 @@
     panelDragY = 0;
   }
   let checkinGuest = $state<Guest | null>(null);
+  let giftUpdateMode = $state(false);
   let angbaoAmount = $state('');
   let giftItem = $state('');
   let unsubGuests: (() => void) | null = null;
@@ -186,6 +187,7 @@
 
   function openCheckinModal(guest: Guest) {
     checkinGuest = guest;
+    giftUpdateMode = guest.checkedIn;
     angbaoAmount = guest.angbaoAmount != null ? String(guest.angbaoAmount) : '';
     giftItem = guest.giftItem ?? '';
     showCheckinModal = true;
@@ -195,6 +197,25 @@
     if (!checkinGuest) return;
     const wid = get(weddingId);
     try {
+      if (giftUpdateMode) {
+        // Gift flow: guest is already checked in — save angpao/gift via the
+        // guest-update endpoint instead of re-checking-in (which 409s).
+        // Full payload: the update endpoint replaces every field it receives.
+        await updateGuest(wid, checkinGuest.id, {
+          name: checkinGuest.name, phone: checkinGuest.phone, email: checkinGuest.email || undefined,
+          pax: checkinGuest.pax, rsvp: checkinGuest.rsvp, isVip: checkinGuest.isVip,
+          notes: checkinGuest.notes, dietary: checkinGuest.dietaryRequirements,
+          angbaoAmt: angbaoAmount ? Number(angbaoAmount) : null,
+          giftItem: giftItem || null,
+        });
+        allGuests = allGuests.map(g => g.id === checkinGuest!.id
+          ? { ...g, angbaoAmount: angbaoAmount ? Number(angbaoAmount) : undefined, giftItem: giftItem || undefined }
+          : g
+        );
+        showCheckinModal = false;
+        addToast(`${checkinGuest.name}'s gift updated`, 'success');
+        return;
+      }
       const body: { angbaoAmt?: number; giftItem?: string } = {};
       if (angbaoAmount) body.angbaoAmt = Number(angbaoAmount);
       if (giftItem) body.giftItem = giftItem;
@@ -203,6 +224,14 @@
       showCheckinModal = false;
       addToast(`${checkinGuest.name} checked in`, 'success');
     } catch (e: any) {
+      if (e instanceof ConflictError) {
+        // Another receptionist checked the guest in first — keep the typed
+        // angpao by switching this modal to the gift-update flow.
+        allGuests = allGuests.map(g => g.id === checkinGuest!.id ? { ...g, checkedIn: true } : g);
+        giftUpdateMode = true;
+        addToast(`${checkinGuest.name} was already checked in — saving will update their gift instead`, 'error');
+        return;
+      }
       addToast(e.message ?? 'Check-in failed', 'error');
     }
   }
@@ -541,6 +570,7 @@
     guestName={checkinGuest.name}
     bind:angbaoAmount
     bind:giftItem
+    updateMode={giftUpdateMode}
     onConfirm={confirmCheckIn}
     onClose={() => showCheckinModal = false}
   />
