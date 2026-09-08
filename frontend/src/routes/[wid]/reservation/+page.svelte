@@ -153,7 +153,15 @@
       form.seatNumbers = current.filter(s => s !== seatNum);
     } else {
       if (current.length >= form.pax) return; // max pax seats
-      form.seatNumbers = [...current, seatNum].sort((a, b) => a - b);
+      // Keep picks contiguous: a seat that is not max+1 restarts the run,
+      // otherwise scattered picks would silently collapse server-side
+      // (only the first seat of the run is sent).
+      const max = current.length ? Math.max(...current) : 0;
+      if (current.length > 0 && seatNum !== max + 1) {
+        form.seatNumbers = [seatNum];
+      } else {
+        form.seatNumbers = [...current, seatNum].sort((a, b) => a - b);
+      }
     }
   }
 
@@ -216,7 +224,9 @@
     try {
       const wid = get(weddingId);
       const firstSeat = form.seatNumbers?.[0] ?? null;
-      const assignedPax = form.seatNumbers?.length ?? form.pax;
+      // "no table" reservations send no seats; fall back to form.pax so pax
+      // is never 0 (backend rejects pax < 1).
+      const assignedPax = form.seatNumbers?.length || form.pax;
       
       await createGuest(wid, {
         name: form.name,

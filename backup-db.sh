@@ -11,7 +11,5 @@ BACKUP_FILE="${BACKUP_DIR}/weddingdb_${TIMESTAMP}.sql.gz"
 mkdir -p "$BACKUP_DIR"
 
 echo "Backing up $DB_NAME from $CONTAINER..."
-docker exec "$CONTAINER" pg_dump -U "$DB_USER" "$DB_NAME" \
-  | sed '/^\\/d' \
-  | gzip > "$BACKUP_FILE"
+docker exec "$CONTAINER" pg_dump -U "$DB_USER" "$DB_NAME" | gzip > "$BACKUP_FILE"
 echo "Saved: $BACKUP_FILE ($(du -h "$BACKUP_FILE" | cut -f1))"

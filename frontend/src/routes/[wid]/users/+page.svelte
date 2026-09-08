@@ -3,9 +3,9 @@
   import { goto } from '$app/navigation';
   import { addToast, getAuth } from '$lib/stores';
   import { weddingId } from '$lib/stores/weddingId';
-  import { listUsers, createUser, deleteUser, assignWeddings, resetPassword, getUserWeddings, updateRole, type User } from '$lib/api/users';
+  import { listUsers, createUser, deleteUser, revokeUser, assignWeddings, resetPassword, getUserWeddings, updateRole, type User } from '$lib/api/users';
   import { listWeddings, type Wedding } from '$lib/api/weddings';
-  import { Plus, Trash2, X, Users, Building2, Key, Shield, Check } from 'lucide-svelte';
+  import { Plus, Trash2, X, Users, Building2, Key, Shield, Check, LogOut } from 'lucide-svelte';
   import { weddingTitle } from '$lib/stores/weddingTitle';
   import PasswordRequirements from '$lib/components/ui/PasswordRequirements.svelte';
 
@@ -104,6 +104,16 @@
       addToast(`${user.name} deleted`, 'info');
     } catch (e: any) {
       addToast(e.message ?? 'Delete failed', 'error');
+    }
+  }
+
+  async function handleRevoke(user: User) {
+    if (!confirm(`Revoke all sessions for "${user.name}"? They will be logged out everywhere.`)) return;
+    try {
+      await revokeUser(user.id);
+      addToast(`Sessions revoked for ${user.name}`, 'success');
+    } catch (e: any) {
+      addToast(e.message ?? 'Revoke failed', 'error');
     }
   }
 
@@ -254,6 +264,9 @@
                       <Key class="w-4 h-4" />
                     </button>
                   {/if}
+                    <button onclick={() => handleRevoke(user)} class="p-1.5 rounded-lg hover:bg-orange-50 text-gray-400 hover:text-orange-600 transition-colors" aria-label="Revoke sessions" title="Revoke sessions">
+                      <LogOut class="w-4 h-4" />
+                    </button>
                     <button onclick={() => handleDelete(user)} class="p-1.5 rounded-lg hover:bg-red-50 text-gray-400 hover:text-red transition-colors" aria-label="Delete">
                       <Trash2 class="w-4 h-4" />
                     </button>
@@ -305,11 +318,16 @@
               <button onclick={() => openReset(user)} class="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg bg-amber-50 text-amber-600 text-xs font-semibold hover:bg-amber-100 transition-colors">
                 <Key class="w-3.5 h-3.5" /> Reset PW
               </button>
-              <button onclick={() => handleDelete(user)} class="flex items-center justify-center p-2 rounded-lg bg-red-50 text-red hover:bg-red-100 transition-colors">
-                <Trash2 class="w-3.5 h-3.5" />
-              </button>
             </div>
           {/if}
+          <div class="flex items-center gap-2 {user.role !== 'admin' || editingRoleUserId === user.id ? 'mt-3 pt-3 border-t border-gray-100' : 'mt-3'}">
+            <button onclick={() => handleRevoke(user)} class="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg bg-orange-50 text-orange-600 text-xs font-semibold hover:bg-orange-100 transition-colors">
+              <LogOut class="w-3.5 h-3.5" /> Revoke Sessions
+            </button>
+            <button onclick={() => handleDelete(user)} class="flex items-center justify-center p-2 rounded-lg bg-red-50 text-red hover:bg-red-100 transition-colors" aria-label="Delete">
+              <Trash2 class="w-3.5 h-3.5" />
+            </button>
+          </div>
         </div>
       {/each}
     </div>

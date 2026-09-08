@@ -42,6 +42,16 @@ export async function deleteUser(id: string): Promise<void> {
 	if (!res.ok) throw new Error('Failed to delete user');
 }
 
+export async function revokeUser(id: string): Promise<void> {
+	const res = await apiFetch(`/api/users/${id}/revoke`, {
+		method: 'PUT',
+	});
+	if (!res.ok) {
+		const err = await res.json().catch(() => ({ title: 'Failed to revoke sessions' }));
+		throw new Error(err.title || 'Failed to revoke sessions');
+	}
+}
+
 export async function assignWeddings(userId: string, weddingIds: string[]): Promise<User> {
 	const res = await apiFetch(`/api/users/${userId}/weddings`, {
 		method: 'PUT',

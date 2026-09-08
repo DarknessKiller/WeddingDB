@@ -25,8 +25,18 @@ func (r *TokenRepo) FindByToken(ctx context.Context, token string) (*models.Refr
 	return &t, err
 }
 
-func (r *TokenRepo) DeleteByToken(ctx context.Context, token string) error {
-	return r.db.WithContext(ctx).Where("token = ?", token).Delete(&models.RefreshToken{}).Error
+func (r *TokenRepo) DeleteByToken(ctx context.Context, token string) (int64, error) {
+	res := r.db.WithContext(ctx).Where("token = ?", token).Delete(&models.RefreshToken{})
+	return res.RowsAffected, res.Error
+}
+
+// UpdateWeddingScope persists the selected wedding onto all live refresh
+// tokens for the given admin, so Refresh re-mints a scoped access token
+// instead of dropping back to an unscoped (nil) wedding.
+func (r *TokenRepo) UpdateWeddingScope(ctx context.Context, adminID uuid.UUID, weddingID uuid.UUID) error {
+	return r.db.WithContext(ctx).Model(&models.RefreshToken{}).
+		Where("admin_id = ? AND expires_at > ?", adminID, time.Now()).
+		Update("wedding_id", weddingID).Error
 }
 
 func (r *TokenRepo) DeleteExpired(ctx context.Context) error {

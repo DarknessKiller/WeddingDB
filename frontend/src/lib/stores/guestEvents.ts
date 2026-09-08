@@ -65,6 +65,28 @@ export function initializeSSE(onResync?: () => Promise<Guest[]>): (() => void) |
 }
 
 /**
+ * Run a full fetch+seed inside the syncing window: SSE events that arrive
+ * mid-fetch are queued and replayed after the seed lands instead of being
+ * clobbered by it. Use for manual refreshes outside of initializeSSE
+ * (e.g. the wedding layout's online/visibility sync).
+ */
+export async function refreshGuests(fetchFn: () => Promise<Guest[]>): Promise<Guest[]> {
+	syncing = true;
+	try {
+		const guests = await fetchFn();
+		seedGuests(guests);
+		return guests;
+	} catch (e) {
+		// Abandon the window; replay anything that queued up meanwhile.
+		syncing = false;
+		const pending = queuedEvents;
+		queuedEvents = [];
+		pending.forEach(handleGuestEvent);
+		throw e;
+	}
+}
+
+/**
  * Seed the stores with the initial guest list (called after first fetch).
  */
 export function seedGuests(guests: Guest[]) {
@@ -120,7 +142,10 @@ function handleGuestEvent(event: GuestEvent) {
 		return newMap;
 	});
 
-	if (type === 'seat_assign' || type === 'checkin' || type === 'checkout' || type === 'delete') {
+	// 'create'/'update' events also carry table/seat/pax changes, so occupancy
+	// must be recalculated for them too — otherwise $tableOccupancy goes stale
+	// after REST updates or unassigns (the server publishes those as 'update').
+	if (type === 'create' || type === 'update' || type === 'seat_assign' || type === 'checkin' || type === 'checkout' || type === 'delete') {
 		recalculateOccupancy();
 	}
 

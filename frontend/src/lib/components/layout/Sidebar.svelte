@@ -79,7 +79,7 @@
           <item.icon class="nav-icon" />
           {#if !$sidebarCollapsed}
             {item.label}
-            {#if item.href === '/guests' && guestCount > 0}
+            {#if item.href === `/${wid}/guests` && guestCount > 0}
               <span class="nav-badge">{guestCount}</span>
             {/if}
           {/if}

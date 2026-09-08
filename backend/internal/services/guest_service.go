@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"gorm.io/gorm"
 	"weddingdb/internal/models"
 	"weddingdb/internal/repository"
 	"weddingdb/internal/utils"
@@ -18,10 +19,11 @@ type GuestService struct {
 	guestRepo *repository.GuestRepo
 	tableRepo *repository.TableRepo
 	sseHub    *SSEHub
+	db        *gorm.DB
 }
 
-func NewGuestService(guestRepo *repository.GuestRepo, tableRepo *repository.TableRepo, sseHub *SSEHub) *GuestService {
-	return &GuestService{guestRepo: guestRepo, tableRepo: tableRepo, sseHub: sseHub}
+func NewGuestService(guestRepo *repository.GuestRepo, tableRepo *repository.TableRepo, sseHub *SSEHub, db *gorm.DB) *GuestService {
+	return &GuestService{guestRepo: guestRepo, tableRepo: tableRepo, sseHub: sseHub, db: db}
 }
 
 func (s *GuestService) List(ctx context.Context, weddingID uuid.UUID, cursor string, limit int) ([]models.GuestRecord, int64, error) {
@@ -138,58 +140,80 @@ func (s *GuestService) CheckOut(ctx context.Context, id, weddingID uuid.UUID) er
 
 func (s *GuestService) BulkCreate(ctx context.Context, guests []models.GuestRecord) (int, error) {
 	created := 0
-	existing := make(map[uuid.UUID][]models.GuestRecord)
-	// Cache table lookups for this batch
-	tableCache := make(map[uuid.UUID]*models.BanquetTable)
-	for i := range guests {
-		g := &guests[i]
-		if g.Pax < 1 {
-			g.Pax = 1
-		}
-		if g.TableID == nil || g.SeatNum == nil {
-			if err := s.guestRepo.Create(ctx, g); err != nil {
-				return created, err
+	// Buffer SSE events and publish them only after the transaction commits,
+	// so a rolled-back batch never broadcasts phantom rows.
+	type pendingEvent struct {
+		eventType string
+		guest     *models.GuestRecord
+	}
+	events := make([]pendingEvent, 0, len(guests))
+
+	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		txGuestRepo := repository.NewGuestRepo(tx)
+		txTableRepo := repository.NewTableRepo(tx)
+		created = 0
+		events = events[:0]
+		existing := make(map[uuid.UUID][]models.GuestRecord)
+		// Cache table lookups for this batch
+		tableCache := make(map[uuid.UUID]*models.BanquetTable)
+		for i := range guests {
+			g := &guests[i]
+			if g.Pax < 1 {
+				g.Pax = 1
 			}
-			s.publishEvent("create", g, g.WeddingID)
-			created++
-			continue
-		}
-		tid := *g.TableID
-		// Validate table exists and belongs to this wedding
-		if _, ok := tableCache[tid]; !ok {
-			t, err := s.tableRepo.FindByID(ctx, tid, g.WeddingID)
-			if err != nil {
-				return created, fmt.Errorf("table %s not found", tid.String())
-			}
-			tableCache[tid] = t
-		}
-		table := tableCache[tid]
-		guestEnd := *g.SeatNum + g.Pax - 1
-		if *g.SeatNum < 1 || guestEnd > table.Capacity {
-			return created, fmt.Errorf("seat %d-%d on table %s exceeds capacity %d", *g.SeatNum, guestEnd, table.Name, table.Capacity)
-		}
-		if _, ok := existing[tid]; !ok {
-			rows, err := s.guestRepo.FindByTable(ctx, g.WeddingID, tid)
-			if err != nil {
-				return created, err
-			}
-			existing[tid] = rows
-		}
-		for _, e := range existing[tid] {
-			if e.SeatNum == nil {
+			if g.TableID == nil || g.SeatNum == nil {
+				if err := txGuestRepo.Create(ctx, g); err != nil {
+					return err
+				}
+				events = append(events, pendingEvent{"create", g})
+				created++
 				continue
 			}
-			eEnd := *e.SeatNum + e.Pax - 1
-			if *g.SeatNum <= eEnd && *e.SeatNum <= guestEnd {
-				return created, fmt.Errorf("seat %d-%d on table overlaps with \"%s\" (seats %d-%d)", *g.SeatNum, guestEnd, e.Name, *e.SeatNum, eEnd)
+			tid := *g.TableID
+			// Validate table exists and belongs to this wedding
+			if _, ok := tableCache[tid]; !ok {
+				t, err := txTableRepo.FindByID(ctx, tid, g.WeddingID)
+				if err != nil {
+					return fmt.Errorf("table %s not found", tid.String())
+				}
+				tableCache[tid] = t
 			}
+			table := tableCache[tid]
+			guestEnd := *g.SeatNum + g.Pax - 1
+			if *g.SeatNum < 1 || guestEnd > table.Capacity {
+				return fmt.Errorf("seat %d-%d on table %s exceeds capacity %d", *g.SeatNum, guestEnd, table.Name, table.Capacity)
+			}
+			if _, ok := existing[tid]; !ok {
+				rows, err := txGuestRepo.FindByTable(ctx, g.WeddingID, tid)
+				if err != nil {
+					return err
+				}
+				existing[tid] = rows
+			}
+			for _, e := range existing[tid] {
+				if e.SeatNum == nil {
+					continue
+				}
+				eEnd := *e.SeatNum + e.Pax - 1
+				if *g.SeatNum <= eEnd && *e.SeatNum <= guestEnd {
+					return fmt.Errorf("seat %d-%d on table overlaps with \"%s\" (seats %d-%d)", *g.SeatNum, guestEnd, e.Name, *e.SeatNum, eEnd)
+				}
+			}
+			existing[tid] = append(existing[tid], *g)
+			if err := txGuestRepo.Create(ctx, g); err != nil {
+				return err
+			}
+			events = append(events, pendingEvent{"create", g})
+			created++
 		}
-		existing[tid] = append(existing[tid], *g)
-		if err := s.guestRepo.Create(ctx, g); err != nil {
-			return created, err
-		}
-		s.publishEvent("create", g, g.WeddingID)
-		created++
+		return nil
+	})
+	if err != nil {
+		// Transaction rolled back: nothing committed, nothing to broadcast.
+		return 0, err
+	}
+	for _, e := range events {
+		s.publishEvent(e.eventType, e.guest, e.guest.WeddingID)
 	}
 	return created, nil
 }
@@ -259,7 +283,7 @@ type SyncMutation struct {
 
 type SyncResult struct {
 	GuestID      string              `json:"guestId"`
-	Status       string              `json:"status"` // applied | skipped
+	Status       string              `json:"status"` // applied | skipped | failed
 	Reason       string              `json:"reason,omitempty"`
 	ServerRecord *models.GuestRecord `json:"serverRecord,omitempty"`
 }
@@ -281,6 +305,13 @@ func (s *GuestService) applySyncMutation(ctx context.Context, weddingID uuid.UUI
 		return SyncResult{GuestID: m.GuestID, Status: "skipped", Reason: "invalid guestId"}
 	}
 
+	// Skew clamp: never trust a client clock in the future, or a skewed device
+	// would win every LWW comparison from then on.
+	opTime := m.ClientUpdatedAt
+	if opTime.After(time.Now()) {
+		opTime = time.Now()
+	}
+
 	// Load server record if exists
 	existing, err := s.guestRepo.FindByID(ctx, gid, weddingID)
 	found := err == nil
@@ -288,15 +319,20 @@ func (s *GuestService) applySyncMutation(ctx context.Context, weddingID uuid.UUI
 	switch m.Op {
 	case SyncOpCreate:
 		if found {
-			// treat as update with LWW
-			if !m.ClientUpdatedAt.After(existing.UpdatedAt) {
+			// treat as update with LWW; equal timestamps count as newer (tie-break)
+			if opTime.Before(existing.UpdatedAt) {
 				return SyncResult{GuestID: m.GuestID, Status: "skipped", Reason: "older than server", ServerRecord: existing}
 			}
 			if m.Payload != nil {
+				if err := s.validateSyncTableSeat(ctx, weddingID, m.Payload); err != nil {
+					return SyncResult{GuestID: m.GuestID, Status: "failed", Reason: err.Error()}
+				}
 				applySyncPayload(existing, m.Payload, &gid)
 			}
-			existing.UpdatedAt = m.ClientUpdatedAt
-			_ = s.guestRepo.SyncUpdate(ctx, existing)
+			existing.UpdatedAt = opTime
+			if err := s.guestRepo.SyncUpdate(ctx, existing); err != nil {
+				return SyncResult{GuestID: m.GuestID, Status: "failed", Reason: err.Error()}
+			}
 			s.publishEvent("update", existing, weddingID)
 			return SyncResult{GuestID: m.GuestID, Status: "applied", ServerRecord: existing}
 		}
@@ -305,6 +341,9 @@ func (s *GuestService) applySyncMutation(ctx context.Context, weddingID uuid.UUI
 		}
 		if m.Payload.Pax < 1 {
 			m.Payload.Pax = 1
+		}
+		if err := s.validateSyncTableSeat(ctx, weddingID, m.Payload); err != nil {
+			return SyncResult{GuestID: m.GuestID, Status: "failed", Reason: err.Error()}
 		}
 		g := &models.GuestRecord{
 			ID:        gid,
@@ -319,8 +358,8 @@ func (s *GuestService) applySyncMutation(ctx context.Context, weddingID uuid.UUI
 			Dietary:   m.Payload.Dietary,
 			AngbaoAmt: m.Payload.AngbaoAmt,
 			GiftItem:  m.Payload.GiftItem,
-			CreatedAt: m.ClientUpdatedAt,
-			UpdatedAt: m.ClientUpdatedAt,
+			CreatedAt: opTime,
+			UpdatedAt: opTime,
 		}
 		if m.Payload.TableID != nil && *m.Payload.TableID != "" {
 			if tid, err := parseSyncID(*m.Payload.TableID); err == nil {
@@ -328,7 +367,9 @@ func (s *GuestService) applySyncMutation(ctx context.Context, weddingID uuid.UUI
 			}
 		}
 		g.SeatNum = m.Payload.SeatNum
-		_ = s.guestRepo.SyncCreate(ctx, g)
+		if err := s.guestRepo.SyncCreate(ctx, g); err != nil {
+			return SyncResult{GuestID: m.GuestID, Status: "failed", Reason: err.Error()}
+		}
 		s.publishEvent("create", g, weddingID)
 		return SyncResult{GuestID: m.GuestID, Status: "applied", ServerRecord: g}
 
@@ -336,14 +377,20 @@ func (s *GuestService) applySyncMutation(ctx context.Context, weddingID uuid.UUI
 		if !found {
 			return SyncResult{GuestID: m.GuestID, Status: "skipped", Reason: "not found", ServerRecord: nil}
 		}
-		if !m.ClientUpdatedAt.After(existing.UpdatedAt) {
+		// Equal timestamps win the tie-break: only strictly older ops lose.
+		if opTime.Before(existing.UpdatedAt) {
 			return SyncResult{GuestID: m.GuestID, Status: "skipped", Reason: "older than server", ServerRecord: existing}
 		}
 		if m.Payload != nil {
+			if err := s.validateSyncTableSeat(ctx, weddingID, m.Payload); err != nil {
+				return SyncResult{GuestID: m.GuestID, Status: "failed", Reason: err.Error()}
+			}
 			applySyncPayload(existing, m.Payload, nil)
 		}
-		existing.UpdatedAt = m.ClientUpdatedAt
-		_ = s.guestRepo.SyncUpdate(ctx, existing)
+		existing.UpdatedAt = opTime
+		if err := s.guestRepo.SyncUpdate(ctx, existing); err != nil {
+			return SyncResult{GuestID: m.GuestID, Status: "failed", Reason: err.Error()}
+		}
 		s.publishEvent("update", existing, weddingID)
 		return SyncResult{GuestID: m.GuestID, Status: "applied", ServerRecord: existing}
 
@@ -351,10 +398,14 @@ func (s *GuestService) applySyncMutation(ctx context.Context, weddingID uuid.UUI
 		if !found {
 			return SyncResult{GuestID: m.GuestID, Status: "applied"}
 		}
-		if !m.ClientUpdatedAt.After(existing.UpdatedAt) {
-			return SyncResult{GuestID: m.GuestID, Status: "skipped", Reason: "older than server", ServerRecord: existing}
+		if opTime.Before(existing.UpdatedAt) {
+			// Report "failed", not "skipped": the client keeps failed items
+			// queued instead of dequeuing and losing the delete intent.
+			return SyncResult{GuestID: m.GuestID, Status: "failed", Reason: "older than server", ServerRecord: existing}
 		}
-		_ = s.guestRepo.Delete(ctx, gid, weddingID)
+		if err := s.guestRepo.Delete(ctx, gid, weddingID); err != nil {
+			return SyncResult{GuestID: m.GuestID, Status: "failed", Reason: err.Error()}
+		}
 		s.publishEvent("delete", existing, weddingID)
 		return SyncResult{GuestID: m.GuestID, Status: "applied"}
 
@@ -362,10 +413,10 @@ func (s *GuestService) applySyncMutation(ctx context.Context, weddingID uuid.UUI
 		if !found {
 			return SyncResult{GuestID: m.GuestID, Status: "skipped", Reason: "not found"}
 		}
-		if !m.ClientUpdatedAt.After(existing.UpdatedAt) {
+		if opTime.Before(existing.UpdatedAt) {
 			return SyncResult{GuestID: m.GuestID, Status: "skipped", Reason: "older than server", ServerRecord: existing}
 		}
-		existing.CheckedInAt = &m.ClientUpdatedAt
+		existing.CheckedInAt = &opTime
 		if m.Payload != nil {
 			if m.Payload.AngbaoAmt != nil {
 				existing.AngbaoAmt = m.Payload.AngbaoAmt
@@ -374,8 +425,10 @@ func (s *GuestService) applySyncMutation(ctx context.Context, weddingID uuid.UUI
 				existing.GiftItem = m.Payload.GiftItem
 			}
 		}
-		existing.UpdatedAt = m.ClientUpdatedAt
-		_ = s.guestRepo.SyncUpdate(ctx, existing)
+		existing.UpdatedAt = opTime
+		if err := s.guestRepo.SyncUpdate(ctx, existing); err != nil {
+			return SyncResult{GuestID: m.GuestID, Status: "failed", Reason: err.Error()}
+		}
 		s.publishEvent("checkin", existing, weddingID)
 		return SyncResult{GuestID: m.GuestID, Status: "applied", ServerRecord: existing}
 
@@ -383,18 +436,41 @@ func (s *GuestService) applySyncMutation(ctx context.Context, weddingID uuid.UUI
 		if !found {
 			return SyncResult{GuestID: m.GuestID, Status: "skipped", Reason: "not found"}
 		}
-		if !m.ClientUpdatedAt.After(existing.UpdatedAt) {
+		if opTime.Before(existing.UpdatedAt) {
 			return SyncResult{GuestID: m.GuestID, Status: "skipped", Reason: "older than server", ServerRecord: existing}
 		}
 		existing.CheckedInAt = nil
-		existing.UpdatedAt = m.ClientUpdatedAt
-		_ = s.guestRepo.SyncUpdate(ctx, existing)
+		existing.UpdatedAt = opTime
+		if err := s.guestRepo.SyncUpdate(ctx, existing); err != nil {
+			return SyncResult{GuestID: m.GuestID, Status: "failed", Reason: err.Error()}
+		}
 		s.publishEvent("checkout", existing, weddingID)
 		return SyncResult{GuestID: m.GuestID, Status: "applied", ServerRecord: existing}
 
 	default:
 		return SyncResult{GuestID: m.GuestID, Status: "skipped", Reason: "unknown op"}
 	}
+}
+
+// validateSyncTableSeat mirrors the table/seat rules of AssignSeat for offline
+// sync mutations: the table must exist in this wedding and the seat must fit
+// its capacity. A nil/empty tableId (unassign) needs no validation.
+func (s *GuestService) validateSyncTableSeat(ctx context.Context, weddingID uuid.UUID, p *SyncPayload) error {
+	if p.TableID == nil || *p.TableID == "" {
+		return nil
+	}
+	tid, err := parseSyncID(*p.TableID)
+	if err != nil {
+		return fmt.Errorf("invalid tableId %q", *p.TableID)
+	}
+	table, err := s.tableRepo.FindByID(ctx, tid, weddingID)
+	if err != nil {
+		return fmt.Errorf("table %s not found", *p.TableID)
+	}
+	if p.SeatNum != nil && table.Capacity > 0 && *p.SeatNum > table.Capacity {
+		return fmt.Errorf("seat %d exceeds capacity %d of table %s", *p.SeatNum, table.Capacity, table.Name)
+	}
+	return nil
 }
 
 func applySyncPayload(g *models.GuestRecord, p *SyncPayload, gid *uuid.UUID) {
@@ -414,16 +490,17 @@ func applySyncPayload(g *models.GuestRecord, p *SyncPayload, gid *uuid.UUID) {
 	g.Dietary = p.Dietary
 	g.AngbaoAmt = p.AngbaoAmt
 	g.GiftItem = p.GiftItem
-	if p.TableID != nil {
-		if *p.TableID == "" {
-			g.TableID = nil
-			g.SeatNum = nil
-		} else if tid, err := parseSyncID(*p.TableID); err == nil {
+	switch {
+	case p.TableID == nil || *p.TableID == "":
+		// JSON null and empty string both mean "unassign": clear the whole
+		// seat assignment. SeatNum must never survive with a nil TableID.
+		g.TableID = nil
+		g.SeatNum = nil
+	default:
+		if tid, err := parseSyncID(*p.TableID); err == nil {
 			g.TableID = &tid
 			g.SeatNum = p.SeatNum
 		}
-	} else if p.SeatNum != nil {
-		g.SeatNum = p.SeatNum
 	}
 	if gid != nil {
 		g.ID = *gid

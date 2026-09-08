@@ -7,7 +7,7 @@ services:
       PORT: "8080"
       DATABASE_URL: "postgresql://weddingdb:weddingdb@postgres:5432/weddingdb?sslmode=disable"
       REDIS_URL: "redis://redis:6379"
-      JWT_SECRET: "${JWT_SECRET:-change-me-in-production}"
+      JWT_SECRET: "${JWT_SECRET:?JWT_SECRET must be set, e.g. openssl rand -hex 32}"
       ADMIN_BOOTSTRAP_PASSWORD: "${ADMIN_BOOTSTRAP_PASSWORD:-}"
       STATIC_DIR: "./static"
       TZ: Asia/Kuala_Lumpur
@@ -27,7 +27,7 @@ services:
       POSTGRES_PASSWORD: weddingdb
       POSTGRES_DB: weddingdb
     ports:
-      - "5432:5432"
+      - "127.0.0.1:5432:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
@@ -40,11 +40,13 @@ services:
     image: docker.dragonflydb.io/dragonflydb/dragonfly:latest
     ulimits:
       memlock: -1
-    ports:
-      - "6379:6379"
+    volumes:
+      - redisdata:/data
 
 volumes:
   pgdata:
     name: weddingdb_pgdata
   uploads:
     name: weddingdb_uploads
+  redisdata:
+    name: weddingdb_redisdata

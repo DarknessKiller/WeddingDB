@@ -22,12 +22,29 @@ function optimisticPatch(op: string, guestId: string, data?: Record<string, unkn
 			const g = { id: guestId, name: (data.name as string) || '', phone: (data.phone as string) || '', email: (data.email as string) || '', pax: (data.pax as number) || 1, rsvp: (data.rsvp as string) || 'no_response', isVip: !!data.isVip, notes: (data.notes as string) || '', dietaryRequirements: (data.dietary as string[]) || [], tableId: (data.tableId as string | null) || null, seatNumber: (data.seatNum as number | null) ?? null, checkedIn: false, createdAt: now, updatedAt: now } as unknown as import('$lib/types').Guest;
 			guestList.update(l => [...l, g]); guestMap.update(m => { const n = new Map(m); n.set(guestId, g); return n; });
 		} else if (op === 'update' && data) {
-			guestList.update(l => l.map(x => x.id === guestId ? { ...x, ...{ name: data.name, phone: data.phone, email: data.email, pax: data.pax, rsvp: data.rsvp, isVip: data.isVip, notes: data.notes, dietaryRequirements: data.dietary, tableId: data.tableId ?? x.tableId, seatNumber: data.seatNum ?? x.seatNumber, angbaoAmount: data.angbaoAmt ?? x.angbaoAmount, giftItem: data.giftItem ?? x.giftItem, updatedAt: new Date() } } as unknown as import('$lib/types').Guest : x));
+			// Explicit null (or "") in the patch overrides/clears the old value;
+			// undefined keeps the old value (partial payloads like seat assign).
+			guestList.update(l => l.map(x => x.id === guestId ? {
+				...x,
+				name: data.name !== undefined ? data.name : x.name,
+				phone: data.phone !== undefined ? data.phone : x.phone,
+				email: data.email !== undefined ? data.email : x.email,
+				pax: data.pax !== undefined ? data.pax : x.pax,
+				rsvp: data.rsvp !== undefined ? data.rsvp : x.rsvp,
+				isVip: data.isVip !== undefined ? data.isVip : x.isVip,
+				notes: data.notes !== undefined ? data.notes : x.notes,
+				dietaryRequirements: data.dietary !== undefined ? data.dietary : x.dietaryRequirements,
+				tableId: data.tableId !== undefined ? ((data.tableId as string | null) || null) : x.tableId,
+				seatNumber: data.seatNum !== undefined ? ((data.seatNum as number | null) ?? null) : x.seatNumber,
+				angbaoAmount: data.angbaoAmt !== undefined ? ((data.angbaoAmt as number | null) ?? undefined) : x.angbaoAmount,
+				giftItem: data.giftItem !== undefined ? ((data.giftItem as string | null) ?? undefined) : x.giftItem,
+				updatedAt: new Date()
+			} as unknown as import('$lib/types').Guest : x));
 		} else if (op === 'delete') {
 			guestList.update(l => l.filter(x => x.id !== guestId)); guestMap.update(m => { const n = new Map(m); n.delete(guestId); return n; });
 		} else if (op === 'checkin') {
 			const now = new Date();
-			guestList.update(l => l.map(x => x.id === guestId ? { ...x, checkedIn: true, checkedInAt: now, updatedAt: now } as unknown as import('$lib/types').Guest : x));
+			guestList.update(l => l.map(x => x.id === guestId ? { ...x, checkedIn: true, checkedInAt: now, angbaoAmount: data?.angbaoAmt !== undefined ? ((data.angbaoAmt as number | null) ?? undefined) : x.angbaoAmount, giftItem: data?.giftItem !== undefined ? ((data.giftItem as string | null) ?? undefined) : x.giftItem, updatedAt: now } as unknown as import('$lib/types').Guest : x));
 		} else if (op === 'checkout') {
 			guestList.update(l => l.map(x => x.id === guestId ? { ...x, checkedIn: false, checkedInAt: undefined, updatedAt: new Date() } as unknown as import('$lib/types').Guest : x));
 		}
@@ -167,7 +184,7 @@ export async function deleteGuest(weddingId: string, guestId: string): Promise<v
 }
 
 export async function checkInGuest(weddingId: string, guestId: string, body?: { angbaoAmt?: number; giftItem?: string }): Promise<void> {
-	const doQueue = () => { enqueue(weddingId, { mutationId: genId(), op: 'checkin', guestId, clientUpdatedAt: nowIso(), payload: body as unknown as Record<string, unknown> }); optimisticPatch('checkin', guestId); };
+	const doQueue = () => { enqueue(weddingId, { mutationId: genId(), op: 'checkin', guestId, clientUpdatedAt: nowIso(), payload: body as unknown as Record<string, unknown> }); optimisticPatch('checkin', guestId, body as unknown as Record<string, unknown> | undefined); };
 	if (isOffline()) { doQueue(); return; }
 	try {
 		const res = await apiFetch(`/api/weddings/${weddingId}/guests/${guestId}/checkin`, { method: 'POST', body: body ? JSON.stringify(body) : undefined });

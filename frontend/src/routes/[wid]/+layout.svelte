@@ -11,7 +11,7 @@
   import { fetchAllGuests } from '$lib/api/guests';
   import { getWedding } from '$lib/api/weddings';
   import { listTables } from '$lib/api/tables';
-  import { initializeSSE, seedGuests } from '$lib/stores/guestEvents';
+  import { initializeSSE, refreshGuests } from '$lib/stores/guestEvents';
   import type { BanquetTable } from '$lib/types';
 
   let { children } = $props();
@@ -67,9 +67,10 @@
       try {
         const { syncQueue } = await import('$lib/offline/queue');
         await syncQueue(wid);
-        const guests = await loadGuests();
+        // Refresh inside the syncing window so SSE events arriving mid-fetch
+        // are queued and replayed after the seed instead of being clobbered.
+        const guests = await refreshGuests(loadGuests);
         guestCount = guests.length;
-        seedGuests(guests);
         refreshQueued();
       } catch {}
     }
@@ -91,9 +92,10 @@
     // Subscribe before the snapshot; guestEvents queues mutations until seeding completes.
     cleanupSSE = initializeSSE(loadGuests);
     try {
-      const guests = await loadGuests();
+      // refreshGuests keeps the syncing window open across fetch+seed even if
+      // initializeSSE early-returned, so mid-fetch SSE events can't be clobbered.
+      const guests = await refreshGuests(loadGuests);
       guestCount = guests.length;
-      seedGuests(guests);
     } catch {}
 
     listTables($weddingId).then((t) => {

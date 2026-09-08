@@ -233,6 +233,16 @@ func (h *GuestHandler) CheckIn(c fuego.ContextWithBody[CheckInRequest]) (any, er
 	if err != nil {
 		return nil, fuego.BadRequestError{Title: "Invalid ID"}
 	}
+	// Check in FIRST: an already-checked-in guest must 409 without any
+	// money-record mutation (applying angbao/gift before CheckIn would
+	// overwrite records then reject the request).
+	if err := h.guestService.CheckIn(ctx, id, wid); err != nil {
+		if errors.Is(err, services.ErrAlreadyCheckedIn) {
+			return nil, fuego.ConflictError{Title: "Guest already checked in by another receptionist"}
+		}
+		return nil, err
+	}
+	// Only on successful check-in, apply gift/angbao updates.
 	if body.AngbaoAmt != nil || body.GiftItem != nil {
 		guest, err := h.guestService.Get(ctx, id, wid)
 		if err != nil {
@@ -247,12 +257,7 @@ func (h *GuestHandler) CheckIn(c fuego.ContextWithBody[CheckInRequest]) (any, er
 		if err := h.guestService.Update(ctx, guest); err != nil {
 			return nil, err
 		}
-	}
-	if err := h.guestService.CheckIn(ctx, id, wid); err != nil {
-		if errors.Is(err, services.ErrAlreadyCheckedIn) {
-			return nil, fuego.ConflictError{Title: "Guest already checked in by another receptionist"}
-		}
-		return nil, err
+		return guest, nil
 	}
 	guest, err := h.guestService.Get(ctx, id, wid)
 	if err != nil {

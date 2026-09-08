@@ -21,6 +21,9 @@ func LoadEnv() Env {
 	if secret == "" {
 		log.Fatal("JWT_SECRET environment variable is required and must not be empty")
 	}
+	if secret == "change-me-in-production" {
+		log.Fatal("JWT_SECRET must not be the insecure default \"change-me-in-production\"")
+	}
 	port := getEnv("PORT", "8080")
 	publicURL := getEnv("PUBLIC_URL", "http://localhost:"+port)
 	return Env{
