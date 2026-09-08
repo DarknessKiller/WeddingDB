@@ -15,9 +15,9 @@ Two hundred guests arrive in under two hours. Each one needs a welcome, a table 
 
 WeddingDB changes the door:
 
-- **Check-in takes seconds, not a line.** The receptionist types part of a name, or the pinyin of a Chinese name, and the guest pops up. One tap checks them in and records the angpao at the same time. No flipping pages, no squinting at handwriting.
+- **Check-in takes seconds, not a line.** The receptionist types part of a name, or the pinyin of a Chinese name, and the guest pops up. One tap marks them arrived. No flipping pages, no squinting at handwriting.
 - **The whole team checks in from their pocket.** Anyone with the app finds a guest by name and taps check-in. The reception desk stops being one person with a clipboard.
-- **Angpao is recorded at the same tap.** Name, amount, table. It exports to CSV or Excel after the night, no transcription, no deciphering handwriting.
+- **Angpao is keyed separately, for every guest.** Check-in stays a single tap; the angpao amount and gift item are recorded from the guest list, so a declined guest who still sent a gift gets their entry too. It exports to CSV or Excel after the night, no transcription, no deciphering handwriting.
 - **Seats update live.** Cross off a guest at the door and every screen shows it. A no-show frees a table and a last-minute guest takes it.
 
 ## What You Get
