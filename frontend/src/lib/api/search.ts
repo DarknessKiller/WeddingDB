@@ -44,19 +44,6 @@ export async function listTables(): Promise<BanquetTable[]> {
 	return res.json();
 }
 
-export async function checkInGuest(guestId: string, angbaoAmt?: number, giftItem?: string): Promise<Guest> {
-	const wid = get(weddingId);
-	const body: Record<string, unknown> = {};
-	if (angbaoAmt !== undefined) body.angbaoAmt = angbaoAmt;
-	if (giftItem) body.giftItem = giftItem;
-	const res = await apiFetch(`/api/weddings/${wid}/guests/${guestId}/checkin`, {
-		method: 'POST',
-		body: JSON.stringify(body)
-	});
-	if (!res.ok) throw new Error('Check-in failed');
-	return mapGuest(await res.json());
-}
-
 function mapGuest(raw: any): Guest {
 	return {
 		id: String(raw.id),

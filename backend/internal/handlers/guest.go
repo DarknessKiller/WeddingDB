@@ -217,14 +217,10 @@ func (h *GuestHandler) Delete(c fuego.ContextWithBody[any]) (any, error) {
 	return nil, nil
 }
 
-type CheckInRequest struct {
-	AngbaoAmt *int    `json:"angbaoAmt"`
-	GiftItem  *string `json:"giftItem"`
-}
-
-func (h *GuestHandler) CheckIn(c fuego.ContextWithBody[CheckInRequest]) (any, error) {
+// CheckIn checks a guest in. Gift/angpao keying is a separate flow — it goes
+// through the guest-update endpoint (PUT /guests/{id}), never this one.
+func (h *GuestHandler) CheckIn(c fuego.ContextWithBody[any]) (any, error) {
 	ctx := c.Context()
-	body, _ := c.Body()
 	wid, err := DecodeWID(c)
 	if err != nil {
 		return nil, fuego.BadRequestError{Title: "Invalid wedding ID"}
@@ -233,31 +229,11 @@ func (h *GuestHandler) CheckIn(c fuego.ContextWithBody[CheckInRequest]) (any, er
 	if err != nil {
 		return nil, fuego.BadRequestError{Title: "Invalid ID"}
 	}
-	// Check in FIRST: an already-checked-in guest must 409 without any
-	// money-record mutation (applying angbao/gift before CheckIn would
-	// overwrite records then reject the request).
 	if err := h.guestService.CheckIn(ctx, id, wid); err != nil {
 		if errors.Is(err, services.ErrAlreadyCheckedIn) {
 			return nil, fuego.ConflictError{Title: "Guest already checked in by another receptionist"}
 		}
 		return nil, err
-	}
-	// Only on successful check-in, apply gift/angbao updates.
-	if body.AngbaoAmt != nil || body.GiftItem != nil {
-		guest, err := h.guestService.Get(ctx, id, wid)
-		if err != nil {
-			return nil, fuego.NotFoundError{Title: "Guest not found"}
-		}
-		if body.AngbaoAmt != nil {
-			guest.AngbaoAmt = body.AngbaoAmt
-		}
-		if body.GiftItem != nil {
-			guest.GiftItem = body.GiftItem
-		}
-		if err := h.guestService.Update(ctx, guest); err != nil {
-			return nil, err
-		}
-		return guest, nil
 	}
 	guest, err := h.guestService.Get(ctx, id, wid)
 	if err != nil {

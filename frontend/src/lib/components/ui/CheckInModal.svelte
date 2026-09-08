@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { X, Banknote, Gift, UserCheck, Loader2 } from 'lucide-svelte';
+  import { X, UserCheck, Loader2 } from 'lucide-svelte';
   import { fade } from 'svelte/transition';
   import { slideOut as sheetSlideOut } from '$lib/utils/motion';
 
@@ -9,18 +9,11 @@
 
   let {
     guestName,
-    angbaoAmount = $bindable(''),
-    giftItem = $bindable(''),
-    updateMode = false,
     onConfirm,
     onClose,
     loading = false,
   }: {
     guestName: string;
-    angbaoAmount?: string;
-    giftItem?: string;
-    /** Already-checked-in guest: modal saves the gift via the guest-update flow instead of checking in. */
-    updateMode?: boolean;
     onConfirm: () => void;
     onClose: () => void;
     loading?: boolean;
@@ -67,36 +60,19 @@
       <div class="w-10 h-1 bg-gray-300 rounded-full"></div>
     </div>
     <div class="flex items-center justify-between p-5 border-b border-gray-100">
-      <h3 id="check-in-title" class="font-bold text-gray-900">{updateMode ? 'Update Gift — ' : 'Check In '}{guestName}</h3>
+      <h3 id="check-in-title" class="font-bold text-gray-900">Check In {guestName}</h3>
       <button onclick={onClose} aria-label="Close" class="min-w-[44px] min-h-[44px] rounded-lg flex items-center justify-center hover:bg-gray-100 transition-colors">
         <X class="w-4 h-4 text-gray-400" />
       </button>
     </div>
     <div class="p-5 space-y-4">
-      <div>
-        <label for="angbao-amount" class="text-sm font-semibold text-gray-700 mb-1.5 block">Angbao Amount (RM)</label>
-        <div class="relative">
-          <Banknote class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-          <input id="angbao-amount" type="number" min="0" bind:value={angbaoAmount} placeholder="0"
-            class="w-full pl-10 pr-4 py-3 border border-black/[0.08] rounded-xl text-sm bg-white/80 focus:border-red focus:ring-2 focus:ring-red/10 outline-none transition-all min-h-[48px]" />
-        </div>
-      </div>
-      <div>
-        <label for="gift-item" class="text-sm font-semibold text-gray-700 mb-1.5 block">Gift Item</label>
-        <div class="relative">
-          <Gift class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-          <input id="gift-item" bind:value={giftItem} placeholder="Optional"
-            class="w-full pl-10 pr-4 py-3 border border-black/[0.08] rounded-xl text-sm bg-white/80 focus:border-red focus:ring-2 focus:ring-red/10 outline-none transition-all min-h-[48px]" />
-        </div>
-      </div>
+      <p class="text-sm text-gray-600">Mark {guestName} as arrived. Angpao and gifts are recorded separately from the guest list.</p>
     </div>
     <div class="flex gap-3 p-5 pt-0">
       <button onclick={onConfirm} disabled={loading}
         class="flex-1 py-3 bg-red text-white rounded-xl text-sm font-semibold hover:bg-red-light transition-colors flex items-center justify-center gap-2 disabled:opacity-50">
         {#if loading}
           <Loader2 class="w-4 h-4 text-white animate-spin" /> Processing...
-        {:else if updateMode}
-          <Gift class="w-4 h-4" /> Save Gift
         {:else}
           <UserCheck class="w-4 h-4" /> Confirm Check In
         {/if}

@@ -183,11 +183,11 @@ export async function deleteGuest(weddingId: string, guestId: string): Promise<v
 	}
 }
 
-export async function checkInGuest(weddingId: string, guestId: string, body?: { angbaoAmt?: number; giftItem?: string }): Promise<void> {
-	const doQueue = () => { enqueue(weddingId, { mutationId: genId(), op: 'checkin', guestId, clientUpdatedAt: nowIso(), payload: body as unknown as Record<string, unknown> }); optimisticPatch('checkin', guestId, body as unknown as Record<string, unknown> | undefined); };
+export async function checkInGuest(weddingId: string, guestId: string): Promise<void> {
+	const doQueue = () => { enqueue(weddingId, { mutationId: genId(), op: 'checkin', guestId, clientUpdatedAt: nowIso() }); optimisticPatch('checkin', guestId); };
 	if (isOffline()) { doQueue(); return; }
 	try {
-		const res = await apiFetch(`/api/weddings/${weddingId}/guests/${guestId}/checkin`, { method: 'POST', body: body ? JSON.stringify(body) : undefined });
+		const res = await apiFetch(`/api/weddings/${weddingId}/guests/${guestId}/checkin`, { method: 'POST' });
 		if (res.status === 409) { const err = await res.json().catch(() => ({ title: 'Guest already checked in' })); throw new ConflictError(err.title || 'Guest already checked in'); }
 		if (!res.ok) throw new Error(`Failed to check in guest: ${res.status}`);
 	} catch (e) {
