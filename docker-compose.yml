@@ -65,7 +65,7 @@ services:
       - "16686:16686"
       - "127.0.0.1:4318:4318"
     volumes:
-      - jqdata:/badger
+      - jgdata:/badger
 
 volumes:
   pgdata:
@@ -74,5 +74,5 @@ volumes:
     name: weddingdb_uploads
   redisdata:
     name: weddingdb_redisdata
-  jqdata:
-    name: weddingdb_jqdata
+  jgdata:
+    name: weddingdb_jgdata
