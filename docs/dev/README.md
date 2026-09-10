@@ -140,6 +140,24 @@ Server runs at `http://localhost:8080`.
 | `PORT` | Server port | `8080` |
 | `PUBLIC_URL` | Public server URL (used in OpenAPI spec) | `http://localhost:{PORT}` |
 | `CORS_ORIGIN` | Allowed CORS origin | `http://localhost:5173` |
+| `OTEL_ENABLED` | Enable OpenTelemetry tracing | `false` |
+| `OTEL_EXPORTER_OTLP_ENDPOINT` | OTLP HTTP endpoint | `http://localhost:4318/v1/traces` |
+| `OTEL_LOG_SQL` | `all` records SQL text on `gorm.query` spans (may contain PII) | off |
+| `OTEL_LOG_BODY` | `all` records JSON request/response bodies on request spans (passwords masked) | off |
+
+### Tracing (Jaeger)
+
+Opt-in tracing with a local Jaeger. The compose file ships a `jaeger` service behind the `tracing` profile:
+
+```sh
+docker compose --profile tracing up -d jaeger
+# then set on the app service:
+#   OTEL_ENABLED: "true"
+#   OTEL_EXPORTER_OTLP_ENDPOINT: "http://jaeger:4318/v1/traces"
+docker compose up -d app
+```
+
+Jaeger UI at `http://localhost:16686`. Request spans record route pattern, status code, and optionally bodies as span events; every DB query gets a `gorm.query` span with rows returned and, with `OTEL_LOG_SQL=all`, the SQL text as an event. Passwords in captured bodies are masked as `***`. Traces persist across Jaeger restarts via the Badger storage backend (`weddingdb_jqdata` volume).
 
 ---
 
@@ -249,3 +267,4 @@ nohup sh -c 'cd frontend && npm run dev -- --host 0.0.0.0 --port 5173' > /tmp/we
 ## Reference Docs
 
 - [`docs/specs/jwt-revocation-spec.md`](../specs/jwt-revocation-spec.md) — JWT refresh rotation & revocation design
+- [`docs/adr/002-otel-tracing.md`](../adr/002-otel-tracing.md) — OpenTelemetry tracing design
