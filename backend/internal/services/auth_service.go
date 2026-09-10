@@ -105,6 +105,13 @@ func (s *AuthService) SelectWedding(ctx context.Context, adminID uuid.UUID, wedd
 		if err != nil || !hasAccess {
 			return "", errors.New("no access to this wedding")
 		}
+		// Persist the wedding scope onto the caller's refresh token(s) so that
+		// Refresh re-mints a scoped access token. Without this, the first
+		// refresh after SelectWedding drops the wedding and the user gets 403
+		// until they log in again. Admins keep a nil scope (all weddings).
+		if err := s.tokenRepo.UpdateWeddingScope(ctx, adminID, weddingID); err != nil {
+			return "", fmt.Errorf("failed to persist wedding scope: %w", err)
+		}
 	}
 	return s.generateAccessToken(ctx, admin, &weddingID)
 }
@@ -131,6 +138,17 @@ func (s *AuthService) Refresh(ctx context.Context, refreshTokenStr string, oldAc
 		}
 	}
 
+	// Consume the presented refresh token BEFORE minting anything. If 0 rows
+	// were deleted the token was already used (replay) or expired — refuse so
+	// two concurrent refreshes can never both succeed.
+	rows, err := s.tokenRepo.DeleteByToken(ctx, refreshTokenStr)
+	if err != nil {
+		return nil, fmt.Errorf("failed to consume refresh token: %w", err)
+	}
+	if rows != 1 {
+		return nil, errors.New("invalid refresh token")
+	}
+
 	accessToken, err := s.generateAccessToken(ctx, admin, token.WeddingID)
 	if err != nil {
 		return nil, err
@@ -138,10 +156,6 @@ func (s *AuthService) Refresh(ctx context.Context, refreshTokenStr string, oldAc
 	newRefreshToken, err := s.generateRefreshToken(ctx, admin.ID, token.WeddingID)
 	if err != nil {
 		return nil, err
-	}
-	// Atomically consume the old refresh token — if 0 rows deleted, it was already used (replay)
-	if err := s.tokenRepo.DeleteByToken(ctx, refreshTokenStr); err != nil {
-		return nil, fmt.Errorf("failed to consume refresh token: %w", err)
 	}
 
 	var weddings []models.WeddingEvent
@@ -172,7 +186,9 @@ func (s *AuthService) Logout(ctx context.Context, refreshToken string, accessTok
 			s.BlacklistAccessToken(ctx, claims)
 		}
 	}
-	return s.tokenRepo.DeleteByToken(ctx, refreshToken)
+	// Best-effort delete: logging out with an already-consumed token is not an error.
+	_, err := s.tokenRepo.DeleteByToken(ctx, refreshToken)
+	return err
 }
 
 // ValidateToken parses and validates a JWT, then checks blacklist and token version.

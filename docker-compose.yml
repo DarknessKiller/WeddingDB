@@ -7,7 +7,7 @@ services:
       PORT: "8080"
       DATABASE_URL: "postgresql://weddingdb:weddingdb@postgres:5432/weddingdb?sslmode=disable"
       REDIS_URL: "redis://redis:6379"
-      JWT_SECRET: "${JWT_SECRET:-change-me-in-production}"
+      JWT_SECRET: "${JWT_SECRET:?JWT_SECRET must be set, e.g. openssl rand -hex 32}"
       ADMIN_BOOTSTRAP_PASSWORD: "${ADMIN_BOOTSTRAP_PASSWORD:-}"
       STATIC_DIR: "./static"
       # Opt-in tracing: uncomment + run `docker compose --profile tracing up` to enable.
@@ -33,7 +33,7 @@ services:
       POSTGRES_PASSWORD: weddingdb
       POSTGRES_DB: weddingdb
     ports:
-      - "5432:5432"
+      - "127.0.0.1:5432:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
@@ -48,6 +48,8 @@ services:
       memlock: -1
     ports:
       - "6379:6379"
+    volumes:
+      - redisdata:/data
 
   jaeger:
     # Pinned: newer Jaeger UI broke the dark theme.
@@ -70,5 +72,7 @@ volumes:
     name: weddingdb_pgdata
   uploads:
     name: weddingdb_uploads
+  redisdata:
+    name: weddingdb_redisdata
   jqdata:
     name: weddingdb_jqdata

@@ -25,6 +25,18 @@
   let searching = $state(false);
   let abortController: AbortController | null = null;
 
+  // Guest list polling: kiosks run for hours, so re-fetch every 30s.
+  let pollTimer: ReturnType<typeof setInterval> | undefined;
+  let guestsInFlight = false;
+  async function loadGuests() {
+    if (guestsInFlight) return; // skip while a fetch is still in flight
+    guestsInFlight = true;
+    try {
+      allGuests = await listGuests();
+    } catch {}
+    finally { guestsInFlight = false; }
+  }
+
   // Kiosk customization
   let kioskDescription = $state('Enter your name to find your table and seat');
   let kioskLogoUrl = $state('');
@@ -32,6 +44,10 @@
   let kioskBackgroundSize = $state('cover');
   let kioskBackgroundPosX = $state('center');
   let kioskBackgroundPosY = $state('center');
+  let kioskBackgroundBlur = $state(0);
+  let kioskLogoSize = $state('cover');
+  let kioskLogoPosX = $state('50%');
+  let kioskLogoPosY = $state('50%');
   let showSeatNumbers = $state(true);
   let weddingDate = $state<string>('');
   let weddingName = $state('');
@@ -98,16 +114,23 @@
     const wid = page.params.wid ?? '';
     if (wid) setWeddingId(wid);
     timer = setInterval(() => currentTime = new Date(), 1000);
-    listGuests().then(g => allGuests = g).catch(() => {});
+    loadGuests();
+    pollTimer = setInterval(loadGuests, 30_000);
     getPublicLayout(wid).then(l => { tables = l.tables; elements = l.elements; hallWidth = l.hallWidth; hallHeight = l.hallHeight; }).catch(() => {});
     fetch(`/api/public/weddings/${wid}/kiosk`).then(r => r.ok ? r.json() : null).then(data => {
       if (data) {
-        if (data.kioskDescription) kioskDescription = data.kioskDescription;
+        // Apply the server value even when it's an empty string — only
+        // undefined (field absent) means "keep the default".
+        if (data.kioskDescription !== undefined) kioskDescription = data.kioskDescription;
         if (data.kioskLogoUrl) kioskLogoUrl = data.kioskLogoUrl;
         if (data.kioskBackgroundUrl) kioskBackgroundUrl = data.kioskBackgroundUrl;
         if (data.kioskBackgroundSize) kioskBackgroundSize = data.kioskBackgroundSize;
         if (data.kioskBackgroundPosX) kioskBackgroundPosX = data.kioskBackgroundPosX;
         if (data.kioskBackgroundPosY) kioskBackgroundPosY = data.kioskBackgroundPosY;
+        if (data.kioskBackgroundBlur !== undefined) kioskBackgroundBlur = data.kioskBackgroundBlur;
+        if (data.kioskLogoSize) kioskLogoSize = data.kioskLogoSize;
+        if (data.kioskLogoPosX) kioskLogoPosX = data.kioskLogoPosX;
+        if (data.kioskLogoPosY) kioskLogoPosY = data.kioskLogoPosY;
         if (data.showSeatNumbers !== undefined) showSeatNumbers = data.showSeatNumbers;
         if (data.date) weddingDate = data.date;
         if (data.name) weddingName = data.name;
@@ -119,6 +142,7 @@
 
   onDestroy(() => {
     clearInterval(timer);
+    if (pollTimer) clearInterval(pollTimer);
     if (sheetAnimFrame) cancelAnimationFrame(sheetAnimFrame);
     if (mqHandler) {
       const mq = window.matchMedia('(prefers-reduced-motion: reduce)');
@@ -433,14 +457,14 @@
     <!-- Search View -->
     <div class="search-view" in:fade={{ duration: 250 }}>
       {#if kioskBackgroundUrl}
-        <div class="search-bg" style={`background-image: url(${kioskBackgroundUrl}); background-size: ${kioskBackgroundSize}; background-position: ${kioskBackgroundPosX} ${kioskBackgroundPosY};`}></div>
+        <div class="search-bg" style={`background-image: url(${kioskBackgroundUrl}); background-size: ${kioskBackgroundSize}; background-position: ${kioskBackgroundPosX} ${kioskBackgroundPosY}; filter: blur(${kioskBackgroundBlur}px); transform: scale(${kioskBackgroundBlur > 0 ? 1.1 : 1.05});`}></div>
         <div class="search-bg-overlay"></div>
       {/if}
 
       <div class="search-content">
         <div class="search-hero">
           {#if kioskLogoUrl}
-            <img src={kioskLogoUrl} alt="Logo" class="hero-logo" />
+            <img src={kioskLogoUrl} alt="Logo" class="hero-logo" style={`object-fit: ${kioskLogoSize}; object-position: ${kioskLogoPosX} ${kioskLogoPosY};`} />
           {:else}
             <div class="hero-icon">囍</div>
           {/if}
@@ -1003,7 +1027,7 @@
     color: #D4AF37;
     font-size: 2.5rem;
     font-weight: 700;
-    font-family: 'Noto Serif SC', 'Songti SC', serif;
+    font-family: var(--font-serif);
     box-shadow: 0 8px 32px rgba(161, 18, 23, 0.3);
   }
 

@@ -52,7 +52,8 @@ func newIntegrationAuthService(t *testing.T, secret string) (*AuthService, *mini
 		id TEXT PRIMARY KEY,
 		name TEXT NOT NULL,
 		date DATETIME,
-		kiosk_title TEXT,
+		venue_name TEXT,
+		venue_address TEXT,
 		kiosk_description TEXT,
 		kiosk_logo_url TEXT,
 		kiosk_background_url TEXT,
@@ -68,6 +69,14 @@ func newIntegrationAuthService(t *testing.T, secret string) (*AuthService, *mini
 		hall_height INTEGER DEFAULT 1000,
 		created_at DATETIME,
 		updated_at DATETIME
+	)`)
+
+	db.Exec(`CREATE TABLE user_weddings (
+		id TEXT PRIMARY KEY,
+		user_id TEXT NOT NULL,
+		wedding_id TEXT NOT NULL,
+		created_at DATETIME,
+		UNIQUE(user_id, wedding_id)
 	)`)
 
 	mr := miniredis.RunT(t)
@@ -107,6 +116,24 @@ func seedRefreshToken(t *testing.T, db *gorm.DB, adminID uuid.UUID, weddingID *u
 	}
 	if err := db.Create(rt).Error; err != nil {
 		t.Fatalf("failed to seed refresh token: %v", err)
+	}
+}
+
+// seedWedding inserts a wedding event.
+func seedWedding(t *testing.T, db *gorm.DB, weddingID uuid.UUID) {
+	t.Helper()
+	w := &models.WeddingEvent{ID: weddingID, Name: "Test Wedding"}
+	if err := db.Create(w).Error; err != nil {
+		t.Fatalf("failed to seed wedding: %v", err)
+	}
+}
+
+// seedUserWedding grants a user access to a wedding.
+func seedUserWedding(t *testing.T, db *gorm.DB, userID, weddingID uuid.UUID) {
+	t.Helper()
+	uw := &models.UserWedding{ID: uuid.New(), UserID: userID, WeddingID: weddingID}
+	if err := db.Create(uw).Error; err != nil {
+		t.Fatalf("failed to seed user wedding: %v", err)
 	}
 }
 
@@ -242,6 +269,106 @@ func TestRefresh_WithoutOldAccessToken_NoBlacklist(t *testing.T) {
 		if len(k) > 10 && k[:10] == "blacklist:j" {
 			t.Errorf("unexpected blacklist key written when no old access token provided: %q", k)
 		}
+	}
+}
+
+// --- Refresh rotation atomicity (consume-then-issue) ---
+
+func TestRefresh_ReplayRejected(t *testing.T) {
+	svc, _, db := newIntegrationAuthService(t, "test-secret")
+	adminID := uuid.New()
+	wid := uuid.New()
+	refreshStr := "test-refresh-token-replay"
+
+	seedAdmin(t, db, adminID, "admin")
+	seedRefreshToken(t, db, adminID, &wid, refreshStr)
+
+	result, err := svc.Refresh(context.Background(), refreshStr, "")
+	if err != nil {
+		t.Fatalf("first Refresh failed: %v", err)
+	}
+	if result == nil || result.RefreshToken == "" {
+		t.Fatal("expected new refresh token from first Refresh")
+	}
+
+	// Replaying the already-consumed refresh token must fail.
+	if _, err := svc.Refresh(context.Background(), refreshStr, ""); err == nil {
+		t.Fatal("expected replayed refresh token to be rejected, got nil error")
+	}
+
+	// The replacement token issued by the first Refresh must still work.
+	if _, err := svc.Refresh(context.Background(), result.RefreshToken, ""); err != nil {
+		t.Fatalf("expected rotated refresh token to be usable, got error: %v", err)
+	}
+
+	// Exactly one live refresh token must remain.
+	var count int64
+	db.Model(&models.RefreshToken{}).Where("admin_id = ?", adminID).Count(&count)
+	if count != 1 {
+		t.Errorf("expected 1 live refresh token after rotation, got %d", count)
+	}
+}
+
+// --- SelectWedding persists wedding scope onto refresh token ---
+
+func TestSelectWedding_PersistsWeddingScopeForUser(t *testing.T) {
+	svc, _, db := newIntegrationAuthService(t, "test-secret")
+	adminID := uuid.New()
+	wid := uuid.New()
+	refreshStr := "user-refresh-token"
+
+	seedAdmin(t, db, adminID, "user")
+	seedWedding(t, db, wid)
+	seedUserWedding(t, db, adminID, wid)
+	seedRefreshToken(t, db, adminID, nil, refreshStr) // login mints nil wedding scope
+
+	if _, err := svc.SelectWedding(context.Background(), adminID, wid); err != nil {
+		t.Fatalf("SelectWedding failed: %v", err)
+	}
+
+	// The refresh token row must now carry the selected wedding.
+	var rt models.RefreshToken
+	if err := db.Where("token = ?", refreshStr).First(&rt).Error; err != nil {
+		t.Fatalf("failed to load refresh token: %v", err)
+	}
+	if rt.WeddingID == nil || *rt.WeddingID != wid {
+		t.Fatalf("expected refresh token wedding_id=%s, got %v", wid, rt.WeddingID)
+	}
+
+	// Refresh must re-mint a scoped access token (not drop to nil → 403).
+	result, err := svc.Refresh(context.Background(), refreshStr, "")
+	if err != nil {
+		t.Fatalf("Refresh failed: %v", err)
+	}
+	claims, err := svc.ValidateToken(context.Background(), result.AccessToken)
+	if err != nil {
+		t.Fatalf("ValidateToken failed: %v", err)
+	}
+	if claims.WeddingID == nil || *claims.WeddingID != wid {
+		t.Errorf("expected scoped access token with wedding_id=%s, got %v", wid, claims.WeddingID)
+	}
+}
+
+func TestSelectWedding_AdminKeepsUnscopedRefreshToken(t *testing.T) {
+	svc, _, db := newIntegrationAuthService(t, "test-secret")
+	adminID := uuid.New()
+	wid := uuid.New()
+	refreshStr := "admin-refresh-token"
+
+	seedAdmin(t, db, adminID, "admin")
+	seedWedding(t, db, wid)
+	seedRefreshToken(t, db, adminID, nil, refreshStr)
+
+	if _, err := svc.SelectWedding(context.Background(), adminID, wid); err != nil {
+		t.Fatalf("SelectWedding failed: %v", err)
+	}
+
+	var rt models.RefreshToken
+	if err := db.Where("token = ?", refreshStr).First(&rt).Error; err != nil {
+		t.Fatalf("failed to load refresh token: %v", err)
+	}
+	if rt.WeddingID != nil {
+		t.Errorf("expected admin refresh token to keep nil wedding scope, got %v", *rt.WeddingID)
 	}
 }
 

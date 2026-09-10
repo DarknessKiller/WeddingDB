@@ -14,7 +14,14 @@ func GenerateNamePinyin(name string) string {
 	for _, r := range name {
 		if unicode.Is(unicode.Han, r) {
 			py := pinyin.LazyPinyin(string(r), pinyin.Args{Style: pinyin.NORMAL})
-			parts = append(parts, py[0])
+			if len(py) == 0 {
+				// Rare Han chars missing from go-pinyin's dict (e.g. 𠮷) return an
+				// empty slice — indexing py[0] would panic and crash the caller.
+				// Fall back to the raw char, lowercased, so search still works.
+				parts = append(parts, strings.ToLower(string(r)))
+			} else {
+				parts = append(parts, py[0])
+			}
 		} else {
 			parts = append(parts, strings.ToLower(string(r)))
 		}

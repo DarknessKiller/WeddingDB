@@ -8,12 +8,17 @@ vi.mock('$lib/stores', () => ({
 }));
 
 vi.mock('$lib/stores/weddingId', () => ({
-	weddingId: { subscribe: vi.fn(() => vi.fn()), set: vi.fn(), update: vi.fn() }
+	// subscribe must invoke the callback so svelte's get() returns 'w1'
+	weddingId: { get: () => 'w1', subscribe: vi.fn((run: (v: string) => void) => { run('w1'); return () => {}; }), set: vi.fn(), update: vi.fn() }
 }));
+
+// Captures the SSE event handler so tests can drive handleGuestEvent.
+const sseState = vi.hoisted(() => ({ eventHandler: undefined as ((e: unknown) => void) | undefined }));
 
 vi.mock('$lib/api/sse', () => ({
 	connectSSE: vi.fn(() => ({
-		onEvent: vi.fn(() => vi.fn()),
+		onEvent: vi.fn((cb: (e: unknown) => void) => { sseState.eventHandler = cb; return () => {}; }),
+		onStatus: vi.fn(() => () => {}),
 		disconnect: vi.fn()
 	})),
 	disconnectSSE: vi.fn()
@@ -115,5 +120,44 @@ describe('guestEvents store', () => {
 		const list = get(guestList);
 		expect(list).toHaveLength(2);
 		expect(list[0].name).toBe('Second');
+	});
+
+	// Server publishes REST updates/unassigns as 'update' events — occupancy
+	// must be recalculated for them too.
+	function makeEvent(overrides: Record<string, unknown> = {}) {
+		return {
+			type: 'update',
+			guestId: 'g1',
+			weddingId: 'w1',
+			timestamp: Date.now(),
+			guest: {
+				id: 'g1', name: 'Alice', phone: '123', email: '', pax: 2, rsvp: 'confirmed',
+				isVip: false, notes: '', dietary: [], tableId: 't1', seatNum: 1,
+				checkedInAt: null, angbaoAmt: null, giftItem: null,
+			},
+			...overrides,
+		};
+	}
+
+	it('update events recalculate occupancy (unassign clears table)', async () => {
+		const { initializeSSE, seedGuests, tableOccupancy, guestList } = await freshModule();
+		initializeSSE(() => Promise.resolve([]));
+		seedGuests([makeGuest({ id: 'g1', tableId: 't1', pax: 3 })]);
+		expect(get(tableOccupancy).get('t1')).toBe(3);
+
+		sseState.eventHandler!(makeEvent({ guest: { id: 'g1', name: 'Alice', phone: '123', email: '', pax: 2, rsvp: 'confirmed', isVip: false, notes: '', dietary: [], tableId: null, seatNum: null, checkedInAt: null, angbaoAmt: null, giftItem: null } }));
+
+		expect(get(guestList)[0].tableId).toBeNull();
+		expect(get(tableOccupancy).has('t1')).toBe(false);
+	});
+
+	it('create events recalculate occupancy', async () => {
+		const { initializeSSE, seedGuests, tableOccupancy } = await freshModule();
+		initializeSSE(() => Promise.resolve([]));
+		seedGuests([]);
+
+		sseState.eventHandler!(makeEvent({ type: 'create', guest: { id: 'g9', name: 'Zoe', phone: '', email: '', pax: 4, rsvp: 'confirmed', isVip: false, notes: '', dietary: [], tableId: 't2', seatNum: 1, checkedInAt: null, angbaoAmt: null, giftItem: null } }));
+
+		expect(get(tableOccupancy).get('t2')).toBe(4);
 	});
 });

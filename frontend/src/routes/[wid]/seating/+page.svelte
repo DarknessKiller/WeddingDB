@@ -5,7 +5,7 @@
   import { weddingId } from '$lib/stores/weddingId';
   import { guestList, tableOccupancy } from '$lib/stores/guestEvents';
   import { goto } from '$app/navigation';
-  import { assignSeat, checkInGuest, checkOutGuest } from '$lib/api/guests';
+  import { assignSeat, checkInGuest, checkOutGuest, ConflictError } from '$lib/api/guests';
   import { getOccupancy, listTables } from '$lib/api/tables';
   import { getLayout, saveLayout } from '$lib/api/layout';
   import Badge from '$lib/components/ui/Badge.svelte';
@@ -57,8 +57,6 @@
     panelDragY = 0;
   }
   let checkinGuest = $state<Guest | null>(null);
-  let angbaoAmount = $state('');
-  let giftItem = $state('');
   let unsubGuests: (() => void) | null = null;
 
   // Local state derived from SSE-backed store — updates in real time.
@@ -185,9 +183,11 @@
   }
 
   function openCheckinModal(guest: Guest) {
+    if (guest.checkedIn) {
+      addToast(`${guest.name} is already checked in — update their gift from the guest list`, 'error');
+      return;
+    }
     checkinGuest = guest;
-    angbaoAmount = guest.angbaoAmount != null ? String(guest.angbaoAmount) : '';
-    giftItem = guest.giftItem ?? '';
     showCheckinModal = true;
   }
 
@@ -195,14 +195,18 @@
     if (!checkinGuest) return;
     const wid = get(weddingId);
     try {
-      const body: { angbaoAmt?: number; giftItem?: string } = {};
-      if (angbaoAmount) body.angbaoAmt = Number(angbaoAmount);
-      if (giftItem) body.giftItem = giftItem;
-      await checkInGuest(wid, checkinGuest.id, Object.keys(body).length ? body : undefined);
-      allGuests = allGuests.map(g => g.id === checkinGuest!.id ? { ...g, checkedIn: true, checkedInAt: new Date(), angbaoAmount: angbaoAmount ? Number(angbaoAmount) : g.angbaoAmount, giftItem: giftItem || g.giftItem } : g);
+      await checkInGuest(wid, checkinGuest.id);
+      allGuests = allGuests.map(g => g.id === checkinGuest!.id ? { ...g, checkedIn: true, checkedInAt: new Date() } : g);
       showCheckinModal = false;
       addToast(`${checkinGuest.name} checked in`, 'success');
     } catch (e: any) {
+      if (e instanceof ConflictError) {
+        // Another receptionist checked the guest in first.
+        allGuests = allGuests.map(g => g.id === checkinGuest!.id ? { ...g, checkedIn: true } : g);
+        showCheckinModal = false;
+        addToast(`${checkinGuest.name} was already checked in by another receptionist`, 'error');
+        return;
+      }
       addToast(e.message ?? 'Check-in failed', 'error');
     }
   }
@@ -539,8 +543,6 @@
 {#if showCheckinModal && checkinGuest}
   <CheckInModal
     guestName={checkinGuest.name}
-    bind:angbaoAmount
-    bind:giftItem
     onConfirm={confirmCheckIn}
     onClose={() => showCheckinModal = false}
   />

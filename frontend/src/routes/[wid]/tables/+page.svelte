@@ -5,6 +5,7 @@
   import { cn } from '$lib/utils';
   import { addToast, isDrawerOpen } from '$lib/stores';
   import TableDrawer from '$lib/components/ui/TableDrawer.svelte';
+  import ConfirmDialog from '$lib/components/ui/ConfirmDialog.svelte';
   import { Star, Users, Plus, MoreVertical, Pencil, Trash2, AlertCircle, Map } from 'lucide-svelte';
   import { listTables, createTable, updateTable, deleteTable, getOccupancy } from '$lib/api/tables';
   import { getLayout, saveLayout } from '$lib/api/layout';
@@ -51,6 +52,10 @@
   let contextMenu = $state<{ x: number; y: number; table: BanquetTable } | null>(null);
   const menuWidth = 180;
   const menuHeight = 120;
+
+  // Delete confirmation
+  let showDeleteConfirm = $state(false);
+  let deleteTarget = $state<BanquetTable | null>(null);
 
   // Drawer state
   let showDrawer = $state(false);
@@ -166,6 +171,19 @@
     } finally {
       saving = false;
     }
+  }
+
+  function requestDelete(table: BanquetTable) {
+    contextMenu = null;
+    deleteTarget = table;
+    showDeleteConfirm = true;
+  }
+
+  async function confirmDelete() {
+    if (!deleteTarget) return;
+    showDeleteConfirm = false;
+    await handleDelete(deleteTarget);
+    deleteTarget = null;
   }
 
   async function handleDelete(table: BanquetTable) {
@@ -371,11 +389,22 @@
       <Pencil class="w-4 h-4" /> Edit
     </button>
     <hr class="my-1 border-gray-100" />
-    <button class="w-full flex items-center gap-2.5 px-4 py-2 text-sm text-red hover:bg-red-50" onclick={() => handleDelete(contextMenu!.table)}>
+    <button class="w-full flex items-center gap-2.5 px-4 py-2 text-sm text-red hover:bg-red-50" onclick={() => requestDelete(contextMenu!.table)}>
       <Trash2 class="w-4 h-4" /> Delete
     </button>
   </div>
 {/if}
+
+<ConfirmDialog
+  open={showDeleteConfirm}
+  title="Delete Table"
+  message={`Delete table ${deleteTarget?.name ?? ''}? Guests seated at this table will be unassigned. This cannot be undone.`}
+  confirmLabel="Delete"
+  cancelLabel="Cancel"
+  variant="danger"
+  onConfirm={confirmDelete}
+  onCancel={() => { showDeleteConfirm = false; deleteTarget = null; }}
+/>
 
 <!-- Add/Edit Drawer -->
 {#if showDrawer}

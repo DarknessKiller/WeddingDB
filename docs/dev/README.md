@@ -54,8 +54,8 @@ docker compose up -d
 ```
 
 - App: `http://localhost:8080` (serves the SPA + API)
-- Postgres: `localhost:5432` (user/pass/db all `weddingdb`)
-- Redis: `localhost:6379`
+- Postgres: `localhost:5432` (user/pass/db all `weddingdb`, bound to loopback only)
+- Redis: internal to the compose network (no host port published)
 
 ### First login (bootstrap admin)
 
@@ -74,7 +74,7 @@ The bootstrap only runs when the admin table is empty. After the first admin exi
 | `PORT` | `8080` | App listen port |
 | `DATABASE_URL` | compose-provided | Points at the `postgres` service; override to use an external DB |
 | `REDIS_URL` | `redis://redis:6379` | Compose-provided; override for external Redis |
-| `JWT_SECRET` | `change-me-in-production` | **Must set in production** |
+| `JWT_SECRET` | — | **Required** (compose fails fast if unset); must not be `change-me-in-production` |
 | `ADMIN_BOOTSTRAP_PASSWORD` | — | First-boot admin password (required when DB is empty) |
 | `TZ` | `Asia/Kuala_Lumpur` | Report timestamps follow this |
 
@@ -94,6 +94,7 @@ docker compose up -d
 - `weddingdb_pgdata` volume — PostgreSQL data (survives `down`, removed with `down -v`)
 - `weddingdb_uploads` volume — uploaded kiosk logos/backgrounds, mounted at `/app/uploads`
 - Backups: `./backup-db.sh` dumps the `postgres` container to `./backups/weddingdb_<timestamp>.sql.gz`. Note it expects the container named `weddingdb-postgres-1` (default compose naming).
+- Restore: `gunzip -c backups/<file>.sql.gz | docker exec -i weddingdb-postgres-1 psql -U weddingdb weddingdb`
 
 ### Updating
 

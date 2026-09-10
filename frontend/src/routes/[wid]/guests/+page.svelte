@@ -209,9 +209,15 @@
     showSeatNumbers ? allColumns : allColumns.filter(c => c.key !== 'seatNum')
   );
 
+  // Quote every field: double quotes around the value, internal quotes escaped as "".
+  function csvField(v: unknown): string {
+    const s = v === null || v === undefined ? '' : String(v);
+    return `"${s.replace(/"/g, '""')}"`;
+  }
+
   function exportCSV() {
     const headers = ['Name', 'Phone', 'Email', 'Table', 'Seat', 'Pax', 'RSVP', 'VIP', 'Checked In', 'Angbao', 'Gift', 'Notes'];
-    const rows = guests.map(g => {
+    const rows = filtered.map(g => {
       const table = tables.find(t => String(t.id) === String(g.tableId));
       return [
         g.name,
@@ -225,10 +231,10 @@
         g.checkedInAt ? g.checkedInAt.toLocaleString() : '',
         g.angbaoAmount ?? '',
         g.giftItem || '',
-        (g.notes || '').replace(/,/g, ';')
-      ];
+        g.notes || ''
+      ].map(csvField);
     });
-    const csv = [headers, ...rows].map(r => r.join(',')).join('\n');
+    const csv = [headers.map(csvField), ...rows].map(r => r.join(',')).join('\n');
     const blob = new Blob([csv], { type: 'text/csv' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -464,7 +470,7 @@
   function getNextBulkSeatNum(): number {
     if (!bulkMoveTableId) return 1;
     const cap = getBulkTableCapacity();
-    const occ = guests.filter(g => g.tableId === bulkMoveTableId && !selectedIds.has(g.id) && g.seatNumber != null)
+    const occ = filtered.filter(g => g.tableId === bulkMoveTableId && !selectedIds.has(g.id) && g.seatNumber != null)
       .flatMap(g => Array.from({ length: g.pax }, (_, i) => g.seatNumber! + i));
     for (let s = 1; s <= cap; s++) {
       if (!occ.includes(s)) return s;
@@ -475,7 +481,7 @@
   let bulkOccupiedSeats = $derived.by((): Set<number> => {
     if (!bulkMoveTableId) return new Set();
     return new Set(
-      guests
+      filtered
         .filter(g => g.tableId === bulkMoveTableId && !selectedIds.has(g.id) && g.seatNumber != null)
         .flatMap(g => {
           const start = g.seatNumber!;
@@ -495,7 +501,7 @@
     const capacity = getBulkTableCapacity();
     const ids = [...selectedIds];
     const seatsNeeded = ids.reduce((sum, id) => {
-      const g = guests.find(g => g.id === id);
+      const g = filtered.find(g => g.id === id);
       return sum + (g?.pax ?? 1);
     }, 0);
     // reject unless every pax fits after the starting seat
@@ -514,10 +520,12 @@
     try {
       let seat = bulkMoveSeatStart;
       for (const id of ids) {
-        const g = guests.find(g => g.id === id);
+        const g = filtered.find(gg => gg.id === id);
         if (!g) continue;
         await assignSeat(wid, id, bulkMoveTableId, seat);
-        guests = guests.map(gg => gg.id === id ? { ...gg, tableId: bulkMoveTableId, seatNumber: seat } : gg);
+        // Push through the store so off-page rows and the next loop
+        // iterations see the new seat even if the SSE echo is slow.
+        guestList.update(list => list.map(gg => gg.id === id ? { ...gg, tableId: bulkMoveTableId, seatNumber: seat } : gg));
         seat += g.pax;
       }
       addToast(`Moved ${ids.length} guests to table`, 'success');
@@ -759,7 +767,7 @@
   <MoveGuestDrawer
     guest={g}
     tables={moveTables}
-    guests={guests}
+    guests={filtered}
     currentTableName={tables.find(t => t.id === g.tableId)?.name ?? '—'}
     onSave={confirmMoveTable}
     onClose={() => { showMoveModal = false; moveGuest = null; }}
