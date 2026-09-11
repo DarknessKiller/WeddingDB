@@ -736,13 +736,9 @@
     padding-bottom: 1rem;
   }
 
-  .sheet-collapsed .sheet-content > :not(.guest-header) {
-    opacity: 0;
-    pointer-events: none;
-  }
-
   .sheet-collapsed .guest-header {
     padding-bottom: 0;
+    border-bottom: none;
   }
 
   .sheet-handle {
