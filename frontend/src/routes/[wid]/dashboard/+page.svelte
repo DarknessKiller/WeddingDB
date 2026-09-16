@@ -131,7 +131,10 @@
     </div>
 
     <!-- Stats -->
-    <div class="grid grid-cols-2 lg:grid-cols-6 gap-4">
+    <!-- auto-fit instead of lg:grid-cols-6: the 260px sidebar is in-flow on iPad,
+         so viewport breakpoints would squeeze 6 cards into ~100px each. 12rem floor =
+         card padding + icon + gap + number width, so tracks only appear when they fit. -->
+    <div class="grid grid-cols-2 sm:grid-cols-[repeat(auto-fit,minmax(12rem,1fr))] gap-4">
       {#each [
         { label: 'Confirmed', value: stats.confirmedGuests, icon: UserCheck, color: 'bg-red-50 text-red' },
         { label: 'Pending', value: stats.pendingRsvp, icon: Clock, color: 'bg-gold-50 text-gold-dark' },
@@ -145,11 +148,11 @@
             <card.icon class="w-5 h-5 sm:w-6 sm:h-6" />
           </div>
           <div class="flex-1 min-w-0">
-            <div class="text-[13px] text-gray-500 font-medium">{card.label}</div>
+            <div class="text-[0.8125rem] text-gray-500 font-medium">{card.label}</div>
             {#if card.label === 'Check-in Rate'}
-            <div class="text-[28px] font-extrabold text-gray-900 leading-tight tabular-nums" style="letter-spacing: -0.02em;"><NumberTicker value={card.value} />%</div>
+            <div class="text-[1.75rem] font-extrabold text-gray-900 leading-tight tabular-nums" style="letter-spacing: -0.02em;"><NumberTicker value={card.value} />%</div>
             {:else}
-            <div class="text-[28px] font-extrabold text-gray-900 leading-tight tabular-nums" style="letter-spacing: -0.02em;"><NumberTicker value={card.value} /></div>
+            <div class="text-[1.75rem] font-extrabold text-gray-900 leading-tight tabular-nums" style="letter-spacing: -0.02em;"><NumberTicker value={card.value} /></div>
             {/if}
           </div>
         </div>
