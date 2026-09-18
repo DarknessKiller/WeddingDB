@@ -4,6 +4,7 @@
   import { weddingId, setWeddingId } from '$lib/stores/weddingId';
   import { get } from 'svelte/store';
   import { Eye, EyeOff, LogIn, Calendar, ChevronRight } from 'lucide-svelte';
+  import { identifyUser, track } from '$lib/analytics';
 
   let email = $state('');
   let password = $state('');
@@ -40,6 +41,7 @@
         return;
       }
       const wedding = await res.json();
+      track('wedding_created', { wedding_id: wedding.id });
       addToast('Wedding created', 'success');
       await selectWedding(wedding.id);
     } catch {
@@ -71,6 +73,8 @@
 
       if (data.forcePasswordChange) {
         setAuth(loginAccessToken, loginRefreshToken, loginRole, loginName);
+        identifyUser(email, loginName, loginRole);
+        track('login_completed', { forced_password_change: true, role: loginRole });
         goto('/change-password', { replaceState: true });
         return;
       }
@@ -118,6 +122,8 @@
       setAuth(data.accessToken, loginRefreshToken, loginRole, loginName);
       setWeddingId(weddingIdValue);
       addToast('Login successful', 'success');
+      identifyUser(email, loginName, loginRole);
+      track('login_completed', { wedding_id: weddingIdValue, role: loginRole });
       goto(`/${weddingIdValue}/dashboard`, { replaceState: true });
     } catch (err) {
       addToast('Network error', 'error');

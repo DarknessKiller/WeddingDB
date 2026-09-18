@@ -15,6 +15,7 @@
   import { Users, Star, X, Search, AlertCircle, Plus, UserCheck, CheckCircle2, Banknote, Gift } from 'lucide-svelte';
   import CheckInModal from '$lib/components/ui/CheckInModal.svelte';
   import { get } from 'svelte/store';
+  import { track } from '$lib/analytics';
   import type { BanquetTable, Guest, RSVPStatus, TableOccupancy, HallElement } from '$lib/types';
 
   let allTables = $state<BanquetTable[]>([]);
@@ -177,6 +178,7 @@
       assigningSeat = null;
       guestSearch = '';
       addToast(`${guest.name} assigned to seat ${seatNum}`, 'success');
+      track('seat_assignment_updated', { wedding_id: wid, table_id: String(selectedTable.id) });
     } catch (e: any) {
       addToast(e.message ?? 'Assignment failed', 'error');
     }
@@ -199,6 +201,7 @@
       allGuests = allGuests.map(g => g.id === checkinGuest!.id ? { ...g, checkedIn: true, checkedInAt: new Date() } : g);
       showCheckinModal = false;
       addToast(`${checkinGuest.name} checked in`, 'success');
+      track('guest_checked_in', { wedding_id: wid });
     } catch (e: any) {
       if (e instanceof ConflictError) {
         // Another receptionist checked the guest in first.
@@ -217,6 +220,7 @@
       await checkOutGuest(wid, guest.id);
       allGuests = allGuests.map(g => g.id === guest.id ? { ...g, checkedIn: false, checkedInAt: undefined } : g);
       addToast(`${guest.name} checked out`, 'success');
+      track('guest_checked_out', { wedding_id: wid });
     } catch (e: any) {
       addToast(e.message ?? 'Check-out failed', 'error');
     }
@@ -232,6 +236,7 @@
         elements: editElements,
       });
       addToast('Layout saved', 'success');
+      track('seat_assignment_updated', { wedding_id: wid, table_id: 'layout' });
       editMode = false;
       await loadData();
     } catch (e: any) {
