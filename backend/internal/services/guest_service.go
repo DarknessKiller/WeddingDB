@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -107,12 +108,23 @@ func (s *GuestService) AssignSeat(ctx context.Context, guestID, weddingID, table
 	return nil
 }
 
-// CheckIn marks a guest as checked in. Returns ErrAlreadyCheckedIn if the guest
-// was already checked in by another receptionist (FIFO conflict).
-func (s *GuestService) CheckIn(ctx context.Context, id, weddingID uuid.UUID) error {
+// CheckIn marks a guest as checked in and promotes their RSVP to confirmed.
+// Non-empty notes are appended to the guest's existing notes.
+// Returns ErrAlreadyCheckedIn if the guest was already checked in by another
+// receptionist (FIFO conflict).
+func (s *GuestService) CheckIn(ctx context.Context, id, weddingID uuid.UUID, notes string) error {
 	now := time.Now()
+	updatedNotes := ""
+	notes = strings.TrimSpace(notes)
+	if notes != "" {
+		existing, err := s.guestRepo.FindByID(ctx, id, weddingID)
+		if err != nil {
+			return err
+		}
+		updatedNotes = appendNote(existing.Notes, notes)
+	}
 	// Atomic conditional update: only check in if not already checked in
-	if err := s.guestRepo.ConditionalCheckIn(ctx, id, weddingID, now); err != nil {
+	if err := s.guestRepo.ConditionalCheckIn(ctx, id, weddingID, now, updatedNotes); err != nil {
 		if errors.Is(err, repository.ErrAlreadyCheckedIn) {
 			return ErrAlreadyCheckedIn
 		}
@@ -417,6 +429,7 @@ func (s *GuestService) applySyncMutation(ctx context.Context, weddingID uuid.UUI
 			return SyncResult{GuestID: m.GuestID, Status: "skipped", Reason: "older than server", ServerRecord: existing}
 		}
 		existing.CheckedInAt = &opTime
+		existing.RSVP = "confirmed"
 		if m.Payload != nil {
 			if m.Payload.AngbaoAmt != nil {
 				existing.AngbaoAmt = m.Payload.AngbaoAmt
@@ -424,6 +437,9 @@ func (s *GuestService) applySyncMutation(ctx context.Context, weddingID uuid.UUI
 			if m.Payload.GiftItem != nil {
 				existing.GiftItem = m.Payload.GiftItem
 			}
+			// A notes value in a checkin payload is appended to the guest's notes,
+			// never replacing them, so a queued note never wipes existing notes.
+			existing.Notes = appendNote(existing.Notes, strings.TrimSpace(m.Payload.Notes))
 		}
 		existing.UpdatedAt = opTime
 		if err := s.guestRepo.SyncUpdate(ctx, existing); err != nil {
@@ -505,6 +521,17 @@ func applySyncPayload(g *models.GuestRecord, p *SyncPayload, gid *uuid.UUID) {
 	if gid != nil {
 		g.ID = *gid
 	}
+}
+
+// appendNote joins existing notes and notes added at check-in with a newline.
+func appendNote(existing, notes string) string {
+	if notes == "" {
+		return existing
+	}
+	if existing == "" {
+		return notes
+	}
+	return existing + "\n" + notes
 }
 
 func parseSyncID(s string) (uuid.UUID, error) {

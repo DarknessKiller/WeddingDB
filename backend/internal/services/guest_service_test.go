@@ -1,6 +1,7 @@
 package services
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"testing"
@@ -146,4 +147,77 @@ func TestGuestEvent_Serialization(t *testing.T) {
 	if parsed.Guest.Name != "Bob" {
 		t.Errorf("Guest.Name = %q, want %q", parsed.Guest.Name, "Bob")
 	}
+}
+
+// TestCheckInPromotesRSVPAndAppendsNotes covers both check-in paths: the
+// online endpoint and the offline sync op. Arrival must promote RSVP to
+// confirmed and never wipe existing notes.
+func TestCheckInPromotesRSVPAndAppendsNotes(t *testing.T) {
+	ctx := context.Background()
+
+	t.Run("online endpoint", func(t *testing.T) {
+		svc, db, wid := newGuestSyncService(t)
+		gid := uuid.New()
+		seed := &models.GuestRecord{ID: gid, WeddingID: wid, Name: "Pending Guest", Pax: 1, RSVP: "pending", Notes: "vegetarian", CreatedAt: time.Now(), UpdatedAt: time.Now()}
+		if err := db.Create(seed).Error; err != nil {
+			t.Fatalf("seed: %v", err)
+		}
+
+		if err := svc.CheckIn(ctx, gid, wid, " came with 2 kids "); err != nil {
+			t.Fatalf("checkin: %v", err)
+		}
+
+		var got models.GuestRecord
+		if err := db.First(&got, "id = ?", gid).Error; err != nil {
+			t.Fatalf("reload: %v", err)
+		}
+		if got.RSVP != "confirmed" {
+			t.Errorf("RSVP = %q, want confirmed", got.RSVP)
+		}
+		if got.CheckedInAt == nil {
+			t.Error("CheckedInAt is nil")
+		}
+		if got.Notes != "vegetarian\ncame with 2 kids" {
+			t.Errorf("Notes = %q", got.Notes)
+		}
+
+		// FIFO conflict: a second check-in must not overwrite the first note.
+		if err := svc.CheckIn(ctx, gid, wid, "late note"); !errors.Is(err, ErrAlreadyCheckedIn) {
+			t.Errorf("second checkin err = %v, want ErrAlreadyCheckedIn", err)
+		}
+	})
+
+	t.Run("offline sync op", func(t *testing.T) {
+		svc, db, wid := newGuestSyncService(t)
+		gid := uuid.New()
+		seed := &models.GuestRecord{ID: gid, WeddingID: wid, Name: "Pending Guest", Pax: 1, RSVP: "no_response", CreatedAt: time.Now(), UpdatedAt: time.Now()}
+		if err := db.Create(seed).Error; err != nil {
+			t.Fatalf("seed: %v", err)
+		}
+
+		res, err := svc.Sync(ctx, wid, []SyncMutation{{
+			MutationID:      "m1",
+			Op:              SyncOpCheckIn,
+			GuestID:         gid.String(),
+			ClientUpdatedAt: time.Now(),
+			Payload:         &SyncPayload{Notes: "no gift"},
+		}})
+		if err != nil {
+			t.Fatalf("sync: %v", err)
+		}
+		if len(res) != 1 || res[0].Status != "applied" {
+			t.Fatalf("sync result = %+v", res)
+		}
+
+		var got models.GuestRecord
+		if err := db.First(&got, "id = ?", gid).Error; err != nil {
+			t.Fatalf("reload: %v", err)
+		}
+		if got.RSVP != "confirmed" {
+			t.Errorf("RSVP = %q, want confirmed", got.RSVP)
+		}
+		if got.Notes != "no gift" {
+			t.Errorf("Notes = %q", got.Notes)
+		}
+	})
 }

@@ -217,9 +217,16 @@ func (h *GuestHandler) Delete(c fuego.ContextWithBody[any]) (any, error) {
 	return nil, nil
 }
 
-// CheckIn checks a guest in. Gift/angpao keying is a separate flow — it goes
-// through the guest-update endpoint (PUT /guests/{id}), never this one.
-func (h *GuestHandler) CheckIn(c fuego.ContextWithBody[any]) (any, error) {
+// CheckInRequest is the optional body of the check-in endpoint.
+type CheckInRequest struct {
+	Notes string `json:"notes"`
+}
+
+// CheckIn checks a guest in, promoting their RSVP to confirmed. Non-empty notes
+// are appended to the guest's notes. Gift/angpao keying is a separate
+// flow — it goes through the guest-update endpoint (PUT /guests/{id}), never
+// this one.
+func (h *GuestHandler) CheckIn(c fuego.ContextWithBody[CheckInRequest]) (any, error) {
 	ctx := c.Context()
 	wid, err := DecodeWID(c)
 	if err != nil {
@@ -229,7 +236,9 @@ func (h *GuestHandler) CheckIn(c fuego.ContextWithBody[any]) (any, error) {
 	if err != nil {
 		return nil, fuego.BadRequestError{Title: "Invalid ID"}
 	}
-	if err := h.guestService.CheckIn(ctx, id, wid); err != nil {
+	// Body is optional (older clients send none): ignore decode errors.
+	body, _ := c.Body()
+	if err := h.guestService.CheckIn(ctx, id, wid, body.Notes); err != nil {
 		if errors.Is(err, services.ErrAlreadyCheckedIn) {
 			return nil, fuego.ConflictError{Title: "Guest already checked in by another receptionist"}
 		}
