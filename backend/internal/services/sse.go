@@ -36,6 +36,7 @@ type GuestEventData struct {
 	TableID     *string  `json:"tableId"`
 	SeatNum     *int     `json:"seatNum"`
 	CheckedInAt *string  `json:"checkedInAt"`
+	WalkIn      bool     `json:"walkIn"`
 	AngbaoAmt   *int     `json:"angbaoAmt"`
 	GiftItem    *string  `json:"giftItem"`
 }

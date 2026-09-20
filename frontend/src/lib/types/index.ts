@@ -11,6 +11,8 @@ export interface Guest {
   seatNumber: number | null;
   checkedIn: boolean;
   checkedInAt?: Date;
+  /** Arrived without a confirmed RSVP; RSVP is promoted to confirmed on check-in. */
+  walkIn?: boolean;
   notes: string;
   dietaryRequirements: string[];
   isVip: boolean;
@@ -53,6 +55,8 @@ export interface DashboardStats {
   pendingRsvp: number;
   declined: number;
   checkedIn: number;
+  /** Pax that arrived without a confirmed RSVP. */
+  walkIns: number;
   totalPax: number;
   totalTables: number;
   occupiedTables: number;

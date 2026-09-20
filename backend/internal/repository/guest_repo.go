@@ -158,10 +158,18 @@ func (r *GuestRepo) UnassignByTable(ctx context.Context, weddingID, tableID uuid
 
 // ConditionalCheckIn atomically checks in a guest only if not already checked in.
 // Returns ErrAlreadyCheckedIn if the guest was already checked in.
+// A guest not confirmed at check-in time is a walk-in: RSVP is promoted to
+// confirmed so the check-in rate denominator counts them, and walk_in is set
+// (sticky: checkout + re-check-in must not clear it).
 func (r *GuestRepo) ConditionalCheckIn(ctx context.Context, id, weddingID uuid.UUID, now time.Time) error {
+	// All SET expressions read the pre-update row, so order does not matter.
 	result := r.db.WithContext(ctx).Model(&models.GuestRecord{}).
 		Where("id = ? AND wedding_id = ? AND checked_in_at IS NULL", id, weddingID).
-		Update("checked_in_at", now)
+		Updates(map[string]any{
+			"checked_in_at": now,
+			"rsvp":          gorm.Expr("CASE WHEN rsvp = 'confirmed' THEN rsvp ELSE 'confirmed' END"),
+			"walk_in":       gorm.Expr("COALESCE(walk_in, false) OR rsvp <> 'confirmed'"),
+		})
 	if result.Error != nil {
 		return result.Error
 	}

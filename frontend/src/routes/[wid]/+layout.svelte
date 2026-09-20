@@ -43,7 +43,7 @@
       return {
         id: g.id, name: g.name, phone: g.phone, email: g.email,
         rsvp: g.rsvp as any, pax: g.pax, tableId: g.tableId, seatNumber: g.seatNum,
-        checkedIn: !!g.checkedInAt, checkedInAt: g.checkedInAt ? new Date(g.checkedInAt) : undefined,
+        checkedIn: !!g.checkedInAt, checkedInAt: g.checkedInAt ? new Date(g.checkedInAt) : undefined, walkIn: !!g.walkIn,
         notes: g.notes, dietaryRequirements: g.dietary ?? [], isVip: g.isVip,
         angbaoAmount: g.angbaoAmt ?? undefined, giftItem: g.giftItem ?? undefined,
         createdAt, updatedAt: g.updatedAt ? new Date(g.updatedAt) : createdAt,

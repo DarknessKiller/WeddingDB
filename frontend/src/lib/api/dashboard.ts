@@ -9,6 +9,7 @@ interface RawGuest {
   pax: number;
   rsvp: string;
   checkedInAt?: string | null;
+  walkIn?: boolean;
   notes?: string;
   dietary?: string[];
   isVip?: boolean;
@@ -40,6 +41,7 @@ export async function getDashboardStats(weddingId: string): Promise<DashboardSta
   const pending = guests.filter(g => g.rsvp === 'pending').length;
   const declined = guests.filter(g => g.rsvp === 'declined').length;
   const checkedIn = guests.filter(g => g.checkedInAt != null).length;
+  const walkIns = guests.filter(g => g.checkedInAt != null && (g.walkIn || g.rsvp !== 'confirmed')).length;
   const totalPax = guests.reduce((s, g) => s + (g.pax ?? 0), 0);
 
   return {
@@ -48,6 +50,7 @@ export async function getDashboardStats(weddingId: string): Promise<DashboardSta
     pendingRsvp: pending,
     declined,
     checkedIn,
+    walkIns,
     totalPax,
     totalTables: (occData ?? []).length,
     occupiedTables: (occData ?? []).filter(o => o.Pax > 0).length,

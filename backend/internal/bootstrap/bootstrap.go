@@ -72,6 +72,13 @@ func Init(env config.Env, version string) *App {
 		log.Fatal("Failed to migrate database:", err)
 	}
 
+	// ponytail: backfill walk-ins — checked-in guests who were never confirmed
+	// would otherwise keep the dashboard check-in rate above 100%. Idempotent:
+	// after the first run every checked-in row is already confirmed.
+	db.Model(&models.GuestRecord{}).
+		Where("checked_in_at IS NOT NULL AND rsvp <> ?", "confirmed").
+		Updates(map[string]any{"rsvp": "confirmed", "walk_in": true})
+
 	// ponytail: backfill name_pinyin for all guests (safe to re-run, idempotent)
 	var guests []models.GuestRecord
 	db.Find(&guests)

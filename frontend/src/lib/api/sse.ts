@@ -17,6 +17,7 @@ export interface GuestEvent {
 		tableId: string | null;
 		seatNum: number | null;
 		checkedInAt: string | null;
+		walkIn?: boolean;
 		angbaoAmt: number | null;
 		giftItem: string | null;
 	};

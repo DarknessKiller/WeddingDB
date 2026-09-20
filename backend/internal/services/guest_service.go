@@ -416,6 +416,11 @@ func (s *GuestService) applySyncMutation(ctx context.Context, weddingID uuid.UUI
 		if opTime.Before(existing.UpdatedAt) {
 			return SyncResult{GuestID: m.GuestID, Status: "skipped", Reason: "older than server", ServerRecord: existing}
 		}
+		// Same walk-in promotion as GuestService.CheckIn: RSVP follows attendance.
+		if existing.RSVP != "confirmed" {
+			existing.WalkIn = true
+			existing.RSVP = "confirmed"
+		}
 		existing.CheckedInAt = &opTime
 		if m.Payload != nil {
 			if m.Payload.AngbaoAmt != nil {
@@ -535,6 +540,7 @@ func guestToEventData(g *models.GuestRecord) *GuestEventData {
 		Pax:     g.Pax,
 		RSVP:    g.RSVP,
 		IsVip:   g.IsVip,
+		WalkIn:  g.WalkIn,
 		Notes:   g.Notes,
 		Dietary: []string(g.Dietary),
 	}

@@ -44,7 +44,7 @@ function optimisticPatch(op: string, guestId: string, data?: Record<string, unkn
 			guestList.update(l => l.filter(x => x.id !== guestId)); guestMap.update(m => { const n = new Map(m); n.delete(guestId); return n; });
 		} else if (op === 'checkin') {
 			const now = new Date();
-			guestList.update(l => l.map(x => x.id === guestId ? { ...x, checkedIn: true, checkedInAt: now, angbaoAmount: data?.angbaoAmt !== undefined ? ((data.angbaoAmt as number | null) ?? undefined) : x.angbaoAmount, giftItem: data?.giftItem !== undefined ? ((data.giftItem as string | null) ?? undefined) : x.giftItem, updatedAt: now } as unknown as import('$lib/types').Guest : x));
+			guestList.update(l => l.map(x => x.id === guestId ? { ...x, checkedIn: true, checkedInAt: now, rsvp: x.rsvp === 'confirmed' ? x.rsvp : 'confirmed', walkIn: x.walkIn || x.rsvp !== 'confirmed', angbaoAmount: data?.angbaoAmt !== undefined ? ((data.angbaoAmt as number | null) ?? undefined) : x.angbaoAmount, giftItem: data?.giftItem !== undefined ? ((data.giftItem as string | null) ?? undefined) : x.giftItem, updatedAt: now } as unknown as import('$lib/types').Guest : x));
 		} else if (op === 'checkout') {
 			guestList.update(l => l.map(x => x.id === guestId ? { ...x, checkedIn: false, checkedInAt: undefined, updatedAt: new Date() } as unknown as import('$lib/types').Guest : x));
 		}
@@ -87,6 +87,7 @@ export interface GuestResponse {
 	tableId: string | null;
 	seatNum: number | null;
 	checkedInAt: string | null;
+	walkIn?: boolean;
 	angbaoAmt: number | null;
 	giftItem: string | null;
 	createdAt: string;

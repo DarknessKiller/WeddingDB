@@ -29,6 +29,9 @@
     const pendingPax = guests.filter(g => g.rsvp === 'pending').reduce((s, g) => s + g.pax, 0);
     const declinedPax = guests.filter(g => g.rsvp === 'declined').reduce((s, g) => s + g.pax, 0);
     const checkedInPax = guests.filter(g => g.checkedIn).reduce((s, g) => s + g.pax, 0);
+    // Rate counts only confirmed check-ins: a walk-in's pax must not push it past 100%.
+    const checkedInConfirmedPax = guests.filter(g => g.checkedIn && g.rsvp === 'confirmed').reduce((s, g) => s + g.pax, 0);
+    const walkInPax = guests.filter(g => g.checkedIn && (g.walkIn || g.rsvp !== 'confirmed')).reduce((s, g) => s + g.pax, 0);
     const totalPax = guests.reduce((s, g) => s + g.pax, 0);
     return {
       totalGuests: guests.length,
@@ -36,8 +39,9 @@
       pendingRsvp: pendingPax,
       declined: declinedPax,
       checkedIn: checkedInPax,
+      walkIns: walkInPax,
       totalPax,
-      checkInRate: confirmedPax > 0 ? Math.round((checkedInPax / confirmedPax) * 100) : 0,
+      checkInRate: confirmedPax > 0 ? Math.round((checkedInConfirmedPax / confirmedPax) * 100) : 0,
       totalTables: 0,
       occupiedTables: 0,
       averageOccupancy: 0
@@ -151,6 +155,9 @@
             <div class="text-[0.8125rem] text-gray-500 font-medium">{card.label}</div>
             {#if card.label === 'Check-in Rate'}
             <div class="text-[1.75rem] font-extrabold text-gray-900 leading-tight tabular-nums" style="letter-spacing: -0.02em;"><NumberTicker value={card.value} />%</div>
+            {#if stats.walkIns > 0}
+            <div class="text-[0.6875rem] font-semibold text-amber-600 mt-0.5">+{stats.walkIns} walk-in{stats.walkIns === 1 ? '' : 's'}</div>
+            {/if}
             {:else}
             <div class="text-[1.75rem] font-extrabold text-gray-900 leading-tight tabular-nums" style="letter-spacing: -0.02em;"><NumberTicker value={card.value} /></div>
             {/if}
