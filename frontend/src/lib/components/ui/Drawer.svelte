@@ -242,7 +242,8 @@
       await checkInGuest(wid, guest.id);
       guest.checkedIn = true;
       guest.checkedInAt = new Date();
-      pushGuestPatch(guest.id, { checkedIn: true, checkedInAt: guest.checkedInAt });
+      guest.rsvp = 'confirmed';
+      pushGuestPatch(guest.id, { checkedIn: true, checkedInAt: guest.checkedInAt, rsvp: 'confirmed' });
       localGuest = { ...guest };
       addToast(`${guest.name} checked in`, 'success');
     } catch (e: any) {
