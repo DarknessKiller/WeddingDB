@@ -231,7 +231,7 @@ Jaeger UI at `http://localhost:16686`. Request spans record route pattern, statu
 | GET | `/api/weddings/{wid}/guests/{id}` | Get guest |
 | PUT | `/api/weddings/{wid}/guests/{id}` | Update guest |
 | DELETE | `/api/weddings/{wid}/guests/{id}` | Delete guest |
-| POST | `/api/weddings/{wid}/guests/{id}/checkin` | Check in guest |
+| POST | `/api/weddings/{wid}/guests/{id}/checkin` | Check in guest (optional body `{"notes": "..."}`; promotes RSVP to confirmed) |
 | POST | `/api/weddings/{wid}/guests/{id}/checkout` | Check out guest |
 | POST | `/api/weddings/{wid}/guests/{id}/seat` | Assign seat |
 | POST | `/api/weddings/{wid}/guests/import` | Bulk import guests (max 1000) |

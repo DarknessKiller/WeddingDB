@@ -44,7 +44,14 @@ function optimisticPatch(op: string, guestId: string, data?: Record<string, unkn
 			guestList.update(l => l.filter(x => x.id !== guestId)); guestMap.update(m => { const n = new Map(m); n.delete(guestId); return n; });
 		} else if (op === 'checkin') {
 			const now = new Date();
-			guestList.update(l => l.map(x => x.id === guestId ? { ...x, checkedIn: true, checkedInAt: now, angbaoAmount: data?.angbaoAmt !== undefined ? ((data.angbaoAmt as number | null) ?? undefined) : x.angbaoAmount, giftItem: data?.giftItem !== undefined ? ((data.giftItem as string | null) ?? undefined) : x.giftItem, updatedAt: now } as unknown as import('$lib/types').Guest : x));
+			const addedNotes = typeof data?.notes === 'string' ? data.notes.trim() : '';
+			guestList.update(l => l.map(x => x.id === guestId ? {
+				...x, checkedIn: true, checkedInAt: now, rsvp: 'confirmed' as const,
+				notes: addedNotes ? (x.notes ? `${x.notes}\n${addedNotes}` : addedNotes) : x.notes,
+				angbaoAmount: data?.angbaoAmt !== undefined ? ((data.angbaoAmt as number | null) ?? undefined) : x.angbaoAmount,
+				giftItem: data?.giftItem !== undefined ? ((data.giftItem as string | null) ?? undefined) : x.giftItem,
+				updatedAt: now
+			} as unknown as import('$lib/types').Guest : x));
 		} else if (op === 'checkout') {
 			guestList.update(l => l.map(x => x.id === guestId ? { ...x, checkedIn: false, checkedInAt: undefined, updatedAt: new Date() } as unknown as import('$lib/types').Guest : x));
 		}
@@ -183,11 +190,15 @@ export async function deleteGuest(weddingId: string, guestId: string): Promise<v
 	}
 }
 
-export async function checkInGuest(weddingId: string, guestId: string): Promise<void> {
-	const doQueue = () => { enqueue(weddingId, { mutationId: genId(), op: 'checkin', guestId, clientUpdatedAt: nowIso() }); optimisticPatch('checkin', guestId); };
+// checkInGuest checks a guest in. Optional notes are appended to the guest's
+// notes server-side, atomically with the check-in.
+export async function checkInGuest(weddingId: string, guestId: string, notes?: string): Promise<void> {
+	const trimmed = (notes ?? '').trim();
+	const payload = trimmed ? { notes: trimmed } : undefined;
+	const doQueue = () => { enqueue(weddingId, { mutationId: genId(), op: 'checkin', guestId, clientUpdatedAt: nowIso(), payload: payload ?? null }); optimisticPatch('checkin', guestId, payload); };
 	if (isOffline()) { doQueue(); return; }
 	try {
-		const res = await apiFetch(`/api/weddings/${weddingId}/guests/${guestId}/checkin`, { method: 'POST' });
+		const res = await apiFetch(`/api/weddings/${weddingId}/guests/${guestId}/checkin`, { method: 'POST', body: JSON.stringify({ notes: trimmed }) });
 		if (res.status === 409) { const err = await res.json().catch(() => ({ title: 'Guest already checked in' })); throw new ConflictError(err.title || 'Guest already checked in'); }
 		if (!res.ok) throw new Error(`Failed to check in guest: ${res.status}`);
 	} catch (e) {

@@ -14,10 +14,20 @@
     loading = false,
   }: {
     guestName: string;
-    onConfirm: () => void;
+    onConfirm: (notes: string) => void;
     onClose: () => void;
     loading?: boolean;
   } = $props();
+
+  let notes = $state('');
+
+  function onNotesKeydown(e: KeyboardEvent) {
+    // Enter confirms; isComposing guards IME (Chinese) input.
+    if (e.key === 'Enter' && !e.isComposing && !loading) {
+      e.preventDefault();
+      onConfirm(notes);
+    }
+  }
 
   // Swipe-to-dismiss on mobile
   let dragY = $state(0);
@@ -67,9 +77,22 @@
     </div>
     <div class="p-5 space-y-4">
       <p class="text-sm text-gray-600">Mark {guestName} as arrived. Angpao and gifts are recorded separately from the guest list.</p>
+      <div>
+        <label for="checkin-notes" class="block text-sm font-medium text-gray-700 mb-1.5">
+          Notes <span class="text-gray-400 font-normal">(optional)</span>
+        </label>
+        <input
+          id="checkin-notes"
+          type="text"
+          bind:value={notes}
+          onkeydown={onNotesKeydown}
+          placeholder="e.g. arrived with 2 kids"
+          class="w-full px-4 py-3 rounded-xl border border-black/[0.08] bg-white text-sm text-gray-900 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-red/20 focus:border-red transition-shadow"
+        />
+      </div>
     </div>
     <div class="flex gap-3 p-5 pt-0">
-      <button onclick={onConfirm} disabled={loading}
+      <button onclick={() => onConfirm(notes)} disabled={loading}
         class="flex-1 py-3 bg-red text-white rounded-xl text-sm font-semibold hover:bg-red-light transition-colors flex items-center justify-center gap-2 disabled:opacity-50">
         {#if loading}
           <Loader2 class="w-4 h-4 text-white animate-spin" /> Processing...

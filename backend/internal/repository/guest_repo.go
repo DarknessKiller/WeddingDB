@@ -156,12 +156,18 @@ func (r *GuestRepo) UnassignByTable(ctx context.Context, weddingID, tableID uuid
 		Updates(map[string]interface{}{"table_id": nil, "seat_num": nil}).Error
 }
 
-// ConditionalCheckIn atomically checks in a guest only if not already checked in.
+// ConditionalCheckIn atomically checks in a guest only if not already checked in,
+// and promotes their RSVP to confirmed. A non-empty notes value replaces the stored
+// notes (callers pass the already-joined text).
 // Returns ErrAlreadyCheckedIn if the guest was already checked in.
-func (r *GuestRepo) ConditionalCheckIn(ctx context.Context, id, weddingID uuid.UUID, now time.Time) error {
+func (r *GuestRepo) ConditionalCheckIn(ctx context.Context, id, weddingID uuid.UUID, now time.Time, notes string) error {
+	updates := map[string]any{"checked_in_at": now, "rsvp": "confirmed"}
+	if notes != "" {
+		updates["notes"] = notes
+	}
 	result := r.db.WithContext(ctx).Model(&models.GuestRecord{}).
 		Where("id = ? AND wedding_id = ? AND checked_in_at IS NULL", id, weddingID).
-		Update("checked_in_at", now)
+		Updates(updates)
 	if result.Error != nil {
 		return result.Error
 	}

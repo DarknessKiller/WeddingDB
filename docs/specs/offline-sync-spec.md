@@ -34,7 +34,7 @@ Client generates `guestId` for creates. `clientUpdatedAt` is `new Date().toISOSt
 - Q6 one batch endpoint `POST /api/weddings/{wid}/guests/sync`.
 - Q7 FIFO, no server dedup v1, LWW makes retry idempotent.
 - Q8 sync uses `apiFetch` refresh first, queue kept if refresh fails.
-- Q9 online checkin keeps FIFO `ConditionalCheckIn`, sync checkin is LWW on `checkedInAt`.
+- Q9 online checkin keeps FIFO `ConditionalCheckIn`, sync checkin is LWW on `checkedInAt`. Both promote `rsvp` to `confirmed` and append optional check-in notes to the guest's `notes`.
 - Q10 skipped reverts to server record, toast.
 - Q11 delete tombstone with LWW, `pendingDelete` flag until applied.
 - Q12 drain sync before `seedGuests` fetch, SSE re-broadcast normal.

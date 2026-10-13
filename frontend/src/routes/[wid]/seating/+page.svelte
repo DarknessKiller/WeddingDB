@@ -191,18 +191,25 @@
     showCheckinModal = true;
   }
 
-  async function confirmCheckIn() {
+  async function confirmCheckIn(notes: string) {
     if (!checkinGuest) return;
     const wid = get(weddingId);
     try {
-      await checkInGuest(wid, checkinGuest.id);
-      allGuests = allGuests.map(g => g.id === checkinGuest!.id ? { ...g, checkedIn: true, checkedInAt: new Date() } : g);
+      await checkInGuest(wid, checkinGuest.id, notes);
+      const trimmed = notes.trim();
+      allGuests = allGuests.map(g => g.id === checkinGuest!.id ? {
+        ...g,
+        checkedIn: true,
+        checkedInAt: new Date(),
+        rsvp: 'confirmed' as const,
+        notes: trimmed ? (g.notes ? `${g.notes}\n${trimmed}` : trimmed) : g.notes,
+      } : g);
       showCheckinModal = false;
       addToast(`${checkinGuest.name} checked in`, 'success');
     } catch (e: any) {
       if (e instanceof ConflictError) {
         // Another receptionist checked the guest in first.
-        allGuests = allGuests.map(g => g.id === checkinGuest!.id ? { ...g, checkedIn: true } : g);
+        allGuests = allGuests.map(g => g.id === checkinGuest!.id ? { ...g, checkedIn: true, rsvp: 'confirmed' as const } : g);
         showCheckinModal = false;
         addToast(`${checkinGuest.name} was already checked in by another receptionist`, 'error');
         return;
