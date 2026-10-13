@@ -4,7 +4,14 @@
   import { getPublicLayout } from '$lib/api/layout';
   import { cn, getInitials } from '$lib/utils';
   import { formatSeatRange } from '$lib/utils/seat';
-  import { Maximize, Minimize, Monitor, Search, ArrowLeft, MapPin, Users, Star } from 'lucide-svelte';
+  import Maximize from 'lucide-svelte/icons/maximize';
+import Minimize from 'lucide-svelte/icons/minimize';
+import Monitor from 'lucide-svelte/icons/monitor';
+import Search from 'lucide-svelte/icons/search';
+import ArrowLeft from 'lucide-svelte/icons/arrow-left';
+import MapPin from 'lucide-svelte/icons/map-pin';
+import Users from 'lucide-svelte/icons/users';
+import Star from 'lucide-svelte/icons/star';
   import { onMount, onDestroy } from 'svelte';
   import { fade, fly } from 'svelte/transition';
   import { page } from '$app/state';

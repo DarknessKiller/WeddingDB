@@ -5,7 +5,16 @@
   import { weddingId } from '$lib/stores/weddingId';
   import { get } from 'svelte/store';
   import { getWedding, updateKioskSettings, type Wedding, type KioskSettings } from '$lib/api/weddings';
-  import { Monitor, Save, Loader2, ExternalLink, Copy, Image, Type, FileText, Upload, MapPin } from 'lucide-svelte';
+  import Monitor from 'lucide-svelte/icons/monitor';
+import Save from 'lucide-svelte/icons/save';
+import Loader2 from 'lucide-svelte/icons/loader-2';
+import ExternalLink from 'lucide-svelte/icons/external-link';
+import Copy from 'lucide-svelte/icons/copy';
+import Image from 'lucide-svelte/icons/image';
+import Type from 'lucide-svelte/icons/type';
+import FileText from 'lucide-svelte/icons/file-text';
+import Upload from 'lucide-svelte/icons/upload';
+import MapPin from 'lucide-svelte/icons/map-pin';
   import ImageEditor from '$lib/components/ui/ImageEditor.svelte';
   import { uploadFile } from '$lib/api/client';
 

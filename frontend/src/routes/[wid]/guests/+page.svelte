@@ -14,11 +14,20 @@
   import ConfirmDialog from '$lib/components/ui/ConfirmDialog.svelte';
   import MoveGuestDrawer from '$lib/components/ui/MoveGuestDrawer.svelte';
   import { getInitials } from '$lib/utils';
-  import {
-    Search, Download, Upload, Plus, ChevronLeft, ChevronRight,
-    MoreHorizontal, Pencil, Trash2, ArrowUpDown,
-    FileText, AlertCircle, X, Users
-  } from 'lucide-svelte';
+  import Search from 'lucide-svelte/icons/search';
+import Download from 'lucide-svelte/icons/download';
+import Upload from 'lucide-svelte/icons/upload';
+import Plus from 'lucide-svelte/icons/plus';
+import ChevronLeft from 'lucide-svelte/icons/chevron-left';
+import ChevronRight from 'lucide-svelte/icons/chevron-right';
+import MoreHorizontal from 'lucide-svelte/icons/more-horizontal';
+import Pencil from 'lucide-svelte/icons/pencil';
+import Trash2 from 'lucide-svelte/icons/trash-2';
+import ArrowUpDown from 'lucide-svelte/icons/arrow-up-down';
+import FileText from 'lucide-svelte/icons/file-text';
+import AlertCircle from 'lucide-svelte/icons/alert-circle';
+import X from 'lucide-svelte/icons/x';
+import Users from 'lucide-svelte/icons/users';
   import { onMount } from 'svelte';
 
   let searchQuery = $state('');

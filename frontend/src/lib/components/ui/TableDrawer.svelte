@@ -1,5 +1,9 @@
 <script lang="ts">
-  import { X, Check, Pencil, Star, Users } from 'lucide-svelte';
+  import X from 'lucide-svelte/icons/x';
+import Check from 'lucide-svelte/icons/check';
+import Pencil from 'lucide-svelte/icons/pencil';
+import Star from 'lucide-svelte/icons/star';
+import Users from 'lucide-svelte/icons/users';
   import { cn } from '$lib/utils';
 
   let {

@@ -3,7 +3,11 @@
   import { setAuth, addToast } from '$lib/stores';
   import { weddingId, setWeddingId } from '$lib/stores/weddingId';
   import { get } from 'svelte/store';
-  import { Eye, EyeOff, LogIn, Calendar, ChevronRight } from 'lucide-svelte';
+  import Eye from 'lucide-svelte/icons/eye';
+import EyeOff from 'lucide-svelte/icons/eye-off';
+import LogIn from 'lucide-svelte/icons/log-in';
+import Calendar from 'lucide-svelte/icons/calendar';
+import ChevronRight from 'lucide-svelte/icons/chevron-right';
 
   let email = $state('');
   let password = $state('');

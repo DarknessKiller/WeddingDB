@@ -4,7 +4,8 @@
   import { goto } from '$app/navigation';
   import { cn } from '$lib/utils';
   import { z } from 'zod';
-  import { CheckCircle2, AlertCircle } from 'lucide-svelte';
+  import CheckCircle2 from 'lucide-svelte/icons/check-circle-2';
+import AlertCircle from 'lucide-svelte/icons/alert-circle';
   import { fetchAllGuests, createGuest, type GuestResponse } from '$lib/api/guests';
   import { listTables } from '$lib/api/tables';
   import { getLayout } from '$lib/api/layout';

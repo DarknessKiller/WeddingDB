@@ -1,6 +1,17 @@
 <script lang="ts">
   import type { Guest, BanquetTable, RSVPStatus } from '$lib/types';
-  import { X, Phone, Mail, Utensils, StickyNote, Banknote, Gift, Pencil, Check, UserCheck, CheckCircle2, ArrowUpDown } from 'lucide-svelte';
+  import X from 'lucide-svelte/icons/x';
+import Phone from 'lucide-svelte/icons/phone';
+import Mail from 'lucide-svelte/icons/mail';
+import Utensils from 'lucide-svelte/icons/utensils';
+import StickyNote from 'lucide-svelte/icons/sticky-note';
+import Banknote from 'lucide-svelte/icons/banknote';
+import Gift from 'lucide-svelte/icons/gift';
+import Pencil from 'lucide-svelte/icons/pencil';
+import Check from 'lucide-svelte/icons/check';
+import UserCheck from 'lucide-svelte/icons/user-check';
+import CheckCircle2 from 'lucide-svelte/icons/check-circle-2';
+import ArrowUpDown from 'lucide-svelte/icons/arrow-up-down';
   import Badge from './Badge.svelte';
   import ConfirmDialog from './ConfirmDialog.svelte';
   import CheckInModal from './CheckInModal.svelte';

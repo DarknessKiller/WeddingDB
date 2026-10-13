@@ -1,5 +1,7 @@
 <script lang="ts">
-  import { X, UserCheck, Loader2 } from 'lucide-svelte';
+  import X from 'lucide-svelte/icons/x';
+import UserCheck from 'lucide-svelte/icons/user-check';
+import Loader2 from 'lucide-svelte/icons/loader-2';
   import { fade } from 'svelte/transition';
   import { slideOut as sheetSlideOut } from '$lib/utils/motion';
 
