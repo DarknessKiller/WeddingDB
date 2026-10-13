@@ -4,7 +4,13 @@
   import { addToast, getAuth, setAuth } from '$lib/stores';
   import { weddingId, setWeddingId } from '$lib/stores/weddingId';
   import { listWeddings, createWedding, updateWedding, deleteWedding, type Wedding } from '$lib/api/weddings';
-  import { Plus, Pencil, Trash2, X, Calendar, Check, ChevronRight } from 'lucide-svelte';
+  import Plus from 'lucide-svelte/icons/plus';
+import Pencil from 'lucide-svelte/icons/pencil';
+import Trash2 from 'lucide-svelte/icons/trash-2';
+import X from 'lucide-svelte/icons/x';
+import Calendar from 'lucide-svelte/icons/calendar';
+import Check from 'lucide-svelte/icons/check';
+import ChevronRight from 'lucide-svelte/icons/chevron-right';
   import dayjs from 'dayjs';
   import { validateToken } from '$lib/utils/auth';
   import { apiFetch } from '$lib/api/client';

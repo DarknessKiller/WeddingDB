@@ -1,10 +1,17 @@
 <script lang="ts">
   import { cn } from '$lib/utils';
   import { sidebarCollapsed, getAuth } from '$lib/stores';
-  import {
-    LayoutDashboard, Users, MapPin, Search, Monitor, Calendar,
-    Settings, BarChart3, Utensils, Shield, FileDown
-  } from 'lucide-svelte';
+  import LayoutDashboard from 'lucide-svelte/icons/layout-dashboard';
+import Users from 'lucide-svelte/icons/users';
+import MapPin from 'lucide-svelte/icons/map-pin';
+import Search from 'lucide-svelte/icons/search';
+import Monitor from 'lucide-svelte/icons/monitor';
+import Calendar from 'lucide-svelte/icons/calendar';
+import Settings from 'lucide-svelte/icons/settings';
+import BarChart3 from 'lucide-svelte/icons/bar-chart-3';
+import Utensils from 'lucide-svelte/icons/utensils';
+import Shield from 'lucide-svelte/icons/shield';
+import FileDown from 'lucide-svelte/icons/file-down';
 
   let { currentPath, guestCount = 0, wid = '' }: { currentPath: string; guestCount?: number; wid?: string } = $props();
 

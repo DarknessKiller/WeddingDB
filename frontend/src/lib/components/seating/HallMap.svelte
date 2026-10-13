@@ -5,7 +5,9 @@
   import EditToolbar from './EditToolbar.svelte';
   import type { BanquetTable as BanquetTableType, HallElement, Guest } from '$lib/types';
   import { reorderElements } from '$lib/utils/layout';
-  import { ZoomIn, ZoomOut, RotateCcw } from 'lucide-svelte';
+  import ZoomIn from 'lucide-svelte/icons/zoom-in';
+import ZoomOut from 'lucide-svelte/icons/zoom-out';
+import RotateCcw from 'lucide-svelte/icons/rotate-ccw';
 
   let {
     mode = 'view',

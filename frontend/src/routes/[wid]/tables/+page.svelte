@@ -6,7 +6,14 @@
   import { addToast, isDrawerOpen } from '$lib/stores';
   import TableDrawer from '$lib/components/ui/TableDrawer.svelte';
   import ConfirmDialog from '$lib/components/ui/ConfirmDialog.svelte';
-  import { Star, Users, Plus, MoreVertical, Pencil, Trash2, AlertCircle, Map } from 'lucide-svelte';
+  import Star from 'lucide-svelte/icons/star';
+import Users from 'lucide-svelte/icons/users';
+import Plus from 'lucide-svelte/icons/plus';
+import MoreVertical from 'lucide-svelte/icons/more-vertical';
+import Pencil from 'lucide-svelte/icons/pencil';
+import Trash2 from 'lucide-svelte/icons/trash-2';
+import AlertCircle from 'lucide-svelte/icons/alert-circle';
+import Map from 'lucide-svelte/icons/map';
   import { listTables, createTable, updateTable, deleteTable, getOccupancy } from '$lib/api/tables';
   import { getLayout, saveLayout } from '$lib/api/layout';
   import { defaultSlot } from '$lib/utils/layout';

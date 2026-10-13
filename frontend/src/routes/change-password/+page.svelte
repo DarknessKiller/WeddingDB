@@ -1,7 +1,9 @@
 <script lang="ts">
   import { goto } from '$app/navigation';
   import { addToast, getAuth } from '$lib/stores';
-  import { Eye, EyeOff, KeyRound } from 'lucide-svelte';
+  import Eye from 'lucide-svelte/icons/eye';
+import EyeOff from 'lucide-svelte/icons/eye-off';
+import KeyRound from 'lucide-svelte/icons/key-round';
   import PasswordRequirements from '$lib/components/ui/PasswordRequirements.svelte';
 
   let password = $state('');

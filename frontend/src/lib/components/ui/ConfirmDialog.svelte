@@ -1,5 +1,6 @@
 <script lang="ts">
-  import { X, AlertTriangle } from 'lucide-svelte';
+  import X from 'lucide-svelte/icons/x';
+import AlertTriangle from 'lucide-svelte/icons/alert-triangle';
   import { onMount } from 'svelte';
   import { fade } from 'svelte/transition';
 

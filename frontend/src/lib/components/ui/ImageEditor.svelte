@@ -1,5 +1,8 @@
 <script lang="ts">
-  import { Upload, X, Move, Maximize2 } from 'lucide-svelte';
+  import Upload from 'lucide-svelte/icons/upload';
+import X from 'lucide-svelte/icons/x';
+import Move from 'lucide-svelte/icons/move';
+import Maximize2 from 'lucide-svelte/icons/maximize-2';
   import { uploadFile } from '$lib/api/client';
   import { addToast } from '$lib/stores';
 

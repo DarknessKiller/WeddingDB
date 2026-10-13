@@ -5,10 +5,18 @@
   import { get } from 'svelte/store';
   import { weddingId } from '$lib/stores/weddingId';
   import { guestList } from '$lib/stores/guestEvents';
-  import {
-    Users, UserCheck, Clock, XCircle, CheckCircle, TrendingUp,
-    ArrowUpRight, ArrowDownRight, LayoutGrid, Monitor, Copy, ExternalLink
-  } from 'lucide-svelte';
+  import Users from 'lucide-svelte/icons/users';
+import UserCheck from 'lucide-svelte/icons/user-check';
+import Clock from 'lucide-svelte/icons/clock';
+import XCircle from 'lucide-svelte/icons/x-circle';
+import CheckCircle from 'lucide-svelte/icons/check-circle';
+import TrendingUp from 'lucide-svelte/icons/trending-up';
+import ArrowUpRight from 'lucide-svelte/icons/arrow-up-right';
+import ArrowDownRight from 'lucide-svelte/icons/arrow-down-right';
+import LayoutGrid from 'lucide-svelte/icons/layout-grid';
+import Monitor from 'lucide-svelte/icons/monitor';
+import Copy from 'lucide-svelte/icons/copy';
+import ExternalLink from 'lucide-svelte/icons/external-link';
   import dayjs from 'dayjs';
   import relativeTime from 'dayjs/plugin/relativeTime';
   import { onMount } from 'svelte';

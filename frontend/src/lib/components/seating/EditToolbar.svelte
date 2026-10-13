@@ -1,5 +1,13 @@
 <script lang="ts">
-  import { Plus, Trash2, Save, X, RotateCw, Maximize2, Magnet, ChevronsUp, ChevronsDown } from 'lucide-svelte';
+  import Plus from 'lucide-svelte/icons/plus';
+import Trash2 from 'lucide-svelte/icons/trash-2';
+import Save from 'lucide-svelte/icons/save';
+import X from 'lucide-svelte/icons/x';
+import RotateCw from 'lucide-svelte/icons/rotate-cw';
+import Maximize2 from 'lucide-svelte/icons/maximize-2';
+import Magnet from 'lucide-svelte/icons/magnet';
+import ChevronsUp from 'lucide-svelte/icons/chevrons-up';
+import ChevronsDown from 'lucide-svelte/icons/chevrons-down';
   import type { HallElement, ElementType } from '$lib/types';
 
   let {

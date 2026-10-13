@@ -9,6 +9,7 @@
   import { weddingTitle } from '$lib/stores/weddingTitle';
   import { validateToken } from '$lib/utils/auth';
   import { fetchAllGuests } from '$lib/api/guests';
+  import { syncQueue } from '$lib/offline/queue';
   import { getWedding } from '$lib/api/weddings';
   import { listTables } from '$lib/api/tables';
   import { initializeSSE, refreshGuests } from '$lib/stores/guestEvents';
@@ -65,7 +66,6 @@
     async function doSync() {
       if (!wid || typeof window === 'undefined' || !navigator.onLine) return;
       try {
-        const { syncQueue } = await import('$lib/offline/queue');
         await syncQueue(wid);
         // Refresh inside the syncing window so SSE events arriving mid-fetch
         // are queued and replayed after the seed instead of being clobbered.
@@ -87,7 +87,7 @@
     refreshQueued();
 
     // initial sync before seed
-    if (navigator.onLine) { try { const { syncQueue } = await import('$lib/offline/queue'); await syncQueue(wid); } catch {} }
+    if (navigator.onLine) { try { await syncQueue(wid); } catch {} }
 
     // Subscribe before the snapshot; guestEvents queues mutations until seeding completes.
     cleanupSSE = initializeSSE(loadGuests);
@@ -143,7 +143,7 @@
       {#if offline}
         <div class="offline-banner">Offline — changes queued{queued ? ` (${queued})` : ''}</div>
       {:else if queued}
-        <div class="offline-banner queued">{queued} queued — syncing on reconnect <button onclick={async () => { const { syncQueue } = await import('$lib/offline/queue'); await syncQueue(wid); refreshQueued(); }}>Sync now</button></div>
+        <div class="offline-banner queued">{queued} queued — syncing on reconnect <button onclick={async () => { await syncQueue(wid); refreshQueued(); }}>Sync now</button></div>
       {/if}
       <Header />
       <main class="main-content">

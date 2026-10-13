@@ -12,7 +12,16 @@
   import { cn } from '$lib/utils';
   import { page } from '$app/state';
   import { onMount, onDestroy } from 'svelte';
-  import { Users, Star, X, Search, AlertCircle, Plus, UserCheck, CheckCircle2, Banknote, Gift } from 'lucide-svelte';
+  import Users from 'lucide-svelte/icons/users';
+import Star from 'lucide-svelte/icons/star';
+import X from 'lucide-svelte/icons/x';
+import Search from 'lucide-svelte/icons/search';
+import AlertCircle from 'lucide-svelte/icons/alert-circle';
+import Plus from 'lucide-svelte/icons/plus';
+import UserCheck from 'lucide-svelte/icons/user-check';
+import CheckCircle2 from 'lucide-svelte/icons/check-circle-2';
+import Banknote from 'lucide-svelte/icons/banknote';
+import Gift from 'lucide-svelte/icons/gift';
   import CheckInModal from '$lib/components/ui/CheckInModal.svelte';
   import { get } from 'svelte/store';
   import type { BanquetTable, Guest, RSVPStatus, TableOccupancy, HallElement } from '$lib/types';

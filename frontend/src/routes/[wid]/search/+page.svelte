@@ -9,7 +9,9 @@
   import { get } from 'svelte/store';
   import Badge from '$lib/components/ui/Badge.svelte';
   import { getInitials, cn } from '$lib/utils';
-  import { Search, CheckCircle2, Phone } from 'lucide-svelte';
+  import Search from 'lucide-svelte/icons/search';
+import CheckCircle2 from 'lucide-svelte/icons/check-circle-2';
+import Phone from 'lucide-svelte/icons/phone';
   import { onMount } from 'svelte';
   import type { Guest, BanquetTable, HallElement } from '$lib/types';
   import HallMap from '$lib/components/seating/HallMap.svelte';

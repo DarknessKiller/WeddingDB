@@ -1,6 +1,8 @@
 <script lang="ts">
   import { toasts } from '$lib/stores';
-  import { CheckCircle, XCircle, Info } from 'lucide-svelte';
+  import CheckCircle from 'lucide-svelte/icons/check-circle';
+import XCircle from 'lucide-svelte/icons/x-circle';
+import Info from 'lucide-svelte/icons/info';
   import { toastOut } from '$lib/utils/motion';
 </script>
 

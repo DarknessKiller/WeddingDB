@@ -3,7 +3,10 @@
   import { weddingTitle } from '$lib/stores/weddingTitle';
   import { weddingId } from '$lib/stores/weddingId';
   import { exportAngpaoReport } from '$lib/api/reports';
-  import { Download, FileSpreadsheet, FileText, Loader2 } from 'lucide-svelte';
+  import Download from 'lucide-svelte/icons/download';
+import FileSpreadsheet from 'lucide-svelte/icons/file-spreadsheet';
+import FileText from 'lucide-svelte/icons/file-text';
+import Loader2 from 'lucide-svelte/icons/loader-2';
 
   let exporting = $state<'csv' | 'xlsx' | null>(null);
   let error = $state('');

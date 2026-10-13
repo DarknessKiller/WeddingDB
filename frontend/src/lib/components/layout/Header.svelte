@@ -3,7 +3,9 @@
   import { sidebarCollapsed, getAuth, clearAuth } from '$lib/stores';
   import { setWeddingId } from '$lib/stores/weddingId';
   import { goto } from '$app/navigation';
-  import { Menu, X, LogOut } from 'lucide-svelte';
+  import Menu from 'lucide-svelte/icons/menu';
+import X from 'lucide-svelte/icons/x';
+import LogOut from 'lucide-svelte/icons/log-out';
 
   const TITLES: Record<string, string> = {
     '/dashboard': 'Dashboard',

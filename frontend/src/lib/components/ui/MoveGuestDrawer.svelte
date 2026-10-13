@@ -1,5 +1,6 @@
 <script lang="ts">
-  import { X, ArrowUpDown } from 'lucide-svelte';
+  import X from 'lucide-svelte/icons/x';
+import ArrowUpDown from 'lucide-svelte/icons/arrow-up-down';
   import { getInitials } from '$lib/utils';
   import type { Guest, BanquetTable } from '$lib/types';
 
