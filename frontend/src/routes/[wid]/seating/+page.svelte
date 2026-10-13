@@ -205,13 +205,13 @@ import Gift from 'lucide-svelte/icons/gift';
     const wid = get(weddingId);
     try {
       await checkInGuest(wid, checkinGuest.id, notes);
-      const trimmed = notes.trim();
+      // Notes come back from the server via SSE (or offline optimisticPatch);
+      // appending them here too duplicated the input.
       allGuests = allGuests.map(g => g.id === checkinGuest!.id ? {
         ...g,
         checkedIn: true,
         checkedInAt: new Date(),
         rsvp: 'confirmed' as const,
-        notes: trimmed ? (g.notes ? `${g.notes}\n${trimmed}` : trimmed) : g.notes,
       } : g);
       showCheckinModal = false;
       addToast(`${checkinGuest.name} checked in`, 'success');

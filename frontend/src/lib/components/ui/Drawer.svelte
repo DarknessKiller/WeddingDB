@@ -253,12 +253,12 @@ import ArrowUpDown from 'lucide-svelte/icons/arrow-up-down';
     const wid = get(weddingId);
     try {
       await checkInGuest(wid, guest.id, notes);
-      const trimmed = notes.trim();
+      // Notes are appended by the server and echoed back over SSE (or by the
+      // offline optimisticPatch when queued) — appending here too duplicated them.
       guest.checkedIn = true;
       guest.checkedInAt = new Date();
       guest.rsvp = 'confirmed';
-      if (trimmed) guest.notes = guest.notes ? `${guest.notes}\n${trimmed}` : trimmed;
-      pushGuestPatch(guest.id, { checkedIn: true, checkedInAt: guest.checkedInAt, rsvp: 'confirmed', notes: guest.notes });
+      pushGuestPatch(guest.id, { checkedIn: true, checkedInAt: guest.checkedInAt, rsvp: 'confirmed' });
       localGuest = { ...guest };
       showCheckInModal = false;
       addToast(`${guest.name} checked in`, 'success');
