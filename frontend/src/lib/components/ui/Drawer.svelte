@@ -3,6 +3,7 @@
   import { X, Phone, Mail, Utensils, StickyNote, Banknote, Gift, Pencil, Check, UserCheck, CheckCircle2, ArrowUpDown } from 'lucide-svelte';
   import Badge from './Badge.svelte';
   import ConfirmDialog from './ConfirmDialog.svelte';
+  import CheckInModal from './CheckInModal.svelte';
   import { getInitials, cn } from '$lib/utils';
   import { formatSeatRange } from '$lib/utils/seat';
   import { addToast } from '$lib/stores';
@@ -29,6 +30,7 @@
   $effect(() => { localGuest = guest; });
 
   let showUnassignConfirm = $state(false);
+  let showCheckInModal = $state(false);
 
   async function refreshGuest() {
     if (!guest?.id) return;
@@ -235,19 +237,23 @@
     guestList.update(list => list.map(g => g.id === id ? { ...g, ...patch } : g));
   }
 
-  async function handleCheckIn() {
+  async function handleCheckIn(notes: string) {
     if (!guest) return;
     const wid = get(weddingId);
     try {
-      await checkInGuest(wid, guest.id);
+      await checkInGuest(wid, guest.id, notes);
+      const trimmed = notes.trim();
       guest.checkedIn = true;
       guest.checkedInAt = new Date();
       guest.rsvp = 'confirmed';
-      pushGuestPatch(guest.id, { checkedIn: true, checkedInAt: guest.checkedInAt, rsvp: 'confirmed' });
+      if (trimmed) guest.notes = guest.notes ? `${guest.notes}\n${trimmed}` : trimmed;
+      pushGuestPatch(guest.id, { checkedIn: true, checkedInAt: guest.checkedInAt, rsvp: 'confirmed', notes: guest.notes });
       localGuest = { ...guest };
+      showCheckInModal = false;
       addToast(`${guest.name} checked in`, 'success');
     } catch (e: any) {
       if (e instanceof ConflictError) {
+        showCheckInModal = false;
         addToast(`${guest.name} was already checked in`, 'info');
       } else {
         addToast(e.message ?? 'Check-in failed', 'error');
@@ -498,7 +504,7 @@
                 <CheckCircle2 class="w-4 h-4" /> Checked In — Tap to Check Out
               </button>
             {:else}
-              <button onclick={handleCheckIn} class="w-full py-2.5 sm:py-3 bg-red text-white rounded-xl text-sm font-semibold hover:bg-red-light transition-colors flex items-center justify-center gap-2">
+              <button onclick={() => showCheckInModal = true} class="w-full py-2.5 sm:py-3 bg-red text-white rounded-xl text-sm font-semibold hover:bg-red-light transition-colors flex items-center justify-center gap-2">
                 <UserCheck class="w-4 h-4" /> Check In
               </button>
             {/if}
@@ -533,6 +539,14 @@
   onConfirm={confirmUnassign}
   onCancel={() => showUnassignConfirm = false}
 />
+
+{#if showCheckInModal && guest}
+  <CheckInModal
+    guestName={guest.name}
+    onConfirm={handleCheckIn}
+    onClose={() => showCheckInModal = false}
+  />
+{/if}
 
 <style>
   @import './drawer.css';
