@@ -7,8 +7,8 @@ export async function getLayout(wid: string): Promise<HallLayoutData> {
 	return res.json();
 }
 
-export async function getPublicLayout(wid: string): Promise<HallLayoutData> {
-	const res = await fetch(`/api/public/weddings/${wid}/layout`);
+export async function getPublicLayout(wid: string, opts: { signal?: AbortSignal } = {}): Promise<HallLayoutData> {
+	const res = await fetch(`/api/public/weddings/${wid}/layout`, { signal: opts.signal });
 	if (!res.ok) throw new Error('Failed to load layout');
 	return res.json();
 }

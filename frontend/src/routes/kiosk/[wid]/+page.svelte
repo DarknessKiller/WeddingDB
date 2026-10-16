@@ -1,6 +1,6 @@
 <script lang="ts">
   import HallMap from '$lib/components/seating/HallMap.svelte';
-  import { publicListGuests as listGuests, mapGuest } from '$lib/api/public';
+  import { publicListGuests, mapGuest } from '$lib/api/public';
   import { getPublicLayout } from '$lib/api/layout';
   import { cn, getInitials } from '$lib/utils';
   import { formatSeatRange } from '$lib/utils/seat';
@@ -31,15 +31,18 @@ import Star from 'lucide-svelte/icons/star';
   let timer: ReturnType<typeof setInterval>;
   let searching = $state(false);
   let abortController: AbortController | null = null;
+  // AbortController tied to the page lifecycle: aborted on destroy so slow
+  // responses (e.g. network handoff) cannot stack after navigation/refresh.
+  let pageAbort = new AbortController();
 
-  // Guest list polling: kiosks run for hours, so re-fetch every 30s.
+  // Guest list polling: kiosks run for hours, so re-fetch every 60s.
   let pollTimer: ReturnType<typeof setInterval> | undefined;
   let guestsInFlight = false;
-  async function loadGuests() {
+  async function loadGuests(signal?: AbortSignal) {
     if (guestsInFlight) return; // skip while a fetch is still in flight
     guestsInFlight = true;
     try {
-      allGuests = await listGuests();
+      allGuests = await publicListGuests({ signal });
     } catch {}
     finally { guestsInFlight = false; }
   }
@@ -120,11 +123,12 @@ import Star from 'lucide-svelte/icons/star';
 
     const wid = page.params.wid ?? '';
     if (wid) setWeddingId(wid);
-    timer = setInterval(() => currentTime = new Date(), 1000);
-    loadGuests();
-    pollTimer = setInterval(loadGuests, 30_000);
-    getPublicLayout(wid).then(l => { tables = l.tables; elements = l.elements; hallWidth = l.hallWidth; hallHeight = l.hallHeight; }).catch(() => {});
-    fetch(`/api/public/weddings/${wid}/kiosk`).then(r => r.ok ? r.json() : null).then(data => {
+    // formatTime renders minute granularity, so ticking once per minute is enough.
+    timer = setInterval(() => currentTime = new Date(), 60_000);
+    loadGuests(pageAbort.signal);
+    pollTimer = setInterval(() => loadGuests(pageAbort.signal), 60_000);
+    getPublicLayout(wid, { signal: pageAbort.signal }).then(l => { tables = l.tables; elements = l.elements; hallWidth = l.hallWidth; hallHeight = l.hallHeight; }).catch(() => {});
+    fetch(`/api/public/weddings/${wid}/kiosk`, { signal: pageAbort.signal }).then(r => r.ok ? r.json() : null).then(data => {
       if (data) {
         // Apply the server value even when it's an empty string — only
         // undefined (field absent) means "keep the default".
@@ -151,6 +155,8 @@ import Star from 'lucide-svelte/icons/star';
     clearInterval(timer);
     if (pollTimer) clearInterval(pollTimer);
     if (sheetAnimFrame) cancelAnimationFrame(sheetAnimFrame);
+    pageAbort.abort(); // cancel any in-flight initial fetches
+    pageAbort = new AbortController(); // fresh controller if component remounts
     if (mqHandler) {
       const mq = window.matchMedia('(prefers-reduced-motion: reduce)');
       mq.removeEventListener('change', mqHandler);
@@ -471,7 +477,7 @@ import Star from 'lucide-svelte/icons/star';
       <div class="search-content">
         <div class="search-hero">
           {#if kioskLogoUrl}
-            <img src={kioskLogoUrl} alt="Logo" class="hero-logo" style={`object-fit: ${kioskLogoSize}; object-position: ${kioskLogoPosX} ${kioskLogoPosY};`} />
+            <img src={kioskLogoUrl} alt="Logo" class="hero-logo" width="112" height="112" loading="eager" decoding="async" style={`object-fit: ${kioskLogoSize}; object-position: ${kioskLogoPosX} ${kioskLogoPosY};`} />
           {:else}
             <div class="hero-icon">囍</div>
           {/if}

@@ -87,6 +87,8 @@ func Init(env config.Env, version string) *App {
 	db.Exec("CREATE INDEX IF NOT EXISTS idx_guest_records_name_trgm ON guest_records USING gin (name gin_trgm_ops)")
 	db.Exec("CREATE INDEX IF NOT EXISTS idx_guest_records_name_pinyin_trgm ON guest_records USING gin (name_pinyin gin_trgm_ops)")
 	db.Exec("CREATE INDEX IF NOT EXISTS idx_guest_records_phone_trgm ON guest_records USING gin (phone gin_trgm_ops)")
+	db.Exec("CREATE INDEX IF NOT EXISTS idx_guest_records_wedding_id ON guest_records (wedding_id, id)")
+	db.Exec("CREATE INDEX IF NOT EXISTS idx_guest_records_wedding_name ON guest_records (wedding_id, name)")
 
 	// ponytail: FK lookup indexes
 	db.Exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_admin_users_email ON admin_users (email)")
@@ -140,6 +142,7 @@ func Init(env config.Env, version string) *App {
 	// both fuego's logger and the tracing span read RemoteAddr afterwards.
 	// Fuego executes middlewares outer-first, so proxy is registered first.
 	fuego.Use(server, middleware.ProxyAwareMiddleware)
+	fuego.Use(server, tracing.ServerTimingMiddleware)
 	if tracingEnabled {
 		fuego.Use(server, tracing.Middleware)
 	}
@@ -153,9 +156,8 @@ func Init(env config.Env, version string) *App {
 			return
 		}
 		filePath := filepath.Join("./uploads", file)
-		if strings.HasPrefix(file, "kiosk-logo-") {
-			w.Header().Set("Cache-Control", "public, max-age=86400, s-maxage=604800, stale-while-revalidate=86400")
-		}
+		// keys are forgiving per-API: admins may replace uploaded files (e.g. kiosk logo/background)
+		w.Header().Set("Cache-Control", "public, max-age=604800, stale-while-revalidate=86400")
 		http.ServeFile(w, r, filePath)
 	})
 
@@ -174,6 +176,12 @@ func Init(env config.Env, version string) *App {
 		}
 		filePath := filepath.Join(staticDir, path)
 		if info, err := os.Stat(filePath); err == nil && !info.IsDir() {
+			stripped := strings.TrimPrefix(path, "/")
+			if strings.HasPrefix(stripped, "_app/") || strings.HasPrefix(stripped, "assets/") {
+				w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
+			} else if stripped == "index.html" {
+				w.Header().Set("Cache-Control", "no-cache")
+			}
 			if path == "favicon.svg" {
 				w.Header().Set("Cache-Control", "public, max-age=86400, s-maxage=604800, stale-while-revalidate=86400")
 			}
@@ -181,6 +189,7 @@ func Init(env config.Env, version string) *App {
 			return
 		}
 		// SPA fallback: serve index.html for client-side routing
+		w.Header().Set("Cache-Control", "no-cache") // deep links land here with a non-file path: mark no-cache so browser heuristics never serve stale chunk URLs after a redeploy
 		http.ServeFile(w, r, filepath.Join(staticDir, "index.html"))
 	})
 

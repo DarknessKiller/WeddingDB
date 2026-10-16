@@ -76,19 +76,21 @@ func (r *GuestRepo) SearchByWedding(ctx context.Context, weddingID uuid.UUID, qu
 	q := fmt.Sprintf("%%%s%%", escaped)
 	pinyinQ := fmt.Sprintf("%%%s%%", strings.ToLower(models.GenerateNamePinyin(query)))
 	lowerQ := strings.ToLower(query)
-	err := r.db.WithContext(ctx).Where("wedding_id = ? AND (name ILIKE ? OR name_pinyin ILIKE ?)",
-		weddingID, q, pinyinQ).
-		Order(fmt.Sprintf(`
+	prefix := fmt.Sprintf("%s%%", lowerQ)
+	err := r.db.WithContext(ctx).Raw(`
+		SELECT * FROM guest_records
+		WHERE wedding_id = ? AND (name ILIKE ? OR name_pinyin ILIKE ?)
+		ORDER BY
 			CASE
-				WHEN LOWER(name) = %s THEN 0
-				WHEN LOWER(name) LIKE %s THEN 1
-				WHEN LOWER(name) LIKE %s THEN 2
+				WHEN LOWER(name) = ? THEN 0
+				WHEN LEFT(LOWER(name), ?) = ? THEN 1
+				WHEN LEFT(name_pinyin, ?) = ? THEN 2
 				ELSE 3
-			END, name`,
-			fmt.Sprintf("'%s'", strings.ReplaceAll(lowerQ, "'", "''")),
-			fmt.Sprintf("'%s%%'", strings.ReplaceAll(lowerQ, "'", "''")),
-			fmt.Sprintf("'%%%s%%'", strings.ReplaceAll(lowerQ, "'", "''")))).
-		Find(&guests).Error
+			END, name
+		LIMIT 101`,
+		weddingID, q, pinyinQ,
+		lowerQ, len(lowerQ), prefix, len(lowerQ), strings.ToLower(models.GenerateNamePinyin(query))).
+		Scan(&guests).Error
 	return guests, err
 }
 
