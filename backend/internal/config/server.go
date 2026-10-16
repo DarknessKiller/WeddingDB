@@ -28,6 +28,10 @@ func NewFuegoServer(env Env, version string) *fuego.Server {
 	// deadline and fuego's 30s default would kill every stream at 30s, forcing
 	// a reconnect/resync loop. Keepalive pings cannot extend it.
 	s.Server.WriteTimeout = 0
+	// Large/slow uploads must not be reset mid-transfer (fuego defaults
+	// ReadTimeout to 30s). The reverse proxy owns body-size limits and request
+	// timeouts; ReadHeaderTimeout still applies so slowloris headers die.
+	s.Server.ReadTimeout = 0
 
 	// Set the public server URL in the OpenAPI spec
 	if env.PublicURL != "" {
