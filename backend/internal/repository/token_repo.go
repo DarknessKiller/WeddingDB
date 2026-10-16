@@ -2,6 +2,7 @@ package repository
 
 import (
 	"context"
+	"errors"
 	"time"
 	"weddingdb/internal/models"
 
@@ -17,6 +18,28 @@ func NewTokenRepo(db *gorm.DB) *TokenRepo {
 
 func (r *TokenRepo) Save(ctx context.Context, token *models.RefreshToken) error {
 	return r.db.WithContext(ctx).Create(token).Error
+}
+
+// ErrTokenClaimed reports that another caller rotated the token first.
+var ErrTokenClaimed = errors.New("refresh token already rotated")
+
+// Rotate consumes token and stores its replacement in one transaction. The
+// conditional update lets exactly one concurrent caller win; the loser gets
+// ErrTokenClaimed and falls back to the replay path. Any failure rolls back, so
+// a token is never consumed without its successor being stored.
+func (r *TokenRepo) Rotate(ctx context.Context, token string, replacement *models.RefreshToken) error {
+	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		res := tx.Model(&models.RefreshToken{}).
+			Where("token = ? AND rotated_at IS NULL", token).
+			Updates(map[string]any{"rotated_at": time.Now(), "replaced_by": replacement.Token})
+		if res.Error != nil {
+			return res.Error
+		}
+		if res.RowsAffected != 1 {
+			return ErrTokenClaimed
+		}
+		return tx.Create(replacement).Error
+	})
 }
 
 func (r *TokenRepo) FindByToken(ctx context.Context, token string) (*models.RefreshToken, error) {

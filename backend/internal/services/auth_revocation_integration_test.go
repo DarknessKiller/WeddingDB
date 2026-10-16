@@ -32,9 +32,19 @@ func newIntegrationAuthService(t *testing.T, secret string) (*AuthService, *mini
 		wedding_id TEXT,
 		token TEXT NOT NULL UNIQUE,
 		expires_at DATETIME,
-		created_at DATETIME
+		created_at DATETIME,
+		rotated_at DATETIME,
+		replaced_by TEXT
 	)`)
 	db.Exec(`CREATE INDEX idx_refresh_tokens_admin_id ON refresh_tokens(admin_id)`)
+
+	// ":memory:" gives every new connection its own empty database, so keep one.
+	sqlDB, err := db.DB()
+	if err != nil {
+		t.Fatalf("failed to reach sql.DB: %v", err)
+	}
+	sqlDB.SetMaxOpenConns(1)
+	sqlDB.SetMaxIdleConns(1)
 
 	db.Exec(`CREATE TABLE admin_users (
 		id TEXT PRIMARY KEY,
@@ -274,7 +284,7 @@ func TestRefresh_WithoutOldAccessToken_NoBlacklist(t *testing.T) {
 
 // --- Refresh rotation atomicity (consume-then-issue) ---
 
-func TestRefresh_ReplayRejected(t *testing.T) {
+func TestRefresh_ReplayWithinGraceIsIdempotent(t *testing.T) {
 	svc, _, db := newIntegrationAuthService(t, "test-secret")
 	adminID := uuid.New()
 	wid := uuid.New()
@@ -291,21 +301,26 @@ func TestRefresh_ReplayRejected(t *testing.T) {
 		t.Fatal("expected new refresh token from first Refresh")
 	}
 
-	// Replaying the already-consumed refresh token must fail.
-	if _, err := svc.Refresh(context.Background(), refreshStr, ""); err == nil {
-		t.Fatal("expected replayed refresh token to be rejected, got nil error")
+	// Retrying the consumed token inside the grace window (lost response, or a
+	// second tab) must return the same successor, not end the session.
+	replay, err := svc.Refresh(context.Background(), refreshStr, "")
+	if err != nil {
+		t.Fatalf("retry inside the grace window should be idempotent, got: %v", err)
+	}
+	if replay.RefreshToken != result.RefreshToken {
+		t.Errorf("retry returned refresh token %q, want the same successor %q", replay.RefreshToken, result.RefreshToken)
 	}
 
-	// The replacement token issued by the first Refresh must still work.
+	// The successor still rotates normally.
 	if _, err := svc.Refresh(context.Background(), result.RefreshToken, ""); err != nil {
 		t.Fatalf("expected rotated refresh token to be usable, got error: %v", err)
 	}
 
-	// Exactly one live refresh token must remain.
-	var count int64
-	db.Model(&models.RefreshToken{}).Where("admin_id = ?", adminID).Count(&count)
-	if count != 1 {
-		t.Errorf("expected 1 live refresh token after rotation, got %d", count)
+	// Consumed rows stay for grace bookkeeping; exactly one is still live.
+	var live int64
+	db.Model(&models.RefreshToken{}).Where("admin_id = ? AND rotated_at IS NULL", adminID).Count(&live)
+	if live != 1 {
+		t.Errorf("expected 1 live refresh token after rotation, got %d", live)
 	}
 }
 

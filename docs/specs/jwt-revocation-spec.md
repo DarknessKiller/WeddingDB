@@ -427,3 +427,24 @@ Request → AuthMiddleware
 5. **First-ever request for a user (no tv in Redis):** `GetTokenVersion` returns `0`. JWT with `tv=0` passes. Correct — lazy init means no write until first revoke.
 
 6. **Race between revoke and in-flight requests:** Requests already past middleware are unaffected. Requests hitting middleware during revoke will see the INCR on next Redis read (sub-ms propagation in single Redis instance).
+
+---
+
+## Refresh Rotation & Grace Window
+
+`Refresh` mints the access token and the successor refresh token **before**
+consuming the presented one, then claims and replaces it in a single Postgres
+transaction (`TokenRepo.Rotate`). The claim is a conditional update on
+`rotated_at IS NULL`, so exactly one concurrent caller wins; the loser gets
+`repository.ErrTokenClaimed` and is served the successor instead of a 401.
+
+A consumed token stays in the table with `rotated_at` + `replaced_by` set. For
+`refreshGraceWindow` (60s) after the rotation, presenting it again returns the
+same successor — a response lost in transit, or a second tab replaying the
+token it still holds, no longer ends the session. After the window the token is
+rejected as replayed (no family revocation: rejecting is already the whole
+response, and revoking would log out honest clients retrying a stale tab).
+
+Consumed rows are reclaimed by `TokenRepo.DeleteExpired` once `expires_at`
+passes. Migration is two nullable columns via the existing `AutoMigrate` in
+`bootstrap.go`; no backfill.
