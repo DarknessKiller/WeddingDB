@@ -57,6 +57,21 @@ docker compose up -d
 - Postgres: `localhost:5432` (user/pass/db all `weddingdb`, bound to loopback only)
 - Redis: internal to the compose network (no host port published)
 
+### File-size limits
+
+Uploads (`POST /api/upload`) are uncapped at the app level and have no request deadline — put the size limit in the reverse proxy, which should also set generous upstream read timeouts so large/slow uploads survive:
+
+```nginx
+client_max_body_size 50m;            # nginx
+proxy_read_timeout 300s;
+```
+
+```caddy
+reverse_proxy localhost:8080 {
+    request_body max_size 50MB        # Caddy
+}
+```
+
 ### First login (bootstrap admin)
 
 On first start with an empty database, the app seeds a default admin:
@@ -216,7 +231,7 @@ Jaeger UI at `http://localhost:16686`. Request spans record route pattern, statu
 | PUT | `/api/weddings/{id}` | Update wedding |
 | PUT | `/api/weddings/{id}/kiosk` | Update kiosk settings |
 | DELETE | `/api/weddings/{id}` | Delete wedding |
-| POST | `/api/upload` | Upload file (max 5MB, images only) |
+| POST | `/api/upload` | Upload file (multipart; no app-level size cap — enforced by reverse proxy, images only) |
 
 ### Tables, Guests & Seating
 
