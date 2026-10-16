@@ -74,6 +74,11 @@ func (s *AuthService) Login(ctx context.Context, email, password string) (*Login
 	if err != nil {
 		return nil, err
 	}
+	return s.sessionResult(ctx, admin, accessToken, refreshToken)
+}
+
+// sessionResult assembles the token payload shared by Login and Refresh.
+func (s *AuthService) sessionResult(ctx context.Context, admin *models.AdminUser, accessToken, refreshToken string) (*LoginResult, error) {
 	var weddings []models.WeddingEvent
 	if admin.Role == "admin" {
 		weddings, _ = s.weddingRepo.List(ctx)
@@ -116,19 +121,15 @@ func (s *AuthService) SelectWedding(ctx context.Context, adminID uuid.UUID, wedd
 	return s.generateAccessToken(ctx, admin, &weddingID)
 }
 
+// refreshGraceWindow is how long after a rotation a retry of the consumed token
+// is answered with the same successor. It covers responses lost in transit and
+// refreshes racing from two tabs, without which either one ends the session.
+const refreshGraceWindow = 60 * time.Second
+
 // Refresh returns a new LoginResult with fresh tokens.
 // oldAccessToken is the previous access token (from Authorization header) — its JTI is blacklisted
 // to prevent concurrent use after rotation.
 func (s *AuthService) Refresh(ctx context.Context, refreshTokenStr string, oldAccessToken string) (*LoginResult, error) {
-	token, err := s.tokenRepo.FindByToken(ctx, refreshTokenStr)
-	if err != nil {
-		return nil, errors.New("invalid refresh token")
-	}
-	admin, err := s.adminRepo.FindByID(ctx, token.AdminID)
-	if err != nil {
-		return nil, errors.New("admin not found")
-	}
-
 	// Blacklist old access token JTI first — failure here leaves no token state mutated
 	if oldAccessToken != "" {
 		if oldClaims, err := s.parseTokenClaims(oldAccessToken); err == nil && oldClaims != nil {
@@ -138,43 +139,65 @@ func (s *AuthService) Refresh(ctx context.Context, refreshTokenStr string, oldAc
 		}
 	}
 
-	// Consume the presented refresh token BEFORE minting anything. If 0 rows
-	// were deleted the token was already used (replay) or expired — refuse so
-	// two concurrent refreshes can never both succeed.
-	rows, err := s.tokenRepo.DeleteByToken(ctx, refreshTokenStr)
+	token, err := s.tokenRepo.FindByToken(ctx, refreshTokenStr)
 	if err != nil {
-		return nil, fmt.Errorf("failed to consume refresh token: %w", err)
-	}
-	if rows != 1 {
 		return nil, errors.New("invalid refresh token")
 	}
+	if token.RotatedAt != nil {
+		return s.resumeRotation(ctx, token)
+	}
 
+	admin, err := s.adminRepo.FindByID(ctx, token.AdminID)
+	if err != nil {
+		return nil, errors.New("admin not found")
+	}
+
+	// Mint before consuming: if Redis or the token generator fails here, the
+	// presented token stays usable and the client can simply retry.
 	accessToken, err := s.generateAccessToken(ctx, admin, token.WeddingID)
 	if err != nil {
 		return nil, err
 	}
-	newRefreshToken, err := s.generateRefreshToken(ctx, admin.ID, token.WeddingID)
+	replacement, err := s.buildRefreshToken(admin.ID, token.WeddingID)
 	if err != nil {
 		return nil, err
 	}
 
-	var weddings []models.WeddingEvent
-	if admin.Role == "admin" {
-		weddings, _ = s.weddingRepo.List(ctx)
-	} else {
-		weddings, _ = s.adminRepo.GetUserWeddings(ctx, admin.ID)
+	err = s.tokenRepo.Rotate(ctx, refreshTokenStr, replacement)
+	if err == nil {
+		return s.sessionResult(ctx, admin, accessToken, replacement.Token)
 	}
-	if weddings == nil {
-		weddings = []models.WeddingEvent{}
+	if !errors.Is(err, repository.ErrTokenClaimed) {
+		return nil, fmt.Errorf("failed to rotate refresh token: %w", err)
 	}
-	return &LoginResult{
-		AccessToken:         accessToken,
-		RefreshToken:        newRefreshToken,
-		Role:                admin.Role,
-		Name:                admin.Name,
-		Weddings:            weddings,
-		ForcePasswordChange: admin.ForcePasswordChange,
-	}, nil
+	// Another caller rotated it between our read and our claim — serve the
+	// successor instead of failing one of the two.
+	current, findErr := s.tokenRepo.FindByToken(ctx, refreshTokenStr)
+	if findErr != nil || current.RotatedAt == nil {
+		return nil, errors.New("invalid refresh token")
+	}
+	return s.resumeRotation(ctx, current)
+}
+
+// resumeRotation answers a retry of an already-rotated token with the same
+// successor, inside the grace window. Outside it the token counts as replayed.
+func (s *AuthService) resumeRotation(ctx context.Context, consumed *models.RefreshToken) (*LoginResult, error) {
+	if consumed.RotatedAt == nil || consumed.ReplacedBy == nil || time.Since(*consumed.RotatedAt) > refreshGraceWindow {
+		return nil, errors.New("invalid refresh token")
+	}
+	replacement, err := s.tokenRepo.FindByToken(ctx, *consumed.ReplacedBy)
+	if err != nil {
+		return nil, errors.New("invalid refresh token")
+	}
+	admin, err := s.adminRepo.FindByID(ctx, replacement.AdminID)
+	if err != nil {
+		return nil, errors.New("admin not found")
+	}
+	accessToken, err := s.generateAccessToken(ctx, admin, replacement.WeddingID)
+	if err != nil {
+		return nil, err
+	}
+	return s.sessionResult(ctx, admin, accessToken, replacement.Token)
 }
 
 // Logout deletes the refresh token and blacklists the access token's JTI.
@@ -351,21 +374,28 @@ func (s *AuthService) generateAccessToken(ctx context.Context, admin *models.Adm
 	return token.SignedString(s.secret)
 }
 
-func (s *AuthService) generateRefreshToken(ctx context.Context, adminID uuid.UUID, weddingID *uuid.UUID) (string, error) {
+// buildRefreshToken returns an unsaved refresh token row.
+func (s *AuthService) buildRefreshToken(adminID uuid.UUID, weddingID *uuid.UUID) (*models.RefreshToken, error) {
 	b := make([]byte, 32)
 	if _, err := rand.Read(b); err != nil {
-		return "", err
+		return nil, err
 	}
-	tokenStr := hex.EncodeToString(b)
-	token := &models.RefreshToken{
+	return &models.RefreshToken{
 		ID:        uuid.New(),
 		AdminID:   adminID,
 		WeddingID: weddingID,
-		Token:     tokenStr,
+		Token:     hex.EncodeToString(b),
 		ExpiresAt: time.Now().Add(7 * 24 * time.Hour),
+	}, nil
+}
+
+func (s *AuthService) generateRefreshToken(ctx context.Context, adminID uuid.UUID, weddingID *uuid.UUID) (string, error) {
+	token, err := s.buildRefreshToken(adminID, weddingID)
+	if err != nil {
+		return "", err
 	}
 	if err := s.tokenRepo.Save(ctx, token); err != nil {
 		return "", err
 	}
-	return tokenStr, nil
+	return token.Token, nil
 }
