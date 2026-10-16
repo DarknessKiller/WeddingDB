@@ -14,23 +14,29 @@ export function getAccessToken(): string {
 async function doRefresh(): Promise<boolean> {
 	const { refreshToken } = getAuth();
 	if (!refreshToken) return false;
+	let refreshRes: Response;
 	try {
-		const refreshRes = await fetch(`${BASE}/api/auth/refresh`, {
+		refreshRes = await fetch(`${BASE}/api/auth/refresh`, {
 			method: 'POST',
 			headers: { 'Content-Type': 'application/json' },
 			body: JSON.stringify({ refreshToken })
 		});
-		if (refreshRes.ok) {
-			const data = await refreshRes.json();
-			if (data.forcePasswordChange) {
-				setAuth(data.accessToken, data.refreshToken, data.role ?? getAuth().role ?? '', data.name ?? getAuth().name ?? '');
-				if (typeof window !== 'undefined') window.location.href = '/change-password';
-				return false;
-			}
+	} catch {
+		// Network failure — the token was never seen by the server, so keep the session.
+		return false;
+	}
+	if (refreshRes.ok) {
+		const data = await refreshRes.json();
+		if (data.forcePasswordChange) {
 			setAuth(data.accessToken, data.refreshToken, data.role ?? getAuth().role ?? '', data.name ?? getAuth().name ?? '');
-			return true;
+			if (typeof window !== 'undefined') window.location.href = '/change-password';
+			return false;
 		}
-	} catch {}
+		setAuth(data.accessToken, data.refreshToken, data.role ?? getAuth().role ?? '', data.name ?? getAuth().name ?? '');
+		return true;
+	}
+	// Only a definite rejection means the refresh token is dead. Keep the session on 5xx.
+	if (refreshRes.status !== 400 && refreshRes.status !== 401) return false;
 	clearAuth();
 	setWeddingId('');
 	if (typeof window !== 'undefined') window.location.href = '/login';

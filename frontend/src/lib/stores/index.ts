@@ -43,6 +43,14 @@ function loadAuth() {
 }
 loadAuth();
 
+// Another tab can refresh or clear the session. Mirror it instead of replaying
+// a refresh token that tab already consumed (single-use rotation).
+if (typeof window !== 'undefined') {
+  window.addEventListener('storage', (e) => {
+    if (e.key === null || e.key.startsWith('weddingdb_')) loadAuth();
+  });
+}
+
 export function getAuth() {
   return { accessToken: _accessToken, refreshToken: _refreshToken, role: _role, name: _name };
 }
