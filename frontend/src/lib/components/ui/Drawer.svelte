@@ -30,7 +30,7 @@ import ArrowUpDown from 'lucide-svelte/icons/arrow-up-down';
     return { duration: drawerSlideOut(node, { dir: 'y', duration: 300 }) };
   }
 
-  let { guest, tables = [], onClose, startEditing = false, createMode = false, readonly = false, showSeatNumbers = true }: { guest?: Guest; tables?: BanquetTable[]; onClose: () => void; startEditing?: boolean; createMode?: boolean; readonly?: boolean; showSeatNumbers?: boolean } = $props();
+  let { guest, tables = [], onClose, startEditing = false, createMode = false, readonly = false, showSeatNumbers = false }: { guest?: Guest; tables?: BanquetTable[]; onClose: () => void; startEditing?: boolean; createMode?: boolean; readonly?: boolean; showSeatNumbers?: boolean } = $props();
 
   let tableName = $derived(guest ? (tables.find(t => t.id === guest.tableId)?.name ?? guest.tableId ?? '—') : '—');
 

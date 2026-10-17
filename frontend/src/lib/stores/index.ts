@@ -83,7 +83,7 @@ export function clearAuth() {
 
 // Show seat numbers setting. Shared so every page reacts without a reload, and
 // mirrored to localStorage so a kiosk/preview tab in the same browser updates too.
-export const showSeatNumbers = writable(true);
+export const showSeatNumbers = writable(false);
 
 const seatNumbersKey = (wid: string) => `weddingdb_show_seat_numbers_${wid}`;
 let currentWid = '';

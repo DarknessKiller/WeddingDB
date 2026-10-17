@@ -55,7 +55,7 @@ import MapPin from 'lucide-svelte/icons/map-pin';
         kioskLogoSize = wedding.kioskLogoSize ?? 'contain';
         if (wedding.kioskLogoPosX) kioskLogoPosX = wedding.kioskLogoPosX;
         if (wedding.kioskLogoPosY) kioskLogoPosY = wedding.kioskLogoPosY;
-        setShowSeatNumbers(wedding.id, wedding.showSeatNumbers ?? true);
+        setShowSeatNumbers(wedding.id, wedding.showSeatNumbers ?? false);
       }
     } catch {
       addToast('Failed to load settings', 'error');
@@ -98,7 +98,7 @@ import MapPin from 'lucide-svelte/icons/map-pin';
         ...kioskPayload(),
       });
       wedding = updated;
-      setShowSeatNumbers(updated.id, updated.showSeatNumbers ?? true);
+      setShowSeatNumbers(updated.id, updated.showSeatNumbers ?? false);
       weddingNameEdit = updated.name;
       addToast('Kiosk settings saved', 'success');
     } catch (e: any) {

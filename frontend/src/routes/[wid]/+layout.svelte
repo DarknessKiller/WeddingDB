@@ -102,7 +102,7 @@
     }).catch(() => {});
     getWedding(wid).then((w) => {
       weddingTitle.set(w.name || '');
-      setShowSeatNumbers(wid, w.showSeatNumbers ?? true);
+      setShowSeatNumbers(wid, w.showSeatNumbers ?? false);
     }).catch(() => {});
   });
 
