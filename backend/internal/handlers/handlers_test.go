@@ -42,48 +42,26 @@ func TestSanitizeURL(t *testing.T) {
 	}
 }
 
-// --- validateCSSValue tests ---
+// --- position normalization tests ---
 
-func TestValidateCSSValue(t *testing.T) {
-	// BackgroundSize
-	if got := validateCSSValue("cover", validBackgroundSizes, "cover"); got != "cover" {
-		t.Errorf("cover: got %q", got)
-	}
-	if got := validateCSSValue("contain", validBackgroundSizes, "cover"); got != "contain" {
-		t.Errorf("contain: got %q", got)
-	}
-	if got := validateCSSValue("auto", validBackgroundSizes, "cover"); got != "auto" {
-		t.Errorf("auto: got %q", got)
-	}
-	// Invalid background size falls back
-	if got := validateCSSValue("100%", validBackgroundSizes, "cover"); got != "cover" {
-		t.Errorf("100%%: got %q, want fallback", got)
-	}
-	if got := validateCSSValue("javascript:evil", validBackgroundSizes, "cover"); got != "cover" {
-		t.Errorf("injection: got %q, want fallback", got)
-	}
-
-	// PositionsX
-	for _, v := range []string{"left", "center", "right"} {
-		if got := validateCSSValue(v, validPositionsX, "center"); got != v {
-			t.Errorf("PosX %q: got %q", v, got)
+func TestNormalizePosition(t *testing.T) {
+	for _, in := range []string{"left", "center", "right", "0%", "37%", "37.5%", "100%"} {
+		if _, ok := normalizePosition(in, validPositionsX); !ok {
+			t.Errorf("normalizePosition(%q) rejected", in)
 		}
 	}
-	if got := validateCSSValue("50%", validPositionsX, "center"); got != "center" {
-		t.Errorf("PosX 50%%: got %q, want fallback", got)
+	if got, ok := normalizePosition("37.50%", validPositionsX); !ok || got != "37.5%" {
+		t.Errorf("canonical form: got %q, %v", got, ok)
 	}
-	if got := validateCSSValue("expression(evil)", validPositionsX, "center"); got != "center" {
-		t.Errorf("PosX injection: got %q, want fallback", got)
-	}
-
-	// PositionsY
-	for _, v := range []string{"top", "center", "bottom"} {
-		if got := validateCSSValue(v, validPositionsY, "center"); got != v {
-			t.Errorf("PosY %q: got %q", v, got)
+	for _, in := range []string{"top", "center", "bottom", "50%"} {
+		if _, ok := normalizePosition(in, validPositionsY); !ok {
+			t.Errorf("normalizePosition(%q) rejected for Y", in)
 		}
 	}
-	if got := validateCSSValue("calc(100% - 20px)", validPositionsY, "center"); got != "center" {
-		t.Errorf("PosY calc: got %q, want fallback", got)
+	for _, in := range []string{"", "below", "-1%", "101%", "50 %", "50%%", "calc(100% - 20px)", "NaN%", "Inf%", "0.00000001%"} {
+		if _, ok := normalizePosition(in, validPositionsX); ok {
+			t.Errorf("normalizePosition(%q) accepted, want rejected", in)
+		}
 	}
 }
 
@@ -155,8 +133,8 @@ func TestKioskSettingsRequestNameDirtyOnly(t *testing.T) {
 		if req.Name != nil {
 			t.Errorf("expected nil Name when omitted, got %q", *req.Name)
 		}
-		if req.VenueName != "Hall" {
-			t.Errorf("expected VenueName 'Hall', got %q", req.VenueName)
+		if req.VenueName == nil || *req.VenueName != "Hall" {
+			t.Errorf("expected VenueName 'Hall', got %v", req.VenueName)
 		}
 	})
 
@@ -226,20 +204,17 @@ func TestBlurClamping(t *testing.T) {
 	}
 }
 
-// --- LogoSize validation with "contain" fallback ---
+// --- background size validation ---
 
-func TestLogoSizeValidation(t *testing.T) {
-	// Valid logo sizes
+func TestBackgroundSizeValidation(t *testing.T) {
 	for _, size := range []string{"cover", "contain", "auto"} {
-		if got := validateCSSValue(size, validBackgroundSizes, "contain"); got != size {
-			t.Errorf("logoSize %q: got %q, want %q", size, got, size)
+		if !validBackgroundSizes[size] {
+			t.Errorf("size %q rejected", size)
 		}
 	}
-	// Invalid logo size falls back to "contain" (not "cover")
-	if got := validateCSSValue("100%", validBackgroundSizes, "contain"); got != "contain" {
-		t.Errorf("invalid logoSize: got %q, want 'contain'", got)
-	}
-	if got := validateCSSValue("", validBackgroundSizes, "contain"); got != "contain" {
-		t.Errorf("empty logoSize: got %q, want 'contain'", got)
+	for _, size := range []string{"", "100%", "javascript:evil"} {
+		if validBackgroundSizes[size] {
+			t.Errorf("size %q accepted, want rejected", size)
+		}
 	}
 }

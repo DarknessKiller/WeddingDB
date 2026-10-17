@@ -8,6 +8,8 @@ import Maximize2 from 'lucide-svelte/icons/maximize-2';
 import Magnet from 'lucide-svelte/icons/magnet';
 import ChevronsUp from 'lucide-svelte/icons/chevrons-up';
 import ChevronsDown from 'lucide-svelte/icons/chevrons-down';
+import Undo2 from 'lucide-svelte/icons/undo-2';
+import Redo2 from 'lucide-svelte/icons/redo-2';
   import type { HallElement, ElementType } from '$lib/types';
 
   let {
@@ -17,6 +19,11 @@ import ChevronsDown from 'lucide-svelte/icons/chevrons-down';
     isTableSelected = false,
     selectedItem = null,
     snap = true,
+    canUndo = false,
+    canRedo = false,
+    dirty = false,
+    onUndo,
+    onRedo,
     onSave,
     onCancel,
     onDelete,
@@ -33,6 +40,11 @@ import ChevronsDown from 'lucide-svelte/icons/chevrons-down';
     isTableSelected?: boolean;
     selectedItem?: any;
     snap?: boolean;
+    canUndo?: boolean;
+    canRedo?: boolean;
+    dirty?: boolean;
+    onUndo?: () => void;
+    onRedo?: () => void;
     onSave: () => void;
     onCancel: () => void;
     onDelete: (id: string) => void;
@@ -94,6 +106,27 @@ import ChevronsDown from 'lucide-svelte/icons/chevrons-down';
     </button>
   {/each}
 
+  <div class="flex items-center gap-1">
+    <button
+      onclick={() => onUndo?.()}
+      disabled={!canUndo}
+      class="px-2 py-1 border border-gray-200 rounded-lg hover:bg-gray-50 text-gray-700 font-medium transition-colors flex items-center gap-1 disabled:opacity-40 disabled:cursor-not-allowed"
+      title="Undo (Ctrl+Z)"
+      aria-label="Undo"
+    >
+      <Undo2 class="w-3 h-3" />
+    </button>
+    <button
+      onclick={() => onRedo?.()}
+      disabled={!canRedo}
+      class="px-2 py-1 border border-gray-200 rounded-lg hover:bg-gray-50 text-gray-700 font-medium transition-colors flex items-center gap-1 disabled:opacity-40 disabled:cursor-not-allowed"
+      title="Redo (Ctrl+Shift+Z)"
+      aria-label="Redo"
+    >
+      <Redo2 class="w-3 h-3" />
+    </button>
+  </div>
+
   {#if selectedId && !isTableSelected}
     <button
       onclick={() => onDelete(selectedId!)}
@@ -154,6 +187,12 @@ import ChevronsDown from 'lucide-svelte/icons/chevrons-down';
       max="3000"
     />
   </div>
+
+  {#if dirty}
+    <span class="px-2 py-1 rounded-lg bg-amber-50 text-amber-700 border border-amber-200 font-medium" role="status">
+      Unsaved changes
+    </span>
+  {/if}
 
   <button
     onclick={handleSave}

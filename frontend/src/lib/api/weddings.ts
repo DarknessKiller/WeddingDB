@@ -66,21 +66,22 @@ export async function deleteWedding(id: string): Promise<void> {
 	if (!res.ok) throw new Error('Failed to delete wedding');
 }
 
+// All fields optional: the API leaves omitted fields unchanged.
 export interface KioskSettings {
 	name?: string;
-	venueName: string;
-	venueAddress: string;
-	kioskDescription: string;
-	kioskLogoUrl: string;
-	kioskBackgroundUrl: string;
-	kioskBackgroundBlur: number;
-	kioskBackgroundSize: string;
-	kioskBackgroundPosX: string;
-	kioskBackgroundPosY: string;
-	kioskLogoSize: string;
-	kioskLogoPosX: string;
-	kioskLogoPosY: string;
-	showSeatNumbers: boolean;
+	venueName?: string;
+	venueAddress?: string;
+	kioskDescription?: string;
+	kioskLogoUrl?: string;
+	kioskBackgroundUrl?: string;
+	kioskBackgroundBlur?: number;
+	kioskBackgroundSize?: string;
+	kioskBackgroundPosX?: string;
+	kioskBackgroundPosY?: string;
+	kioskLogoSize?: string;
+	kioskLogoPosX?: string;
+	kioskLogoPosY?: string;
+	showSeatNumbers?: boolean;
 }
 
 export async function updateKioskSettings(id: string, settings: KioskSettings): Promise<Wedding> {

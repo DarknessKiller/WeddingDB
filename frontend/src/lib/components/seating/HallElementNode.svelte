@@ -2,12 +2,13 @@
   import { onMount } from 'svelte';
   import type { HallElement } from '$lib/types';
 
-  let { element, hallWidth, hallHeight, dark = false, mode = 'view', ondragend, ontransformend, onselect, onrefready }: {
+  let { element, hallWidth, hallHeight, dark = false, mode = 'view', ondragstart, ondragend, ontransformend, onselect, onrefready }: {
     element: HallElement;
     hallWidth: number;
     hallHeight: number;
     dark?: boolean;
     mode?: 'view' | 'edit';
+    ondragstart?: (e: any) => void;
     ondragend?: (e: any) => void;
     ontransformend?: (e: any) => void;
     onselect?: () => void;
@@ -81,6 +82,7 @@
     draggable={mode === 'edit'}
     bind:this={groupEl}
     onclick={() => onselect?.()}
+    ondragstart={ondragstart}
     ondragend={ondragend}
     ontransformend={ontransformend}
   >

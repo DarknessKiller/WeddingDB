@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"strconv"
 	"strings"
 	"time"
 	"weddingdb/internal/models"
@@ -119,21 +120,22 @@ func (h *WeddingHandler) Update(c fuego.ContextWithBody[WeddingRequest]) (any, e
 	return w, nil
 }
 
+// KioskSettingsRequest uses pointers so an omitted field stays unchanged.
 type KioskSettingsRequest struct {
 	Name                *string `json:"name"` // nil = unchanged (dirty-only from frontend)
-	VenueName           string  `json:"venueName"`
-	VenueAddress        string `json:"venueAddress"`
-	KioskDescription    string `json:"kioskDescription"`
-	KioskLogoUrl        string `json:"kioskLogoUrl"`
-	KioskBackgroundUrl  string `json:"kioskBackgroundUrl"`
-	KioskBackgroundBlur int    `json:"kioskBackgroundBlur"`
-	KioskBackgroundSize string `json:"kioskBackgroundSize"`
-	KioskBackgroundPosX string `json:"kioskBackgroundPosX"`
-	KioskBackgroundPosY string `json:"kioskBackgroundPosY"`
-	KioskLogoSize       string `json:"kioskLogoSize"`
-	KioskLogoPosX       string `json:"kioskLogoPosX"`
-	KioskLogoPosY       string `json:"kioskLogoPosY"`
-	ShowSeatNumbers     *bool  `json:"showSeatNumbers"`
+	VenueName           *string `json:"venueName"`
+	VenueAddress        *string `json:"venueAddress"`
+	KioskDescription    *string `json:"kioskDescription"`
+	KioskLogoUrl        *string `json:"kioskLogoUrl"`
+	KioskBackgroundUrl  *string `json:"kioskBackgroundUrl"`
+	KioskBackgroundBlur *int    `json:"kioskBackgroundBlur"`
+	KioskBackgroundSize *string `json:"kioskBackgroundSize"`
+	KioskBackgroundPosX *string `json:"kioskBackgroundPosX"`
+	KioskBackgroundPosY *string `json:"kioskBackgroundPosY"`
+	KioskLogoSize       *string `json:"kioskLogoSize"`
+	KioskLogoPosX       *string `json:"kioskLogoPosX"`
+	KioskLogoPosY       *string `json:"kioskLogoPosY"`
+	ShowSeatNumbers     *bool   `json:"showSeatNumbers"`
 }
 
 func (h *WeddingHandler) UpdateKioskSettings(c fuego.ContextWithBody[KioskSettingsRequest]) (any, error) {
@@ -160,18 +162,50 @@ func (h *WeddingHandler) UpdateKioskSettings(c fuego.ContextWithBody[KioskSettin
 		}
 		w.Name = name
 	}
-	w.VenueName = strings.TrimSpace(body.VenueName)
-	w.VenueAddress = strings.TrimSpace(body.VenueAddress)
-	w.KioskDescription = strings.TrimSpace(body.KioskDescription)
-	w.KioskLogoUrl = sanitizeURL(body.KioskLogoUrl)
-	w.KioskBackgroundUrl = sanitizeURL(body.KioskBackgroundUrl)
-	w.KioskBackgroundBlur = max(0, min(20, body.KioskBackgroundBlur))
-	w.KioskBackgroundSize = validateCSSValue(body.KioskBackgroundSize, validBackgroundSizes, "cover")
-	w.KioskBackgroundPosX = validateCSSValue(body.KioskBackgroundPosX, validPositionsX, "center")
-	w.KioskBackgroundPosY = validateCSSValue(body.KioskBackgroundPosY, validPositionsY, "center")
-	w.KioskLogoSize = validateCSSValue(body.KioskLogoSize, validBackgroundSizes, "contain")
-	w.KioskLogoPosX = validateCSSValue(body.KioskLogoPosX, validPositionsX, "center")
-	w.KioskLogoPosY = validateCSSValue(body.KioskLogoPosY, validPositionsY, "center")
+	if body.VenueName != nil {
+		w.VenueName = strings.TrimSpace(*body.VenueName)
+	}
+	if body.VenueAddress != nil {
+		w.VenueAddress = strings.TrimSpace(*body.VenueAddress)
+	}
+	if body.KioskDescription != nil {
+		w.KioskDescription = strings.TrimSpace(*body.KioskDescription)
+	}
+	if body.KioskLogoUrl != nil {
+		w.KioskLogoUrl = sanitizeURL(*body.KioskLogoUrl)
+	}
+	if body.KioskBackgroundUrl != nil {
+		w.KioskBackgroundUrl = sanitizeURL(*body.KioskBackgroundUrl)
+	}
+	if body.KioskBackgroundBlur != nil {
+		w.KioskBackgroundBlur = max(0, min(20, *body.KioskBackgroundBlur))
+	}
+	if body.KioskBackgroundSize != nil {
+		size := strings.TrimSpace(*body.KioskBackgroundSize)
+		if !validBackgroundSizes[size] {
+			return nil, fuego.BadRequestError{Title: "kioskBackgroundSize must be cover, contain, or auto"}
+		}
+		w.KioskBackgroundSize = size
+	}
+	if body.KioskLogoSize != nil {
+		size := strings.TrimSpace(*body.KioskLogoSize)
+		if !validBackgroundSizes[size] {
+			return nil, fuego.BadRequestError{Title: "kioskLogoSize must be cover, contain, or auto"}
+		}
+		w.KioskLogoSize = size
+	}
+	if err := applyPosition(&w.KioskBackgroundPosX, body.KioskBackgroundPosX, validPositionsX, "kioskBackgroundPosX", "left, center, right"); err != nil {
+		return nil, err
+	}
+	if err := applyPosition(&w.KioskBackgroundPosY, body.KioskBackgroundPosY, validPositionsY, "kioskBackgroundPosY", "top, center, bottom"); err != nil {
+		return nil, err
+	}
+	if err := applyPosition(&w.KioskLogoPosX, body.KioskLogoPosX, validPositionsX, "kioskLogoPosX", "left, center, right"); err != nil {
+		return nil, err
+	}
+	if err := applyPosition(&w.KioskLogoPosY, body.KioskLogoPosY, validPositionsY, "kioskLogoPosY", "top, center, bottom"); err != nil {
+		return nil, err
+	}
 	if body.ShowSeatNumbers != nil {
 		w.ShowSeatNumbers = *body.ShowSeatNumbers
 	}
@@ -224,9 +258,34 @@ var (
 	validPositionsY      = map[string]bool{"top": true, "center": true, "bottom": true}
 )
 
-func validateCSSValue(val string, allowed map[string]bool, fallback string) string {
-	if allowed[val] {
-		return val
+// normalizePosition accepts a keyword or a percentage in [0, 100] and returns
+// its canonical form. Anything else is rejected rather than silently coerced.
+func normalizePosition(val string, keywords map[string]bool) (string, bool) {
+	if keywords[val] {
+		return val, true
 	}
-	return fallback
+	if !strings.HasSuffix(val, "%") {
+		return "", false
+	}
+	n, err := strconv.ParseFloat(strings.TrimSuffix(val, "%"), 64)
+	if err != nil || !(n >= 0 && n <= 100) {
+		return "", false
+	}
+	out := strconv.FormatFloat(n, 'f', -1, 64) + "%"
+	if len(out) > 10 { // kiosk*PosX/Y columns are varchar(10)
+		return "", false
+	}
+	return out, true
+}
+
+func applyPosition(dst *string, src *string, keywords map[string]bool, field, allowed string) error {
+	if src == nil {
+		return nil
+	}
+	val, ok := normalizePosition(strings.TrimSpace(*src), keywords)
+	if !ok {
+		return fuego.BadRequestError{Title: field + " must be " + allowed + ", or a percentage from 0% to 100%"}
+	}
+	*dst = val
+	return nil
 }
