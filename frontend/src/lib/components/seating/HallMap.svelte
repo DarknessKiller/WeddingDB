@@ -45,6 +45,19 @@ import RotateCcw from 'lucide-svelte/icons/rotate-ccw';
   let panX = $state(0);
   let panY = $state(0);
 
+  type LayoutSnapshot = {
+    tables: BanquetTableType[];
+    elements: HallElement[];
+    hallWidth: number;
+    hallHeight: number;
+  };
+  const HISTORY_LIMIT = 50;
+  let history = $state<LayoutSnapshot[]>([]);
+  let historyIndex = $state(-1);
+  let baseline = $state<LayoutSnapshot | null>(null);
+  let dragStart = $state<{ id: string; x: number; y: number } | null>(null);
+  let dragCancelled = $state(false);
+
   let containerEl = $state<HTMLElement | null>(null);
   let containerW = $state(800);
   let containerH = $state(600);
@@ -85,6 +98,61 @@ import RotateCcw from 'lucide-svelte/icons/rotate-ccw';
     refreshTransformer();
   }
 
+  const clone = <T,>(value: T): T => JSON.parse(JSON.stringify(value));
+
+  function currentSnapshot(): LayoutSnapshot {
+    return {
+      tables: clone(editTables),
+      elements: clone(editElements),
+      hallWidth: editHallWidth,
+      hallHeight: editHallHeight,
+    };
+  }
+
+  // Takes explicit values: reading edit state here would make the mode effect
+  // depend on it and reset the layout on every edit.
+  function resetHistory(snapshot: LayoutSnapshot) {
+    history = [snapshot];
+    historyIndex = 0;
+    baseline = snapshot;
+  }
+
+  function commit() {
+    if (historyIndex >= 0 && JSON.stringify(currentSnapshot()) === JSON.stringify(history[historyIndex])) return;
+    history = [...history.slice(0, historyIndex + 1), currentSnapshot()].slice(-HISTORY_LIMIT);
+    historyIndex = history.length - 1;
+  }
+
+  function restore(snapshot: LayoutSnapshot) {
+    editTables = clone(snapshot.tables);
+    editElements = clone(snapshot.elements);
+    editHallWidth = snapshot.hallWidth;
+    editHallHeight = snapshot.hallHeight;
+    const stillExists = selectedId !== null &&
+      (editTables.some(t => t.id === selectedId) || editElements.some(el => el.id === selectedId));
+    if (!stillExists) selectedId = null;
+    void refreshTransformerAfterUpdate();
+  }
+
+  function undo() {
+    if (historyIndex <= 0) return;
+    historyIndex--;
+    restore(history[historyIndex]);
+  }
+
+  function redo() {
+    if (historyIndex >= history.length - 1) return;
+    historyIndex++;
+    restore(history[historyIndex]);
+  }
+
+  const canUndo = $derived(historyIndex > 0);
+  const canRedo = $derived(historyIndex < history.length - 1);
+  const dirty = $derived.by(() => {
+    if (mode !== 'edit' || !baseline) return false;
+    return JSON.stringify(currentSnapshot()) !== JSON.stringify(baseline);
+  });
+
   $effect(() => {
     if (mode === 'edit') {
       editTables = JSON.parse(JSON.stringify(tables));
@@ -92,8 +160,12 @@ import RotateCcw from 'lucide-svelte/icons/rotate-ccw';
       editHallWidth = hallWidth;
       editHallHeight = hallHeight;
       selectedId = null;
+      resetHistory(clone({ tables, elements, hallWidth, hallHeight }));
     } else {
       selectedId = null;
+      history = [];
+      historyIndex = -1;
+      baseline = null;
     }
   });
 
@@ -296,7 +368,33 @@ import RotateCcw from 'lucide-svelte/icons/rotate-ccw';
     return Math.round(v / GRID_STEP) * GRID_STEP;
   }
 
+  function handleDragStart(id: string, e: any) {
+    dragStart = { id, x: e.target.x(), y: e.target.y() };
+    dragCancelled = false;
+  }
+
+  function cancelDrag() {
+    if (!dragStart) return;
+    // stopDrag fires dragend synchronously, which clears dragStart.
+    const start = dragStart;
+    dragCancelled = true;
+    const node = nodeRefs[start.id];
+    node?.stopDrag?.();
+    if (node) {
+      node.x(start.x);
+      node.y(start.y);
+      node.getLayer()?.batchDraw();
+    }
+    dragStart = null;
+  }
+
   function handleDragEnd(id: string, e: any) {
+    if (dragCancelled) {
+      dragCancelled = false;
+      dragStart = null;
+      return;
+    }
+    dragStart = null;
     const rawX = e.target.x() / displayHallWidth * 100;
     const rawY = e.target.y() / displayHallHeight * 100;
     const x = Math.max(0, Math.min(100, snapGrid(rawX)));
@@ -307,11 +405,13 @@ import RotateCcw from 'lucide-svelte/icons/rotate-ccw';
     const idx = editTables.findIndex(t => t.id === id);
     if (idx >= 0) {
       editTables[idx] = { ...editTables[idx], x, y };
+      commit();
       return;
     }
     const eidx = editElements.findIndex(el => el.id === id);
     if (eidx >= 0) {
       editElements[eidx] = { ...editElements[eidx], x, y };
+      commit();
     }
   }
 
@@ -321,6 +421,7 @@ import RotateCcw from 'lucide-svelte/icons/rotate-ccw';
     const idx = editTables.findIndex(t => t.id === id);
     if (idx >= 0) {
       editTables[idx] = { ...editTables[idx], degree: rotation };
+      commit();
       return;
     }
     const eidx = editElements.findIndex(el => el.id === id);
@@ -333,12 +434,14 @@ import RotateCcw from 'lucide-svelte/icons/rotate-ccw';
       node.scaleX(1);
       node.scaleY(1);
       editElements[eidx] = { ...el, degree: rotation, width: newW, height: newH };
+      commit();
       void refreshTransformerAfterUpdate();
     }
   }
 
   function handleAddElement(el: HallElement) {
     editElements = [...editElements, el];
+    commit();
   }
 
   function handleUpdateSelected(props: Record<string, any>) {
@@ -346,12 +449,14 @@ import RotateCcw from 'lucide-svelte/icons/rotate-ccw';
     const tidx = editTables.findIndex(t => t.id === selectedId);
     if (tidx >= 0) {
       editTables[tidx] = { ...editTables[tidx], ...props };
+      commit();
       void refreshTransformerAfterUpdate();
       return;
     }
     const eidx = editElements.findIndex(el => el.id === selectedId);
     if (eidx >= 0) {
       editElements[eidx] = { ...editElements[eidx], ...props };
+      commit();
       void refreshTransformerAfterUpdate();
     }
   }
@@ -359,6 +464,7 @@ import RotateCcw from 'lucide-svelte/icons/rotate-ccw';
   function handleDeleteSelected(id: string) {
     editElements = editElements.filter(el => el.id !== id);
     selectedId = null;
+    commit();
   }
 
   function handleReorder(dir: 'front' | 'back') {
@@ -375,6 +481,70 @@ import RotateCcw from 'lucide-svelte/icons/rotate-ccw';
       node.zIndex(edgeNode.zIndex());
       node.getLayer()?.batchDraw();
     }
+    commit();
+  }
+
+  function nudgeSelected(dx: number, dy: number) {
+    if (!selectedId) return;
+    const clamp = (v: number) => Math.max(0, Math.min(100, snapGrid(v)));
+    const tidx = editTables.findIndex(t => t.id === selectedId);
+    if (tidx >= 0) {
+      const t = editTables[tidx];
+      editTables[tidx] = { ...t, x: clamp(t.x + dx), y: clamp(t.y + dy) };
+      commit();
+      void refreshTransformerAfterUpdate();
+      return;
+    }
+    const eidx = editElements.findIndex(el => el.id === selectedId);
+    if (eidx >= 0) {
+      const el = editElements[eidx];
+      editElements[eidx] = { ...el, x: clamp(el.x + dx), y: clamp(el.y + dy) };
+      commit();
+      void refreshTransformerAfterUpdate();
+    }
+  }
+
+  function isTypingTarget(target: EventTarget | null): boolean {
+    const el = target as HTMLElement | null;
+    if (!el) return false;
+    return el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' ||
+      el.tagName === 'SELECT' || el.isContentEditable;
+  }
+
+  function handleKeydown(e: KeyboardEvent) {
+    if (mode !== 'edit' || isTypingTarget(e.target)) return;
+    const mod = e.metaKey || e.ctrlKey;
+    if (mod && e.key.toLowerCase() === 'z') {
+      e.preventDefault();
+      if (e.shiftKey) redo(); else undo();
+      return;
+    }
+    if (mod && e.key.toLowerCase() === 'y') {
+      e.preventDefault();
+      redo();
+      return;
+    }
+    if (e.key === 'Escape') {
+      if (dragStart) cancelDrag();
+      else selectedId = null;
+      return;
+    }
+    if (!selectedId) return;
+    if (e.key === 'Delete' || e.key === 'Backspace') {
+      if (!isTableSelected) {
+        e.preventDefault();
+        handleDeleteSelected(selectedId);
+      }
+      return;
+    }
+    const deltas: Record<string, [number, number]> = {
+      ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1],
+    };
+    const delta = deltas[e.key];
+    if (!delta) return;
+    e.preventDefault();
+    const step = e.shiftKey ? 10 : (snapEnabled ? GRID_STEP : 1);
+    nudgeSelected(delta[0] * step, delta[1] * step);
   }
 
   async function handleSave() {
@@ -403,17 +573,24 @@ import RotateCcw from 'lucide-svelte/icons/rotate-ccw';
     {isTableSelected}
     selectedItem={selectedItem}
     snap={snapEnabled}
+    {canUndo}
+    {canRedo}
+    {dirty}
+    onUndo={undo}
+    onRedo={redo}
     onSave={handleSave}
     onCancel={handleCancel}
     onDelete={handleDeleteSelected}
     onAddElement={handleAddElement}
     onUpdateSelected={handleUpdateSelected}
-    onWidthChange={(w) => editHallWidth = w}
-    onHeightChange={(h) => editHallHeight = h}
+    onWidthChange={(w) => { editHallWidth = w; commit(); }}
+    onHeightChange={(h) => { editHallHeight = h; commit(); }}
     onSnapToggle={() => snapEnabled = !snapEnabled}
     onReorder={handleReorder}
   />
 {/if}
+
+<svelte:window onkeydown={handleKeydown} />
 
 <div
   bind:this={containerEl}
@@ -430,7 +607,7 @@ import RotateCcw from 'lucide-svelte/icons/rotate-ccw';
     <button onclick={() => zoom = Math.max(0.3, zoom - 0.15)} class="w-8 h-8 sm:w-9 sm:h-9 {dark ? 'bg-gray-800 border-gray-700 hover:bg-gray-700 text-gray-300' : 'bg-white border-gray-200 hover:bg-gray-50 text-gray-600'} border rounded-lg shadow-sm flex items-center justify-center transition-colors" aria-label="Zoom out">
       <ZoomOut class="w-4 h-4" />
     </button>
-    <button onclick={resetView} class="w-8 h-8 sm:w-9 sm:h-9 {dark ? 'bg-gray-800 border-gray-700 hover:bg-gray-700 text-gray-300' : 'bg-white border-gray-200 hover:bg-gray-50 text-gray-600'} border rounded-lg shadow-sm flex items-center justify-center transition-colors" aria-label="Reset view">
+    <button onclick={resetView} class="w-8 h-8 sm:w-9 sm:h-9 {dark ? 'bg-gray-800 border-gray-700 hover:bg-gray-700 text-gray-300' : 'bg-white border-gray-200 hover:bg-gray-50 text-gray-600'} border rounded-lg shadow-sm flex items-center justify-center transition-colors" aria-label="Fit hall to view" title="Fit hall to view">
       <RotateCcw class="w-4 h-4" />
     </button>
     <div class="text-center text-[10px] {dark ? 'text-gray-500' : 'text-gray-400'} font-medium mt-0.5">{Math.round(zoom * 100)}%</div>
@@ -500,6 +677,7 @@ import RotateCcw from 'lucide-svelte/icons/rotate-ccw';
             {dark}
             mode={mode}
             onrefready={(node: any) => { nodeRefs[el.id] = node; }}
+            ondragstart={(e: any) => handleDragStart(el.id, e)}
             ondragend={(e: any) => handleDragEnd(el.id, e)}
             ontransformend={(e: any) => handleTransformEnd(el.id, e)}
             onselect={() => { if (mode === 'edit') selectedId = el.id; }}
@@ -518,6 +696,7 @@ import RotateCcw from 'lucide-svelte/icons/rotate-ccw';
             onrefready={(node: any) => { nodeRefs[t.id] = node; }}
             onTableClick={mode === 'edit' ? () => { selectedId = t.id; } : () => onTableClick?.(t.id)}
             onSeatClick={mode === 'edit' ? undefined : (seatNum, guest) => onSeatClick?.(t.id, seatNum, guest)}
+            ondragstart={(e: any) => handleDragStart(t.id, e)}
             ondragend={(e: any) => handleDragEnd(t.id, e)}
             ontransformend={(e: any) => handleTransformEnd(t.id, e)}
           />
