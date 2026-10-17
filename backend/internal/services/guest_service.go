@@ -11,6 +11,7 @@ import (
 
 	"github.com/google/uuid"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 	"weddingdb/internal/models"
 	"weddingdb/internal/repository"
 	"weddingdb/internal/utils"
@@ -27,6 +28,78 @@ func NewGuestService(guestRepo *repository.GuestRepo, tableRepo *repository.Tabl
 	return &GuestService{guestRepo: guestRepo, tableRepo: tableRepo, sseHub: sseHub, db: db}
 }
 
+// MaxGuestsPerWedding caps a wedding at 1000 guests. Party size counts: a
+// guest entry with pax 2 counts as two guests.
+const MaxGuestsPerWedding = 1000
+
+// ErrGuestCapExceeded is returned when adding guests would cross the cap.
+var ErrGuestCapExceeded = errors.New("guest limit exceeded")
+
+func guestCapError(current, delta int) error {
+	return fmt.Errorf("%w: this wedding has %d guests; this change would make %d, over the %d-guest limit",
+		ErrGuestCapExceeded, current, current+delta, MaxGuestsPerWedding)
+}
+
+// guestCountLocked serializes guest additions for one wedding and returns the
+// current count. The row lock is Postgres-only; sqlite (tests) has one writer.
+func (s *GuestService) guestCountLocked(tx *gorm.DB, weddingID uuid.UUID) (int, error) {
+	if tx.Dialector.Name() == "postgres" {
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+			Select("id").Where("id = ?", weddingID).First(&models.WeddingEvent{}).Error; err != nil {
+			return 0, err
+		}
+	}
+	var total int
+	if err := tx.Model(&models.GuestRecord{}).
+		Where("wedding_id = ?", weddingID).
+		Select("COALESCE(SUM(pax), 0)").Row().Scan(&total); err != nil {
+		return 0, err
+	}
+	return total, nil
+}
+
+func (s *GuestService) createGuestTx(ctx context.Context, tx *gorm.DB, g *models.GuestRecord, syncWrite bool) error {
+	if g.Pax < 1 {
+		g.Pax = 1
+	}
+	total, err := s.guestCountLocked(tx, g.WeddingID)
+	if err != nil {
+		return err
+	}
+	if total+g.Pax > MaxGuestsPerWedding {
+		return guestCapError(total, g.Pax)
+	}
+	repo := repository.NewGuestRepo(tx)
+	if syncWrite {
+		return repo.SyncCreate(ctx, g)
+	}
+	return repo.Create(ctx, g)
+}
+
+func (s *GuestService) updateGuestTx(ctx context.Context, tx *gorm.DB, g *models.GuestRecord, syncWrite bool) error {
+	if g.Pax < 1 {
+		g.Pax = 1
+	}
+	total, err := s.guestCountLocked(tx, g.WeddingID)
+	if err != nil {
+		return err
+	}
+	var current models.GuestRecord
+	if err := tx.Select("id", "pax").
+		Where("id = ? AND wedding_id = ?", g.ID, g.WeddingID).
+		First(&current).Error; err != nil {
+		return err
+	}
+	if g.Pax > current.Pax && total-current.Pax+g.Pax > MaxGuestsPerWedding {
+		return guestCapError(total, g.Pax-current.Pax)
+	}
+	repo := repository.NewGuestRepo(tx)
+	if syncWrite {
+		return repo.SyncUpdate(ctx, g)
+	}
+	return repo.Update(ctx, g)
+}
+
 func (s *GuestService) List(ctx context.Context, weddingID uuid.UUID, cursor string, limit int) ([]models.GuestRecord, int64, error) {
 	return s.guestRepo.ListByWedding(ctx, weddingID, cursor, limit)
 }
@@ -36,7 +109,10 @@ func (s *GuestService) Get(ctx context.Context, id, weddingID uuid.UUID) (*model
 }
 
 func (s *GuestService) Create(ctx context.Context, g *models.GuestRecord) error {
-	if err := s.guestRepo.Create(ctx, g); err != nil {
+	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		return s.createGuestTx(ctx, tx, g, false)
+	})
+	if err != nil {
 		return err
 	}
 	s.publishEvent("create", g, g.WeddingID)
@@ -44,7 +120,10 @@ func (s *GuestService) Create(ctx context.Context, g *models.GuestRecord) error 
 }
 
 func (s *GuestService) Update(ctx context.Context, g *models.GuestRecord) error {
-	if err := s.guestRepo.Update(ctx, g); err != nil {
+	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		return s.updateGuestTx(ctx, tx, g, false)
+	})
+	if err != nil {
 		return err
 	}
 	s.publishEvent("update", g, g.WeddingID)
@@ -152,6 +231,17 @@ func (s *GuestService) CheckOut(ctx context.Context, id, weddingID uuid.UUID) er
 
 func (s *GuestService) BulkCreate(ctx context.Context, guests []models.GuestRecord) (int, error) {
 	created := 0
+	if len(guests) == 0 {
+		return 0, nil
+	}
+	weddingID := guests[0].WeddingID
+	incoming := 0
+	for i := range guests {
+		if guests[i].Pax < 1 {
+			guests[i].Pax = 1
+		}
+		incoming += guests[i].Pax
+	}
 	// Buffer SSE events and publish them only after the transaction commits,
 	// so a rolled-back batch never broadcasts phantom rows.
 	type pendingEvent struct {
@@ -165,6 +255,13 @@ func (s *GuestService) BulkCreate(ctx context.Context, guests []models.GuestReco
 		txTableRepo := repository.NewTableRepo(tx)
 		created = 0
 		events = events[:0]
+		total, err := s.guestCountLocked(tx, weddingID)
+		if err != nil {
+			return err
+		}
+		if total+incoming > MaxGuestsPerWedding {
+			return guestCapError(total, incoming)
+		}
 		existing := make(map[uuid.UUID][]models.GuestRecord)
 		// Cache table lookups for this batch
 		tableCache := make(map[uuid.UUID]*models.BanquetTable)
@@ -342,7 +439,9 @@ func (s *GuestService) applySyncMutation(ctx context.Context, weddingID uuid.UUI
 				applySyncPayload(existing, m.Payload, &gid)
 			}
 			existing.UpdatedAt = opTime
-			if err := s.guestRepo.SyncUpdate(ctx, existing); err != nil {
+			if err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+				return s.updateGuestTx(ctx, tx, existing, true)
+			}); err != nil {
 				return SyncResult{GuestID: m.GuestID, Status: "failed", Reason: err.Error()}
 			}
 			s.publishEvent("update", existing, weddingID)
@@ -379,7 +478,9 @@ func (s *GuestService) applySyncMutation(ctx context.Context, weddingID uuid.UUI
 			}
 		}
 		g.SeatNum = m.Payload.SeatNum
-		if err := s.guestRepo.SyncCreate(ctx, g); err != nil {
+		if err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+			return s.createGuestTx(ctx, tx, g, true)
+		}); err != nil {
 			return SyncResult{GuestID: m.GuestID, Status: "failed", Reason: err.Error()}
 		}
 		s.publishEvent("create", g, weddingID)
@@ -400,7 +501,9 @@ func (s *GuestService) applySyncMutation(ctx context.Context, weddingID uuid.UUI
 			applySyncPayload(existing, m.Payload, nil)
 		}
 		existing.UpdatedAt = opTime
-		if err := s.guestRepo.SyncUpdate(ctx, existing); err != nil {
+		if err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+			return s.updateGuestTx(ctx, tx, existing, true)
+		}); err != nil {
 			return SyncResult{GuestID: m.GuestID, Status: "failed", Reason: err.Error()}
 		}
 		s.publishEvent("update", existing, weddingID)

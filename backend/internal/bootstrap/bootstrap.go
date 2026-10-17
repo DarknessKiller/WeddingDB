@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 	"weddingdb/internal/config"
 	"weddingdb/internal/handlers"
 	"weddingdb/internal/middleware"
@@ -54,6 +55,12 @@ func Init(env config.Env, version string) *App {
 	if err != nil {
 		log.Fatal("Failed to connect to database:", err)
 	}
+	if sqlDB, err := db.DB(); err == nil {
+		// Bound the pool so a wedding-night burst cannot exhaust Postgres.
+		sqlDB.SetMaxOpenConns(20)
+		sqlDB.SetMaxIdleConns(20)
+		sqlDB.SetConnMaxLifetime(30 * time.Minute)
+	}
 	if tracingEnabled {
 		if err := db.Use(tracing.NewGormPlugin()); err != nil {
 			log.Println("Warning: failed to register tracing GORM plugin:", err)
@@ -72,10 +79,14 @@ func Init(env config.Env, version string) *App {
 		log.Fatal("Failed to migrate database:", err)
 	}
 
-	// ponytail: backfill name_pinyin for all guests (safe to re-run, idempotent)
-	var guests []models.GuestRecord
-	db.Find(&guests)
-	for _, g := range guests {
+	// Backfill name_pinyin only for rows missing it. A full scan here reads every
+	// guest ever added on each boot, so it grows with total history forever.
+	db.Exec("CREATE INDEX IF NOT EXISTS idx_guest_records_missing_pinyin ON guest_records (id) WHERE name_pinyin IS NULL OR name_pinyin = ''")
+	var missing []models.GuestRecord
+	db.Select("id", "name", "name_pinyin").
+		Where("(name_pinyin IS NULL OR name_pinyin = '') AND name <> ''").
+		Find(&missing)
+	for _, g := range missing {
 		py := models.GenerateNamePinyin(g.Name)
 		if py != g.NamePinyin {
 			db.Model(&models.GuestRecord{}).Where("id = ?", g.ID).Update("name_pinyin", py)
@@ -91,20 +102,25 @@ func Init(env config.Env, version string) *App {
 	// ponytail: FK lookup indexes
 	db.Exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_admin_users_email ON admin_users (email)")
 	db.Exec("CREATE INDEX IF NOT EXISTS idx_banquet_tables_wedding_name ON banquet_tables (wedding_id, name)")
+	db.Exec("CREATE INDEX IF NOT EXISTS idx_refresh_tokens_wedding_id ON refresh_tokens (wedding_id)")
+	db.Exec("CREATE INDEX IF NOT EXISTS idx_refresh_tokens_expires_at ON refresh_tokens (expires_at)")
+
+	// Expired refresh tokens are unusable; drop them so the table does not grow
+	// forever. Keep a week for debugging.
+	db.Where("expires_at < ?", time.Now().AddDate(0, 0, -7)).Delete(&models.RefreshToken{})
 
 	if db.Migrator().HasColumn(&models.HallElement{}, "label") {
 		db.Migrator().DropColumn(&models.HallElement{}, "label")
 	}
-	// Seed default elements for weddings that have none
-	var allWeddings []uuid.UUID
-	db.Model(&models.WeddingEvent{}).Pluck("id", &allWeddings)
-	for _, wid := range allWeddings {
-		var n int64
-		db.Model(&models.HallElement{}).Where("wedding_id = ?", wid).Count(&n)
-		if n == 0 {
-			if err := db.Create(models.DefaultElements(wid)).Error; err != nil {
-				log.Println("Warning: seed default elements for wedding", wid, ":", err)
-			}
+	// Seed default elements for weddings that have none — one query, not one
+	// COUNT per wedding on every boot.
+	var missingHall []uuid.UUID
+	db.Model(&models.WeddingEvent{}).
+		Where("NOT EXISTS (SELECT 1 FROM hall_elements WHERE hall_elements.wedding_id = wedding_events.id)").
+		Pluck("id", &missingHall)
+	for _, wid := range missingHall {
+		if err := db.Create(models.DefaultElements(wid)).Error; err != nil {
+			log.Println("Warning: seed default elements for wedding", wid, ":", err)
 		}
 	}
 

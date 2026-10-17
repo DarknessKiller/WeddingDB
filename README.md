@@ -37,7 +37,7 @@ It's customizable per wedding: your own logo and background, a welcome message, 
 ## Built for One Night, Engineered to Last
 
 - **Interactive hall map** (Konva-based) to draw your actual venue: tables, stage, entrances, obstacles
-- **Bulk import** of up to 1,000 guests from CSV
+- **Bulk import** of up to 1,000 guests from CSV (per wedding, counted per person)
 - **Angpao reports** as CSV or Excel, ready for thank-you notes
 - **Multi-wedding support** in one deployment, useful for planners and venues
 - **Secure by default** with JWT auth, refresh-token rotation, token revocation, role-based admin, rate-limited login, and per-wedding kiosk settings that never touch admin access

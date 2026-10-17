@@ -111,6 +111,9 @@ func (h *GuestHandler) Create(c fuego.ContextWithBody[GuestCreateRequest]) (any,
 		Dietary:   body.Dietary,
 	}
 	if err := h.guestService.Create(ctx, guest); err != nil {
+		if errors.Is(err, services.ErrGuestCapExceeded) {
+			return nil, fuego.BadRequestError{Title: err.Error()}
+		}
 		return nil, err
 	}
 	c.SetStatus(201)
@@ -195,6 +198,9 @@ func (h *GuestHandler) Update(c fuego.ContextWithBody[GuestCreateRequest]) (any,
 	}
 	// else: tableId not provided — preserve existing seat assignment
 	if err := h.guestService.Update(ctx, guest); err != nil {
+		if errors.Is(err, services.ErrGuestCapExceeded) {
+			return nil, fuego.BadRequestError{Title: err.Error()}
+		}
 		return nil, err
 	}
 	return guest, nil
@@ -308,8 +314,8 @@ func (h *GuestHandler) BulkImport(c fuego.ContextWithBody[BulkImportRequest]) (a
 	if err != nil {
 		return nil, fuego.BadRequestError{Title: "Invalid request"}
 	}
-	if len(body.Guests) > 1000 {
-		return nil, fuego.BadRequestError{Title: "Maximum 1000 guests per import"}
+	if len(body.Guests) == 0 {
+		return map[string]any{"imported": 0}, nil
 	}
 	wid, err := DecodeWID(c)
 	if err != nil {
@@ -350,6 +356,9 @@ func (h *GuestHandler) BulkImport(c fuego.ContextWithBody[BulkImportRequest]) (a
 	}
 	count, err := h.guestService.BulkCreate(ctx, guests)
 	if err != nil {
+		if errors.Is(err, services.ErrGuestCapExceeded) {
+			return nil, fuego.BadRequestError{Title: err.Error()}
+		}
 		return nil, fuego.BadRequestError{Title: "Bulk import failed"}
 	}
 	return map[string]any{"imported": count}, nil
