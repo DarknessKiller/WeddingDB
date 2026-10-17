@@ -249,11 +249,13 @@ Jaeger UI at `http://localhost:16686`. Request spans record route pattern, statu
 | POST | `/api/weddings/{wid}/guests/{id}/checkin` | Check in guest (optional body `{"notes": "..."}`; promotes RSVP to confirmed) |
 | POST | `/api/weddings/{wid}/guests/{id}/checkout` | Check out guest |
 | POST | `/api/weddings/{wid}/guests/{id}/seat` | Assign seat |
-| POST | `/api/weddings/{wid}/guests/import` | Bulk import guests (max 1000) |
+| POST | `/api/weddings/{wid}/guests/import` | Bulk import guests (1,000 guests per wedding, counted per person) |
 | GET | `/api/weddings/{wid}/guests/search?q=` | Search guests |
 | GET | `/api/weddings/{wid}/occupancy` | Table occupancy |
 | GET | `/api/weddings/{wid}/layout` | Get hall layout (tables + elements with positions) |
 | PATCH | `/api/weddings/{wid}/layout` | Save hall layout (atomic replace) |
+
+Guest limit: 1,000 guests per wedding, counted per person — a guest entry for a couple counts as two.
 
 ### Reports & Realtime
 
