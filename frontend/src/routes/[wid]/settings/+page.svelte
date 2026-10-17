@@ -65,6 +65,26 @@ import MapPin from 'lucide-svelte/icons/map-pin';
     }
   });
 
+  function kioskPayload() {
+    return {
+      venueName, venueAddress, kioskDescription, kioskLogoUrl,
+      kioskBackgroundUrl, kioskBackgroundBlur, kioskBackgroundSize,
+      kioskBackgroundPosX, kioskBackgroundPosY, kioskLogoSize,
+      kioskLogoPosX, kioskLogoPosY, showSeatNumbers,
+    };
+  }
+
+  async function toggleSeatNumbers() {
+    if (!wedding) return;
+    const next = !showSeatNumbers;
+    showSeatNumbers = next;
+    try {
+      await updateKioskSettings(wedding.id, { ...kioskPayload(), showSeatNumbers: next });
+    } catch (e: any) {
+      showSeatNumbers = !next;
+      addToast(e.message ?? 'Failed to save', 'error');
+    }
+  }
   async function handleSave() {
     if (!wedding) return;
     const name = weddingNameEdit.trim();
@@ -76,10 +96,7 @@ import MapPin from 'lucide-svelte/icons/map-pin';
     try {
       const updated = await updateKioskSettings(wedding.id, {
         ...(name !== wedding.name ? { name } : {}),
-        venueName, venueAddress, kioskDescription, kioskLogoUrl,
-        kioskBackgroundUrl, kioskBackgroundBlur, kioskBackgroundSize,
-        kioskBackgroundPosX, kioskBackgroundPosY, kioskLogoSize,
-        kioskLogoPosX, kioskLogoPosY, showSeatNumbers,
+        ...kioskPayload(),
       });
       wedding = updated;
       weddingNameEdit = updated.name;
@@ -243,7 +260,7 @@ import MapPin from 'lucide-svelte/icons/map-pin';
             <p class="text-sm font-semibold text-gray-900">Show Seat Numbers</p>
             <p class="text-xs text-gray-500">Display individual seat numbers on the kiosk, check-in, and admin screens</p>
           </div>
-          <button onclick={() => { showSeatNumbers = !showSeatNumbers; }}
+          <button onclick={toggleSeatNumbers}
             aria-label="Toggle seat numbers"
             class="relative inline-flex h-6 w-11 items-center rounded-full transition-colors {showSeatNumbers ? 'bg-deep-red' : 'bg-gray-200'}">
             <span class="inline-block h-4 w-4 transform rounded-full bg-white transition-transform {showSeatNumbers ? 'translate-x-6' : 'translate-x-1'}"></span>
