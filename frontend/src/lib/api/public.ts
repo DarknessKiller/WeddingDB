@@ -39,12 +39,12 @@ export async function publicSearchGuests(query: string): Promise<Guest[]> {
 	return data.map(mapGuest);
 }
 
-export async function publicListGuests(): Promise<Guest[]> {
+export async function publicListGuests(opts: { signal?: AbortSignal } = {}): Promise<Guest[]> {
 	const wid = get(weddingId);
 	const all: Guest[] = [];
 	let cursor: string | undefined;
 	do {
-		const res = await fetch(`/api/public/weddings/${wid}/guests?limit=1000${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ''}`);
+		const res = await fetch(`/api/public/weddings/${wid}/guests?limit=1000${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ''}`, { signal: opts.signal });
 		if (!res.ok) throw new Error('Failed to list guests');
 		const data = await res.json();
 		all.push(...(data.guests ?? []).map(mapGuest));
