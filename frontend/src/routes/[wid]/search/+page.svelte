@@ -2,7 +2,6 @@
   import { searchGuests, listTables } from '$lib/api/search';
   import { weddingTitle } from '$lib/stores/weddingTitle';
   import { getLayout } from '$lib/api/layout';
-  import { getWedding } from '$lib/api/weddings';
   import { addToast, selectedGuest, isDrawerOpen } from '$lib/stores';
   import { weddingId } from '$lib/stores/weddingId';
   import { guestList } from '$lib/stores/guestEvents';
@@ -26,7 +25,6 @@ import Phone from 'lucide-svelte/icons/phone';
   let hallWidth = $state(860);
   let hallHeight = $state(1000);
   let dataLoading = $state(true);
-  let showSeatNumbers = $state(true);
   let highlightTableId = $state<string | null>(null);
   let showResults = $state(false);
   let sortCol = $state<string>('name');
@@ -101,9 +99,6 @@ import Phone from 'lucide-svelte/icons/phone';
         hallWidth = layout.hallWidth;
         hallHeight = layout.hallHeight;
       }
-      const wid = get(weddingId);
-      const w = await getWedding(wid).catch(() => null) as any;
-      if (w?.showSeatNumbers !== undefined) showSeatNumbers = w.showSeatNumbers;
     } catch {
       addToast('Failed to load data', 'error');
     } finally {

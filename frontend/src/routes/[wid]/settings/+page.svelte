@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { weddingTitle } from '$lib/stores/weddingTitle';
-  import { addToast } from '$lib/stores';
+  import { addToast, showSeatNumbers, setShowSeatNumbers } from '$lib/stores';
   import { weddingId } from '$lib/stores/weddingId';
   import { get } from 'svelte/store';
   import { getWedding, updateKioskSettings, type Wedding, type KioskSettings } from '$lib/api/weddings';
@@ -34,7 +34,6 @@ import MapPin from 'lucide-svelte/icons/map-pin';
   let kioskLogoPosY = $state('50%');
   let kioskLogoBlur = $state(0);
   let weddingNameEdit = $state('');
-  let showSeatNumbers = $state(true);
   let venueName = $state('');
   let venueAddress = $state('');
 
@@ -56,7 +55,7 @@ import MapPin from 'lucide-svelte/icons/map-pin';
         kioskLogoSize = wedding.kioskLogoSize ?? 'contain';
         if (wedding.kioskLogoPosX) kioskLogoPosX = wedding.kioskLogoPosX;
         if (wedding.kioskLogoPosY) kioskLogoPosY = wedding.kioskLogoPosY;
-        showSeatNumbers = wedding.showSeatNumbers ?? true;
+        setShowSeatNumbers(wedding.id, wedding.showSeatNumbers ?? true);
       }
     } catch {
       addToast('Failed to load settings', 'error');
@@ -70,18 +69,18 @@ import MapPin from 'lucide-svelte/icons/map-pin';
       venueName, venueAddress, kioskDescription, kioskLogoUrl,
       kioskBackgroundUrl, kioskBackgroundBlur, kioskBackgroundSize,
       kioskBackgroundPosX, kioskBackgroundPosY, kioskLogoSize,
-      kioskLogoPosX, kioskLogoPosY, showSeatNumbers,
+      kioskLogoPosX, kioskLogoPosY, showSeatNumbers: $showSeatNumbers,
     };
   }
 
   async function toggleSeatNumbers() {
     if (!wedding) return;
-    const next = !showSeatNumbers;
-    showSeatNumbers = next;
+    const next = !$showSeatNumbers;
+    setShowSeatNumbers(wedding.id, next);
     try {
       await updateKioskSettings(wedding.id, { ...kioskPayload(), showSeatNumbers: next });
     } catch (e: any) {
-      showSeatNumbers = !next;
+      setShowSeatNumbers(wedding.id, !next);
       addToast(e.message ?? 'Failed to save', 'error');
     }
   }
@@ -99,6 +98,7 @@ import MapPin from 'lucide-svelte/icons/map-pin';
         ...kioskPayload(),
       });
       wedding = updated;
+      setShowSeatNumbers(updated.id, updated.showSeatNumbers ?? true);
       weddingNameEdit = updated.name;
       addToast('Kiosk settings saved', 'success');
     } catch (e: any) {
@@ -262,8 +262,8 @@ import MapPin from 'lucide-svelte/icons/map-pin';
           </div>
           <button onclick={toggleSeatNumbers}
             aria-label="Toggle seat numbers"
-            class="relative inline-flex h-6 w-11 items-center rounded-full transition-colors {showSeatNumbers ? 'bg-deep-red' : 'bg-gray-200'}">
-            <span class="inline-block h-4 w-4 transform rounded-full bg-white transition-transform {showSeatNumbers ? 'translate-x-6' : 'translate-x-1'}"></span>
+            class="relative inline-flex h-6 w-11 items-center rounded-full transition-colors {$showSeatNumbers ? 'bg-deep-red' : 'bg-gray-200'}">
+            <span class="inline-block h-4 w-4 transform rounded-full bg-white transition-transform {$showSeatNumbers ? 'translate-x-6' : 'translate-x-1'}"></span>
           </button>
         </div>
       </div>

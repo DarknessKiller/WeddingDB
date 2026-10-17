@@ -16,6 +16,7 @@ import Star from 'lucide-svelte/icons/star';
   import { fade, fly } from 'svelte/transition';
   import { page } from '$app/state';
   import { setWeddingId } from '$lib/stores/weddingId';
+  import { showSeatNumbers, setShowSeatNumbers } from '$lib/stores';
   import type { Guest, BanquetTable, HallElement } from '$lib/types';
 
   let query = $state('');
@@ -47,6 +48,37 @@ import Star from 'lucide-svelte/icons/star';
     finally { guestsInFlight = false; }
   }
 
+  // Refetched with the guest poll so a settings change reaches the kiosk
+  // without a reload.
+  async function loadKioskConfig() {
+    const wid = page.params.wid ?? '';
+    const data = await fetch(`/api/public/weddings/${wid}/kiosk`, { signal: pageAbort.signal })
+      .then(r => r.ok ? r.json() : null)
+      .catch(() => null);
+    if (!data) return;
+    // Apply the server value even when it's an empty string — only
+    // undefined (field absent) means "keep the default".
+    if (data.kioskDescription !== undefined) kioskDescription = data.kioskDescription;
+    if (data.kioskLogoUrl) kioskLogoUrl = data.kioskLogoUrl;
+    if (data.kioskBackgroundUrl) kioskBackgroundUrl = data.kioskBackgroundUrl;
+    if (data.kioskBackgroundSize) kioskBackgroundSize = data.kioskBackgroundSize;
+    if (data.kioskBackgroundPosX) kioskBackgroundPosX = data.kioskBackgroundPosX;
+    if (data.kioskBackgroundPosY) kioskBackgroundPosY = data.kioskBackgroundPosY;
+    if (data.kioskBackgroundBlur !== undefined) kioskBackgroundBlur = data.kioskBackgroundBlur;
+    if (data.kioskLogoSize) kioskLogoSize = data.kioskLogoSize;
+    if (data.kioskLogoPosX) kioskLogoPosX = data.kioskLogoPosX;
+    if (data.kioskLogoPosY) kioskLogoPosY = data.kioskLogoPosY;
+    if (data.showSeatNumbers !== undefined) setShowSeatNumbers(wid, data.showSeatNumbers);
+    if (data.date) weddingDate = data.date;
+    if (data.name) weddingName = data.name;
+    venueName = data.venueName ?? '';
+    venueAddress = data.venueAddress ?? '';
+  }
+
+  function onKioskVisible() {
+    if (document.visibilityState === 'visible') loadKioskConfig();
+  }
+
   // Kiosk customization
   let kioskDescription = $state('Enter your name to find your table and seat');
   let kioskLogoUrl = $state('');
@@ -58,7 +90,6 @@ import Star from 'lucide-svelte/icons/star';
   let kioskLogoSize = $state('cover');
   let kioskLogoPosX = $state('50%');
   let kioskLogoPosY = $state('50%');
-  let showSeatNumbers = $state(true);
   let weddingDate = $state<string>('');
   let weddingName = $state('');
   let venueName = $state('');
@@ -126,29 +157,10 @@ import Star from 'lucide-svelte/icons/star';
     // formatTime renders minute granularity, so ticking once per minute is enough.
     timer = setInterval(() => currentTime = new Date(), 60_000);
     loadGuests(pageAbort.signal);
-    pollTimer = setInterval(() => loadGuests(pageAbort.signal), 60_000);
+    pollTimer = setInterval(() => { loadGuests(pageAbort.signal); loadKioskConfig(); }, 60_000);
     getPublicLayout(wid, { signal: pageAbort.signal }).then(l => { tables = l.tables; elements = l.elements; hallWidth = l.hallWidth; hallHeight = l.hallHeight; }).catch(() => {});
-    fetch(`/api/public/weddings/${wid}/kiosk`, { signal: pageAbort.signal }).then(r => r.ok ? r.json() : null).then(data => {
-      if (data) {
-        // Apply the server value even when it's an empty string — only
-        // undefined (field absent) means "keep the default".
-        if (data.kioskDescription !== undefined) kioskDescription = data.kioskDescription;
-        if (data.kioskLogoUrl) kioskLogoUrl = data.kioskLogoUrl;
-        if (data.kioskBackgroundUrl) kioskBackgroundUrl = data.kioskBackgroundUrl;
-        if (data.kioskBackgroundSize) kioskBackgroundSize = data.kioskBackgroundSize;
-        if (data.kioskBackgroundPosX) kioskBackgroundPosX = data.kioskBackgroundPosX;
-        if (data.kioskBackgroundPosY) kioskBackgroundPosY = data.kioskBackgroundPosY;
-        if (data.kioskBackgroundBlur !== undefined) kioskBackgroundBlur = data.kioskBackgroundBlur;
-        if (data.kioskLogoSize) kioskLogoSize = data.kioskLogoSize;
-        if (data.kioskLogoPosX) kioskLogoPosX = data.kioskLogoPosX;
-        if (data.kioskLogoPosY) kioskLogoPosY = data.kioskLogoPosY;
-        if (data.showSeatNumbers !== undefined) showSeatNumbers = data.showSeatNumbers;
-        if (data.date) weddingDate = data.date;
-        if (data.name) weddingName = data.name;
-        venueName = data.venueName ?? '';
-        venueAddress = data.venueAddress ?? '';
-      }
-    }).catch(() => {});
+    loadKioskConfig();
+    document.addEventListener('visibilitychange', onKioskVisible);
   });
 
   onDestroy(() => {
@@ -157,6 +169,7 @@ import Star from 'lucide-svelte/icons/star';
     if (sheetAnimFrame) cancelAnimationFrame(sheetAnimFrame);
     pageAbort.abort(); // cancel any in-flight initial fetches
     pageAbort = new AbortController(); // fresh controller if component remounts
+    document.removeEventListener('visibilitychange', onKioskVisible);
     if (mqHandler) {
       const mq = window.matchMedia('(prefers-reduced-motion: reduce)');
       mq.removeEventListener('change', mqHandler);
@@ -436,7 +449,7 @@ import Star from 'lucide-svelte/icons/star';
                     <span class="vip-tag">★ VIP</span>
                   {/if}
                 </div>
-                {#if showSeatNumbers}
+                {#if $showSeatNumbers}
                   <div class="seat-divider"></div>
                   <div class="seat-block">
                     <div class="seat-label">Seats</div>
@@ -541,7 +554,7 @@ import Star from 'lucide-svelte/icons/star';
                   <div class="result-meta">
                     {#if guest.tableId}
                       <span class="meta-item"><MapPin class="icon-xs" />Table {tables.find(t => t.id === guest.tableId)?.name ?? guest.tableId}</span>
-                      {#if showSeatNumbers}<span class="meta-item">{formatSeatRange(guest.seatNumber, guest.pax)}</span>{/if}
+                      {#if $showSeatNumbers}<span class="meta-item">{formatSeatRange(guest.seatNumber, guest.pax)}</span>{/if}
                     {:else}
                       <span class="meta-item text-gray-400">No seat assigned</span>
                     {/if}

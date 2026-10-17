@@ -80,3 +80,25 @@ export function clearAuth() {
     localStorage.removeItem('weddingdb_name');
   }
 }
+
+// Show seat numbers setting. Shared so every page reacts without a reload, and
+// mirrored to localStorage so a kiosk/preview tab in the same browser updates too.
+export const showSeatNumbers = writable(true);
+
+const seatNumbersKey = (wid: string) => `weddingdb_show_seat_numbers_${wid}`;
+let currentWid = '';
+
+
+export function setShowSeatNumbers(wid: string, value: boolean) {
+	currentWid = wid;
+	showSeatNumbers.set(value);
+	try {
+		localStorage.setItem(seatNumbersKey(wid), value ? '1' : '0');
+	} catch {}
+}
+
+if (typeof window !== 'undefined') {
+	window.addEventListener('storage', (e) => {
+		if (e.key === seatNumbersKey(currentWid)) showSeatNumbers.set(e.newValue !== '0');
+	});
+}

@@ -1,13 +1,12 @@
 <script lang="ts">
   import type { Guest, RSVPStatus } from '$lib/types';
   import { weddingTitle } from '$lib/stores/weddingTitle';
-  import { selectedGuest, isDrawerOpen, drawerStartEditing, drawerCreateMode, addToast } from '$lib/stores';
+  import { selectedGuest, isDrawerOpen, drawerStartEditing, drawerCreateMode, addToast, showSeatNumbers } from '$lib/stores';
   import { weddingId } from '$lib/stores/weddingId';
   import { guestList } from '$lib/stores/guestEvents';
   import { goto } from '$app/navigation';
   import { deleteGuest as apiDeleteGuest, searchGuests, assignSeat, unassignSeat, bulkImportGuests } from '$lib/api/guests';
   import type { GuestResponse, GuestImportData } from '$lib/api/guests';
-  import { getWedding } from '$lib/api/weddings';
   import { listTables } from '$lib/api/tables';
   import type { BanquetTable } from '$lib/types';
   import Badge from '$lib/components/ui/Badge.svelte';
@@ -117,12 +116,10 @@ import Users from 'lucide-svelte/icons/users';
     prevDrawerOpen = isOpen;
   });
 
-  let showSeatNumbers = $state(true);
   let tables = $state<BanquetTable[]>([]);
 
   onMount(() => {
     loadTables();
-    getWedding(wid).then(w => { showSeatNumbers = w.showSeatNumbers ?? true; }).catch(() => {});
     loading = false;
     function onKey(e: KeyboardEvent) {
       if (e.key === 'Escape') {
@@ -215,7 +212,7 @@ import Users from 'lucide-svelte/icons/users';
   ] as const;
 
   let columns = $derived(
-    showSeatNumbers ? allColumns : allColumns.filter(c => c.key !== 'seatNum')
+    $showSeatNumbers ? allColumns : allColumns.filter(c => c.key !== 'seatNum')
   );
 
   // Quote every field: double quotes around the value, internal quotes escaped as "".
@@ -662,7 +659,7 @@ import Users from 'lucide-svelte/icons/users';
                 <td class="px-4 py-3.5"><Badge status={guest.rsvp as RSVPStatus} /></td>
                 <td class="px-4 py-3.5 text-gray-700 font-medium">{guest.pax}</td>
                 <td class="px-4 py-3.5 text-gray-700 font-medium">{tables.find(t => t.id === guest.tableId)?.name || (guest.tableId ?? '—')}</td>
-                {#if showSeatNumbers}
+                {#if $showSeatNumbers}
                   <td class="px-4 py-3.5 text-gray-700 font-medium">{guest.seatNumber ?? '—'}</td>
                 {/if}
                 <td class="px-4 py-3.5">

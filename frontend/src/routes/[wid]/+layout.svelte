@@ -4,7 +4,7 @@
   import Sidebar from '$lib/components/layout/Sidebar.svelte';
   import Header from '$lib/components/layout/Header.svelte';
   import Drawer from '$lib/components/ui/Drawer.svelte';
-  import { selectedGuest, isDrawerOpen, drawerStartEditing, drawerCreateMode, sidebarCollapsed } from '$lib/stores';
+  import { selectedGuest, isDrawerOpen, drawerStartEditing, drawerCreateMode, sidebarCollapsed, showSeatNumbers, setShowSeatNumbers } from '$lib/stores';
   import { weddingId, setWeddingId } from '$lib/stores/weddingId';
   import { weddingTitle } from '$lib/stores/weddingTitle';
   import { validateToken } from '$lib/utils/auth';
@@ -22,7 +22,6 @@
   let authChecked = $state(false);
   let guestCount = $state(0);
   let tables = $state<BanquetTable[]>([]);
-  let showSeatNumbers = $state(true);
   let cleanupSSE: (() => void) | undefined;
   let offline = $state(typeof navigator !== 'undefined' ? !navigator.onLine : false);
   let queued = $state(0);
@@ -103,7 +102,7 @@
     }).catch(() => {});
     getWedding(wid).then((w) => {
       weddingTitle.set(w.name || '');
-      showSeatNumbers = w.showSeatNumbers ?? true;
+      setShowSeatNumbers(wid, w.showSeatNumbers ?? true);
     }).catch(() => {});
   });
 
@@ -155,7 +154,7 @@
 
 {#if $isDrawerOpen && ($selectedGuest || $drawerCreateMode)}
   {#key `${$drawerStartEditing}-${$drawerCreateMode}`}
-    <Drawer guest={$selectedGuest ?? undefined} tables={tables} {showSeatNumbers} startEditing={$drawerStartEditing} createMode={$drawerCreateMode} onClose={() => { $isDrawerOpen = false; $selectedGuest = null; $drawerStartEditing = false; $drawerCreateMode = false; }} />
+    <Drawer guest={$selectedGuest ?? undefined} tables={tables} showSeatNumbers={$showSeatNumbers} startEditing={$drawerStartEditing} createMode={$drawerCreateMode} onClose={() => { $isDrawerOpen = false; $selectedGuest = null; $drawerStartEditing = false; $drawerCreateMode = false; }} />
   {/key}
 {/if}
 
