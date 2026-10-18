@@ -1,4 +1,4 @@
-# WeddingDB — Developer Documentation
+# WeddingDB developer documentation
 
 Chinese wedding seating & reservation management system.
 
@@ -8,7 +8,7 @@ Chinese wedding seating & reservation management system.
 
 ---
 
-## Project Structure
+## Project structure
 
 ```
 ├── frontend/       # SvelteKit SPA (SSR disabled, client-only SPA)
@@ -17,7 +17,7 @@ Chinese wedding seating & reservation management system.
 └── ui-prototype/   # HTML/CSS/JS design preview (gitignored)
 ```
 
-## Tech Stack
+## Tech stack
 
 ### Frontend
 - **Framework:** SvelteKit (SSR disabled, client-only SPA)
@@ -36,13 +36,13 @@ Chinese wedding seating & reservation management system.
 - **Auth:** JWT HS256 + bcrypt + refresh token rotation + Redis token blacklisting
 
 ### Deployment
-- Docker Compose (see `docker-compose.yml`; Redis service runs DragonflyDB), distroless image, timezone configured.
-- Images are published to GitHub Container Registry (`ghcr.io/darknesskiller/weddingdb`) by the Release workflow on `v*` tags (multi-arch: amd64 + arm64). The compose file pulls `ghcr.io/darknesskiller/weddingdb:latest` instead of building locally.
-- CI (`ci.yml`) runs on push/PR to `main`: backend `go test ./...`, frontend `npm run check` + `vitest run` + `npm run build`.
+- Docker Compose (`docker-compose.yml`; the `redis` service runs DragonflyDB), distroless image, timezone set.
+- The Release workflow publishes images to GitHub Container Registry (`ghcr.io/darknesskiller/weddingdb`) on `v*` tags (multi-arch: amd64 + arm64). The compose file pulls `ghcr.io/darknesskiller/weddingdb:latest`, so nothing builds locally.
+- CI (`ci.yml`) runs on push and PR to `main`: backend `go test ./...`, frontend `npm run check`, `vitest run`, and `npm run build`.
 
 ## Deployment (Docker Compose)
 
-The compose stack runs three services: `app` (the WeddingDB image), `postgres`, and `redis` (DragonflyDB). The app image is pulled from `ghcr.io/darknesskiller/weddingdb` — CI builds and publishes it on `v*` tags, so there's no local build step.
+The compose stack runs three services: `app` (the WeddingDB image), `postgres`, and `redis` (DragonflyDB). CI builds and publishes the app image on `v*` tags, so there is no local build step.
 
 ### Quick start
 
@@ -59,7 +59,7 @@ docker compose up -d
 
 ### File-size limits
 
-Uploads (`POST /api/upload`) are uncapped at the app level and have no request deadline — put the size limit in the reverse proxy, which should also set generous upstream read timeouts so large/slow uploads survive:
+Uploads (`POST /api/upload`) have no app-level size cap and no request deadline. Put the size limit in the reverse proxy, and raise the upstream read timeout so large or slow uploads survive:
 
 ```nginx
 client_max_body_size 50m;            # nginx
@@ -89,8 +89,8 @@ The bootstrap only runs when the admin table is empty. After the first admin exi
 | `PORT` | `8080` | App listen port |
 | `DATABASE_URL` | compose-provided | Points at the `postgres` service; override to use an external DB |
 | `REDIS_URL` | `redis://redis:6379` | Compose-provided; override for external Redis |
-| `JWT_SECRET` | — | **Required** (compose fails fast if unset); must not be `change-me-in-production` |
-| `ADMIN_BOOTSTRAP_PASSWORD` | — | First-boot admin password (required when DB is empty) |
+| `JWT_SECRET` | none | **Required**. Compose fails fast if unset; must not be `change-me-in-production` |
+| `ADMIN_BOOTSTRAP_PASSWORD` | none | First-boot admin password (required when the database is empty) |
 | `TZ` | `Asia/Kuala_Lumpur` | Report timestamps follow this |
 
 ### Building locally instead
@@ -104,11 +104,11 @@ docker compose up -d
 # or swap the compose file to `build: .` and remove `image:`
 ```
 
-### Data & persistence
+### Data and persistence
 
-- `weddingdb_pgdata` volume — PostgreSQL data (survives `down`, removed with `down -v`)
-- `weddingdb_uploads` volume — uploaded kiosk logos/backgrounds, mounted at `/app/uploads`
-- Backups: `./backup-db.sh` dumps the `postgres` container to `./backups/weddingdb_<timestamp>.sql.gz`. Note it expects the container named `weddingdb-postgres-1` (default compose naming).
+- `weddingdb_pgdata` volume: PostgreSQL data. Survives `down`, removed by `down -v`.
+- `weddingdb_uploads` volume: uploaded kiosk logos and backgrounds, mounted at `/app/uploads`.
+- Backups: `./backup-db.sh` dumps the `postgres` container to `./backups/weddingdb_<timestamp>.sql.gz`. It expects the container to be named `weddingdb-postgres-1` (the default compose naming).
 - Restore: `gunzip -c backups/<file>.sql.gz | docker exec -i weddingdb-postgres-1 psql -U weddingdb weddingdb`
 
 ### Updating
@@ -117,11 +117,11 @@ docker compose up -d
 docker compose pull app && docker compose up -d
 ```
 
-New releases are tagged `v*`; `latest` tracks the newest tag. Pin to a specific version with `ghcr.io/darknesskiller/weddingdb:v0.1.0` for reproducibility.
+New releases are tagged `v*`, and `latest` tracks the newest tag. To pin a version for reproducibility, use `ghcr.io/darknesskiller/weddingdb:v0.1.0`.
 
 ---
 
-## Getting Started (dev)
+## Getting started locally
 
 ### Frontend
 
@@ -146,13 +146,13 @@ go run ./cmd/server/
 
 Server runs at `http://localhost:8080`.
 
-### Environment Variables
+### Environment variables
 
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `DATABASE_URL` | PostgreSQL connection string | — |
+| `DATABASE_URL` | PostgreSQL connection string | none |
 | `REDIS_URL` | Redis connection string | `redis://localhost:6379` |
-| `JWT_SECRET` | Secret for JWT signing (required) | — |
+| `JWT_SECRET` | Secret for JWT signing (required) | none |
 | `PORT` | Server port | `8080` |
 | `PUBLIC_URL` | Public server URL (used in OpenAPI spec) | `http://localhost:{PORT}` |
 | `CORS_ORIGIN` | Allowed CORS origin | `http://localhost:5173` |
@@ -173,7 +173,7 @@ docker compose --profile tracing up -d jaeger
 docker compose up -d app
 ```
 
-Jaeger UI at `http://localhost:16686`. Request spans record route pattern, status code, and optionally bodies as span events; every DB query gets a `gorm.query` span with rows returned and, with `OTEL_LOG_SQL=all`, the SQL text as an event. Passwords in captured bodies are masked as `***`. Traces persist across Jaeger restarts via the Badger storage backend (`weddingdb_jqdata` volume).
+Jaeger UI at `http://localhost:16686`. Request spans record the route pattern, the status code, and optionally bodies as span events. Every DB query gets a `gorm.query` span with the rows returned, and with `OTEL_LOG_SQL=all` the SQL text as an event. Bodies mask passwords as `***`. The Badger storage backend keeps traces across Jaeger restarts in the `weddingdb_jqdata` volume.
 
 ---
 
@@ -195,7 +195,7 @@ Jaeger UI at `http://localhost:16686`. Request spans record route pattern, statu
 
 ---
 
-## API Endpoints
+## API endpoints
 
 ### Auth
 
@@ -208,7 +208,7 @@ Jaeger UI at `http://localhost:16686`. Request spans record route pattern, statu
 | POST | `/api/auth/select-wedding` | Select wedding context |
 | POST | `/api/auth/change-password` | Change password |
 
-### Admin & Users
+### Admin and users
 
 | Method | Path | Description |
 |--------|------|-------------|
@@ -231,9 +231,9 @@ Jaeger UI at `http://localhost:16686`. Request spans record route pattern, statu
 | PUT | `/api/weddings/{id}` | Update wedding |
 | PUT | `/api/weddings/{id}/kiosk` | Update kiosk settings |
 | DELETE | `/api/weddings/{id}` | Delete wedding |
-| POST | `/api/upload` | Upload file (multipart; no app-level size cap — enforced by reverse proxy, images only) |
+| POST | `/api/upload` | Upload file (multipart, images only; no app-level size cap, enforced by reverse proxy) |
 
-### Tables, Guests & Seating
+### Tables, guests and seating
 
 | Method | Path | Description |
 |--------|------|-------------|
@@ -255,16 +255,16 @@ Jaeger UI at `http://localhost:16686`. Request spans record route pattern, statu
 | GET | `/api/weddings/{wid}/layout` | Get hall layout (tables + elements with positions) |
 | PATCH | `/api/weddings/{wid}/layout` | Save hall layout (atomic replace) |
 
-Guest limit: 1,000 guests per wedding, counted per person — a guest entry for a couple counts as two.
+Guest limit: 1,000 guests per wedding, counted per person. A guest entry for a couple counts as two.
 
-### Reports & Realtime
+### Reports and realtime
 
 | Method | Path | Description |
 |--------|------|-------------|
 | GET | `/api/weddings/{wid}/reports/angpao?format=csv\|xlsx` | Export angpao report (CSV or Excel) |
 | GET | `/api/weddings/{wid}/events` | SSE stream for real-time guest events (auth via `?token=`) |
 
-### Public Endpoints (no auth required)
+### Public endpoints (no auth required)
 
 | Method | Path | Description |
 |--------|------|-------------|
@@ -276,13 +276,13 @@ Guest limit: 1,000 guests per wedding, counted per person — a guest entry for 
 
 ---
 
-## Background Dev Server
+## Background dev server
 
 ```sh
 nohup sh -c 'cd frontend && npm run dev -- --host 0.0.0.0 --port 5173' > /tmp/weddingdb-dev.log 2>&1 & disown
 ```
 
-## Reference Docs
+## Reference docs
 
-- [`docs/specs/jwt-revocation-spec.md`](../specs/jwt-revocation-spec.md) — JWT refresh rotation & revocation design
-- [`docs/adr/002-otel-tracing.md`](../adr/002-otel-tracing.md) — OpenTelemetry tracing design
+- [`docs/specs/jwt-revocation-spec.md`](../specs/jwt-revocation-spec.md): JWT refresh rotation and revocation design
+- [`docs/adr/002-otel-tracing.md`](../adr/002-otel-tracing.md): OpenTelemetry tracing design
