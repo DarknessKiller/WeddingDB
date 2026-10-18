@@ -22,7 +22,7 @@ func (r *LayoutRepo) SaveLayout(
 	ctx context.Context,
 	weddingID uuid.UUID,
 	hallWidth, hallHeight int,
-	tablePos map[uuid.UUID][3]float64,
+	tables []models.TableUpdate,
 	toCreate, toUpdate []models.HallElement,
 	toDelete []uuid.UUID,
 ) error {
@@ -33,9 +33,12 @@ func (r *LayoutRepo) SaveLayout(
 				return err
 			}
 		}
-		for id, pos := range tablePos {
-			res := tx.Model(&models.BanquetTable{}).Where("id = ? AND wedding_id = ?", id, weddingID).
-				Updates(map[string]any{"x": pos[0], "y": pos[1], "degree": pos[2]})
+		for _, t := range tables {
+			res := tx.Model(&models.BanquetTable{}).Where("id = ? AND wedding_id = ?", t.ID, weddingID).
+				Updates(map[string]any{
+					"x": t.X, "y": t.Y, "degree": t.Degree,
+					"capacity": t.Capacity, "is_vip": t.IsVip,
+				})
 			if res.Error != nil {
 				return res.Error
 			}

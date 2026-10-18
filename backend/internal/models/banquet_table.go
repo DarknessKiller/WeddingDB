@@ -21,6 +21,16 @@ type BanquetTable struct {
 	UpdatedAt time.Time `json:"updatedAt"`
 }
 
+// TableUpdate is the part of a table a layout save may change.
+type TableUpdate struct {
+	ID       uuid.UUID
+	X        float64
+	Y        float64
+	Degree   float64
+	Capacity int
+	IsVip    bool
+}
+
 func (t BanquetTable) MarshalJSON() ([]byte, error) {
 	type Alias BanquetTable
 	return json.Marshal(&struct {

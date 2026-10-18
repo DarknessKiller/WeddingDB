@@ -16,7 +16,7 @@ export async function getPublicLayout(wid: string, opts: { signal?: AbortSignal 
 export interface SaveLayoutPayload {
 	hallWidth: number;
 	hallHeight: number;
-	tables: { id: string; x: number; y: number; degree: number }[];
+	tables: { id: string; x: number; y: number; degree: number; capacity: number; isVip: boolean }[];
 	elements: Omit<HallElement, 'weddingId'>[];
 }
 
