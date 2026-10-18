@@ -14,6 +14,7 @@
     mode = 'view',
     onTableClick,
     onSeatClick,
+    ondragstart,
     ondragend,
     ontransformend,
     onrefready,
@@ -28,6 +29,7 @@
     mode?: 'view' | 'edit';
     onTableClick?: () => void;
     onSeatClick?: (seatNum: number, guest: Guest | null) => void;
+    ondragstart?: (e: any) => void;
     ondragend?: (e: any) => void;
     ontransformend?: (e: any) => void;
     onrefready?: (node: any) => void;
@@ -127,6 +129,7 @@
     draggable={mode === 'edit'}
     bind:this={groupEl}
     onclick={() => onTableClick?.()}
+    ondragstart={ondragstart}
     ondragend={ondragend}
     ontransformend={ontransformend}
   >
