@@ -22,6 +22,7 @@ import UserCheck from 'lucide-svelte/icons/user-check';
 import CheckCircle2 from 'lucide-svelte/icons/check-circle-2';
 import Banknote from 'lucide-svelte/icons/banknote';
 import Gift from 'lucide-svelte/icons/gift';
+import Pencil from 'lucide-svelte/icons/pencil';
   import CheckInModal from '$lib/components/ui/CheckInModal.svelte';
   import { get } from 'svelte/store';
   import type { BanquetTable, Guest, RSVPStatus, TableOccupancy, HallElement } from '$lib/types';
@@ -298,8 +299,9 @@ import Gift from 'lucide-svelte/icons/gift';
   </div>
 {:else}
 
-<div class="flex h-full">
-  <!-- Map -->
+<div class="relative flex h-full">
+  <!-- HallMap renders the edit toolbar and the stage as siblings, so it needs a column wrapper -->
+  <div class="flex-1 flex flex-col min-h-0">
   <HallMap
     selectedTableId={editMode ? null : selectedTableId}
     tableGuests={tableGuests}
@@ -314,6 +316,16 @@ import Gift from 'lucide-svelte/icons/gift';
     onSaveLayout={handleSaveLayout}
     onCancelEdit={handleCancelEdit}
   />
+  </div>
+
+  {#if !editMode}
+    <button
+      onclick={() => (editMode = true)}
+      class="absolute top-3 right-14 sm:top-4 sm:right-16 z-10 px-2.5 py-1.5 bg-white border border-gray-200 rounded-lg shadow-sm text-xs font-semibold text-gray-700 hover:bg-gray-50 transition-colors flex items-center gap-1"
+    >
+      <Pencil class="w-3 h-3" /> Edit Layout
+    </button>
+  {/if}
 
   <!-- Desktop Side Panel -->
   {#if selectedTable && !editMode}
