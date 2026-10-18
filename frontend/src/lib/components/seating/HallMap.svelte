@@ -1,8 +1,10 @@
 <script lang="ts">
   import { onMount, onDestroy, tick } from 'svelte';
+  import { beforeNavigate, goto } from '$app/navigation';
   import BanquetTableComponent from './BanquetTable.svelte';
   import HallElementNode from './HallElementNode.svelte';
   import EditToolbar from './EditToolbar.svelte';
+  import ConfirmDialog from '$lib/components/ui/ConfirmDialog.svelte';
   import type { BanquetTable as BanquetTableType, HallElement, Guest } from '$lib/types';
   import { reorderElements } from '$lib/utils/layout';
   import ZoomIn from 'lucide-svelte/icons/zoom-in';
@@ -57,6 +59,8 @@ import RotateCcw from 'lucide-svelte/icons/rotate-ccw';
   let baseline = $state<LayoutSnapshot | null>(null);
   let dragStart = $state<{ id: string; x: number; y: number } | null>(null);
   let dragCancelled = $state(false);
+  let groupStart = $state<Record<string, { x: number; y: number }> | null>(null);
+  let panStart = $state<{ x: number; y: number } | null>(null);
 
   let containerEl = $state<HTMLElement | null>(null);
   let containerW = $state(800);
@@ -77,7 +81,9 @@ import RotateCcw from 'lucide-svelte/icons/rotate-ccw';
   let editElements = $state<HallElement[]>([]);
   let editHallWidth = $state(0);
   let editHallHeight = $state(0);
-  let selectedId = $state<string | null>(null);
+  let selectedIds = $state<string[]>([]);
+  // Property panel and transformer follow the most recently clicked item.
+  const selectedId = $derived(selectedIds[selectedIds.length - 1] ?? null);
   let snapEnabled = $state(true);
   let transformerEl = $state<any>(null);
   let nodeRefs = $state<Record<string, any>>({});
@@ -128,9 +134,8 @@ import RotateCcw from 'lucide-svelte/icons/rotate-ccw';
     editElements = clone(snapshot.elements);
     editHallWidth = snapshot.hallWidth;
     editHallHeight = snapshot.hallHeight;
-    const stillExists = selectedId !== null &&
-      (editTables.some(t => t.id === selectedId) || editElements.some(el => el.id === selectedId));
-    if (!stillExists) selectedId = null;
+    const keep = selectedIds.filter(id => editTables.some(t => t.id === id) || editElements.some(el => el.id === id));
+    if (keep.length !== selectedIds.length) selectedIds = keep;
     void refreshTransformerAfterUpdate();
   }
 
@@ -152,6 +157,25 @@ import RotateCcw from 'lucide-svelte/icons/rotate-ccw';
     if (mode !== 'edit' || !baseline) return false;
     return JSON.stringify(currentSnapshot()) !== JSON.stringify(baseline);
   });
+  // Leaving edit mode or the page with unsaved edits asks first.
+  let discardOpen = $state(false);
+  let pendingAction: (() => void) | null = null;
+  let skipGuard = false;
+
+  function guard(proceed: () => void) {
+    if (!dirty) { proceed(); return; }
+    pendingAction = proceed;
+    discardOpen = true;
+  }
+
+  beforeNavigate(nav => {
+    if (!dirty || skipGuard) return;
+    const href = nav.to?.url.href;
+    if (!href) return;
+    nav.cancel();
+    pendingAction = () => { skipGuard = true; void goto(href); };
+    discardOpen = true;
+  });
 
   $effect(() => {
     if (mode === 'edit') {
@@ -159,10 +183,10 @@ import RotateCcw from 'lucide-svelte/icons/rotate-ccw';
       editElements = JSON.parse(JSON.stringify(elements));
       editHallWidth = hallWidth;
       editHallHeight = hallHeight;
-      selectedId = null;
+      selectedIds = [];
       resetHistory(clone({ tables, elements, hallWidth, hallHeight }));
     } else {
-      selectedId = null;
+      selectedIds = [];
       history = [];
       historyIndex = -1;
       baseline = null;
@@ -211,6 +235,13 @@ import RotateCcw from 'lucide-svelte/icons/rotate-ccw';
     return null;
   });
 
+  // Reload/close: beforeNavigate only sees in-app navigation.
+  onMount(() => {
+    const warn = (e: BeforeUnloadEvent) => { if (dirty) e.preventDefault(); };
+    window.addEventListener('beforeunload', warn);
+    return () => window.removeEventListener('beforeunload', warn);
+  });
+
   onMount(() => {
     let ro: ResizeObserver | null = null;
     const canvasListeners: Array<[string, EventListener, any]> = [];
@@ -242,8 +273,10 @@ import RotateCcw from 'lucide-svelte/icons/rotate-ccw';
         // ponytail: store listeners for cleanup on destroy
         const onWheel = (e: Event) => {
           e.preventDefault();
-          const delta = (e as WheelEvent).deltaY > 0 ? -0.08 : 0.08;
-          zoom = Math.max(0.3, Math.min(3, zoom + delta));
+          const we = e as WheelEvent;
+          const rect = canvas.getBoundingClientRect();
+          const delta = we.deltaY > 0 ? -0.08 : 0.08;
+          zoomAt(zoom + delta, we.clientX - rect.left, we.clientY - rect.top);
         };
         canvas.addEventListener('wheel', onWheel, { passive: false });
         canvasListeners.push(['wheel', onWheel as EventListener, { passive: false }]);
@@ -350,15 +383,26 @@ import RotateCcw from 'lucide-svelte/icons/rotate-ccw';
 
   function handleStageClick(e: any) {
     if (mode !== 'edit') return;
-    if (e.target === e.target.getStage()) {
-      selectedId = null;
-    }
+    // A pan ends in a click too; only a real click on empty hall clears the selection.
+    const moved = panStart && (Math.abs(panX - panStart.x) > 0.5 || Math.abs(panY - panStart.y) > 0.5);
+    panStart = null;
+    if (!moved && e.target === e.target.getStage()) selectedIds = [];
   }
 
   function resetView() {
     zoom = 1;
     panX = 0;
     panY = 0;
+  }
+
+  // Zooms about a point in stage coordinates, so whatever sits under it stays put.
+  function zoomAt(next: number, mx: number, my: number) {
+    const z = Math.max(0.3, Math.min(3, next));
+    if (z === zoom) return;
+    const ratio = z / zoom;
+    panX = mx - offsetX - (mx - panX - offsetX) * ratio;
+    panY = my - offsetY - (my - panY - offsetY) * ratio;
+    zoom = z;
   }
 
   // Grid snap: snap to nearest 2.5% increment (toggleable)
@@ -371,30 +415,124 @@ import RotateCcw from 'lucide-svelte/icons/rotate-ccw';
   function handleDragStart(id: string, e: any) {
     dragStart = { id, x: e.target.x(), y: e.target.y() };
     dragCancelled = false;
+    // Dragging any member of a multi-selection moves the whole group.
+    groupStart = selectedIds.length > 1 && selectedIds.includes(id)
+      ? Object.fromEntries(selectedIds.map(sid => [sid, { x: nodeRefs[sid]?.x() ?? 0, y: nodeRefs[sid]?.y() ?? 0 }]))
+      : null;
+  }
+
+  function handleDragMove(e: any) {
+    if (!dragStart || !groupStart) return;
+    const dx = e.target.x() - dragStart.x;
+    const dy = e.target.y() - dragStart.y;
+    for (const [sid, start] of Object.entries(groupStart)) {
+      if (sid === dragStart.id) continue;
+      const node = nodeRefs[sid];
+      if (!node) continue;
+      node.x(start.x + dx);
+      node.y(start.y + dy);
+    }
+    e.target.getLayer()?.batchDraw();
+  }
+
+  // Click select: shift toggles membership, a click inside an existing
+  // multi-selection keeps it so the group can be dragged.
+  function selectItem(id: string, e?: any) {
+    if (e?.evt?.shiftKey) {
+      selectedIds = selectedIds.includes(id) ? selectedIds.filter(x => x !== id) : [...selectedIds, id];
+      return;
+    }
+    if (selectedIds.includes(id) && selectedIds.length > 1) {
+      selectedIds = [...selectedIds.filter(x => x !== id), id];
+      return;
+    }
+    selectedIds = [id];
+  }
+
+  // Table footprint in hall pixels: BanquetTable's circle plus its seat orbit.
+  const TABLE_FOOTPRINT_PX = 116;
+  type AlignOp = 'left' | 'centerX' | 'right' | 'top' | 'middle' | 'bottom' | 'distX' | 'distY';
+
+  function alignSelection(op: AlignOp) {
+    if (selectedIds.length < 2) return;
+    const items = selectedIds.flatMap(id => {
+      const t = editTables.find(x => x.id === id);
+      if (t) return [{ id, wPx: TABLE_FOOTPRINT_PX, hPx: TABLE_FOOTPRINT_PX, xPx: t.x / 100 * displayHallWidth, yPx: t.y / 100 * displayHallHeight }];
+      const el = editElements.find(x => x.id === id);
+      return el ? [{ id, wPx: el.width / 100 * displayHallWidth, hPx: el.height / 100 * displayHallHeight, xPx: el.x / 100 * displayHallWidth, yPx: el.y / 100 * displayHallHeight }] : [];
+    });
+    if (items.length < 2) return;
+    const setPos = (id: string, xPx: number, yPx: number) => {
+      const x = Math.max(0, Math.min(100, xPx / displayHallWidth * 100));
+      const y = Math.max(0, Math.min(100, yPx / displayHallHeight * 100));
+      const tidx = editTables.findIndex(t => t.id === id);
+      if (tidx >= 0) { editTables[tidx] = { ...editTables[tidx], x, y }; return; }
+      const eidx = editElements.findIndex(el => el.id === id);
+      if (eidx >= 0) editElements[eidx] = { ...editElements[eidx], x, y };
+    };
+    const left = Math.min(...items.map(i => i.xPx - i.wPx / 2));
+    const right = Math.max(...items.map(i => i.xPx + i.wPx / 2));
+    const top = Math.min(...items.map(i => i.yPx - i.hPx / 2));
+    const bottom = Math.max(...items.map(i => i.yPx + i.hPx / 2));
+    const spread = (axis: 'x' | 'y') => {
+      const key = axis === 'x' ? 'xPx' : 'yPx';
+      const sorted = [...items].sort((a, b) => a[key] - b[key]);
+      const first = sorted[0][key];
+      const last = sorted[sorted.length - 1][key];
+      sorted.forEach((it, i) => {
+        const next = first + (last - first) * i / (sorted.length - 1);
+        setPos(it.id, axis === 'x' ? next : it.xPx, axis === 'y' ? next : it.yPx);
+      });
+    };
+    switch (op) {
+      case 'left': items.forEach(i => setPos(i.id, left + i.wPx / 2, i.yPx)); break;
+      case 'right': items.forEach(i => setPos(i.id, right - i.wPx / 2, i.yPx)); break;
+      case 'centerX': items.forEach(i => setPos(i.id, (left + right) / 2, i.yPx)); break;
+      case 'top': items.forEach(i => setPos(i.id, i.xPx, top + i.hPx / 2)); break;
+      case 'bottom': items.forEach(i => setPos(i.id, i.xPx, bottom - i.hPx / 2)); break;
+      case 'middle': items.forEach(i => setPos(i.id, i.xPx, (top + bottom) / 2)); break;
+      case 'distX': spread('x'); break;
+      case 'distY': spread('y'); break;
+    }
+    commit();
+    void refreshTransformerAfterUpdate();
   }
 
   function cancelDrag() {
     if (!dragStart) return;
     // stopDrag fires dragend synchronously, which clears dragStart.
     const start = dragStart;
+    const group = groupStart;
     dragCancelled = true;
     const node = nodeRefs[start.id];
     node?.stopDrag?.();
+    if (group) {
+      for (const [sid, pos] of Object.entries(group)) {
+        const peer = nodeRefs[sid];
+        if (!peer) continue;
+        peer.x(pos.x);
+        peer.y(pos.y);
+      }
+    }
     if (node) {
       node.x(start.x);
       node.y(start.y);
       node.getLayer()?.batchDraw();
     }
     dragStart = null;
+    groupStart = null;
   }
 
   function handleDragEnd(id: string, e: any) {
     if (dragCancelled) {
       dragCancelled = false;
       dragStart = null;
+      groupStart = null;
       return;
     }
     dragStart = null;
+    const group = groupStart;
+    groupStart = null;
     const rawX = e.target.x() / displayHallWidth * 100;
     const rawY = e.target.y() / displayHallHeight * 100;
     const x = Math.max(0, Math.min(100, snapGrid(rawX)));
@@ -402,17 +540,31 @@ import RotateCcw from 'lucide-svelte/icons/rotate-ccw';
     // Move node to snapped position
     e.target.x(x / 100 * displayHallWidth);
     e.target.y(y / 100 * displayHallHeight);
-    const idx = editTables.findIndex(t => t.id === id);
-    if (idx >= 0) {
-      editTables[idx] = { ...editTables[idx], x, y };
-      commit();
-      return;
+    const moves: Array<[string, number, number]> = [[id, x, y]];
+    if (group) {
+      // Every follower takes the same snap correction, so spacing survives the drag.
+      const dxPct = x - rawX;
+      const dyPct = y - rawY;
+      for (const sid of Object.keys(group)) {
+        if (sid === id) continue;
+        const node = nodeRefs[sid];
+        if (!node) continue;
+        const nx = Math.max(0, Math.min(100, node.x() / displayHallWidth * 100 + dxPct));
+        const ny = Math.max(0, Math.min(100, node.y() / displayHallHeight * 100 + dyPct));
+        node.x(nx / 100 * displayHallWidth);
+        node.y(ny / 100 * displayHallHeight);
+        moves.push([sid, nx, ny]);
+      }
+      e.target.getLayer()?.batchDraw();
     }
-    const eidx = editElements.findIndex(el => el.id === id);
-    if (eidx >= 0) {
-      editElements[eidx] = { ...editElements[eidx], x, y };
-      commit();
+    let changed = false;
+    for (const [sid, mx, my] of moves) {
+      const idx = editTables.findIndex(t => t.id === sid);
+      if (idx >= 0) { editTables[idx] = { ...editTables[idx], x: mx, y: my }; changed = true; continue; }
+      const eidx = editElements.findIndex(el => el.id === sid);
+      if (eidx >= 0) { editElements[eidx] = { ...editElements[eidx], x: mx, y: my }; changed = true; }
     }
+    if (changed) commit();
   }
 
   function handleTransformEnd(id: string, e: any) {
@@ -462,8 +614,9 @@ import RotateCcw from 'lucide-svelte/icons/rotate-ccw';
   }
 
   function handleDeleteSelected(id: string) {
-    editElements = editElements.filter(el => el.id !== id);
-    selectedId = null;
+    const ids = selectedIds.includes(id) ? selectedIds : [id];
+    editElements = editElements.filter(el => !ids.includes(el.id));
+    selectedIds = selectedIds.filter(sid => !ids.includes(sid));
     commit();
   }
 
@@ -485,20 +638,27 @@ import RotateCcw from 'lucide-svelte/icons/rotate-ccw';
   }
 
   function nudgeSelected(dx: number, dy: number) {
-    if (!selectedId) return;
-    const clamp = (v: number) => Math.max(0, Math.min(100, snapGrid(v)));
-    const tidx = editTables.findIndex(t => t.id === selectedId);
-    if (tidx >= 0) {
-      const t = editTables[tidx];
-      editTables[tidx] = { ...t, x: clamp(t.x + dx), y: clamp(t.y + dy) };
-      commit();
-      void refreshTransformerAfterUpdate();
-      return;
+    if (!selectedIds.length) return;
+    // Snapping each member of a group separately would eat the spacing between them.
+    const snap = selectedIds.length === 1 ? snapGrid : (v: number) => v;
+    const clamp = (v: number) => Math.max(0, Math.min(100, snap(v)));
+    let changed = false;
+    for (const id of selectedIds) {
+      const tidx = editTables.findIndex(t => t.id === id);
+      if (tidx >= 0) {
+        const t = editTables[tidx];
+        editTables[tidx] = { ...t, x: clamp(t.x + dx), y: clamp(t.y + dy) };
+        changed = true;
+        continue;
+      }
+      const eidx = editElements.findIndex(el => el.id === id);
+      if (eidx >= 0) {
+        const el = editElements[eidx];
+        editElements[eidx] = { ...el, x: clamp(el.x + dx), y: clamp(el.y + dy) };
+        changed = true;
+      }
     }
-    const eidx = editElements.findIndex(el => el.id === selectedId);
-    if (eidx >= 0) {
-      const el = editElements[eidx];
-      editElements[eidx] = { ...el, x: clamp(el.x + dx), y: clamp(el.y + dy) };
+    if (changed) {
       commit();
       void refreshTransformerAfterUpdate();
     }
@@ -526,12 +686,13 @@ import RotateCcw from 'lucide-svelte/icons/rotate-ccw';
     }
     if (e.key === 'Escape') {
       if (dragStart) cancelDrag();
-      else selectedId = null;
+      else selectedIds = [];
       return;
     }
     if (!selectedId) return;
     if (e.key === 'Delete' || e.key === 'Backspace') {
-      if (!isTableSelected) {
+      // Tables are removed from the tables page, so only elements are deletable here.
+      if (selectedIds.some(sid => editElements.some(el => el.id === sid))) {
         e.preventDefault();
         handleDeleteSelected(selectedId);
       }
@@ -552,7 +713,7 @@ import RotateCcw from 'lucide-svelte/icons/rotate-ccw';
   }
 
   function handleCancel() {
-    onCancelEdit?.();
+    guard(() => onCancelEdit?.());
   }
 
   const stageW = $derived(containerW);
@@ -581,6 +742,9 @@ import RotateCcw from 'lucide-svelte/icons/rotate-ccw';
     onSave={handleSave}
     onCancel={handleCancel}
     onDelete={handleDeleteSelected}
+    selectedCount={selectedIds.length}
+    elementCount={selectedIds.filter(sid => editElements.some(el => el.id === sid)).length}
+    onAlign={alignSelection}
     onAddElement={handleAddElement}
     onUpdateSelected={handleUpdateSelected}
     onWidthChange={(w) => { editHallWidth = w; commit(); }}
@@ -601,10 +765,10 @@ import RotateCcw from 'lucide-svelte/icons/rotate-ccw';
 >
   <!-- Zoom controls -->
   <div class="absolute top-3 right-3 sm:top-4 sm:right-4 z-40 flex flex-col gap-1.5" style="position: absolute !important;">
-    <button onclick={() => zoom = Math.min(3, zoom + 0.15)} class="w-8 h-8 sm:w-9 sm:h-9 {dark ? 'bg-gray-800 border-gray-700 hover:bg-gray-700 text-gray-300' : 'bg-white border-gray-200 hover:bg-gray-50 text-gray-600'} border rounded-lg shadow-sm flex items-center justify-center transition-colors" aria-label="Zoom in">
+    <button onclick={() => zoomAt(zoom + 0.15, stageW / 2, stageH / 2)} class="w-8 h-8 sm:w-9 sm:h-9 {dark ? 'bg-gray-800 border-gray-700 hover:bg-gray-700 text-gray-300' : 'bg-white border-gray-200 hover:bg-gray-50 text-gray-600'} border rounded-lg shadow-sm flex items-center justify-center transition-colors" aria-label="Zoom in">
       <ZoomIn class="w-4 h-4" />
     </button>
-    <button onclick={() => zoom = Math.max(0.3, zoom - 0.15)} class="w-8 h-8 sm:w-9 sm:h-9 {dark ? 'bg-gray-800 border-gray-700 hover:bg-gray-700 text-gray-300' : 'bg-white border-gray-200 hover:bg-gray-50 text-gray-600'} border rounded-lg shadow-sm flex items-center justify-center transition-colors" aria-label="Zoom out">
+    <button onclick={() => zoomAt(zoom - 0.15, stageW / 2, stageH / 2)} class="w-8 h-8 sm:w-9 sm:h-9 {dark ? 'bg-gray-800 border-gray-700 hover:bg-gray-700 text-gray-300' : 'bg-white border-gray-200 hover:bg-gray-50 text-gray-600'} border rounded-lg shadow-sm flex items-center justify-center transition-colors" aria-label="Zoom out">
       <ZoomOut class="w-4 h-4" />
     </button>
     <button onclick={resetView} class="w-8 h-8 sm:w-9 sm:h-9 {dark ? 'bg-gray-800 border-gray-700 hover:bg-gray-700 text-gray-300' : 'bg-white border-gray-200 hover:bg-gray-50 text-gray-600'} border rounded-lg shadow-sm flex items-center justify-center transition-colors" aria-label="Fit hall to view" title="Fit hall to view">
@@ -630,8 +794,9 @@ import RotateCcw from 'lucide-svelte/icons/rotate-ccw';
       height={stageH}
       x={panX}
       y={panY}
-      draggable={mode !== 'edit'}
-      onDragEnd={(e: any) => { if (mode !== 'edit') { panX = e.target.x(); panY = e.target.y(); } }}
+      draggable
+      onMouseDown={() => { panStart = { x: panX, y: panY }; }}
+      onDragEnd={(e: any) => { panX = e.target.x(); panY = e.target.y(); }}
       onclick={handleStageClick}
     >
       <KLayer>
@@ -676,27 +841,30 @@ import RotateCcw from 'lucide-svelte/icons/rotate-ccw';
             hallHeight={displayHallHeight}
             {dark}
             mode={mode}
+            isSelected={mode === 'edit' && selectedIds.includes(el.id)}
             onrefready={(node: any) => { nodeRefs[el.id] = node; }}
             ondragstart={(e: any) => handleDragStart(el.id, e)}
+            ondragmove={handleDragMove}
             ondragend={(e: any) => handleDragEnd(el.id, e)}
             ontransformend={(e: any) => handleTransformEnd(el.id, e)}
-            onselect={() => { if (mode === 'edit') selectedId = el.id; }}
+            onselect={(e: any) => { if (mode === 'edit') selectItem(el.id, e); }}
           />
         {/each}
         {#each displayTables as t (t.id)}
           <BanquetTableComponent
             table={t}
             guests={tableGuestsRaw[t.id] ?? []}
-            isSelected={selectedTableId === t.id}
+            isSelected={mode === 'edit' ? selectedIds.includes(t.id) : selectedTableId === t.id}
             isHighlighted={highlightedTableId === t.id}
             {dark}
             hallWidth={displayHallWidth}
             hallHeight={displayHallHeight}
             {mode}
             onrefready={(node: any) => { nodeRefs[t.id] = node; }}
-            onTableClick={mode === 'edit' ? () => { selectedId = t.id; } : () => onTableClick?.(t.id)}
+            onTableClick={mode === 'edit' ? (e: any) => selectItem(t.id, e) : () => onTableClick?.(t.id)}
             onSeatClick={mode === 'edit' ? undefined : (seatNum, guest) => onSeatClick?.(t.id, seatNum, guest)}
             ondragstart={(e: any) => handleDragStart(t.id, e)}
+            ondragmove={handleDragMove}
             ondragend={(e: any) => handleDragEnd(t.id, e)}
             ontransformend={(e: any) => handleTransformEnd(t.id, e)}
           />
@@ -721,3 +889,14 @@ import RotateCcw from 'lucide-svelte/icons/rotate-ccw';
     </KonvaStage>
   {/if}
 </div>
+
+<ConfirmDialog
+  open={discardOpen}
+  title="Discard unsaved changes?"
+  message="This layout has edits that have not been saved."
+  confirmLabel="Discard"
+  cancelLabel="Keep editing"
+  variant="danger"
+  onConfirm={() => { const action = pendingAction; pendingAction = null; discardOpen = false; action?.(); }}
+  onCancel={() => { pendingAction = null; discardOpen = false; }}
+/>

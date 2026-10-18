@@ -16,6 +16,7 @@
     onSeatClick,
     ondragstart,
     ondragend,
+    ondragmove,
     ontransformend,
     onrefready,
   }: {
@@ -27,10 +28,11 @@
     hallWidth: number;
     hallHeight: number;
     mode?: 'view' | 'edit';
-    onTableClick?: () => void;
+    onTableClick?: (e?: any) => void;
     onSeatClick?: (seatNum: number, guest: Guest | null) => void;
     ondragstart?: (e: any) => void;
     ondragend?: (e: any) => void;
+    ondragmove?: (e: any) => void;
     ontransformend?: (e: any) => void;
     onrefready?: (node: any) => void;
   } = $props();
@@ -128,8 +130,9 @@
     rotation={table.degree}
     draggable={mode === 'edit'}
     bind:this={groupEl}
-    onclick={() => onTableClick?.()}
+    onclick={(e: any) => onTableClick?.(e)}
     ondragstart={ondragstart}
+    ondragmove={ondragmove}
     ondragend={ondragend}
     ontransformend={ontransformend}
   >
