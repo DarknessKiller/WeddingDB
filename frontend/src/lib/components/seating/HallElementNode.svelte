@@ -2,7 +2,7 @@
   import { onMount } from 'svelte';
   import type { HallElement } from '$lib/types';
 
-  let { element, hallWidth, hallHeight, dark = false, mode = 'view', ondragstart, ondragend, ontransformend, onselect, onrefready }: {
+  let { element, hallWidth, hallHeight, dark = false, mode = 'view', isSelected = false, ondragstart, ondragmove, ondragend, ontransformend, onselect, onrefready }: {
     element: HallElement;
     hallWidth: number;
     hallHeight: number;
@@ -11,7 +11,9 @@
     ondragstart?: (e: any) => void;
     ondragend?: (e: any) => void;
     ontransformend?: (e: any) => void;
-    onselect?: () => void;
+    ondragmove?: (e: any) => void;
+    isSelected?: boolean;
+    onselect?: (e: any) => void;
     onrefready?: (node: any) => void;
   } = $props();
 
@@ -81,8 +83,9 @@
     rotation={element.degree}
     draggable={mode === 'edit'}
     bind:this={groupEl}
-    onclick={() => onselect?.()}
+    onclick={(e: any) => onselect?.(e)}
     ondragstart={ondragstart}
+    ondragmove={ondragmove}
     ondragend={ondragend}
     ontransformend={ontransformend}
   >
@@ -92,8 +95,8 @@
       width={w}
       height={h}
       fill={fillColor}
-      stroke={s.stroke}
-      strokeWidth={s.strokeW}
+      stroke={isSelected ? '#D4AF37' : s.stroke}
+      strokeWidth={isSelected ? Math.max(2, s.strokeW) : s.strokeW}
       cornerRadius={4}
     />
     {#if s.label && element.type !== 'box'}

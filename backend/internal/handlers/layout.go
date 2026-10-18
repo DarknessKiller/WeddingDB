@@ -7,7 +7,6 @@ import (
 	"weddingdb/internal/services"
 
 	"github.com/go-fuego/fuego"
-	"github.com/google/uuid"
 )
 
 type LayoutHandler struct {
@@ -21,10 +20,12 @@ func NewLayoutHandler(ls *services.LayoutService, ts *services.TableService, ws 
 }
 
 type TablePos struct {
-	ID     string  `json:"id"`
-	X      float64 `json:"x"`
-	Y      float64 `json:"y"`
-	Degree float64 `json:"degree"`
+	ID       string  `json:"id"`
+	X        float64 `json:"x"`
+	Y        float64 `json:"y"`
+	Degree   float64 `json:"degree"`
+	Capacity int     `json:"capacity"`
+	IsVip    bool    `json:"isVip"`
 }
 
 type ElementInput struct {
@@ -102,7 +103,7 @@ func (h *LayoutHandler) Save(c fuego.ContextWithBody[LayoutRequest]) (any, error
 			return nil, fuego.BadRequestError{Title: "Element Width/Height must be > 0"}
 		}
 	}
-	tablePos := make(map[uuid.UUID][3]float64, len(body.Tables))
+	tables := make([]models.TableUpdate, 0, len(body.Tables))
 	for _, t := range body.Tables {
 		id, err := middleware.DecodeWIDString(t.ID)
 		if err != nil {
@@ -111,7 +112,13 @@ func (h *LayoutHandler) Save(c fuego.ContextWithBody[LayoutRequest]) (any, error
 		if t.X < 0 || t.X > 100 || t.Y < 0 || t.Y > 100 {
 			return nil, fuego.BadRequestError{Title: "Table X/Y must be 0–100"}
 		}
-		tablePos[id] = [3]float64{t.X, t.Y, t.Degree}
+		if t.Capacity < 1 || t.Capacity > 200 {
+			return nil, fuego.BadRequestError{Title: "Table capacity must be between 1 and 200"}
+		}
+		tables = append(tables, models.TableUpdate{
+			ID: id, X: t.X, Y: t.Y, Degree: t.Degree,
+			Capacity: t.Capacity, IsVip: t.IsVip,
+		})
 	}
 	elements := make([]models.HallElement, 0, len(body.Elements))
 	for _, e := range body.Elements {
@@ -133,7 +140,7 @@ func (h *LayoutHandler) Save(c fuego.ContextWithBody[LayoutRequest]) (any, error
 		}
 		elements = append(elements, el)
 	}
-	if err := h.layoutService.Save(ctx, wid, body.HallWidth, body.HallHeight, tablePos, elements); err != nil {
+	if err := h.layoutService.Save(ctx, wid, body.HallWidth, body.HallHeight, tables, elements); err != nil {
 		log.Printf("layout save error: %v", err)
 		return nil, fuego.InternalServerError{Title: "Failed to save layout"}
 	}

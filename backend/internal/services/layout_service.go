@@ -24,7 +24,7 @@ func (s *LayoutService) Save(
 	ctx context.Context,
 	weddingID uuid.UUID,
 	hallWidth, hallHeight int,
-	tablePos map[uuid.UUID][3]float64,
+	tables []models.TableUpdate,
 	incoming []models.HallElement,
 ) error {
 	existing, err := s.layoutRepo.ElementsByWedding(ctx, weddingID)
@@ -32,7 +32,7 @@ func (s *LayoutService) Save(
 		return err
 	}
 	toCreate, toUpdate, toDelete := ReconcileElements(existing, incoming)
-	return s.layoutRepo.SaveLayout(ctx, weddingID, hallWidth, hallHeight, tablePos, toCreate, toUpdate, toDelete)
+	return s.layoutRepo.SaveLayout(ctx, weddingID, hallWidth, hallHeight, tables, toCreate, toUpdate, toDelete)
 }
 
 // ReconcileElements diffs desired elements against stored ones (full-replace semantics).

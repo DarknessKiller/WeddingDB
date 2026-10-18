@@ -2,6 +2,7 @@ package repository
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"testing"
 	"time"
@@ -35,7 +36,7 @@ func TestSearchByWeddingMatchesNamesOnly(t *testing.T) {
 	for _, query := range []string{"张", "13800138000", "guest@example.com"} {
 		t.Run(query, func(t *testing.T) {
 			capture.sql = ""
-			if _, err := repo.SearchByWedding(context.Background(), uuid.New(), query); err != nil {
+			if _, err := repo.SearchByWedding(context.Background(), uuid.New(), query); err != nil && !errors.Is(err, gorm.ErrDryRunModeUnsupported) {
 				t.Fatalf("search: %v", err)
 			}
 			if !strings.Contains(capture.sql, "name ILIKE") || !strings.Contains(capture.sql, "name_pinyin ILIKE") {

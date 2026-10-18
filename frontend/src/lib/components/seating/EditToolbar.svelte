@@ -10,7 +10,17 @@ import ChevronsUp from 'lucide-svelte/icons/chevrons-up';
 import ChevronsDown from 'lucide-svelte/icons/chevrons-down';
 import Undo2 from 'lucide-svelte/icons/undo-2';
 import Redo2 from 'lucide-svelte/icons/redo-2';
+import AlignStartVertical from 'lucide-svelte/icons/align-start-vertical';
+import AlignCenterVertical from 'lucide-svelte/icons/align-center-vertical';
+import AlignEndVertical from 'lucide-svelte/icons/align-end-vertical';
+import AlignStartHorizontal from 'lucide-svelte/icons/align-start-horizontal';
+import AlignCenterHorizontal from 'lucide-svelte/icons/align-center-horizontal';
+import AlignEndHorizontal from 'lucide-svelte/icons/align-end-horizontal';
+import AlignHorizontalDistributeCenter from 'lucide-svelte/icons/align-horizontal-distribute-center';
+import AlignVerticalDistributeCenter from 'lucide-svelte/icons/align-vertical-distribute-center';
   import type { HallElement, ElementType } from '$lib/types';
+
+  type AlignOp = 'left' | 'centerX' | 'right' | 'top' | 'middle' | 'bottom' | 'distX' | 'distY';
 
   let {
     hallWidth,
@@ -27,6 +37,9 @@ import Redo2 from 'lucide-svelte/icons/redo-2';
     onSave,
     onCancel,
     onDelete,
+    selectedCount = 1,
+    elementCount = 0,
+    onAlign,
     onAddElement,
     onUpdateSelected,
     onWidthChange,
@@ -48,6 +61,9 @@ import Redo2 from 'lucide-svelte/icons/redo-2';
     onSave: () => void;
     onCancel: () => void;
     onDelete: (id: string) => void;
+    selectedCount?: number;
+    elementCount?: number;
+    onAlign?: (op: AlignOp) => void;
     onAddElement: (el: HallElement) => void;
     onUpdateSelected: (props: Record<string, any>) => void;
     onWidthChange: (w: number) => void;
@@ -127,12 +143,12 @@ import Redo2 from 'lucide-svelte/icons/redo-2';
     </button>
   </div>
 
-  {#if selectedId && !isTableSelected}
+  {#if elementCount > 0}
     <button
       onclick={() => onDelete(selectedId!)}
       class="px-2 py-1 border border-red-200 text-red rounded-lg hover:bg-red-50 font-medium transition-colors flex items-center gap-1"
     >
-      <Trash2 class="w-3 h-3" /> Delete
+      <Trash2 class="w-3 h-3" /> Delete{elementCount > 1 ? ` (${elementCount})` : ''}
     </button>
   {/if}
 
@@ -151,6 +167,36 @@ import Redo2 from 'lucide-svelte/icons/redo-2';
         title="Send to back"
       >
         <ChevronsDown class="w-3 h-3" /> Back
+      </button>
+    </div>
+  {/if}
+
+  {#if selectedCount > 1}
+    <div class="flex items-center gap-0.5" role="group" aria-label="Align and distribute">
+      <span class="text-gray-500 mr-1">{selectedCount} selected</span>
+      <button onclick={() => onAlign?.('left')} class="p-1 border border-gray-200 rounded-lg hover:bg-gray-50 text-gray-700 transition-colors" title="Align left" aria-label="Align left">
+        <AlignStartVertical class="w-3.5 h-3.5" />
+      </button>
+      <button onclick={() => onAlign?.('centerX')} class="p-1 border border-gray-200 rounded-lg hover:bg-gray-50 text-gray-700 transition-colors" title="Align centres horizontally" aria-label="Align centres horizontally">
+        <AlignCenterVertical class="w-3.5 h-3.5" />
+      </button>
+      <button onclick={() => onAlign?.('right')} class="p-1 border border-gray-200 rounded-lg hover:bg-gray-50 text-gray-700 transition-colors" title="Align right" aria-label="Align right">
+        <AlignEndVertical class="w-3.5 h-3.5" />
+      </button>
+      <button onclick={() => onAlign?.('top')} class="p-1 border border-gray-200 rounded-lg hover:bg-gray-50 text-gray-700 transition-colors" title="Align top" aria-label="Align top">
+        <AlignStartHorizontal class="w-3.5 h-3.5" />
+      </button>
+      <button onclick={() => onAlign?.('middle')} class="p-1 border border-gray-200 rounded-lg hover:bg-gray-50 text-gray-700 transition-colors" title="Align centres vertically" aria-label="Align centres vertically">
+        <AlignCenterHorizontal class="w-3.5 h-3.5" />
+      </button>
+      <button onclick={() => onAlign?.('bottom')} class="p-1 border border-gray-200 rounded-lg hover:bg-gray-50 text-gray-700 transition-colors" title="Align bottom" aria-label="Align bottom">
+        <AlignEndHorizontal class="w-3.5 h-3.5" />
+      </button>
+      <button onclick={() => onAlign?.('distX')} class="p-1 border border-gray-200 rounded-lg hover:bg-gray-50 text-gray-700 transition-colors" title="Distribute horizontally" aria-label="Distribute horizontally">
+        <AlignHorizontalDistributeCenter class="w-3.5 h-3.5" />
+      </button>
+      <button onclick={() => onAlign?.('distY')} class="p-1 border border-gray-200 rounded-lg hover:bg-gray-50 text-gray-700 transition-colors" title="Distribute vertically" aria-label="Distribute vertically">
+        <AlignVerticalDistributeCenter class="w-3.5 h-3.5" />
       </button>
     </div>
   {/if}
@@ -210,7 +256,7 @@ import Redo2 from 'lucide-svelte/icons/redo-2';
 </div>
 
 <!-- Selected item property editor -->
-{#if selectedItem}
+{#if selectedItem && selectedCount < 2}
   <div class="flex flex-wrap items-center gap-3 px-3 py-2 bg-gray-50 border-b border-gray-200 text-xs">
     <span class="font-semibold text-gray-500">
       {selectedItem.kind === 'table' ? `Table: ${selectedItem.name}` : `${selectedItem.type}`}

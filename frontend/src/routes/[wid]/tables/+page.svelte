@@ -222,7 +222,7 @@ import Map from 'lucide-svelte/icons/map';
       await saveLayout(wid, {
         hallWidth: hw,
         hallHeight: hh,
-        tables: editTables.map(t => ({ id: t.id, x: t.x, y: t.y, degree: t.degree })),
+        tables: editTables.map(t => ({ id: t.id, x: t.x, y: t.y, degree: t.degree, capacity: t.capacity, isVip: t.isVip })),
         elements: editElements,
       });
       addToast('Layout saved', 'success');
