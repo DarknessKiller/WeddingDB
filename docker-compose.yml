@@ -6,7 +6,7 @@ services:
     environment:
       PORT: "8080"
       DATABASE_URL: "postgresql://weddingdb:weddingdb@postgres:5432/weddingdb?sslmode=disable"
-      REDIS_URL: "redis://redis:6379"
+      REDIS_URL: "redis://:${REDIS_PASSWORD:-}@redis:6379"
       JWT_SECRET: "${JWT_SECRET:?JWT_SECRET must be set, e.g. openssl rand -hex 32}"
       ADMIN_BOOTSTRAP_PASSWORD: "${ADMIN_BOOTSTRAP_PASSWORD:-}"
       STATIC_DIR: "./static"
@@ -44,10 +44,12 @@ services:
 
   redis:
     image: docker.dragonflydb.io/dragonflydb/dragonfly:latest
+    # Optional auth: set REDIS_PASSWORD (openssl rand -hex 32) to enable; empty = no password.
+    command: ["--requirepass=${REDIS_PASSWORD:-}"]
     ulimits:
       memlock: -1
     ports:
-      - "6379:6379"
+      - "127.0.0.1:6379:6379"
     volumes:
       - redisdata:/data
 
@@ -62,7 +64,7 @@ services:
       BADGER_DIRECTORY_VALUE: /badger/data
       BADGER_DIRECTORY_SPAN: /badger/state
     ports:
-      - "16686:16686"
+      - "127.0.0.1:16686:16686"
       - "127.0.0.1:4318:4318"
     volumes:
       - jgdata:/badger

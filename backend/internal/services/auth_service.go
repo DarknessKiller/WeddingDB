@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 	"weddingdb/internal/models"
 	"weddingdb/internal/repository"
@@ -154,11 +155,16 @@ func (s *AuthService) Refresh(ctx context.Context, refreshTokenStr string, oldAc
 
 	// Mint before consuming: if Redis or the token generator fails here, the
 	// presented token stays usable and the client can simply retry.
-	accessToken, err := s.generateAccessToken(ctx, admin, token.WeddingID)
+	// Re-check wedding scope: the grant may have been revoked since mint.
+	weddingID, err := s.activeWeddingScope(ctx, admin.ID, token.WeddingID)
 	if err != nil {
 		return nil, err
 	}
-	replacement, err := s.buildRefreshToken(admin.ID, token.WeddingID)
+	accessToken, err := s.generateAccessToken(ctx, admin, weddingID)
+	if err != nil {
+		return nil, err
+	}
+	replacement, err := s.buildRefreshToken(admin.ID, weddingID)
 	if err != nil {
 		return nil, err
 	}
@@ -193,11 +199,88 @@ func (s *AuthService) resumeRotation(ctx context.Context, consumed *models.Refre
 	if err != nil {
 		return nil, errors.New("admin not found")
 	}
-	accessToken, err := s.generateAccessToken(ctx, admin, replacement.WeddingID)
+	weddingID, err := s.activeWeddingScope(ctx, admin.ID, replacement.WeddingID)
+	if err != nil {
+		return nil, err
+	}
+	accessToken, err := s.generateAccessToken(ctx, admin, weddingID)
 	if err != nil {
 		return nil, err
 	}
 	return s.sessionResult(ctx, admin, accessToken, replacement.Token)
+}
+
+// activeWeddingScope returns weddingID only while the user still has access to
+// that wedding; a revoked grant degrades the session to unscoped.
+func (s *AuthService) activeWeddingScope(ctx context.Context, userID uuid.UUID, weddingID *uuid.UUID) (*uuid.UUID, error) {
+	if weddingID == nil {
+		return nil, nil
+	}
+	ok, err := s.adminRepo.HasWeddingAccess(ctx, userID, *weddingID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to check wedding access: %w", err)
+	}
+	if !ok {
+		return nil, nil
+	}
+	return weddingID, nil
+}
+
+// CheckAuthRate caps every auth endpoint (login/refresh/register) at 25
+// requests per second per client IP. It fails open: a Redis outage must not
+// lock users out, and sustained abuse through an outage is itself visible.
+func (s *AuthService) CheckAuthRate(ctx context.Context, ip string) error {
+	key := fmt.Sprintf("auth:ip:%s:%d", ip, time.Now().Unix())
+	return s.rateLimit(ctx, key, 25, time.Second)
+}
+
+// CheckLoginAccountRate locks one account after 25 failed logins per 15 min,
+// scaled to the 25/s per-IP allowance.
+func (s *AuthService) CheckLoginAccountRate(ctx context.Context, email string) error {
+	return s.checkRateLimit(ctx, "login:acct:"+strings.ToLower(email), 25, 15*time.Minute)
+}
+
+func (s *AuthService) RecordLoginFailure(ctx context.Context, email string) {
+	s.recordFailure(ctx, "login:acct:"+strings.ToLower(email), 15*time.Minute)
+}
+
+func (s *AuthService) rateLimit(ctx context.Context, key string, limit int64, window time.Duration) error {
+	n, err := s.redisClient.Incr(ctx, "ratelimit:"+key).Result()
+	if err != nil { // Redis down: fail open
+		return nil
+	}
+	if n == 1 {
+		if err := s.redisClient.Expire(ctx, "ratelimit:"+key, window).Err(); err != nil {
+			// key may live without TTL; the next hit retries the Expire
+		}
+	}
+	if n > limit {
+		return errors.New("too many requests, slow down")
+	}
+	return nil
+}
+
+func (s *AuthService) checkRateLimit(ctx context.Context, key string, limit int64, window time.Duration) error {
+	n, err := s.redisClient.Get(ctx, "ratelimit:"+key).Int64()
+	if err != nil { // redis.Nil = under limit; any other error = fail open
+		return nil
+	}
+	if n >= limit {
+		return errors.New("too many attempts, please try again later")
+	}
+	return nil
+}
+
+func (s *AuthService) recordFailure(ctx context.Context, key string, window time.Duration) {
+	n, err := s.redisClient.Incr(ctx, "ratelimit:"+key).Result()
+	if err != nil {
+		return
+	}
+	if n == 1 {
+		if err := s.redisClient.Expire(ctx, "ratelimit:"+key, window).Err(); err != nil {
+			// key may live without TTL; the next failure retries the Expire
+		}
+	}
 }
 
 // Logout deletes the refresh token and blacklists the access token's JTI.
