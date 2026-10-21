@@ -226,27 +226,38 @@ func (s *AuthService) activeWeddingScope(ctx context.Context, userID uuid.UUID, 
 	return weddingID, nil
 }
 
-// CheckLoginRate / CheckRegisterRate / CheckRefreshRate enforce fixed-window
-// failure limits. checkRateLimit fails open: a Redis outage must not lock
-// every user out, and sustained brute force through an outage is visible.
-func (s *AuthService) CheckLoginRate(ctx context.Context, ip, email string) error {
-	if err := s.checkRateLimit(ctx, "login:ip:"+ip, 10, 5*time.Minute); err != nil {
-		return err
-	}
-	return s.checkRateLimit(ctx, "login:acct:"+strings.ToLower(email), 5, 15*time.Minute)
+// CheckAuthRate caps every auth endpoint (login/refresh/register) at 25
+// requests per second per client IP. It fails open: a Redis outage must not
+// lock users out, and sustained abuse through an outage is itself visible.
+func (s *AuthService) CheckAuthRate(ctx context.Context, ip string) error {
+	key := fmt.Sprintf("auth:ip:%s:%d", ip, time.Now().Unix())
+	return s.rateLimit(ctx, key, 25, time.Second)
 }
 
-func (s *AuthService) RecordLoginFailure(ctx context.Context, ip, email string) {
-	s.recordFailure(ctx, "login:ip:"+ip, 5*time.Minute)
+// CheckLoginAccountRate locks one account after 25 failed logins per 15 min,
+// scaled to the 25/s per-IP allowance.
+func (s *AuthService) CheckLoginAccountRate(ctx context.Context, email string) error {
+	return s.checkRateLimit(ctx, "login:acct:"+strings.ToLower(email), 25, 15*time.Minute)
+}
+
+func (s *AuthService) RecordLoginFailure(ctx context.Context, email string) {
 	s.recordFailure(ctx, "login:acct:"+strings.ToLower(email), 15*time.Minute)
 }
 
-func (s *AuthService) CheckRegisterRate(ctx context.Context, ip string) error {
-	return s.checkRateLimit(ctx, "register:ip:"+ip, 10, time.Hour)
-}
-
-func (s *AuthService) CheckRefreshRate(ctx context.Context, ip string) error {
-	return s.checkRateLimit(ctx, "refresh:ip:"+ip, 60, 5*time.Minute)
+func (s *AuthService) rateLimit(ctx context.Context, key string, limit int64, window time.Duration) error {
+	n, err := s.redisClient.Incr(ctx, "ratelimit:"+key).Result()
+	if err != nil { // Redis down: fail open
+		return nil
+	}
+	if n == 1 {
+		if err := s.redisClient.Expire(ctx, "ratelimit:"+key, window).Err(); err != nil {
+			// key may live without TTL; the next hit retries the Expire
+		}
+	}
+	if n > limit {
+		return errors.New("too many requests, slow down")
+	}
+	return nil
 }
 
 func (s *AuthService) checkRateLimit(ctx context.Context, key string, limit int64, window time.Duration) error {
@@ -266,7 +277,9 @@ func (s *AuthService) recordFailure(ctx context.Context, key string, window time
 		return
 	}
 	if n == 1 {
-		s.redisClient.Expire(ctx, "ratelimit:"+key, window)
+		if err := s.redisClient.Expire(ctx, "ratelimit:"+key, window).Err(); err != nil {
+			// key may live without TTL; the next failure retries the Expire
+		}
 	}
 }
 
