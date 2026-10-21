@@ -21,8 +21,10 @@ RUN mkdir -p /uploads
 FROM gcr.io/distroless/static-debian13
 WORKDIR /app
 COPY --from=backend-build /app/backend/server ./server
-COPY --from=backend-build /uploads ./uploads
+# uploads is a mounted volume: pre-chown so a fresh volume inherits non-root ownership.
+COPY --chown=65532:65532 --from=backend-build /uploads ./uploads
 COPY --from=frontend-build /app/frontend/build ./static
+USER nonroot
 EXPOSE 8080
 ENV PORT=8080
 ENV STATIC_DIR=./static

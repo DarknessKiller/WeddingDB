@@ -1,6 +1,8 @@
 package handlers
 
 import (
+	"net"
+	"net/http"
 	"net/mail"
 	"unicode"
 	"weddingdb/internal/middleware"
@@ -95,8 +97,13 @@ func (h *AuthHandler) Login(c fuego.ContextWithBody[LoginRequest]) (TokenRespons
 	if err != nil {
 		return TokenResponse{}, fuego.BadRequestError{Title: "Invalid request"}
 	}
+	ip := clientIP(c.Request())
+	if err := h.authService.CheckLoginRate(c.Context(), ip, body.Email); err != nil {
+		return TokenResponse{}, fuego.HTTPError{Status: http.StatusTooManyRequests, Title: err.Error()}
+	}
 	result, err := h.authService.Login(c.Context(), body.Email, body.Password)
 	if err != nil {
+		h.authService.RecordLoginFailure(c.Context(), ip, body.Email)
 		return TokenResponse{}, fuego.UnauthorizedError{Title: err.Error()}
 	}
 	return TokenResponse{
@@ -133,6 +140,9 @@ func (h *AuthHandler) Refresh(c fuego.ContextWithBody[RefreshRequest]) (TokenRes
 	}
 	// Extract old access token from Authorization header for blacklisting on rotation
 	oldAccessToken := middleware.ExtractBearer(c.Request())
+	if err := h.authService.CheckRefreshRate(c.Context(), clientIP(c.Request())); err != nil {
+		return TokenResponse{}, fuego.HTTPError{Status: http.StatusTooManyRequests, Title: err.Error()}
+	}
 	result, err := h.authService.Refresh(c.Context(), body.RefreshToken, oldAccessToken)
 	if err != nil {
 		return TokenResponse{}, fuego.UnauthorizedError{Title: err.Error()}
@@ -214,6 +224,9 @@ func (h *AuthHandler) Register(c fuego.ContextWithBody[RegisterRequest]) (any, e
 		return nil, err
 	}
 	ctx := c.Context()
+	if err := h.authService.CheckRegisterRate(ctx, clientIP(c.Request())); err != nil {
+		return nil, fuego.HTTPError{Status: http.StatusTooManyRequests, Title: err.Error()}
+	}
 	existing, _ := h.adminRepo.FindByEmail(ctx, body.Email)
 	if existing != nil && existing.ID != uuid.Nil {
 		return nil, fuego.ConflictError{Title: "Email already registered"}
@@ -233,4 +246,14 @@ func (h *AuthHandler) Register(c fuego.ContextWithBody[RegisterRequest]) (any, e
 	}
 	c.SetStatus(201)
 	return map[string]any{"id": admin.ID.String(), "email": admin.Email, "name": admin.Name, "role": admin.Role}, nil
+}
+
+// clientIP strips the port from RemoteAddr (already XFF-normalized by
+// ProxyAwareMiddleware when behind a trusted proxy).
+func clientIP(r *http.Request) string {
+	host, _, err := net.SplitHostPort(r.RemoteAddr)
+	if err != nil {
+		return r.RemoteAddr
+	}
+	return host
 }

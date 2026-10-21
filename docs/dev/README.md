@@ -89,7 +89,8 @@ The bootstrap only runs when the admin table is empty. After the first admin exi
 | `PORT` | `8080` | App listen port |
 | `DATABASE_URL` | compose-provided | Points at the `postgres` service; override to use an external DB |
 | `REDIS_URL` | `redis://redis:6379` | Compose-provided; override for external Redis |
-| `JWT_SECRET` | none | **Required**. Compose fails fast if unset; must not be `change-me-in-production` |
+| `JWT_SECRET` | none | **Required**. Compose fails fast if unset; values shipped in `.env.example` are rejected at boot |
+| `REDIS_PASSWORD` | unset (no auth) | Optional. When set, Dragonfly runs with `--requirepass` and the app authenticates via `REDIS_URL` |
 | `ADMIN_BOOTSTRAP_PASSWORD` | none | First-boot admin password (required when the database is empty) |
 | `TZ` | `Asia/Kuala_Lumpur` | Report timestamps follow this |
 
@@ -155,7 +156,8 @@ Server runs at `http://localhost:8080`.
 | `JWT_SECRET` | Secret for JWT signing (required) | none |
 | `PORT` | Server port | `8080` |
 | `PUBLIC_URL` | Public server URL (used in OpenAPI spec) | `http://localhost:{PORT}` |
-| `CORS_ORIGIN` | Allowed CORS origin | `http://localhost:5173` |
+| `CORS_ORIGIN` | Allowed CORS origin (credentials allowed only for this origin; unset reflects request origin without credentials) | `http://localhost:5173` |
+| `TRUSTED_PROXIES` | Comma-separated IPs/CIDRs of reverse proxies whose `X-Forwarded-For` is trusted | unset (header ignored) |
 | `OTEL_ENABLED` | Enable OpenTelemetry tracing | `false` |
 | `OTEL_EXPORTER_OTLP_ENDPOINT` | OTLP HTTP endpoint | `http://localhost:4318/v1/traces` |
 | `OTEL_LOG_SQL` | `all` records SQL text on `gorm.query` spans (may contain PII) | off |

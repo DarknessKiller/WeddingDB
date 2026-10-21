@@ -174,6 +174,11 @@ func Init(env config.Env, version string) *App {
 		filePath := filepath.Join("./uploads", file)
 		// keys are forgiving per-API: admins may replace uploaded files (e.g. kiosk logo/background)
 		w.Header().Set("Cache-Control", "public, max-age=604800, stale-while-revalidate=86400")
+		// Uploads can contain user-supplied SVG: sandbox it so a navigated-to
+		// upload cannot run script in the app's origin (token theft via
+		// localStorage). <img> embedding still renders — images never run scripts.
+		w.Header().Set("Content-Security-Policy", "sandbox; default-src 'none'")
+		w.Header().Set("X-Content-Type-Options", "nosniff")
 		http.ServeFile(w, r, filePath)
 	})
 
@@ -186,6 +191,9 @@ func Init(env config.Env, version string) *App {
 	// Serve static frontend (SPA fallback to index.html)
 	staticDir := getEnv("STATIC_DIR", "./static")
 	server.Mux.HandleFunc("GET /{path...}", func(w http.ResponseWriter, r *http.Request) {
+		// Raw mux route: Fuego middleware does not run here, so set the
+		// baseline headers by hand (uploads have their own, stronger set).
+		middleware.SetSecurityHeaders(w)
 		path := r.PathValue("path")
 		if path == "" {
 			path = "index.html"

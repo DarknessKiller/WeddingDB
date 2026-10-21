@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 	"weddingdb/internal/models"
 	"weddingdb/internal/repository"
@@ -154,11 +155,16 @@ func (s *AuthService) Refresh(ctx context.Context, refreshTokenStr string, oldAc
 
 	// Mint before consuming: if Redis or the token generator fails here, the
 	// presented token stays usable and the client can simply retry.
-	accessToken, err := s.generateAccessToken(ctx, admin, token.WeddingID)
+	// Re-check wedding scope: the grant may have been revoked since mint.
+	weddingID, err := s.activeWeddingScope(ctx, admin.ID, token.WeddingID)
 	if err != nil {
 		return nil, err
 	}
-	replacement, err := s.buildRefreshToken(admin.ID, token.WeddingID)
+	accessToken, err := s.generateAccessToken(ctx, admin, weddingID)
+	if err != nil {
+		return nil, err
+	}
+	replacement, err := s.buildRefreshToken(admin.ID, weddingID)
 	if err != nil {
 		return nil, err
 	}
@@ -193,11 +199,75 @@ func (s *AuthService) resumeRotation(ctx context.Context, consumed *models.Refre
 	if err != nil {
 		return nil, errors.New("admin not found")
 	}
-	accessToken, err := s.generateAccessToken(ctx, admin, replacement.WeddingID)
+	weddingID, err := s.activeWeddingScope(ctx, admin.ID, replacement.WeddingID)
+	if err != nil {
+		return nil, err
+	}
+	accessToken, err := s.generateAccessToken(ctx, admin, weddingID)
 	if err != nil {
 		return nil, err
 	}
 	return s.sessionResult(ctx, admin, accessToken, replacement.Token)
+}
+
+// activeWeddingScope returns weddingID only while the user still has access to
+// that wedding; a revoked grant degrades the session to unscoped.
+func (s *AuthService) activeWeddingScope(ctx context.Context, userID uuid.UUID, weddingID *uuid.UUID) (*uuid.UUID, error) {
+	if weddingID == nil {
+		return nil, nil
+	}
+	ok, err := s.adminRepo.HasWeddingAccess(ctx, userID, *weddingID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to check wedding access: %w", err)
+	}
+	if !ok {
+		return nil, nil
+	}
+	return weddingID, nil
+}
+
+// CheckLoginRate / CheckRegisterRate / CheckRefreshRate enforce fixed-window
+// failure limits. checkRateLimit fails open: a Redis outage must not lock
+// every user out, and sustained brute force through an outage is visible.
+func (s *AuthService) CheckLoginRate(ctx context.Context, ip, email string) error {
+	if err := s.checkRateLimit(ctx, "login:ip:"+ip, 10, 5*time.Minute); err != nil {
+		return err
+	}
+	return s.checkRateLimit(ctx, "login:acct:"+strings.ToLower(email), 5, 15*time.Minute)
+}
+
+func (s *AuthService) RecordLoginFailure(ctx context.Context, ip, email string) {
+	s.recordFailure(ctx, "login:ip:"+ip, 5*time.Minute)
+	s.recordFailure(ctx, "login:acct:"+strings.ToLower(email), 15*time.Minute)
+}
+
+func (s *AuthService) CheckRegisterRate(ctx context.Context, ip string) error {
+	return s.checkRateLimit(ctx, "register:ip:"+ip, 10, time.Hour)
+}
+
+func (s *AuthService) CheckRefreshRate(ctx context.Context, ip string) error {
+	return s.checkRateLimit(ctx, "refresh:ip:"+ip, 60, 5*time.Minute)
+}
+
+func (s *AuthService) checkRateLimit(ctx context.Context, key string, limit int64, window time.Duration) error {
+	n, err := s.redisClient.Get(ctx, "ratelimit:"+key).Int64()
+	if err != nil { // redis.Nil = under limit; any other error = fail open
+		return nil
+	}
+	if n >= limit {
+		return errors.New("too many attempts, please try again later")
+	}
+	return nil
+}
+
+func (s *AuthService) recordFailure(ctx context.Context, key string, window time.Duration) {
+	n, err := s.redisClient.Incr(ctx, "ratelimit:"+key).Result()
+	if err != nil {
+		return
+	}
+	if n == 1 {
+		s.redisClient.Expire(ctx, "ratelimit:"+key, window)
+	}
 }
 
 // Logout deletes the refresh token and blacklists the access token's JTI.

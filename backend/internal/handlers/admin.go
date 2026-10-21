@@ -140,8 +140,22 @@ func (h *AdminHandler) AssignWeddings(c fuego.ContextWithBody[AssignWeddingsRequ
 			ids = append(ids, wid)
 		}
 	}
+	// Fetch the old grants so removing access can revoke live sessions.
+	oldWeddings, _ := h.adminRepo.GetUserWeddings(ctx, admin.ID)
 	if err := h.adminRepo.SetUserWeddings(ctx, admin.ID, ids); err != nil {
 		return nil, fuego.InternalServerError{Title: "Failed to assign weddings"}
+	}
+	kept := make(map[uuid.UUID]bool, len(ids))
+	for _, wid := range ids {
+		kept[wid] = true
+	}
+	for _, w := range oldWeddings {
+		if !kept[w.ID] {
+			// Best-effort: Refresh also re-checks access, so a Redis failure
+			// only leaves the old scoped token valid until its next refresh.
+			_ = h.authService.RevokeUserTokens(ctx, admin.ID)
+			break
+		}
 	}
 	return admin, nil
 }
@@ -194,6 +208,8 @@ func (h *AdminHandler) ResetPassword(c fuego.ContextWithBody[ResetPasswordReques
 	if err := h.adminRepo.Update(ctx, admin); err != nil {
 		return nil, fuego.InternalServerError{Title: "Failed to update password"}
 	}
+	// Kill sessions minted under the old password (best-effort).
+	_ = h.authService.RevokeUserTokens(ctx, id)
 	return map[string]any{"message": "Password updated"}, nil
 }
 
@@ -241,6 +257,8 @@ func (h *AdminHandler) UpdateRole(c fuego.ContextWithBody[UpdateRoleRequest]) (a
 	if err := h.adminRepo.Update(ctx, admin); err != nil {
 		return nil, fuego.InternalServerError{Title: "Failed to update role"}
 	}
+	// Force re-login so role claims in live tokens update (best-effort).
+	_ = h.authService.RevokeUserTokens(ctx, id)
 	return admin, nil
 }
 
