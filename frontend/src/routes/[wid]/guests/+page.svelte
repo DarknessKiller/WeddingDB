@@ -166,6 +166,14 @@ import Users from 'lucide-svelte/icons/users';
   let guests = $derived(filtered.slice(currentPage * pageSize, (currentPage + 1) * pageSize));
   let hasNextPage = $derived((currentPage + 1) * pageSize < filtered.length);
 
+  function clearFilters() {
+    searchQuery = '';
+    rsvpFilter = 'all';
+    searchResults = null;
+    searchError = null;
+    currentPage = 0;
+  }
+
   function nextPage() {
     if (!hasNextPage) return;
     currentPage++;
@@ -554,11 +562,13 @@ import Users from 'lucide-svelte/icons/users';
       <Search class="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 sm:w-[18px] sm:h-[18px] text-gray-400 pointer-events-none {searching ? 'animate-pulse' : ''}" />
       <input
         type="text" placeholder="Search guests..." bind:value={searchQuery}
+        aria-label="Search guests by name"
         class="w-full pl-10 sm:pl-11 pr-3 sm:pr-4 py-2.5 sm:py-3 border border-gray-200 rounded-xl text-sm bg-white focus:border-red focus:ring-2 focus:ring-red/10 outline-none transition-all min-h-[44px]"
       />
     </div>
     <div class="flex items-center gap-1 sm:gap-2 flex-wrap">
       <select bind:value={rsvpFilter} class="px-2 sm:px-3 py-1.5 sm:py-2 border border-gray-200 rounded-xl text-xs sm:text-sm bg-white focus:border-gold outline-none">
+        aria-label="Filter by RSVP status"
         <option value="all">All Status</option>
         <option value="confirmed">Confirmed</option>
         <option value="pending">Pending</option>
@@ -605,7 +615,7 @@ import Users from 'lucide-svelte/icons/users';
       <p class="text-red font-medium">Search failed</p>
       <p class="text-sm text-gray-500 mt-1">{searchError}</p>
     </div>
-  {:else if guests.length === 0}
+  {:else if allGuests.length === 0}
     <div class="flex flex-col items-center justify-center py-20 text-center">
       <div class="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mb-4">
         <Users class="w-8 h-8 text-gray-400" />
@@ -614,6 +624,17 @@ import Users from 'lucide-svelte/icons/users';
       <p class="text-sm text-gray-400 mt-1 mb-4">Add your first guest to get started.</p>
       <button onclick={() => { $drawerCreateMode = true; $isDrawerOpen = true; }} class="px-4 py-2.5 bg-red text-white rounded-xl text-sm font-semibold hover:bg-red-light transition-colors flex items-center gap-2">
         <Plus class="w-4 h-4" /> Add Guest
+      </button>
+    </div>
+  {:else if filtered.length === 0}
+    <div class="flex flex-col items-center justify-center py-20 text-center">
+      <div class="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mb-4">
+        <Search class="w-8 h-8 text-gray-400" />
+      </div>
+      <p class="text-gray-500 font-medium">No guests match</p>
+      <p class="text-sm text-gray-400 mt-1 mb-4">Try another name, or clear the status filter.</p>
+      <button onclick={clearFilters} class="px-4 py-2.5 bg-white border border-gray-200 text-gray-700 rounded-xl text-sm font-semibold hover:bg-gray-50 transition-colors">
+        Clear search and filters
       </button>
     </div>
   {:else}
