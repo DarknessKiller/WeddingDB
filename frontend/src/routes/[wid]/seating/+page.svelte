@@ -146,8 +146,7 @@ import Pencil from 'lucide-svelte/icons/pencil';
   let filteredUnassignedGuests = $derived(
     guestSearch.trim()
       ? unassignedGuests.filter(g =>
-          g.name.toLowerCase().includes(guestSearch.toLowerCase()) ||
-          g.phone.includes(guestSearch)
+          g.name.toLowerCase().includes(guestSearch.toLowerCase())
         )
       : unassignedGuests
   );
@@ -400,8 +399,6 @@ import Pencil from 'lucide-svelte/icons/pencil';
                   <span class="font-semibold text-sm text-gray-900 truncate">{guest.name}</span>
                 </div>
                 <div class="flex items-center gap-1.5 text-xs text-gray-500">
-                  <span>{guest.phone}</span>
-                  <span>•</span>
                   <span>{guest.pax} pax</span>
                 </div>
               </div>
@@ -447,7 +444,7 @@ import Pencil from 'lucide-svelte/icons/pencil';
                 </div>
                 <div class="flex-1 min-w-0">
                   <div class="text-sm font-medium text-gray-900 truncate">{guest.name}</div>
-                  <div class="text-xs text-gray-500">{guest.phone} • {guest.pax} pax</div>
+                  <div class="text-xs text-gray-500">{guest.pax} pax</div>
                 </div>
               </button>
             {:else}

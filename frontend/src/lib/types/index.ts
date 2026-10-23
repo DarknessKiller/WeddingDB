@@ -3,7 +3,6 @@ export type RSVPStatus = 'confirmed' | 'pending' | 'declined' | 'no_response';
 export interface Guest {
   id: string;
   name: string;
-  phone: string;
   email?: string;
   rsvp: RSVPStatus;
   pax: number;
@@ -70,7 +69,6 @@ export interface ActivityItem {
 
 export interface ReservationFormData {
   guestName: string;
-  phone: string;
   email?: string;
   numberOfGuests: number;
   attendance: 'attending' | 'not_attending';
@@ -81,7 +79,7 @@ export interface ReservationFormData {
 export interface SearchResult {
   guest: Guest;
   matchScore: number;
-  matchType: 'name' | 'phone' | 'email';
+  matchType: 'name' | 'email';
 }
 
 export type ElementType = 'stage' | 'dj_counter' | 'entrance' | 'tv' | 'walkway' | 'box';

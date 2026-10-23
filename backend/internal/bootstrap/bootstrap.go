@@ -97,7 +97,6 @@ func Init(env config.Env, version string) *App {
 	db.Exec("CREATE EXTENSION IF NOT EXISTS pg_trgm")
 	db.Exec("CREATE INDEX IF NOT EXISTS idx_guest_records_name_trgm ON guest_records USING gin (name gin_trgm_ops)")
 	db.Exec("CREATE INDEX IF NOT EXISTS idx_guest_records_name_pinyin_trgm ON guest_records USING gin (name_pinyin gin_trgm_ops)")
-	db.Exec("CREATE INDEX IF NOT EXISTS idx_guest_records_phone_trgm ON guest_records USING gin (phone gin_trgm_ops)")
 	db.Exec("CREATE INDEX IF NOT EXISTS idx_guest_records_wedding_id ON guest_records (wedding_id, id)")
 	db.Exec("CREATE INDEX IF NOT EXISTS idx_guest_records_wedding_name ON guest_records (wedding_id, name)")
 

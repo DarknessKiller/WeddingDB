@@ -28,7 +28,6 @@ function makeGuest(overrides: Partial<Guest> = {}): Guest {
 	return {
 		id: overrides.id ?? 'g1',
 		name: overrides.name ?? 'Alice',
-		phone: overrides.phone ?? '123',
 		email: overrides.email ?? '',
 		rsvp: overrides.rsvp ?? 'confirmed',
 		pax: overrides.pax ?? 2,
@@ -131,7 +130,7 @@ describe('guestEvents store', () => {
 			weddingId: 'w1',
 			timestamp: Date.now(),
 			guest: {
-				id: 'g1', name: 'Alice', phone: '123', email: '', pax: 2, rsvp: 'confirmed',
+				id: 'g1', name: 'Alice', email: '', pax: 2, rsvp: 'confirmed',
 				isVip: false, notes: '', dietary: [], tableId: 't1', seatNum: 1,
 				checkedInAt: null, angbaoAmt: null, giftItem: null,
 			},
@@ -145,7 +144,7 @@ describe('guestEvents store', () => {
 		seedGuests([makeGuest({ id: 'g1', tableId: 't1', pax: 3 })]);
 		expect(get(tableOccupancy).get('t1')).toBe(3);
 
-		sseState.eventHandler!(makeEvent({ guest: { id: 'g1', name: 'Alice', phone: '123', email: '', pax: 2, rsvp: 'confirmed', isVip: false, notes: '', dietary: [], tableId: null, seatNum: null, checkedInAt: null, angbaoAmt: null, giftItem: null } }));
+		sseState.eventHandler!(makeEvent({ guest: { id: 'g1', name: 'Alice', email: '', pax: 2, rsvp: 'confirmed', isVip: false, notes: '', dietary: [], tableId: null, seatNum: null, checkedInAt: null, angbaoAmt: null, giftItem: null } }));
 
 		expect(get(guestList)[0].tableId).toBeNull();
 		expect(get(tableOccupancy).has('t1')).toBe(false);
@@ -156,7 +155,7 @@ describe('guestEvents store', () => {
 		initializeSSE(() => Promise.resolve([]));
 		seedGuests([]);
 
-		sseState.eventHandler!(makeEvent({ type: 'create', guest: { id: 'g9', name: 'Zoe', phone: '', email: '', pax: 4, rsvp: 'confirmed', isVip: false, notes: '', dietary: [], tableId: 't2', seatNum: 1, checkedInAt: null, angbaoAmt: null, giftItem: null } }));
+		sseState.eventHandler!(makeEvent({ type: 'create', guest: { id: 'g9', name: 'Zoe', email: '', pax: 4, rsvp: 'confirmed', isVip: false, notes: '', dietary: [], tableId: 't2', seatNum: 1, checkedInAt: null, angbaoAmt: null, giftItem: null } }));
 
 		expect(get(tableOccupancy).get('t2')).toBe(4);
 	});

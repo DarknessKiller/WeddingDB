@@ -148,7 +148,6 @@ import Users from 'lucide-svelte/icons/users';
       let av: string | number | null, bv: string | number | null;
       switch (sortCol) {
         case 'name': av = a.name; bv = b.name; break;
-        case 'phone': av = a.phone; bv = b.phone; break;
         case 'rsvp': av = a.rsvp; bv = b.rsvp; break;
         case 'pax': av = a.pax; bv = b.pax; break;
         case 'tableId': av = a.tableId ?? ''; bv = b.tableId ?? ''; break;
@@ -192,7 +191,6 @@ import Users from 'lucide-svelte/icons/users';
     return {
       id: r.id,
       name: r.name,
-      phone: r.phone,
       email: r.email || undefined,
       rsvp: r.rsvp as RSVPStatus,
       pax: r.pax,
@@ -211,7 +209,6 @@ import Users from 'lucide-svelte/icons/users';
 
   const allColumns = [
     { key: 'name', label: 'Name' },
-    { key: 'phone', label: 'Phone' },
     { key: 'rsvp', label: 'RSVP' },
     { key: 'pax', label: 'Pax' },
     { key: 'tableId', label: 'Table' },
@@ -230,12 +227,11 @@ import Users from 'lucide-svelte/icons/users';
   }
 
   function exportCSV() {
-    const headers = ['Name', 'Phone', 'Email', 'Table', 'Seat', 'Pax', 'RSVP', 'VIP', 'Checked In', 'Angbao', 'Gift', 'Notes'];
+    const headers = ['Name', 'Email', 'Table', 'Seat', 'Pax', 'RSVP', 'VIP', 'Checked In', 'Angbao', 'Gift', 'Notes'];
     const rows = filtered.map(g => {
       const table = tables.find(t => String(t.id) === String(g.tableId));
       return [
         g.name,
-        g.phone,
         g.email || '',
         table?.name || '',
         g.seatNumber ?? '',
@@ -373,7 +369,6 @@ import Users from 'lucide-svelte/icons/users';
     const headers = lines[0].split(',').map(h => h.trim().toLowerCase());
     const nameIdx = headers.findIndex(h => h === 'name');
     if (nameIdx === -1) return [];
-    const phoneIdx = headers.findIndex(h => h === 'phone');
     const emailIdx = headers.findIndex(h => h === 'email');
     const paxIdx = headers.findIndex(h => h === 'pax');
     const rsvpIdx = headers.findIndex(h => h === 'rsvp');
@@ -387,7 +382,6 @@ import Users from 'lucide-svelte/icons/users';
       const cols = line.split(',').map(c => c.trim().replace(/^"|"$/g, ''));
       return {
         name: cols[nameIdx] || '',
-        phone: phoneIdx >= 0 ? cols[phoneIdx] : undefined,
         email: emailIdx >= 0 ? cols[emailIdx] : undefined,
         pax: paxIdx >= 0 ? parseInt(cols[paxIdx]) || 1 : 1,
         rsvp: rsvpIdx >= 0 ? cols[rsvpIdx] : 'no_response',
@@ -813,7 +807,7 @@ import Users from 'lucide-svelte/icons/users';
         </button>
       </div>
       <div class="p-5 space-y-4">
-        <p class="text-sm text-gray-600">Upload a CSV file with columns: <strong>name</strong> (required), phone, email, pax, rsvp, vip, notes, dietary, table, seat</p>
+        <p class="text-sm text-gray-600">Upload a CSV file with columns: <strong>name</strong> (required), email, pax, rsvp, vip, notes, dietary, table, seat</p>
 
         <div class="border-2 border-dashed border-gray-200 rounded-xl p-6 text-center hover:border-red/50 transition-colors">
           <input type="file" accept=".csv" onchange={handleImportFile} class="hidden" id="csv-input" />
@@ -839,7 +833,6 @@ import Users from 'lucide-svelte/icons/users';
             <table class="w-full text-xs">
               <thead><tr class="bg-gray-50 border-b border-gray-200">
                 <th class="px-3 py-2 text-left font-semibold text-gray-600">Name</th>
-                <th class="px-3 py-2 text-left font-semibold text-gray-600">Phone</th>
                 <th class="px-3 py-2 text-left font-semibold text-gray-600">Pax</th>
                 <th class="px-3 py-2 text-left font-semibold text-gray-600">VIP</th>
                 {#if importPreview.some(g => g.table)}
@@ -853,7 +846,6 @@ import Users from 'lucide-svelte/icons/users';
                 {#each importPreview.slice(0, 20) as g}
                   <tr class="border-b border-gray-100">
                     <td class="px-3 py-2 font-medium text-gray-900">{g.name}</td>
-                    <td class="px-3 py-2 text-gray-500">{g.phone || '—'}</td>
                     <td class="px-3 py-2 text-gray-500">{g.pax}</td>
                     <td class="px-3 py-2 text-gray-500">{g.isVip ? '★' : ''}</td>
                     {#if importPreview.some(g => g.table)}

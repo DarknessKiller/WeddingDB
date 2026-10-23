@@ -19,7 +19,7 @@ function optimisticPatch(op: string, guestId: string, data?: Record<string, unkn
 	try {
 		if (op === 'create' && data) {
 			const now = new Date();
-			const g = { id: guestId, name: (data.name as string) || '', phone: (data.phone as string) || '', email: (data.email as string) || '', pax: (data.pax as number) || 1, rsvp: (data.rsvp as string) || 'no_response', isVip: !!data.isVip, notes: (data.notes as string) || '', dietaryRequirements: (data.dietary as string[]) || [], tableId: (data.tableId as string | null) || null, seatNumber: (data.seatNum as number | null) ?? null, checkedIn: false, createdAt: now, updatedAt: now } as unknown as import('$lib/types').Guest;
+			const g = { id: guestId, name: (data.name as string) || '', email: (data.email as string) || '', pax: (data.pax as number) || 1, rsvp: (data.rsvp as string) || 'no_response', isVip: !!data.isVip, notes: (data.notes as string) || '', dietaryRequirements: (data.dietary as string[]) || [], tableId: (data.tableId as string | null) || null, seatNumber: (data.seatNum as number | null) ?? null, checkedIn: false, createdAt: now, updatedAt: now } as unknown as import('$lib/types').Guest;
 			guestList.update(l => [...l, g]); guestMap.update(m => { const n = new Map(m); n.set(guestId, g); return n; });
 		} else if (op === 'update' && data) {
 			// Explicit null (or "") in the patch overrides/clears the old value;
@@ -27,7 +27,6 @@ function optimisticPatch(op: string, guestId: string, data?: Record<string, unkn
 			guestList.update(l => l.map(x => x.id === guestId ? {
 				...x,
 				name: data.name !== undefined ? data.name : x.name,
-				phone: data.phone !== undefined ? data.phone : x.phone,
 				email: data.email !== undefined ? data.email : x.email,
 				pax: data.pax !== undefined ? data.pax : x.pax,
 				rsvp: data.rsvp !== undefined ? data.rsvp : x.rsvp,
@@ -67,7 +66,6 @@ export class ConflictError extends Error {
 
 export interface GuestImportData {
   name: string;
-  phone?: string;
   email?: string;
   pax?: number;
   rsvp?: string;
@@ -84,7 +82,6 @@ export interface GuestResponse {
 	id: string;
 	weddingId: string;
 	name: string;
-	phone: string;
 	email: string;
 	pax: number;
 	rsvp: string;
@@ -102,7 +99,6 @@ export interface GuestResponse {
 
 export interface GuestCreateData {
 	name: string;
-	phone: string;
 	email?: string;
 	pax: number;
 	rsvp: string;
@@ -157,7 +153,7 @@ export async function createGuest(weddingId: string, data: GuestCreateData): Pro
 			const id = genId();
 			doQueue(id); optimisticPatch('create', id, data as unknown as Record<string, unknown>);
 			const now = nowIso();
-			return { id, weddingId, name: data.name, phone: data.phone, email: data.email || '', pax: data.pax, rsvp: data.rsvp, isVip: data.isVip, notes: data.notes, dietary: data.dietary, tableId: (data.tableId as string | null) ?? null, seatNum: data.seatNum ?? null, checkedInAt: null, angbaoAmt: data.angbaoAmt ?? null, giftItem: data.giftItem ?? null, createdAt: now, updatedAt: now };
+			return { id, weddingId, name: data.name, email: data.email || '', pax: data.pax, rsvp: data.rsvp, isVip: data.isVip, notes: data.notes, dietary: data.dietary, tableId: (data.tableId as string | null) ?? null, seatNum: data.seatNum ?? null, checkedInAt: null, angbaoAmt: data.angbaoAmt ?? null, giftItem: data.giftItem ?? null, createdAt: now, updatedAt: now };
 		}
 		throw e;
 	}
@@ -165,7 +161,7 @@ export async function createGuest(weddingId: string, data: GuestCreateData): Pro
 
 export async function updateGuest(weddingId: string, guestId: string, data: GuestCreateData): Promise<GuestResponse> {
 	const doQueue = () => { enqueue(weddingId, { mutationId: genId(), op: 'update', guestId, clientUpdatedAt: nowIso(), payload: data as unknown as Record<string, unknown> }); optimisticPatch('update', guestId, data as unknown as Record<string, unknown>); };
-	if (isOffline()) { doQueue(); const now = nowIso(); return { id: guestId, weddingId, name: data.name, phone: data.phone, email: data.email || '', pax: data.pax, rsvp: data.rsvp, isVip: data.isVip, notes: data.notes, dietary: data.dietary, tableId: (data.tableId as string | null) ?? null, seatNum: data.seatNum ?? null, checkedInAt: null, angbaoAmt: data.angbaoAmt ?? null, giftItem: data.giftItem ?? null, createdAt: now, updatedAt: now }; }
+	if (isOffline()) { doQueue(); const now = nowIso(); return { id: guestId, weddingId, name: data.name, email: data.email || '', pax: data.pax, rsvp: data.rsvp, isVip: data.isVip, notes: data.notes, dietary: data.dietary, tableId: (data.tableId as string | null) ?? null, seatNum: data.seatNum ?? null, checkedInAt: null, angbaoAmt: data.angbaoAmt ?? null, giftItem: data.giftItem ?? null, createdAt: now, updatedAt: now }; }
 	try {
 		const res = await apiFetch(`/api/weddings/${weddingId}/guests/${guestId}`, { method: 'PUT', body: JSON.stringify(data) });
 		if (!res.ok) throw new Error(`Failed to update guest: ${res.status}`);
@@ -173,7 +169,7 @@ export async function updateGuest(weddingId: string, guestId: string, data: Gues
 		applyGuestResponse(resp);
 		return resp;
 	} catch (e) {
-		if (isNetworkError(e)) { doQueue(); const now = nowIso(); return { id: guestId, weddingId, name: data.name, phone: data.phone, email: data.email || '', pax: data.pax, rsvp: data.rsvp, isVip: data.isVip, notes: data.notes, dietary: data.dietary, tableId: (data.tableId as string | null) ?? null, seatNum: data.seatNum ?? null, checkedInAt: null, angbaoAmt: data.angbaoAmt ?? null, giftItem: data.giftItem ?? null, createdAt: now, updatedAt: now }; }
+		if (isNetworkError(e)) { doQueue(); const now = nowIso(); return { id: guestId, weddingId, name: data.name, email: data.email || '', pax: data.pax, rsvp: data.rsvp, isVip: data.isVip, notes: data.notes, dietary: data.dietary, tableId: (data.tableId as string | null) ?? null, seatNum: data.seatNum ?? null, checkedInAt: null, angbaoAmt: data.angbaoAmt ?? null, giftItem: data.giftItem ?? null, createdAt: now, updatedAt: now }; }
 		throw e;
 	}
 }

@@ -73,7 +73,7 @@ describe('SSEClient', () => {
 			type: 'checkin',
 			guestId: 'g1',
 			weddingId: 'wedding-123',
-			guest: { id: 'g1', name: 'Alice', phone: '', email: '', pax: 1, rsvp: 'confirmed', isVip: false, notes: '', dietary: [], tableId: null, seatNum: null, checkedInAt: '2026-01-01T00:00:00Z', angbaoAmt: null, giftItem: null },
+			guest: { id: 'g1', name: 'Alice', email: '', pax: 1, rsvp: 'confirmed', isVip: false, notes: '', dietary: [], tableId: null, seatNum: null, checkedInAt: '2026-01-01T00:00:00Z', angbaoAmt: null, giftItem: null },
 			timestamp: 1234567890
 		};
 

@@ -7,7 +7,6 @@ export interface GuestEvent {
 	guest?: {
 		id: string;
 		name: string;
-		phone: string;
 		email: string;
 		pax: number;
 		rsvp: string;

@@ -104,7 +104,6 @@ func (r *GuestRepo) Update(ctx context.Context, g *models.GuestRecord) error {
 	return r.db.WithContext(ctx).Model(g).Where("id = ? AND wedding_id = ?", g.ID, g.WeddingID).Updates(map[string]interface{}{
 		"name":          g.Name,
 		"name_pinyin":   g.NamePinyin,
-		"phone":         g.Phone,
 		"email":         g.Email,
 		"pax":           g.Pax,
 		"table_id":      g.TableID,
@@ -135,7 +134,6 @@ func (r *GuestRepo) SyncUpdate(ctx context.Context, g *models.GuestRecord) error
 	return r.db.WithContext(ctx).Model(g).Where("id = ? AND wedding_id = ?", g.ID, g.WeddingID).Updates(map[string]interface{}{
 		"name":          g.Name,
 		"name_pinyin":   g.NamePinyin,
-		"phone":         g.Phone,
 		"email":         g.Email,
 		"pax":           g.Pax,
 		"table_id":      g.TableID,

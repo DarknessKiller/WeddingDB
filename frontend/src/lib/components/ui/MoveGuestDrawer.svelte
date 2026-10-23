@@ -99,8 +99,6 @@ import ArrowUpDown from 'lucide-svelte/icons/arrow-up-down';
         <div class="min-w-0">
           <h3 class="guest-name-lg">{guest.name}</h3>
           <div class="text-xs text-gray-500 mt-0.5">
-            <span>{guest.phone}</span>
-            <span>•</span>
             <span>{guest.pax} pax</span>
           </div>
         </div>
