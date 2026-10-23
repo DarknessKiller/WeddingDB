@@ -3,7 +3,7 @@
   import { publicListGuests, mapGuest } from '$lib/api/public';
   import { getPublicLayout } from '$lib/api/layout';
   import { cn, getInitials } from '$lib/utils';
-  import { formatSeatRange } from '$lib/utils/seat';
+  import { formatSeatRange, formatPartySize } from '$lib/utils/seat';
   import Maximize from 'lucide-svelte/icons/maximize';
 import Minimize from 'lucide-svelte/icons/minimize';
 import Monitor from 'lucide-svelte/icons/monitor';
@@ -432,10 +432,6 @@ import Star from 'lucide-svelte/icons/star';
                 </div>
                 <div class="guest-meta-row">
                   <span class="guest-table-badge">Table {selectedTableName}</span>
-                  <span class="guest-pax">{selectedGuest.pax} pax</span>
-                  {#if selectedGuest.rsvp && selectedGuest.rsvp !== 'no_response'}
-                    <span class="guest-rsvp-badge rsvp-{selectedGuest.rsvp}">{selectedGuest.rsvp}</span>
-                  {/if}
                 </div>
               </div>
             </div>
@@ -456,6 +452,11 @@ import Star from 'lucide-svelte/icons/star';
                     <div class="seat-value">{formatSeatRange(selectedGuest.seatNumber, selectedGuest.pax)}</div>
                   </div>
                 {/if}
+                <div class="seat-divider"></div>
+                <div class="seat-block">
+                  <div class="seat-label">Guests</div>
+                  <div class="seat-value">{selectedGuest.pax}</div>
+                </div>
               </div>
 
               <div class="sheet-hint">
@@ -522,6 +523,7 @@ import Star from 'lucide-svelte/icons/star';
           <!-- svelte-ignore a11y_autofocus -->
           <input
             type="text"
+            aria-label="Search your name"
             placeholder="Type your name..."
             bind:value={query}
             class="search-input"
@@ -530,6 +532,7 @@ import Star from 'lucide-svelte/icons/star';
         </div>
 
         <!-- Results -->
+        <p class="sr-only" role="status">{query.trim() ? (searching ? 'Searching' : `${results.length} results`) : ''}</p>
         {#if results.length > 0}
           <div class="results-list">
             {#each results.slice(0, 8) as guest, i (guest.id)}
@@ -555,10 +558,10 @@ import Star from 'lucide-svelte/icons/star';
                     {#if guest.tableId}
                       <span class="meta-item"><MapPin class="icon-xs" />Table {tables.find(t => t.id === guest.tableId)?.name ?? guest.tableId}</span>
                       {#if $showSeatNumbers}<span class="meta-item">{formatSeatRange(guest.seatNumber, guest.pax)}</span>{/if}
+                      <span class="meta-item">{formatPartySize(guest.pax)}</span>
                     {:else}
-                      <span class="meta-item text-gray-400">No seat assigned</span>
+                      <span class="meta-item text-gray-400">Ask at the reception desk</span>
                     {/if}
-                    <span class="meta-item">{guest.pax} pax</span>
                   </div>
                 </div>
                 <div class="result-chevron">
@@ -566,12 +569,15 @@ import Star from 'lucide-svelte/icons/star';
                 </div>
               </button>
             {/each}
+            {#if results.length > 8}
+              <p class="results-more">Showing 8 of {results.length}. Type more of your name.</p>
+            {/if}
           </div>
         {:else if query.trim().length > 0 && !searching}
           <div class="empty-state">
             <Search class="icon-xl opacity-30" />
             <p class="font-medium">No guests found</p>
-            <p class="text-sm mt-1 text-gray-400">Try a different spelling</p>
+            <p class="text-sm mt-1 text-gray-400">Try fewer letters, or the pinyin of the name.</p>
           </div>
         {:else if searching}
           <div class="empty-state">
@@ -581,7 +587,7 @@ import Star from 'lucide-svelte/icons/star';
         {:else}
           <div class="empty-state">
             <Users class="icon-lg opacity-30" />
-            <p class="text-sm text-gray-400">Start typing to search</p>
+            <p class="text-sm text-gray-400">Type your name to find your table</p>
           </div>
         {/if}
       </div>
@@ -870,29 +876,14 @@ import Star from 'lucide-svelte/icons/star';
     }
   }
 
-  .guest-pax {
-    font-size: 0.75rem;
-    color: #6b7280;
-  }
-
-  .guest-rsvp-badge {
-    font-size: 0.625rem;
-    font-weight: 600;
-    padding: 0.125rem 0.5rem;
-    border-radius: 9999px;
-    text-transform: capitalize;
-  }
-  .guest-rsvp-badge:where(:global(.rsvp-confirmed)) { background: #ECFDF5; color: #059669; border: 1px solid #A7F3D0; }
-  .guest-rsvp-badge:where(:global(.rsvp-pending)) { background: #FFFBEB; color: #D97706; border: 1px solid #FDE68A; }
-  .guest-rsvp-badge:where(:global(.rsvp-declined)) { background: #FEF2F2; color: #DC2626; border: 1px solid #FECACA; }
-  .guest-rsvp-badge:where(:global(.rsvp-no_response)) { background: #F9FAFB; color: #6B7280; border: 1px solid #E5E7EB; }
-
   /* ---------- Seat Display ---------- */
   .seat-display {
     display: flex;
     align-items: center;
     justify-content: center;
     gap: 1.5rem;
+    flex-wrap: wrap;
+    row-gap: 1rem;
     padding: 1rem 0;
   }
 
@@ -1198,6 +1189,12 @@ import Star from 'lucide-svelte/icons/star';
     flex-direction: column;
     gap: 0.75rem;
     text-align: left;
+  }
+  .results-more {
+    margin: 0.25rem 0 0;
+    font-size: 0.875rem;
+    color: #6b7280;
+    text-align: center;
   }
 
   .result-card {

@@ -3,6 +3,7 @@
 import UserCheck from 'lucide-svelte/icons/user-check';
 import Loader2 from 'lucide-svelte/icons/loader-2';
   import { fade } from 'svelte/transition';
+  import { onMount } from 'svelte';
   import { slideOut as sheetSlideOut } from '$lib/utils/motion';
 
   function outfade(node: HTMLElement) {
@@ -22,6 +23,7 @@ import Loader2 from 'lucide-svelte/icons/loader-2';
   } = $props();
 
   let notes = $state('');
+  let confirmBtn: HTMLButtonElement;
 
   function onNotesKeydown(e: KeyboardEvent) {
     // Enter confirms; isComposing guards IME (Chinese) input.
@@ -54,12 +56,24 @@ import Loader2 from 'lucide-svelte/icons/loader-2';
     if (dragY > 80) onClose();
     dragY = 0;
   }
+  function onDialogKeydown(e: KeyboardEvent) {
+    if (e.key !== 'Tab') return;
+    const nodes = (e.currentTarget as HTMLElement).querySelectorAll<HTMLElement>('button:not([disabled]), input');
+    if (!nodes.length) return;
+    const first = nodes[0];
+    const last = nodes[nodes.length - 1];
+    if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
+    else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+  }
+  onMount(() => confirmBtn?.focus());
 </script>
 
+<svelte:window onkeydown={(e) => { if (e.key === 'Escape' && !loading) onClose(); }} />
 <div class="fixed inset-0 z-[60] flex items-end sm:items-center justify-center p-0 sm:p-4" role="dialog" aria-modal="true" aria-labelledby="check-in-title">
   <div class="absolute inset-0 bg-black/30 backdrop-blur-md" onclick={onClose} role="presentation" transition:fade={{ duration: 250 }}></div>
   <!-- svelte-ignore a11y_no_static_element_interactions -->
   <div
+    onkeydown={onDialogKeydown}
     class="relative bg-white/95 backdrop-blur-xl rounded-t-2xl sm:rounded-2xl shadow-2xl w-full sm:max-w-md overflow-hidden pb-[env(safe-area-inset-bottom)] sm:pb-0"
     out={outfade}
     style="transform: translateY({dragY}px); transition: {dragging ? 'none' : 'transform 300ms cubic-bezier(0.2, 0.8, 0.2, 1)'}"
@@ -94,7 +108,7 @@ import Loader2 from 'lucide-svelte/icons/loader-2';
       </div>
     </div>
     <div class="flex gap-3 p-5 pt-0">
-      <button onclick={() => onConfirm(notes)} disabled={loading}
+      <button bind:this={confirmBtn} onclick={() => onConfirm(notes)} disabled={loading}
         class="flex-1 py-3 bg-red text-white rounded-xl text-sm font-semibold hover:bg-red-light transition-colors flex items-center justify-center gap-2 disabled:opacity-50">
         {#if loading}
           <Loader2 class="w-4 h-4 text-white animate-spin" /> Processing...
