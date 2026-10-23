@@ -1,5 +1,6 @@
 <script lang="ts">
   import type { Guest, BanquetTable, RSVPStatus } from '$lib/types';
+  import { trapFocus } from '$lib/utils/focus';
   import X from 'lucide-svelte/icons/x';
 import Phone from 'lucide-svelte/icons/phone';
 import Mail from 'lucide-svelte/icons/mail';
@@ -316,6 +317,8 @@ import ArrowUpDown from 'lucide-svelte/icons/arrow-up-down';
   <div class="drawer-backdrop" style="opacity: {dragging ? Math.max(0, 1 - dragY / 400) : 1}" aria-hidden="true" transition:fade={{ duration: 250 }}></div>
   <!-- svelte-ignore a11y_no_static_element_interactions -->
   <div class="drawer-panel" role="dialog" aria-modal="true" aria-labelledby="drawer-title" onclick={(e) => e.stopPropagation()}
+    use:trapFocus
+    tabindex="-1"
     ontouchstart={onTouchStart}
     ontouchmove={onTouchMove}
     ontouchend={onTouchEnd}

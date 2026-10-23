@@ -5,6 +5,7 @@ import Pencil from 'lucide-svelte/icons/pencil';
 import Star from 'lucide-svelte/icons/star';
 import Users from 'lucide-svelte/icons/users';
   import { cn } from '$lib/utils';
+  import { trapFocus } from '$lib/utils/focus';
 
   let {
     title = 'Add Table',
@@ -39,7 +40,7 @@ import Users from 'lucide-svelte/icons/users';
 <div class="drawer-overlay" onclick={onClose} role="presentation">
   <div class="drawer-backdrop" aria-hidden="true"></div>
   <!-- svelte-ignore a11y_no_static_element_interactions -->
-  <div class="drawer-panel" role="dialog" aria-modal="true" aria-labelledby="drawer-title" onclick={(e) => e.stopPropagation()}>
+  <div class="drawer-panel" role="dialog" aria-modal="true" aria-labelledby="drawer-title" onclick={(e) => e.stopPropagation()} use:trapFocus tabindex="-1">
     <div class="drawer-pill flex sm:hidden" onclick={onClose} role="presentation">
       <div class="drawer-pill-bar"></div>
     </div>
