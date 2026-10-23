@@ -368,7 +368,6 @@ const (
 
 type SyncPayload struct {
 	Name      string   `json:"name"`
-	Phone     string   `json:"phone"`
 	Email     string   `json:"email"`
 	Pax       int      `json:"pax"`
 	RSVP      string   `json:"rsvp"`
@@ -460,7 +459,6 @@ func (s *GuestService) applySyncMutation(ctx context.Context, weddingID uuid.UUI
 			ID:        gid,
 			WeddingID: weddingID,
 			Name:      m.Payload.Name,
-			Phone:     m.Payload.Phone,
 			Email:     m.Payload.Email,
 			Pax:       m.Payload.Pax,
 			RSVP:      m.Payload.RSVP,
@@ -596,7 +594,6 @@ func applySyncPayload(g *models.GuestRecord, p *SyncPayload, gid *uuid.UUID) {
 	if p.Name != "" {
 		g.Name = p.Name
 	}
-	g.Phone = p.Phone
 	g.Email = p.Email
 	if p.Pax >= 1 {
 		g.Pax = p.Pax
@@ -660,7 +657,6 @@ func guestToEventData(g *models.GuestRecord) *GuestEventData {
 	d := &GuestEventData{
 		ID:      utils.EncodeUUID(g.ID),
 		Name:    g.Name,
-		Phone:   g.Phone,
 		Email:   g.Email,
 		Pax:     g.Pax,
 		RSVP:    g.RSVP,

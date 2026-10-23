@@ -234,7 +234,6 @@ func TestGuestToEventData(t *testing.T) {
 		id:          gid,
 		weddingID:   wid,
 		name:        "张三",
-		phone:       "13800138000",
 		email:       "zhang@example.com",
 		pax:         4,
 		rsvp:        "confirmed",
@@ -257,7 +256,6 @@ func TestGuestToEventData(t *testing.T) {
 		Guest: &GuestEventData{
 			ID:      guest.id.String(),
 			Name:    guest.name,
-			Phone:   guest.phone,
 			Email:   guest.email,
 			Pax:     guest.pax,
 			RSVP:    guest.rsvp,
@@ -302,7 +300,6 @@ type mockGuestRecord struct {
 	id          uuid.UUID
 	weddingID   uuid.UUID
 	name        string
-	phone       string
 	email       string
 	pax         int
 	rsvp        string

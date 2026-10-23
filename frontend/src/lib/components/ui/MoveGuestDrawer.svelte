@@ -3,6 +3,7 @@
 import ArrowUpDown from 'lucide-svelte/icons/arrow-up-down';
   import { getInitials } from '$lib/utils';
   import type { Guest, BanquetTable } from '$lib/types';
+  import { trapFocus } from '$lib/utils/focus';
 
   let {
     guest,
@@ -79,7 +80,7 @@ import ArrowUpDown from 'lucide-svelte/icons/arrow-up-down';
 <div class="drawer-overlay" onclick={onClose} role="presentation">
   <div class="drawer-backdrop" aria-hidden="true"></div>
   <!-- svelte-ignore a11y_no_static_element_interactions -->
-  <div class="drawer-panel" role="dialog" aria-modal="true" aria-labelledby="drawer-title" onclick={(e) => e.stopPropagation()}>
+  <div class="drawer-panel" role="dialog" aria-modal="true" aria-labelledby="drawer-title" onclick={(e) => e.stopPropagation()} use:trapFocus tabindex="-1">
     <div class="drawer-pill flex sm:hidden" onclick={onClose} role="presentation">
       <div class="drawer-pill-bar"></div>
     </div>
@@ -98,8 +99,6 @@ import ArrowUpDown from 'lucide-svelte/icons/arrow-up-down';
         <div class="min-w-0">
           <h3 class="guest-name-lg">{guest.name}</h3>
           <div class="text-xs text-gray-500 mt-0.5">
-            <span>{guest.phone}</span>
-            <span>•</span>
             <span>{guest.pax} pax</span>
           </div>
         </div>

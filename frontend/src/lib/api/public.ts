@@ -17,7 +17,6 @@ export function mapGuest(raw: PublicGuest): Guest {
 	return {
 		id: raw.id,
 		name: raw.name ?? '',
-		phone: '',
 		rsvp: (raw.rsvp as Guest['rsvp']) ?? 'no_response',
 		pax: raw.pax ?? 1,
 		tableId: raw.tableId ?? null,

@@ -1,7 +1,7 @@
 <script lang="ts">
   import type { Guest, BanquetTable, RSVPStatus } from '$lib/types';
+  import { trapFocus } from '$lib/utils/focus';
   import X from 'lucide-svelte/icons/x';
-import Phone from 'lucide-svelte/icons/phone';
 import Mail from 'lucide-svelte/icons/mail';
 import Utensils from 'lucide-svelte/icons/utensils';
 import StickyNote from 'lucide-svelte/icons/sticky-note';
@@ -52,7 +52,6 @@ import ArrowUpDown from 'lucide-svelte/icons/arrow-up-down';
       localGuest = {
         ...guest,
         name: fresh.name,
-        phone: fresh.phone,
         email: fresh.email,
         pax: fresh.pax,
         rsvp: fresh.rsvp,
@@ -174,7 +173,6 @@ import ArrowUpDown from 'lucide-svelte/icons/arrow-up-down';
 
   let form = $state({
     name: guest?.name ?? '',
-    phone: guest?.phone ?? '',
     email: guest?.email ?? '',
     pax: guest?.pax ?? 1,
     rsvp: (guest?.rsvp ?? 'pending') as RSVPStatus,
@@ -188,7 +186,6 @@ import ArrowUpDown from 'lucide-svelte/icons/arrow-up-down';
   $effect(() => {
     if (!guest) return;
     form.name = guest.name;
-    form.phone = guest.phone;
     form.email = guest.email ?? '';
     form.pax = guest.pax;
     form.rsvp = guest.rsvp;
@@ -205,7 +202,7 @@ import ArrowUpDown from 'lucide-svelte/icons/arrow-up-down';
       const wid = get(weddingId);
       if (createMode) {
         const created = await createGuest(wid, {
-          name: form.name, phone: form.phone, email: form.email || undefined,
+          name: form.name, email: form.email || undefined,
           pax: form.pax, rsvp: form.rsvp, isVip: form.isVip, notes: form.notes,
           dietary: form.dietary, angbaoAmt: form.angbaoAmt ? Number(form.angbaoAmt) : null,
           giftItem: form.giftItem || null,
@@ -214,13 +211,13 @@ import ArrowUpDown from 'lucide-svelte/icons/arrow-up-down';
         onClose();
       } else {
         const updated = await updateGuest(wid, guest!.id, {
-          name: form.name, phone: form.phone, email: form.email || undefined,
+          name: form.name, email: form.email || undefined,
           pax: form.pax, rsvp: form.rsvp, isVip: form.isVip, notes: form.notes,
           dietary: form.dietary, angbaoAmt: form.angbaoAmt ? Number(form.angbaoAmt) : null,
           giftItem: form.giftItem || null,
         });
         Object.assign(guest!, {
-          name: updated.name, phone: updated.phone, email: updated.email,
+          name: updated.name, email: updated.email,
           pax: updated.pax, rsvp: updated.rsvp, isVip: updated.isVip,
           notes: updated.notes, dietaryRequirements: updated.dietary,
           angbaoAmount: updated.angbaoAmt ?? undefined, giftItem: updated.giftItem ?? undefined,
@@ -316,6 +313,8 @@ import ArrowUpDown from 'lucide-svelte/icons/arrow-up-down';
   <div class="drawer-backdrop" style="opacity: {dragging ? Math.max(0, 1 - dragY / 400) : 1}" aria-hidden="true" transition:fade={{ duration: 250 }}></div>
   <!-- svelte-ignore a11y_no_static_element_interactions -->
   <div class="drawer-panel" role="dialog" aria-modal="true" aria-labelledby="drawer-title" onclick={(e) => e.stopPropagation()}
+    use:trapFocus
+    tabindex="-1"
     ontouchstart={onTouchStart}
     ontouchmove={onTouchMove}
     ontouchend={onTouchEnd}
@@ -349,10 +348,6 @@ import ArrowUpDown from 'lucide-svelte/icons/arrow-up-down';
           <div class="form-field">
             <label for="guest-name" class="form-label">Name</label>
             <input id="guest-name" bind:value={form.name} class="form-input" />
-          </div>
-          <div class="form-field">
-            <label for="guest-phone" class="form-label">Phone</label>
-            <input id="guest-phone" bind:value={form.phone} class="form-input" />
           </div>
           <div class="form-field">
             <label for="guest-email" class="form-label">Email</label>
@@ -423,10 +418,6 @@ import ArrowUpDown from 'lucide-svelte/icons/arrow-up-down';
         </div>
 
         <div class="info-rows">
-          <div class="info-row">
-            <Phone class="info-icon" />
-            <span>{localGuest.phone}</span>
-          </div>
           {#if localGuest.email}
             <div class="info-row">
               <Mail class="info-icon" />
