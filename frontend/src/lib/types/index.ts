@@ -3,6 +3,7 @@ export type RSVPStatus = 'confirmed' | 'pending' | 'declined' | 'no_response';
 export interface Guest {
   id: string;
   name: string;
+  namePinyin?: string;
   email?: string;
   rsvp: RSVPStatus;
   pax: number;

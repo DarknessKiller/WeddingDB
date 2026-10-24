@@ -81,6 +81,7 @@ export interface GuestImportData {
 export interface GuestResponse {
 	id: string;
 	weddingId: string;
+	namePinyin?: string;
 	name: string;
 	email: string;
 	pax: number;

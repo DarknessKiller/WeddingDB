@@ -1,5 +1,6 @@
 <script lang="ts">
-  import { searchGuests, listTables } from '$lib/api/search';
+  import { listTables } from '$lib/api/search';
+  import { searchGuestsLocal } from '$lib/utils/guestSearch';
   import { weddingTitle } from '$lib/stores/weddingTitle';
   import { getLayout } from '$lib/api/layout';
   import { addToast, selectedGuest, isDrawerOpen } from '$lib/stores';
@@ -107,32 +108,20 @@ import CheckCircle2 from 'lucide-svelte/icons/check-circle-2';
     }
   }
 
-  async function doSearch() {
+  function doSearch() {
     const q = query.trim();
-    if (!q) { results = []; return; }
-    loading = true;
-    try {
-      results = await searchGuests(q);
-    } catch {
-      addToast(t('toast.searchFailed'), 'error');
-      results = [];
-    } finally {
-      loading = false;
-    }
+    // Local search over the SSE-synced guestList: instant, works offline.
+    results = q ? searchGuestsLocal(allGuests, q) : [];
   }
 
   $effect(() => {
-    let timer: ReturnType<typeof setTimeout> | undefined;
     if (query.trim().length > 0) {
       showResults = true;
-      loading = true;
-      timer = setTimeout(doSearch, 300);
+      doSearch();
     } else {
       results = [];
       showResults = false;
-      loading = false;
     }
-    return () => clearTimeout(timer);
   });
 
   function openGuest(guest: Guest) {

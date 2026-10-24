@@ -4,6 +4,7 @@
   import { getPublicLayout } from '$lib/api/layout';
   import { cn, getInitials } from '$lib/utils';
   import { formatSeatRange, formatPartySize } from '$lib/utils/seat';
+  import { searchGuestsLocal } from '$lib/utils/guestSearch';
   import Maximize from 'lucide-svelte/icons/maximize';
 import Minimize from 'lucide-svelte/icons/minimize';
 import Monitor from 'lucide-svelte/icons/monitor';
@@ -126,25 +127,10 @@ import Star from 'lucide-svelte/icons/star';
   let hasValidTable = $derived(selectedGuest?.tableId != null && selectedTable !== null);
 
   $effect(() => {
+    // Local search over the polled guest list: instant, works when venue WiFi dies.
     const q = query.trim();
-    if (!q) { results = []; searching = false; return; }
-    searching = true;
-    let cancelled = false;
-    abortController?.abort();
-    const controller = new AbortController();
-    abortController = controller;
-    const timer = setTimeout(async () => {
-      try {
-        const wid = page.params.wid ?? '';
-        const res = await fetch(`/api/public/weddings/${wid}/guests/search?q=${encodeURIComponent(q)}`, { signal: controller.signal });
-        if (!res.ok) throw new Error('Search failed');
-        const data = await res.json();
-        if (!cancelled && !controller.signal.aborted) { results = data.map(mapGuest); searching = false; }
-      } catch (e) {
-        if (!cancelled && !controller.signal.aborted && !(e instanceof DOMException && e.name === 'AbortError')) { results = []; searching = false; }
-      }
-    }, 300);
-    return () => { cancelled = true; clearTimeout(timer); controller.abort(); };
+    results = q ? searchGuestsLocal(allGuests, q) : [];
+    searching = !!q && allGuests.length === 0;
   });
 
   onMount(() => {

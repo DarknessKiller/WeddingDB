@@ -39,7 +39,7 @@ type GuestRecord struct {
 	ID          uuid.UUID   `gorm:"type:uuid;primaryKey;default:gen_random_uuid()" json:"id"`
 	WeddingID   uuid.UUID   `gorm:"type:uuid;index;not null" json:"weddingId"`
 	Name        string      `gorm:"size:255;not null" json:"name"`
-	NamePinyin  string      `gorm:"size:255" json:"-"`
+	NamePinyin  string      `gorm:"size:255" json:"namePinyin"`
 	Email       string      `gorm:"size:255" json:"email"`
 	Pax         int         `gorm:"not null;default:1" json:"pax"`
 	TableID     *uuid.UUID  `gorm:"type:uuid;index" json:"tableId"`

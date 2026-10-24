@@ -5,6 +5,7 @@ import { get } from 'svelte/store';
 interface PublicGuest {
 	id: string;
 	name: string;
+	namePinyin?: string;
 	rsvp?: string;
 	tableId: string | null;
 	seatNum: number | null;
@@ -17,6 +18,7 @@ export function mapGuest(raw: PublicGuest): Guest {
 	return {
 		id: raw.id,
 		name: raw.name ?? '',
+		namePinyin: raw.namePinyin,
 		rsvp: (raw.rsvp as Guest['rsvp']) ?? 'no_response',
 		pax: raw.pax ?? 1,
 		tableId: raw.tableId ?? null,
