@@ -318,8 +318,6 @@ const zh: Record<string, string> = {
   'tables.delete': '删除桌位',
   'settings.idleReset': '迎宾台闲置复位',
   'settings.idleResetHint': '开启后，迎宾台闲置 15 秒自动回到查询首屏',
-  'nav.wall': '状态墙',
-  'wall.subtitle': '每桌实到 / 确认人数，全体屏幕同秒更新',
 };
 
 export default zh;

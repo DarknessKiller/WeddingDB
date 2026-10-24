@@ -317,8 +317,6 @@ const en: Record<string, string> = {
   'tables.delete': 'Delete Table',
   'settings.idleReset': 'Kiosk idle reset',
   'settings.idleResetHint': 'Kiosk returns to the search screen after 15 seconds idle',
-  'nav.wall': 'Status Wall',
-  'wall.subtitle': 'Arrived vs confirmed per table, synced live on all screens',
 };
 
 export default en;
