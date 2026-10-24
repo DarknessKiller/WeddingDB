@@ -17,6 +17,7 @@ import Star from 'lucide-svelte/icons/star';
   import { page } from '$app/state';
   import { setWeddingId } from '$lib/stores/weddingId';
   import { showSeatNumbers, setShowSeatNumbers } from '$lib/stores';
+  import { t } from '$lib/i18n';
   import type { Guest, BanquetTable, HallElement } from '$lib/types';
 
   let query = $state('');
@@ -524,7 +525,7 @@ import Star from 'lucide-svelte/icons/star';
           <input
             type="text"
             aria-label="Search your name"
-            placeholder="Type your name..."
+            placeholder={t('kiosk.searchPlaceholder')}
             bind:value={query}
             class="search-input"
             autofocus
@@ -532,7 +533,7 @@ import Star from 'lucide-svelte/icons/star';
         </div>
 
         <!-- Results -->
-        <p class="sr-only" role="status">{query.trim() ? (searching ? 'Searching' : `${results.length} results`) : ''}</p>
+        <p class="sr-only" role="status">{query.trim() ? (searching ? t('kiosk.searching') : t('kiosk.nResults', { n: results.length })) : ''}</p>
         {#if results.length > 0}
           <div class="results-list">
             {#each results.slice(0, 8) as guest, i (guest.id)}
@@ -582,7 +583,7 @@ import Star from 'lucide-svelte/icons/star';
         {:else if searching}
           <div class="empty-state">
             <div class="spinner"></div>
-            <p class="font-medium text-gray-500">Searching...</p>
+            <p class="font-medium text-gray-500">{t('kiosk.searching')}</p>
           </div>
         {:else}
           <div class="empty-state">

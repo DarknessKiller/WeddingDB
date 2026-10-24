@@ -14,6 +14,7 @@
   import { getWedding } from '$lib/api/weddings';
   import { listTables } from '$lib/api/tables';
   import { initializeSSE, refreshGuests } from '$lib/stores/guestEvents';
+  import { t } from '$lib/i18n';
   import type { BanquetTable } from '$lib/types';
 
   let { children } = $props();
@@ -71,10 +72,10 @@
         const recordedBy = new Set<string>();
         for (const r of syncResults as { op?: string; status: string; serverRecord?: { checkedInAt?: string; checkedInBy?: string } }[]) {
           if (r.status === 'skipped' && r.op === 'checkin' && r.serverRecord?.checkedInAt) {
-            recordedBy.add(r.serverRecord.checkedInBy || '其他设备');
+            recordedBy.add(r.serverRecord.checkedInBy || t('checkin.unknownDevice'));
           }
         }
-        for (const by of recordedBy) addToast(`该宾客已由 ${by} 报到`, 'info');
+        for (const by of recordedBy) addToast(t('checkin.byOther', { by }), 'info');
         // Refresh inside the syncing window so SSE events arriving mid-fetch
         // are queued and replayed after the seed instead of being clobbered.
         const guests = await refreshGuests(loadGuests);
@@ -149,9 +150,9 @@
 
     <div class="main-area">
       {#if offline}
-        <div class="offline-banner">离线 — 变更已排队{queued ? ` (${queued})` : ''}</div>
+        <div class="offline-banner">{t('offline.banner')}{queued ? ` (${queued})` : ''}</div>
       {:else if queued}
-        <div class="offline-banner queued">{queued} 待同步 — 联网后自动同步 <button onclick={async () => { await syncQueue(wid); refreshQueued(); }}>Sync now</button></div>
+        <div class="offline-banner queued">{t('offline.queued', { n: queued })} <button onclick={async () => { await syncQueue(wid); refreshQueued(); }}>{t('offline.syncNow')}</button></div>
       {/if}
       <Header />
       <main class="main-content">
