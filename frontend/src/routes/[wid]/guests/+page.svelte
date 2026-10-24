@@ -631,6 +631,17 @@ import Users from 'lucide-svelte/icons/users';
         {t('guests.clearFilters')}
       </button>
     </div>
+  {:else if filtered.length === 0}
+    <div class="flex flex-col items-center justify-center py-20 text-center">
+      <div class="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mb-4">
+        <Search class="w-8 h-8 text-gray-400" />
+      </div>
+      <p class="text-gray-500 font-medium">No guests match</p>
+      <p class="text-sm text-gray-400 mt-1 mb-4">Try another name, or clear the status filter.</p>
+      <button onclick={clearFilters} class="px-4 py-2.5 bg-white border border-gray-200 text-gray-700 rounded-xl text-sm font-semibold hover:bg-gray-50 transition-colors">
+        Clear search and filters
+      </button>
+    </div>
   {:else}
     <!-- Table -->
     <div class="bg-white/90 backdrop-blur-xl border border-black/[0.06] rounded-2xl overflow-hidden">
