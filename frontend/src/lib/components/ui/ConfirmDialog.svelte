@@ -3,13 +3,14 @@
 import AlertTriangle from 'lucide-svelte/icons/alert-triangle';
   import { onMount } from 'svelte';
   import { fade } from 'svelte/transition';
+  import { t } from '$lib/i18n';
 
   let {
     open = false,
-    title = 'Confirm Action',
+    title = t('confirm.title'),
     message = '',
-    confirmLabel = 'Confirm',
-    cancelLabel = 'Cancel',
+    confirmLabel = t('confirm.ok'),
+    cancelLabel = t('confirm.cancel'),
     variant = 'danger',
     onConfirm,
     onCancel

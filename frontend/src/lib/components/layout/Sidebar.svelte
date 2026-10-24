@@ -1,6 +1,7 @@
 <script lang="ts">
   import { cn } from '$lib/utils';
   import { sidebarCollapsed, getAuth } from '$lib/stores';
+  import { t } from '$lib/i18n';
   import LayoutDashboard from 'lucide-svelte/icons/layout-dashboard';
 import Users from 'lucide-svelte/icons/users';
 import MapPin from 'lucide-svelte/icons/map-pin';
@@ -16,7 +17,7 @@ import FileDown from 'lucide-svelte/icons/file-down';
   let { currentPath, guestCount = 0, wid = '' }: { currentPath: string; guestCount?: number; wid?: string } = $props();
 
   const auth = $derived(getAuth());
-  const displayName = $derived(auth.name || 'Admin');
+  const displayName = $derived(auth.name || t('common.admin'));
   const isAdmin = $derived(auth.role === 'admin');
   const initials = $derived(
     displayName.split(' ').map((w: string) => w[0]).join('').toUpperCase().slice(0, 2)
@@ -24,32 +25,32 @@ import FileDown from 'lucide-svelte/icons/file-down';
 
   const navSections = $derived([
     {
-      label: 'Main',
+      label: t('nav.main'),
       items: [
-        { href: `/${wid}/dashboard`, label: 'Dashboard', icon: LayoutDashboard },
-        { href: `/${wid}/guests`, label: 'Guests', icon: Users },
-        { href: `/${wid}/tables`, label: 'Tables', icon: Utensils },
+        { href: `/${wid}/dashboard`, label: t('nav.dashboard'), icon: LayoutDashboard },
+        { href: `/${wid}/guests`, label: t('nav.guests'), icon: Users },
+        { href: `/${wid}/tables`, label: t('nav.tables'), icon: Utensils },
       ]
     },
     {
-      label: 'Operations',
+      label: t('nav.operations'),
       items: [
-        { href: `/${wid}/seating`, label: 'Seating Map', icon: MapPin },
-        { href: `/${wid}/search`, label: 'Check In', icon: Search },
-        { href: `/${wid}/reports`, label: 'Reports', icon: FileDown },
+        { href: `/${wid}/seating`, label: t('nav.seating'), icon: MapPin },
+        { href: `/${wid}/search`, label: t('nav.checkin'), icon: Search },
+        { href: `/${wid}/reports`, label: t('nav.reports'), icon: FileDown },
       ]
     },
     {
-      label: 'Management',
+      label: t('nav.management'),
       items: [
-        { href: '/weddings', label: 'Weddings', icon: Calendar },
-        ...(isAdmin ? [{ href: `/${wid}/users`, label: 'Users', icon: Shield }] : []),
+        { href: '/weddings', label: t('nav.weddings'), icon: Calendar },
+        ...(isAdmin ? [{ href: `/${wid}/users`, label: t('nav.users'), icon: Shield }] : []),
       ]
     },
     {
-      label: 'Other',
+      label: t('nav.other'),
       items: [
-        { href: `/${wid}/settings`, label: 'Settings', icon: Settings },
+        { href: `/${wid}/settings`, label: t('nav.settings'), icon: Settings },
       ]
     }
   ]);

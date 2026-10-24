@@ -354,7 +354,7 @@ import Star from 'lucide-svelte/icons/star';
         {:else}
           <div class="top-bar-brand">
             <Monitor class="icon-sm text-red" />
-            <span class="top-bar-wedding-name text-align-left">{weddingName || 'Wedding'}</span>
+            <span class="top-bar-wedding-name text-align-left">{weddingName || t('weddings.fallback')}</span>
           </div>
         {/if}
       </div>
@@ -362,7 +362,7 @@ import Star from 'lucide-svelte/icons/star';
       <!-- Center: always show kiosk title -->
       <div class="top-bar-center">
         {#if selectedGuest}
-          <span class="top-bar-wedding-name">{weddingName || 'Wedding'}</span>
+          <span class="top-bar-wedding-name">{weddingName || t('weddings.fallback')}</span>
         {/if}
       </div>
 
@@ -496,7 +496,7 @@ import Star from 'lucide-svelte/icons/star';
           {:else}
             <div class="hero-icon">囍</div>
           {/if}
-          <h1 class="hero-title">{weddingName || 'Wedding'}</h1>
+          <h1 class="hero-title">{weddingName || t('weddings.fallback')}</h1>
           {#if weddingDate}
             <p class="hero-date">{formatWeddingDate(weddingDate)}</p>
           {/if}
@@ -515,6 +515,8 @@ import Star from 'lucide-svelte/icons/star';
           {/if}
           {#if kioskDescription}
             <p class="hero-subtitle">{kioskDescription}</p>
+          {:else}
+            <p class="hero-subtitle">{t('kiosk.defaultDescription')}</p>
           {/if}
         </div>
 

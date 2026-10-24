@@ -23,8 +23,11 @@ import ExternalLink from 'lucide-svelte/icons/external-link';
   import type { DashboardStats, TableOccupancy, ActivityItem, Guest } from '$lib/types';
   import { getActivityTimestamp } from '$lib/utils/activity';
   import NumberTicker from '$lib/components/ui/NumberTicker.svelte';
+  import { t, locale } from '$lib/i18n';
+  import 'dayjs/locale/zh';
 
   dayjs.extend(relativeTime);
+  $effect(() => { dayjs.locale($locale === 'zh' ? 'zh' : 'en'); });
 
   let occupancy: TableOccupancy[] = $state([]);
   let loading = $state(true);
@@ -54,7 +57,7 @@ import ExternalLink from 'lucide-svelte/icons/external-link';
 
   // Recent activity derived from the SSE-backed guestList store — updates in real time.
   const RSVP_LABELS: Record<string, string> = {
-    confirmed: 'Confirmed', pending: 'Pending', declined: 'Declined', no_response: 'No response',
+    confirmed: 'rsvp.confirmed', pending: 'rsvp.pending', declined: 'rsvp.declined', no_response: 'rsvp.no_response',
   };
   let activity = $derived.by((): ActivityItem[] => {
     const recent = [...$guestList]
@@ -63,7 +66,7 @@ import ExternalLink from 'lucide-svelte/icons/external-link';
     return recent.map((g: Guest) => ({
       id: g.id,
       type: g.checkedIn ? 'check_in' as const : 'rsvp_update' as const,
-      message: g.checkedIn ? 'checked in' : `RSVP: ${RSVP_LABELS[g.rsvp] ?? g.rsvp}`,
+      message: g.checkedIn ? t('dash.checkinMsg') : t('dash.rsvpMsg', { status: t(RSVP_LABELS[g.rsvp] ?? '') }),
       guestName: g.name,
       timestamp: getActivityTimestamp(g),
       icon: g.checkedIn ? 'check-circle' : 'user-check'
@@ -82,7 +85,7 @@ import ExternalLink from 'lucide-svelte/icons/external-link';
       occupancy = await getOccupancy(wid);
       loaded = true;
     } catch (e) {
-      addToast('Failed to load dashboard data', 'error');
+      addToast(t('toast.loadFailed'), 'error');
     } finally {
       loading = false;
     }
@@ -97,11 +100,11 @@ import ExternalLink from 'lucide-svelte/icons/external-link';
   };
 </script>
 
-<svelte:head> <title>{$weddingTitle ? `${$weddingTitle} – Dashboard` : 'Dashboard – WeddingDB'}</title></svelte:head>
+<svelte:head> <title>{$weddingTitle ? `${$weddingTitle} – ${t('nav.dashboard')}` : `${t('nav.dashboard')} – WeddingDB`}</title></svelte:head>
 
 <div class="p-4 sm:p-7 space-y-4 sm:space-y-6 max-w-[1400px]">
   {#if loading}
-    <div class="text-center text-gray-400 py-16 text-sm">Loading dashboard…</div>
+    <div class="text-center text-gray-400 py-16 text-sm">{t('common.loading')}</div>
   {:else if loaded}
     <!-- Kiosk Quick Access -->
     <div class="bg-white/90 backdrop-blur-xl border border-black/[0.06] rounded-2xl p-4 sm:p-5 flex items-center justify-between gap-4 shadow-sm">
@@ -110,8 +113,8 @@ import ExternalLink from 'lucide-svelte/icons/external-link';
           <Monitor class="w-5 h-5 sm:w-6 sm:h-6 text-white" />
         </div>
         <div>
-          <h3 class="text-sm font-bold text-gray-900">Guest Kiosk</h3>
-          <p class="text-xs text-gray-500">Share this with guests to find their seats</p>
+          <h3 class="text-sm font-bold text-gray-900">{t('dash.kiosk')}</h3>
+          <p class="text-xs text-gray-500">{t('dash.kioskShare')}</p>
         </div>
       </div>
       <div class="flex items-center gap-2">
@@ -126,18 +129,18 @@ import ExternalLink from 'lucide-svelte/icons/external-link';
             ta.select();
             document.execCommand('copy');
             document.body.removeChild(ta);
-            addToast('Kiosk link copied!', 'success');
+            addToast(t('toast.linkCopied'), 'success');
           }}
           class="px-3 py-2 sm:px-4 sm:py-2.5 bg-white/90 border border-black/[0.06] hover:bg-gray-50 text-gray-700 rounded-xl text-xs sm:text-sm font-semibold transition-colors flex items-center gap-1.5 min-h-[44px]"
         >
-          <Copy class="w-3.5 h-3.5" /> Copy Link
+          <Copy class="w-3.5 h-3.5" /> {t('dash.copyLink')}
         </button>
         <a
           href="/kiosk/{get(weddingId)}"
           target="_blank"
           class="px-3 py-2 sm:px-4 sm:py-2.5 bg-red hover:bg-red-light text-white rounded-xl text-xs sm:text-sm font-semibold transition-colors flex items-center gap-1.5 min-h-[44px]"
         >
-          <ExternalLink class="w-3.5 h-3.5" /> Open Kiosk
+          <ExternalLink class="w-3.5 h-3.5" /> {t('dash.openKiosk')}
         </a>
       </div>
     </div>
@@ -148,20 +151,20 @@ import ExternalLink from 'lucide-svelte/icons/external-link';
          card padding + icon + gap + number width, so tracks only appear when they fit. -->
     <div class="grid grid-cols-2 sm:grid-cols-[repeat(auto-fit,minmax(12rem,1fr))] gap-4">
       {#each [
-        { label: 'Confirmed', value: stats.confirmedGuests, icon: UserCheck, color: 'bg-red-50 text-red' },
-        { label: 'Pending', value: stats.pendingRsvp, icon: Clock, color: 'bg-gold-50 text-gold-dark' },
-        { label: 'Declined', value: stats.declined, icon: XCircle, color: 'bg-gray-100 text-gray-600' },
-        { label: 'Checked In', value: stats.checkedIn, icon: CheckCircle, color: 'bg-emerald-50 text-emerald-600' },
-        { label: 'Total Guests', value: stats.totalPax, icon: Users, color: 'bg-blue-50 text-blue-600' },
-        { label: 'Check-in Rate', value: stats.checkInRate, icon: TrendingUp, color: 'bg-emerald-50 text-emerald-600' }
+        { key: 'rsvp.confirmed', value: stats.confirmedGuests, icon: UserCheck, color: 'bg-red-50 text-red' },
+        { key: 'rsvp.pending', value: stats.pendingRsvp, icon: Clock, color: 'bg-gold-50 text-gold-dark' },
+        { key: 'rsvp.declined', value: stats.declined, icon: XCircle, color: 'bg-gray-100 text-gray-600' },
+        { key: 'dash.checkedIn', value: stats.checkedIn, icon: CheckCircle, color: 'bg-emerald-50 text-emerald-600' },
+        { key: 'dash.totalGuests', value: stats.totalPax, icon: Users, color: 'bg-blue-50 text-blue-600' },
+        { key: 'dash.checkinRate', value: stats.checkInRate, icon: TrendingUp, color: 'bg-emerald-50 text-emerald-600' }
       ] as card}
         <div class="bg-white/90 backdrop-blur-xl border border-black/[0.06] rounded-2xl p-3 sm:p-5 flex items-start gap-3 sm:gap-4 hover:shadow-md transition-[box-shadow] duration-300" style="transition-timing-function: cubic-bezier(0.2, 0.8, 0.2, 1);">
           <div class="w-10 h-10 sm:w-12 sm:h-12 rounded-xl {card.color} flex items-center justify-center flex-shrink-0">
             <card.icon class="w-5 h-5 sm:w-6 sm:h-6" />
           </div>
           <div class="flex-1 min-w-0">
-            <div class="text-[0.8125rem] text-gray-500 font-medium">{card.label}</div>
-            {#if card.label === 'Check-in Rate'}
+            <div class="text-[0.8125rem] text-gray-500 font-medium">{t(card.key)}</div>
+            {#if card.key === 'dash.checkinRate'}
             <div class="text-[1.75rem] font-extrabold text-gray-900 leading-tight tabular-nums" style="letter-spacing: -0.02em;"><NumberTicker value={card.value} />%</div>
             {:else}
             <div class="text-[1.75rem] font-extrabold text-gray-900 leading-tight tabular-nums" style="letter-spacing: -0.02em;"><NumberTicker value={card.value} /></div>
@@ -174,7 +177,7 @@ import ExternalLink from 'lucide-svelte/icons/external-link';
     <div class="grid grid-cols-1 lg:grid-cols-3 gap-5">
       <!-- RSVP Donut -->
       <div class="bg-white/90 backdrop-blur-xl border border-black/[0.06] rounded-2xl p-6 shadow-sm">
-        <h3 class="text-base font-bold text-gray-800 mb-5" style="letter-spacing: -0.01em;">RSVP Status</h3>
+        <h3 class="text-base font-bold text-gray-800 mb-5" style="letter-spacing: -0.01em;">{t('guest.rsvp')}</h3>
       <div class="relative w-40 h-40 mx-auto mb-5">
         <svg viewBox="0 0 100 100" class="w-full h-full -rotate-90">
           <circle cx="50" cy="50" r={DONUT_R} fill="none" stroke="#E5E7EB" stroke-width="10" />
@@ -198,15 +201,15 @@ import ExternalLink from 'lucide-svelte/icons/external-link';
         </svg>
       </div>
         <div class="flex justify-center gap-5 flex-wrap text-sm">
-          <div class="flex items-center gap-2"><span class="w-2.5 h-2.5 rounded-full bg-emerald-500"></span> Confirmed ({stats.confirmedGuests})</div>
-          <div class="flex items-center gap-2"><span class="w-2.5 h-2.5 rounded-full bg-amber-500"></span> Pending ({stats.pendingRsvp})</div>
-          <div class="flex items-center gap-2"><span class="w-2.5 h-2.5 rounded-full bg-red"></span> Declined ({stats.declined})</div>
+          <div class="flex items-center gap-2"><span class="w-2.5 h-2.5 rounded-full bg-emerald-500"></span> {t('rsvp.confirmed')} ({stats.confirmedGuests})</div>
+          <div class="flex items-center gap-2"><span class="w-2.5 h-2.5 rounded-full bg-amber-500"></span> {t('rsvp.pending')} ({stats.pendingRsvp})</div>
+          <div class="flex items-center gap-2"><span class="w-2.5 h-2.5 rounded-full bg-red"></span> {t('rsvp.declined')} ({stats.declined})</div>
         </div>
       </div>
 
       <!-- Table Occupancy -->
       <div class="bg-white/90 backdrop-blur-xl border border-black/[0.06] rounded-2xl p-6 shadow-sm">
-        <h3 class="text-base font-bold text-gray-800 mb-5" style="letter-spacing: -0.01em;">Table Occupancy</h3>
+        <h3 class="text-base font-bold text-gray-800 mb-5" style="letter-spacing: -0.01em;">{t('dash.tableOccupancy')}</h3>
         <div class="space-y-3">
           {#each occupancy as t}
             <div class="flex items-center gap-3">
@@ -220,14 +223,14 @@ import ExternalLink from 'lucide-svelte/icons/external-link';
               <span class="w-10 text-xs font-semibold text-gray-600">{t.percentage}%</span>
             </div>
           {:else}
-            <p class="text-sm text-gray-400">No tables yet. <a href="/{get(weddingId)}/seating" class="text-red font-medium hover:underline">Set up seating</a>.</p>
+            <p class="text-sm text-gray-400">{t('dash.noTables')} <a href="/{get(weddingId)}/seating" class="text-red font-medium hover:underline">{t('dash.setupSeating')}</a></p>
           {/each}
         </div>
       </div>
 
       <!-- Recent Activity (derived from SSE-backed guestList; updates live) -->
       <div class="bg-white/90 backdrop-blur-xl border border-black/[0.06] rounded-2xl p-6 shadow-sm">
-        <h3 class="text-base font-bold text-gray-800 mb-5" style="letter-spacing: -0.01em;">Recent Activity</h3>
+        <h3 class="text-base font-bold text-gray-800 mb-5" style="letter-spacing: -0.01em;">{t('dash.recentActivity')}</h3>
         <div class="space-y-4">
           {#each activity as item (item.id)}
             {@const Icon = activityIcons[item.icon] || CheckCircle}
@@ -244,12 +247,12 @@ import ExternalLink from 'lucide-svelte/icons/external-link';
               </div>
             </div>
           {:else}
-            <p class="text-sm text-gray-400">No activity yet.</p>
+            <p class="text-sm text-gray-400">{t('dash.noActivity')}</p>
           {/each}
         </div>
       </div>
     </div>
   {:else}
-    <div class="text-center text-gray-400 py-16 text-sm">No data available</div>
+    <div class="text-center text-gray-400 py-16 text-sm">{t('dash.noData')}</div>
   {/if}
 </div>

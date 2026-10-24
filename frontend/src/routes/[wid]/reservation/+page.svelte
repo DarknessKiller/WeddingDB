@@ -14,6 +14,7 @@ import AlertCircle from 'lucide-svelte/icons/alert-circle';
   import { onMount } from 'svelte';
   import type { BanquetTable, Guest, HallElement, RSVPStatus } from '$lib/types';
   import HallMap from '$lib/components/seating/HallMap.svelte';
+  import { t } from '$lib/i18n';
 
   let apiTables = $state<BanquetTable[]>([]);
   let apiGuests = $state<Guest[]>([]);
@@ -53,7 +54,7 @@ import AlertCircle from 'lucide-svelte/icons/alert-circle';
       hallHeight = layout.hallHeight;
       dataLoaded = true;
     } catch (e) {
-      addToast('Failed to load data', 'error');
+      addToast(t('toast.loadFailed'), 'error');
     }
   });
 
@@ -98,9 +99,9 @@ import AlertCircle from 'lucide-svelte/icons/alert-circle';
   }
 
   const schema = z.object({
-    name: z.string().min(1, 'Name is required'),
-    email: z.string().email('Invalid email').optional().or(z.literal('')),
-    pax: z.number().min(1, 'At least 1 guest').max(10, 'Max 10 guests'),
+    name: z.string().min(1, t('reservation.nameRequired')),
+    email: z.string().email(t('reservation.invalidEmail')).optional().or(z.literal('')),
+    pax: z.number().min(1, t('reservation.paxMin')).max(10, t('reservation.paxMax')),
     rsvp: z.enum(['confirmed', 'pending', 'declined']),
     tableId: z.string().nullable().optional(),
     seatNumbers: z.array(z.number()).optional(),
@@ -201,10 +202,10 @@ import AlertCircle from 'lucide-svelte/icons/alert-circle';
     }
     // Custom validation
     if (form.tableId && (!form.seatNumbers || form.seatNumbers.length === 0)) {
-      fieldErrors.seatNumbers = 'Select at least one seat';
+      fieldErrors.seatNumbers = t('reservation.selectSeat');
     }
     if (form.tableId && form.seatNumbers && form.seatNumbers.length < form.pax) {
-      fieldErrors.seatNumbers = `Select ${form.pax} seat(s) for ${form.pax} guest(s)`;
+      fieldErrors.seatNumbers = t('reservation.selectN', { n: form.pax });
     }
     errors = fieldErrors;
     return false;
@@ -238,17 +239,17 @@ import AlertCircle from 'lucide-svelte/icons/alert-circle';
         isVip: form.isVip ?? false,
       });
       
-      addToast(`Reservation for ${form.name} saved successfully`, 'success');
+      addToast(t('reservation.savedToast', { name: form.name }), 'success');
       goto(`/${wid}/guests`);
     } catch (e) {
-      addToast('Failed to save reservation', 'error');
+      addToast(t('reservation.saveFailed'), 'error');
     } finally {
       isSubmitting = false;
     }
   }
 </script>
 
-  <svelte:head> <title>{$weddingTitle ? `${$weddingTitle} – Reservation` : 'Reservation – WeddingDB'}</title></svelte:head>
+  <svelte:head> <title>{$weddingTitle ? `${$weddingTitle} – ${t('reservation.title')}` : `${t('reservation.title')} – WeddingDB`}</title></svelte:head>
 
 
 <div class="flex flex-col sm:flex-row h-full">
@@ -272,15 +273,15 @@ import AlertCircle from 'lucide-svelte/icons/alert-circle';
   <div class="flex-1 sm:w-full sm:max-w-lg bg-white/90 backdrop-blur-xl sm:border-l border-black/[0.06] overflow-y-auto">
     <div class="p-6">
       <div class="mb-6">
-        <h1 class="text-xl font-bold text-gray-900">New Reservation</h1>
-        <p class="text-sm text-gray-500 mt-0.5">Add a new guest reservation</p>
+        <h1 class="text-xl font-bold text-gray-900">{t('reservation.title')}</h1>
+        <p class="text-sm text-gray-500 mt-0.5">{t('reservation.subtitle')}</p>
       </div>
 
       <form onsubmit={(e) => { e.preventDefault(); handleSubmit(); }} class="space-y-5">
         <!-- Name -->
         <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div>
-            <label for="name" class="block text-sm font-semibold text-gray-700 mb-1.5">Full Name *</label>
+            <label for="name" class="block text-sm font-semibold text-gray-700 mb-1.5">{t('auth.fullName')} *</label>
             <input
               id="name"
               type="text"
@@ -288,7 +289,7 @@ import AlertCircle from 'lucide-svelte/icons/alert-circle';
               class={cn("w-full px-4 py-2.5 border rounded-xl text-sm bg-white outline-none transition-all",
                 errors.name ? "border-red focus:ring-2 focus:ring-red/15" : "border-gray-200 focus:border-gold focus:ring-2 focus:ring-gold/15"
               )}
-              placeholder="Guest name"
+              placeholder={t("reservation.guestName")}
             />
             {#if errors.name}
               <p class="mt-1 text-xs text-red flex items-center gap-1"><AlertCircle class="w-3 h-3" />{errors.name}</p>
@@ -299,17 +300,17 @@ import AlertCircle from 'lucide-svelte/icons/alert-circle';
         <!-- Email + Pax -->
         <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div>
-            <label for="email" class="block text-sm font-semibold text-gray-700 mb-1.5">Email</label>
+            <label for="email" class="block text-sm font-semibold text-gray-700 mb-1.5">{t('common.email')}</label>
             <input
               id="email"
               type="email"
               bind:value={form.email}
               class="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm bg-white focus:border-gold focus:ring-2 focus:ring-gold/15 outline-none transition-all"
-              placeholder="Optional"
+              placeholder={t("common.optional")}
             />
           </div>
           <div>
-            <label for="pax" class="block text-sm font-semibold text-gray-700 mb-1.5">Pax *</label>
+            <label for="pax" class="block text-sm font-semibold text-gray-700 mb-1.5">{t('guest.paxLabel')} *</label>
             <input
               id="pax"
               type="number"
@@ -329,18 +330,18 @@ import AlertCircle from 'lucide-svelte/icons/alert-circle';
 
         <!-- Table Assignment -->
         <div>
-          <label for="table" class="block text-sm font-semibold text-gray-700 mb-1.5">Assign Table</label>
+          <label for="table" class="block text-sm font-semibold text-gray-700 mb-1.5">{t('reservation.assignTable')}</label>
           <select
             id="table"
             onchange={(e) => onTableChange(e.currentTarget.value || null)}
             class="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm bg-white focus:border-gold focus:ring-2 focus:ring-gold/15 outline-none transition-all"
           >
-            <option value="">No table (unassigned)</option>
-            {#each apiTables as t}
-              {@const tg = tableGuests[String(t.id)] ?? []}
-              {@const occ = { occupied: tg.reduce((sum, g) => sum + g.pax, 0), capacity: t.capacity }}
-              <option value={t.id} selected={form.tableId === t.id}>
-                {t.name || `Table ${t.id}`} {t.isVip ? '★' : ''} – {occ.occupied}/{occ.capacity} seats
+            <option value="">{t('reservation.noTable')}</option>
+            {#each apiTables as tb}
+              {@const tg = tableGuests[String(tb.id)] ?? []}
+              {@const occ = { occupied: tg.reduce((sum, g) => sum + g.pax, 0), capacity: tb.capacity }}
+              <option value={tb.id} selected={form.tableId === tb.id}>
+                {tb.name || `Table ${tb.id}`} {tb.isVip ? '★' : ''} – {occ.occupied}/{occ.capacity} {t('seat.nSeats', { n: occ.capacity })}
               </option>
             {/each}
           </select>
@@ -349,9 +350,9 @@ import AlertCircle from 'lucide-svelte/icons/alert-circle';
         <!-- Seat info (from map selection) -->
         {#if form.tableId && form.seatNumbers && form.seatNumbers.length > 0}
           <div class="bg-gold-50 border border-gold/30 rounded-xl p-3 text-sm">
-            <span class="font-semibold text-gray-700">Selected seats:</span>
+            <span class="font-semibold text-gray-700">{t('reservation.selectedSeats')}</span>
             <span class="text-gold font-medium">{form.seatNumbers.join(', ')}</span>
-            <span class="text-gray-400 ml-1">({form.seatNumbers.length} of {form.pax})</span>
+            <span class="text-gray-400 ml-1">({form.seatNumbers.length} / {form.pax})</span>
           </div>
         {/if}
 
@@ -362,12 +363,12 @@ import AlertCircle from 'lucide-svelte/icons/alert-circle';
         <!-- RSVP -->
         <div>
           <!-- svelte-ignore a11y_label_has_associated_control -->
-          <label class="block text-sm font-semibold text-gray-700 mb-2">RSVP Status *</label>
+          <label class="block text-sm font-semibold text-gray-700 mb-2">{t('guest.rsvp')} *</label>
           <div class="flex gap-3 flex-wrap sm:flex-nowrap">
             {#each [
-              { value: 'confirmed', label: 'Confirmed', color: 'emerald' },
-              { value: 'pending', label: 'Pending', color: 'gold' },
-              { value: 'declined', label: 'Declined', color: 'red' },
+              { value: 'confirmed', color: 'emerald' },
+              { value: 'pending', color: 'gold' },
+              { value: 'declined', color: 'red' },
             ] as opt}
               <button
                 type="button"
@@ -381,7 +382,7 @@ import AlertCircle from 'lucide-svelte/icons/alert-circle';
                     : "bg-white border-gray-200 text-gray-600 hover:border-gray-300"
                 )}
               >
-                {opt.label}
+                {t('rsvp.' + opt.value)}
               </button>
             {/each}
           </div>
@@ -390,7 +391,7 @@ import AlertCircle from 'lucide-svelte/icons/alert-circle';
         <!-- Dietary -->
         <div>
           <!-- svelte-ignore a11y_label_has_associated_control -->
-          <label class="block text-sm font-semibold text-gray-700 mb-2">Dietary Restrictions</label>
+          <label class="block text-sm font-semibold text-gray-700 mb-2">{t('guest.dietary')}</label>
           <div class="flex flex-wrap gap-2">
             {#each DIETARY_OPTIONS as opt}
               <button
@@ -403,7 +404,7 @@ import AlertCircle from 'lucide-svelte/icons/alert-circle';
                     : "bg-white border-gray-200 text-gray-600 hover:border-gray-300"
                 )}
               >
-                {opt.label}
+                {t(`dietary.${opt.id}`)}
               </button>
             {/each}
           </div>
@@ -415,18 +416,18 @@ import AlertCircle from 'lucide-svelte/icons/alert-circle';
             <input type="checkbox" bind:checked={form.isVip} class="sr-only peer" />
             <div class="w-11 h-6 bg-gray-200 rounded-full peer peer-checked:bg-gold transition-colors after:content-[''] after:absolute after:top-0.5 after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:after:translate-x-full"></div>
           </label>
-          <span class="text-sm font-semibold text-gray-700">VIP Guest</span>
+          <span class="text-sm font-semibold text-gray-700">{t('guest.vip')}</span>
         </div>
 
         <!-- Notes -->
         <div>
-          <label for="notes" class="block text-sm font-semibold text-gray-700 mb-1.5">Notes</label>
+          <label for="notes" class="block text-sm font-semibold text-gray-700 mb-1.5">{t('common.notes')}</label>
           <textarea
             id="notes"
             bind:value={form.notes}
             rows="3"
             class="w-full px-4 py-3 border border-black/[0.08] rounded-xl text-sm bg-white/80 focus:border-red focus:ring-2 focus:ring-red/10 outline-none transition-all resize-none min-h-[80px]"
-            placeholder="Any special requirements or notes..."
+            placeholder={t("reservation.notesPlaceholder")}
           ></textarea>
         </div>
 
@@ -439,13 +440,13 @@ import AlertCircle from 'lucide-svelte/icons/alert-circle';
           >
             {#if isSubmitting}
               <div class="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
-              Saving...
+              {t('common.saving')}
             {:else}
-              <CheckCircle2 class="w-4 h-4" /> Save Reservation
+              <CheckCircle2 class="w-4 h-4" /> {t('reservation.save')}
             {/if}
           </button>
           <button type="button" onclick={() => goto(`/${$weddingId}/guests`)} class="px-6 py-3 border border-black/[0.06] bg-white/90 rounded-xl text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors">
-            Cancel
+            {t('common.cancel')}
           </button>
         </div>
       </form>

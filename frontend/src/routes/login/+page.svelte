@@ -3,6 +3,7 @@
   import { setAuth, addToast } from '$lib/stores';
   import { weddingId, setWeddingId } from '$lib/stores/weddingId';
   import { get } from 'svelte/store';
+  import { t, locale } from '$lib/i18n';
   import Eye from 'lucide-svelte/icons/eye';
 import EyeOff from 'lucide-svelte/icons/eye-off';
 import LogIn from 'lucide-svelte/icons/log-in';
@@ -39,15 +40,15 @@ import ChevronRight from 'lucide-svelte/icons/chevron-right';
         body: JSON.stringify({ name: newName, date: newDate })
       });
       if (!res.ok) {
-        const err = await res.json().catch(() => ({ title: 'Failed to create wedding' }));
-        addToast(err.title || 'Failed to create wedding', 'error');
+        const err = await res.json().catch(() => ({ title: t('toast.createFailed') }));
+        addToast(err.title || t('toast.createFailed'), 'error');
         return;
       }
       const wedding = await res.json();
-      addToast('Wedding created', 'success');
+      addToast(t('toast.weddingCreated'), 'success');
       await selectWedding(wedding.id);
     } catch {
-      addToast('Network error', 'error');
+      addToast(t('toast.netError'), 'error');
     } finally {
       creating = false;
     }
@@ -63,8 +64,8 @@ import ChevronRight from 'lucide-svelte/icons/chevron-right';
         body: JSON.stringify({ email, password })
       });
       if (!res.ok) {
-        const err = await res.json().catch(() => ({ title: 'Login failed' }));
-        addToast(err.title || 'Login failed', 'error');
+        const err = await res.json().catch(() => ({ title: t('toast.loginFailed') }));
+        addToast(err.title || t('toast.loginFailed'), 'error');
         return;
       }
       const data = await res.json();
@@ -87,7 +88,7 @@ import ChevronRight from 'lucide-svelte/icons/chevron-right';
           step = 'select';
           return;
         }
-        addToast('No weddings assigned to your account', 'error');
+        addToast(t('toast.noWeddings'), 'error');
         return;
       }
       if (weddings.length === 1) {
@@ -96,7 +97,7 @@ import ChevronRight from 'lucide-svelte/icons/chevron-right';
       }
       step = 'select';
     } catch (err) {
-      addToast('Network error', 'error');
+      addToast(t('toast.netError'), 'error');
     } finally {
       loading = false;
     }
@@ -114,24 +115,24 @@ import ChevronRight from 'lucide-svelte/icons/chevron-right';
         body: JSON.stringify({ weddingId: weddingIdValue })
       });
       if (!res.ok) {
-        const err = await res.json().catch(() => ({ title: 'Failed to select wedding' }));
-        addToast(err.title || 'Failed to select wedding', 'error');
+        const err = await res.json().catch(() => ({ title: t('toast.selectFailed') }));
+        addToast(err.title || t('toast.selectFailed'), 'error');
         return;
       }
       const data = await res.json();
       setAuth(data.accessToken, loginRefreshToken, loginRole, loginName);
       setWeddingId(weddingIdValue);
-      addToast('Login successful', 'success');
+      addToast(t('toast.loginOk'), 'success');
       goto(`/${weddingIdValue}/dashboard`, { replaceState: true });
     } catch (err) {
-      addToast('Network error', 'error');
+      addToast(t('toast.netError'), 'error');
     } finally {
       loading = false;
     }
   }
 </script>
 
-<svelte:head><title>Sign In – WeddingDB</title></svelte:head>
+<svelte:head><title>{t('auth.title')} – WeddingDB</title></svelte:head>
 
 <div class="auth-page">
   <div class="auth-card">
@@ -139,13 +140,13 @@ import ChevronRight from 'lucide-svelte/icons/chevron-right';
     <div class="auth-hero">
       <div class="auth-logo">囍</div>
       <h1 class="auth-title">WeddingDB</h1>
-      <p class="auth-subtitle">Sign in to manage your wedding</p>
+      <p class="auth-subtitle">{t('auth.subtitle')}</p>
     </div>
 
     {#if step === 'login'}
       <form onsubmit={handleLogin} class="auth-form">
         <div class="form-field">
-          <label for="email" class="form-label">Email</label>
+          <label for="email" class="form-label">{t('common.email')}</label>
           <input
             id="email"
             type="email"
@@ -157,7 +158,7 @@ import ChevronRight from 'lucide-svelte/icons/chevron-right';
         </div>
 
         <div class="form-field">
-          <label for="password" class="form-label">Password</label>
+          <label for="password" class="form-label">{t('auth.password')}</label>
           <div class="password-wrap">
             <input
               id="password"
@@ -165,7 +166,7 @@ import ChevronRight from 'lucide-svelte/icons/chevron-right';
               bind:value={password}
               required
               class="form-input password-input"
-              placeholder="Enter password"
+              placeholder={t("auth.passwordPlaceholder")}
             />
             <button
               type="button"
@@ -191,12 +192,12 @@ import ChevronRight from 'lucide-svelte/icons/chevron-right';
           {:else}
             <LogIn size={18} />
           {/if}
-          {loading ? 'Signing in...' : 'Sign in'}
+          {loading ? t('auth.signingIn') : t('auth.signin')}
         </button>
       </form>
 
       <p class="auth-footer">
-        Need an account? <a href="/register" class="auth-link">Register</a>
+        {t('auth.noAccount')} <a href="/register" class="auth-link">{t('auth.register')}</a>
       </p>
     {:else}
       <div class="auth-form">
@@ -204,32 +205,32 @@ import ChevronRight from 'lucide-svelte/icons/chevron-right';
           {#if !showCreate}
             <div class="empty-state">
               <Calendar class="empty-icon" />
-              <p class="empty-text">No weddings yet. Create your first wedding to get started.</p>
+              <p class="empty-text">{t('auth.emptyWeddings')}</p>
               <button onclick={() => showCreate = true} class="auth-submit">
-                Create Wedding
+                {t('auth.createWedding')}
               </button>
             </div>
           {:else}
-            <h2 class="section-title">New Wedding</h2>
+            <h2 class="section-title">{t('auth.newWedding')}</h2>
             <div class="form-grid">
               <div class="form-field">
-                <label for="wedding-name" class="form-label">Wedding Name</label>
-                <input id="wedding-name" type="text" bind:value={newName} placeholder="e.g. John & Jane's Wedding" class="form-input" />
+                <label for="wedding-name" class="form-label">{t('weddings.name')}</label>
+                <input id="wedding-name" type="text" bind:value={newName} placeholder={t("auth.namePlaceholder")} class="form-input" />
               </div>
               <div class="form-field">
-                <label for="wedding-date" class="form-label">Date</label>
+                <label for="wedding-date" class="form-label">{t('common.date')}</label>
                 <input id="wedding-date" type="date" bind:value={newDate} class="form-input" />
               </div>
               <div class="form-row">
                 <button onclick={handleCreateWedding} disabled={creating || !newName || !newDate} class="auth-submit">
-                  {creating ? 'Creating...' : 'Create & Continue'}
+                  {creating ? t('auth.creating') : t('auth.createContinue')}
                 </button>
-                <button onclick={() => showCreate = false} class="auth-cancel">Cancel</button>
+                <button onclick={() => showCreate = false} class="auth-cancel">{t('common.cancel')}</button>
               </div>
             </div>
           {/if}
         {:else}
-          <h2 class="section-title">Select a wedding</h2>
+          <h2 class="section-title">{t('auth.selectWedding')}</h2>
           <div class="wedding-list">
             {#each availableWeddings as w}
               <button
@@ -242,7 +243,7 @@ import ChevronRight from 'lucide-svelte/icons/chevron-right';
                 </div>
                 <div class="wedding-info">
                   <div class="wedding-name">{w.name}</div>
-                  <div class="wedding-date">{w.date ? new Date(w.date).toLocaleDateString() : 'No date'}</div>
+                  <div class="wedding-date">{w.date ? new Date(w.date).toLocaleDateString($locale === 'zh' ? 'zh-CN' : 'en-US') : t('weddings.noDate')}</div>
                 </div>
                 <ChevronRight class="wedding-chevron" />
               </button>
