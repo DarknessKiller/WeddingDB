@@ -1,4 +1,5 @@
 <script lang="ts">
+  import LangToggle from '$lib/components/ui/LangToggle.svelte';
   import { page } from '$app/state';
   import { sidebarCollapsed, getAuth, clearAuth } from '$lib/stores';
   import { setWeddingId } from '$lib/stores/weddingId';
@@ -60,6 +61,8 @@ import LogOut from 'lucide-svelte/icons/log-out';
   <span class="header-title">{pageTitle}</span>
 
   <div class="header-spacer"></div>
+
+  <LangToggle />
 
   <div class="header-user">
     <div class="header-user-avatar">{initials}</div>

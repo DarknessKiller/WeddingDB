@@ -19,6 +19,7 @@ import Map from 'lucide-svelte/icons/map';
   import { defaultSlot } from '$lib/utils/layout';
   import { weddingId } from '$lib/stores/weddingId';
   import { get } from 'svelte/store';
+  import { t } from '$lib/i18n';
   import type { BanquetTable, TableOccupancy, HallElement, HallLayoutData } from '$lib/types';
 
   type TableCreateData = Omit<BanquetTable, 'id'>;
@@ -156,7 +157,7 @@ import Map from 'lucide-svelte/icons/map';
     try {
       const pos = defaultSlot(tables);
       const data: TableCreateData = {
-        name: formName || `Table ${(tables ?? []).length + 1}`,
+        name: formName || t('tables.autoName', { n: (tables ?? []).length + 1 }),
         capacity: formCapacity,
         x: editingTable ? editingTable.x : pos.x,
         y: editingTable ? editingTable.y : pos.y,
@@ -166,15 +167,15 @@ import Map from 'lucide-svelte/icons/map';
       if (editingTable) {
         const updated = await updateTable(wid, editingTable.id, data);
         tables = tables.map(t => t.id === editingTable!.id ? updated : t);
-        addToast('Table updated', 'success');
+        addToast(t('toast.tableUpdated'), 'success');
       } else {
         const created = await createTable(wid, data);
         tables = [...tables, created];
-        addToast('Table created', 'success');
+        addToast(t('toast.tableCreated'), 'success');
       }
       closeDrawer();
     } catch (e: any) {
-      addToast(e.message ?? 'Save failed', 'error');
+      addToast(e.message ?? t('toast.saveFailed'), 'error');
     } finally {
       saving = false;
     }
@@ -197,7 +198,7 @@ import Map from 'lucide-svelte/icons/map';
     try {
       await deleteTable(wid, table.id);
       tables = tables.filter(t => t.id !== table.id);
-      addToast(`Table ${table.name} deleted`, 'info');
+      addToast(t('toast.tableDeleted', { name: table.name }), 'info');
     } catch (e: any) {
       addToast(e.message ?? 'Delete failed', 'error');
     }
@@ -225,11 +226,11 @@ import Map from 'lucide-svelte/icons/map';
         tables: editTables.map(t => ({ id: t.id, x: t.x, y: t.y, degree: t.degree, capacity: t.capacity, isVip: t.isVip })),
         elements: editElements,
       });
-      addToast('Layout saved', 'success');
+      addToast(t('toast.layoutSaved'), 'success');
       editMode = false;
       await loadData();
     } catch (e: any) {
-      addToast(e.message ?? 'Save failed', 'error');
+      addToast(e.message ?? t('toast.saveFailed'), 'error');
     }
   }
 
@@ -241,33 +242,33 @@ import Map from 'lucide-svelte/icons/map';
     try {
       await loadData();
     } catch (e: any) {
-      tablesError = e.message ?? 'Failed to load tables';
-      addToast(tablesError ?? 'Failed to load tables', 'error');
+      tablesError = e.message ?? t('toast.loadTablesFailed');
+      addToast(tablesError ?? t('toast.loadTablesFailed'), 'error');
     } finally {
       loading = false;
     }
   });
 </script>
 
-<svelte:head> <title>{$weddingTitle ? `${$weddingTitle} – Tables` : 'Tables – WeddingDB'}</title></svelte:head>
+<svelte:head> <title>{$weddingTitle ? `${$weddingTitle} – ${t('nav.tables')}` : `${t('nav.tables')} – WeddingDB`}</title></svelte:head>
 
 <!-- svelte-ignore a11y_no_static_element_interactions -->
 <!-- svelte-ignore a11y_click_events_have_key_events -->
 <div class="p-4 sm:p-7 max-w-[1400px]" onclick={() => contextMenu = null}>
   <div class="flex items-center justify-between mb-6">
     <div>
-      <h1 class="text-xl font-bold text-gray-900" style="letter-spacing: -0.02em;">Banquet Tables</h1>
-      <p class="text-sm text-gray-500 mt-0.5">Overview of all {(tables ?? []).length} tables</p>
+      <h1 class="text-xl font-bold text-gray-900" style="letter-spacing: -0.02em;">{t('tables.title')}</h1>
+      <p class="text-sm text-gray-500 mt-0.5">{t('tables.overview', { n: (tables ?? []).length })}</p>
     </div>
     <div class="flex items-center gap-1.5 sm:gap-2">
       <button onclick={() => editMode = !editMode} class="px-2.5 sm:px-4 py-1.5 sm:py-2.5 border border-black/[0.06] bg-white/90 rounded-xl text-xs sm:text-sm font-semibold hover:bg-gray-50 transition-colors flex items-center gap-1.5 sm:gap-2">
-        <Map class="w-3.5 h-3.5 sm:w-4 sm:h-4" /> <span class="hidden sm:inline">{editMode ? 'Exit Editor' : 'Edit Layout'}</span><span class="sm:hidden">{editMode ? 'Exit' : 'Layout'}</span>
+        <Map class="w-3.5 h-3.5 sm:w-4 sm:h-4" /> <span class="hidden sm:inline">{editMode ? t('tables.exitEditor') : t('tables.editLayout')}</span><span class="sm:hidden">{editMode ? t('tables.exitShort') : t('tables.layoutShort')}</span>
       </button>
       <button onclick={openCreate} class="px-2.5 sm:px-4 py-1.5 sm:py-2.5 bg-red text-white rounded-xl text-xs sm:text-sm font-semibold hover:bg-red-light transition-colors flex items-center gap-1.5 sm:gap-2">
-        <Plus class="w-3.5 h-3.5 sm:w-4 sm:h-4" /> <span class="hidden sm:inline">Add Table</span><span class="sm:hidden">Add</span>
+        <Plus class="w-3.5 h-3.5 sm:w-4 sm:h-4" /> <span class="hidden sm:inline">{t('tables.add')}</span><span class="sm:hidden">{t('tables.add')}</span>
       </button>
       <button onclick={() => goto(`/${$weddingId}/seating`)} class="px-2.5 sm:px-4 py-1.5 sm:py-2.5 border border-black/[0.06] bg-white/90 rounded-xl text-xs sm:text-sm font-semibold hover:bg-gray-50 transition-colors flex items-center gap-1.5 sm:gap-2">
-        <Users class="w-3.5 h-3.5 sm:w-4 sm:h-4" /> <span class="hidden sm:inline">Manage Seating</span><span class="sm:hidden">Seating</span>
+        <Users class="w-3.5 h-3.5 sm:w-4 sm:h-4" /> <span class="hidden sm:inline">{t('tables.manageSeating')}</span><span class="sm:hidden">{t('tables.manageSeating')}</span>
       </button>
     </div>
   </div>
@@ -304,10 +305,10 @@ import Map from 'lucide-svelte/icons/map';
       <div class="w-16 h-16 bg-red-50 rounded-full flex items-center justify-center mb-4">
         <AlertCircle class="w-8 h-8 text-red" />
       </div>
-      <p class="text-red font-medium">Failed to load tables</p>
+      <p class="text-red font-medium">{t('toast.loadTablesFailed')}</p>
       <p class="text-sm text-gray-500 mt-1 mb-4">{tablesError}</p>
       <button onclick={() => location.reload()} class="px-4 py-2 bg-red text-white rounded-xl text-sm font-semibold hover:bg-red-light transition-colors">
-        Retry
+        {t('common.retry')}
       </button>
     </div>
   {:else if (tables ?? []).length === 0}
@@ -315,10 +316,10 @@ import Map from 'lucide-svelte/icons/map';
       <div class="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mb-4">
         <Users class="w-8 h-8 text-gray-400" />
       </div>
-      <p class="text-gray-500 font-medium">No tables yet</p>
-      <p class="text-sm text-gray-400 mt-1 mb-4">Add your first banquet table to get started.</p>
+      <p class="text-gray-500 font-medium">{t('tables.none')}</p>
+      <p class="text-sm text-gray-400 mt-1 mb-4">{t('tables.first')}</p>
       <button onclick={openCreate} class="px-4 py-2.5 bg-red text-white rounded-xl text-sm font-semibold hover:bg-red-light transition-colors flex items-center gap-2">
-        <Plus class="w-4 h-4" /> Add Table
+        <Plus class="w-4 h-4" /> {t('tables.add')}
       </button>
     </div>
   {:else}
@@ -341,7 +342,7 @@ import Map from 'lucide-svelte/icons/map';
           <button
             onclick={(e) => { e.stopPropagation(); handleCtx(e, table); }}
             class="absolute top-2 right-2 p-1.5 rounded-lg opacity-0 group-hover:opacity-100 hover:bg-gray-100 transition-all"
-            aria-label="Table options"
+            aria-label={t("tables.options")}
           >
             <MoreVertical class="w-4 h-4 text-gray-400" />
           </button>
@@ -370,7 +371,7 @@ import Map from 'lucide-svelte/icons/map';
 
           <div class="text-center">
             <div class="font-semibold text-xs sm:text-sm text-gray-800">{table.name || `Table ${table.id}`}</div>
-            <div class="text-[10px] sm:text-xs text-gray-500">{occ.occupied}/{table.capacity} seats</div>
+            <div class="text-[10px] sm:text-xs text-gray-500">{occ.occupied}/{table.capacity} · {t('seat.nSeats', { n: table.capacity })}</div>
           </div>
 
           {#if table.isVip}
@@ -393,21 +394,21 @@ import Map from 'lucide-svelte/icons/map';
     class="fixed z-[600] bg-white/95 backdrop-blur-xl border border-black/[0.06] rounded-xl shadow-xl py-1.5 min-w-[180px]"
     style={getMenuStyle(contextMenu.x, contextMenu.y)}>
     <button class="w-full flex items-center gap-2.5 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50" onclick={() => openEdit(contextMenu!.table)}>
-      <Pencil class="w-4 h-4" /> Edit
+      <Pencil class="w-4 h-4" /> {t('common.edit')}
     </button>
     <hr class="my-1 border-gray-100" />
     <button class="w-full flex items-center gap-2.5 px-4 py-2 text-sm text-red hover:bg-red-50" onclick={() => requestDelete(contextMenu!.table)}>
-      <Trash2 class="w-4 h-4" /> Delete
+      <Trash2 class="w-4 h-4" /> {t('common.delete')}
     </button>
   </div>
 {/if}
 
 <ConfirmDialog
   open={showDeleteConfirm}
-  title="Delete Table"
-  message={`Delete table ${deleteTarget?.name ?? ''}? Guests seated at this table will be unassigned. This cannot be undone.`}
-  confirmLabel="Delete"
-  cancelLabel="Cancel"
+  title={t('tables.delete')}
+  message={t('tables.deleteConfirm', { name: deleteTarget?.name ?? '' })}
+  confirmLabel={t("common.delete")}
+  cancelLabel={t("common.cancel")}
   variant="danger"
   onConfirm={confirmDelete}
   onCancel={() => { showDeleteConfirm = false; deleteTarget = null; }}
@@ -416,7 +417,7 @@ import Map from 'lucide-svelte/icons/map';
 <!-- Add/Edit Drawer -->
 {#if showDrawer}
   <TableDrawer
-    title={editingTable ? 'Edit Table' : 'Add Table'}
+    title={editingTable ? t('tables.edit') : t('tables.add')}
     bind:name={formName}
     bind:capacity={formCapacity}
     bind:isVip={formVip}

@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { weddingTitle } from '$lib/stores/weddingTitle';
-  import { addToast, showSeatNumbers, setShowSeatNumbers } from '$lib/stores';
+  import { addToast, showSeatNumbers, setShowSeatNumbers, kioskIdleReset, setKioskIdleReset } from '$lib/stores';
   import { weddingId } from '$lib/stores/weddingId';
   import { get } from 'svelte/store';
   import { getWedding, updateKioskSettings, type Wedding, type KioskSettings } from '$lib/api/weddings';
@@ -16,6 +16,7 @@ import FileText from 'lucide-svelte/icons/file-text';
 import Upload from 'lucide-svelte/icons/upload';
 import MapPin from 'lucide-svelte/icons/map-pin';
   import ImageEditor from '$lib/components/ui/ImageEditor.svelte';
+  import { t } from '$lib/i18n';
   import { uploadFile } from '$lib/api/client';
 
   let wedding = $state<Wedding | null>(null);
@@ -56,9 +57,10 @@ import MapPin from 'lucide-svelte/icons/map-pin';
         if (wedding.kioskLogoPosX) kioskLogoPosX = wedding.kioskLogoPosX;
         if (wedding.kioskLogoPosY) kioskLogoPosY = wedding.kioskLogoPosY;
         setShowSeatNumbers(wedding.id, wedding.showSeatNumbers ?? false);
+        setKioskIdleReset(wedding.id, wedding.kioskIdleReset ?? false);
       }
     } catch {
-      addToast('Failed to load settings', 'error');
+      addToast(t('toast.loadFailed'), 'error');
     } finally {
       loading = false;
     }
@@ -69,7 +71,7 @@ import MapPin from 'lucide-svelte/icons/map-pin';
       venueName, venueAddress, kioskDescription, kioskLogoUrl,
       kioskBackgroundUrl, kioskBackgroundBlur, kioskBackgroundSize,
       kioskBackgroundPosX, kioskBackgroundPosY, kioskLogoSize,
-      kioskLogoPosX, kioskLogoPosY, showSeatNumbers: $showSeatNumbers,
+      kioskLogoPosX, kioskLogoPosY, showSeatNumbers: $showSeatNumbers, kioskIdleReset: $kioskIdleReset,
     };
   }
 
@@ -81,14 +83,26 @@ import MapPin from 'lucide-svelte/icons/map-pin';
       await updateKioskSettings(wedding.id, { ...kioskPayload(), showSeatNumbers: next });
     } catch (e: any) {
       setShowSeatNumbers(wedding.id, !next);
-      addToast(e.message ?? 'Failed to save', 'error');
+      addToast(e.message ?? t('toast.saveFailed'), 'error');
+    }
+  }
+  async function toggleIdleReset() {
+    if (!wedding) return;
+    const next = !$kioskIdleReset;
+    setKioskIdleReset(wedding.id, next);
+    try {
+      await updateKioskSettings(wedding.id, { ...kioskPayload(), kioskIdleReset: next });
+      addToast(t('toast.settingsSaved'), 'success');
+    } catch {
+      setKioskIdleReset(wedding.id, !next);
+      addToast(t('toast.saveFailed'), 'error');
     }
   }
   async function handleSave() {
     if (!wedding) return;
     const name = weddingNameEdit.trim();
     if (!name) {
-      addToast('Wedding name is required', 'error');
+      addToast(t('settings.nameRequired'), 'error');
       return;
     }
     saving = true;
@@ -100,9 +114,9 @@ import MapPin from 'lucide-svelte/icons/map-pin';
       wedding = updated;
       setShowSeatNumbers(updated.id, updated.showSeatNumbers ?? false);
       weddingNameEdit = updated.name;
-      addToast('Kiosk settings saved', 'success');
+      addToast(t('toast.settingsSaved'), 'success');
     } catch (e: any) {
-      addToast(e.message ?? 'Failed to save', 'error');
+      addToast(e.message ?? t('toast.saveFailed'), 'error');
     } finally {
       saving = false;
     }
@@ -113,18 +127,18 @@ import MapPin from 'lucide-svelte/icons/map-pin';
     const url = `${window.location.origin}/kiosk/${wedding.id}`;
     try {
       await navigator.clipboard.writeText(url);
-      addToast('Kiosk link copied!', 'success');
+      addToast(t('toast.linkCopied'), 'success');
     } catch {
-      addToast('Failed to copy', 'error');
+      addToast(t('toast.copyFailed'), 'error');
     }
   }
 </script>
 
-<svelte:head> <title>{$weddingTitle ? `${$weddingTitle} – Settings` : 'Settings – WeddingDB'}</title></svelte:head>
+<svelte:head> <title>{$weddingTitle ? `${$weddingTitle} – ${t('nav.settings')}` : `${t('nav.settings')} – WeddingDB`}</title></svelte:head>
 
 
 <div class="p-4 sm:p-7 max-w-2xl mx-auto">
-  <h1 class="text-xl font-bold text-gray-900 mb-6" style="letter-spacing: -0.02em;">Settings</h1>
+  <h1 class="text-xl font-bold text-gray-900 mb-6" style="letter-spacing: -0.02em;">{t('nav.settings')}</h1>
 
   {#if loading}
     <div class="space-y-4">
@@ -146,17 +160,17 @@ import MapPin from 'lucide-svelte/icons/map-pin';
           <div class="flex items-center gap-3">
             <div class="w-10 h-10 rounded-xl bg-red flex items-center justify-center text-white"><Monitor class="w-5 h-5" /></div>
             <div>
-              <h3 class="font-semibold text-gray-900 text-sm">Kiosk Mode</h3>
-              <p class="text-xs text-gray-500">Guest seat-finding kiosk screen</p>
+              <h3 class="font-semibold text-gray-900 text-sm">{t('settings.kioskMode')}</h3>
+              <p class="text-xs text-gray-500">{t('settings.kioskModeDesc')}</p>
             </div>
           </div>
           <div class="flex gap-2">
             <button onclick={copyKioskLink} class="px-3 py-2 text-xs font-semibold bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-xl transition-colors flex items-center gap-1.5">
-              <Copy class="w-3.5 h-3.5" /> Copy Link
+              <Copy class="w-3.5 h-3.5" /> {t('dash.copyLink')}
             </button>
             <a href="/kiosk/{wedding ? wedding.id : ''}" target="_blank"
               class="px-3 py-2 text-xs font-semibold bg-red text-white rounded-xl hover:bg-red-light transition-colors flex items-center gap-1.5">
-              <ExternalLink class="w-3.5 h-3.5" /> Preview
+              <ExternalLink class="w-3.5 h-3.5" /> {t('settings.preview')}
             </a>
           </div>
         </div>
@@ -164,63 +178,64 @@ import MapPin from 'lucide-svelte/icons/map-pin';
 
       <!-- Kiosk Customization -->
       <div class="bg-white/90 backdrop-blur-xl border border-black/[0.06] rounded-2xl p-5 sm:p-6 shadow-sm">
-        <h3 class="font-bold text-gray-900 mb-5" style="letter-spacing: -0.01em;">Kiosk Display Settings</h3>
+        <h3 class="font-bold text-gray-900 mb-5" style="letter-spacing: -0.01em;">{t('settings.displayTitle')}</h3>
 
         <div class="space-y-5">
           <!-- Wedding Name -->
           <div>
             <label for="wedding-name" class="flex items-center gap-1.5 text-sm font-semibold text-gray-700 mb-1.5">
-              <Type class="w-4 h-4 text-gray-400" /> Wedding Name
+              <Type class="w-4 h-4 text-gray-400" /> {t('weddings.name')}
             </label>
             <input id="wedding-name" type="text" bind:value={weddingNameEdit}
-              placeholder="e.g. Sarah & John's Wedding" required maxlength="255"
+              placeholder={t("auth.namePlaceholder")} required maxlength="255"
               class="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm bg-white focus:border-red focus:ring-2 focus:ring-red/15 outline-none transition-all" />
-            <p class="text-xs text-gray-400 mt-1">Name displayed in the kiosk header</p>
+            <p class="text-xs text-gray-400 mt-1">{t('settings.nameHint')}</p>
           </div>
 
           <!-- Venue Name -->
           <div>
             <label for="venue-name" class="flex items-center gap-1.5 text-sm font-semibold text-gray-700 mb-1.5">
-              <MapPin class="w-4 h-4 text-gray-400" /> Venue Name
+              <MapPin class="w-4 h-4 text-gray-400" /> {t('settings.venueName')}
             </label>
             <input id="venue-name" type="text" bind:value={venueName}
-              placeholder="e.g. Grand Ballroom" maxlength="255"
+              placeholder={t("settings.venueNamePh")} maxlength="255"
               class="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm bg-white focus:border-red focus:ring-2 focus:ring-red/15 outline-none transition-all" />
-            <p class="text-xs text-gray-400 mt-1">Name of the venue or hall</p>
+            <p class="text-xs text-gray-400 mt-1">{t('settings.venueNameHint')}</p>
           </div>
 
           <!-- Venue Address -->
           <div>
             <label for="venue-address" class="flex items-center gap-1.5 text-sm font-semibold text-gray-700 mb-1.5">
-              <MapPin class="w-4 h-4 text-gray-400" /> Venue Address
+              <MapPin class="w-4 h-4 text-gray-400" /> {t('settings.venueAddress')}
             </label>
             <input id="venue-address" type="text" bind:value={venueAddress}
-              placeholder="e.g. 123 Main Street, City" maxlength="500"
+              placeholder={t("settings.venueAddressPh")} maxlength="500"
               class="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm bg-white focus:border-red focus:ring-2 focus:ring-red/15 outline-none transition-all" />
-            <p class="text-xs text-gray-400 mt-1">Address shown on the kiosk screen</p>
+            <p class="text-xs text-gray-400 mt-1">{t('settings.venueAddressHint')}</p>
           </div>
 
           <!-- Description -->
           <div>
             <label for="kiosk-desc" class="flex items-center gap-1.5 text-sm font-semibold text-gray-700 mb-1.5">
-              <FileText class="w-4 h-4 text-gray-400" /> Description
+              <FileText class="w-4 h-4 text-gray-400" /> {t('settings.desc')}
             </label>
             <textarea id="kiosk-desc" bind:value={kioskDescription} rows="2"
-              placeholder="e.g. Enter your name to find your table and seat"
+              placeholder={t("kiosk.defaultDescription")}
               class="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm bg-white focus:border-red focus:ring-2 focus:ring-red/15 outline-none transition-all resize-none"></textarea>
+            <p class="text-xs text-gray-400 mt-1">{t('settings.descHostNote')}</p>
           </div>
 
           <!-- Logo -->
           <div>
             <!-- svelte-ignore a11y_label_has_associated_control -->
-            <label class="text-sm font-semibold text-gray-700 mb-1.5 block">Logo</label>
+            <label class="text-sm font-semibold text-gray-700 mb-1.5 block">{t('settings.logo')}</label>
             <ImageEditor
               bind:value={kioskLogoUrl}
               bind:size={kioskLogoSize}
               bind:posX={kioskLogoPosX}
               bind:posY={kioskLogoPosY}
               bind:blur={kioskLogoBlur}
-              label="Logo"
+              label={t("settings.logo")}
               aspect="square"
             />
           </div>
@@ -228,14 +243,14 @@ import MapPin from 'lucide-svelte/icons/map-pin';
           <!-- Background -->
           <div>
             <!-- svelte-ignore a11y_label_has_associated_control -->
-            <label class="text-sm font-semibold text-gray-700 mb-1.5 block">Background Image</label>
+            <label class="text-sm font-semibold text-gray-700 mb-1.5 block">{t('settings.background')}</label>
             <ImageEditor
               bind:value={kioskBackgroundUrl}
               bind:size={kioskBackgroundSize}
               bind:posX={kioskBackgroundPosX}
               bind:posY={kioskBackgroundPosY}
               bind:blur={kioskBackgroundBlur}
-              label="Background"
+              label={t("settings.background")}
             />
           </div>
         </div>
@@ -245,9 +260,9 @@ import MapPin from 'lucide-svelte/icons/map-pin';
           <button onclick={handleSave} disabled={saving}
             class="px-5 py-2.5 bg-red text-white rounded-xl text-sm font-semibold hover:bg-red-light transition-colors disabled:opacity-50 flex items-center gap-2">
             {#if saving}
-              <Loader2 class="w-4 h-4 text-white animate-spin" /> Saving...
+              <Loader2 class="w-4 h-4 text-white animate-spin" /> {t('common.saving')}
             {:else}
-              <Save class="w-4 h-4" /> Save Settings
+              <Save class="w-4 h-4" /> {t('settings.saveSettings')}
             {/if}
           </button>
         </div>
@@ -257,15 +272,32 @@ import MapPin from 'lucide-svelte/icons/map-pin';
       <div class="bg-white/90 backdrop-blur-xl border border-black/[0.06] rounded-2xl p-5 shadow-sm">
         <div class="flex items-center justify-between py-1">
           <div>
-            <p class="text-sm font-semibold text-gray-900">Show Seat Numbers</p>
-            <p class="text-xs text-gray-500">Display individual seat numbers on the kiosk, check-in, and admin screens</p>
+            <p class="text-sm font-semibold text-gray-900">{t('settings.seatNumbers')}</p>
+            <p class="text-xs text-gray-500">{t('settings.seatNumbersHint')}</p>
           </div>
           <button onclick={toggleSeatNumbers}
-            aria-label="Toggle seat numbers"
+            aria-label={t("settings.seatNumbers")}
             role="switch"
             aria-checked={$showSeatNumbers}
             class="relative inline-flex h-6 w-11 items-center rounded-full transition-colors {$showSeatNumbers ? 'bg-deep-red' : 'bg-gray-200'}">
             <span class="inline-block h-4 w-4 transform rounded-full bg-white transition-transform {$showSeatNumbers ? 'translate-x-6' : 'translate-x-1'}"></span>
+          </button>
+        </div>
+      </div>
+
+      <!-- Idle Reset Toggle -->
+      <div class="bg-white/90 backdrop-blur-xl border border-black/[0.06] rounded-2xl p-5 shadow-sm">
+        <div class="flex items-center justify-between py-1">
+          <div>
+            <p class="text-sm font-semibold text-gray-900">{t('settings.idleReset')}</p>
+            <p class="text-xs text-gray-500">{t('settings.idleResetHint')}</p>
+          </div>
+          <button onclick={toggleIdleReset}
+            aria-label={t("settings.idleReset")}
+            role="switch"
+            aria-checked={$kioskIdleReset}
+            class="relative inline-flex h-6 w-11 items-center rounded-full transition-colors {$kioskIdleReset ? 'bg-deep-red' : 'bg-gray-200'}">
+            <span class="inline-block h-4 w-4 transform rounded-full bg-white transition-transform {$kioskIdleReset ? 'translate-x-6' : 'translate-x-1'}"></span>
           </button>
         </div>
       </div>

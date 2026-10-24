@@ -1,5 +1,6 @@
 <script lang="ts">
   import type { RSVPStatus } from '$lib/types';
+  import { t } from '$lib/i18n';
 
   let { status }: { status: RSVPStatus } = $props();
 
@@ -11,16 +12,16 @@
   };
 
   const labels: Record<string, string> = {
-    confirmed: 'Confirmed',
-    pending: 'Pending',
-    declined: 'Declined',
-    no_response: 'No Response',
+    confirmed: 'rsvp.confirmed',
+    pending: 'rsvp.pending',
+    declined: 'rsvp.declined',
+    no_response: 'rsvp.no_response',
   };
 </script>
 
 <span class="badge {styles[status]}">
   <span class="badge-dot"></span>
-  {labels[status]}
+  {t(labels[status])}
 </span>
 
 <style>

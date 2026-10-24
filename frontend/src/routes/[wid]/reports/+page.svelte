@@ -7,6 +7,7 @@
 import FileSpreadsheet from 'lucide-svelte/icons/file-spreadsheet';
 import FileText from 'lucide-svelte/icons/file-text';
 import Loader2 from 'lucide-svelte/icons/loader-2';
+  import { t } from '$lib/i18n';
 
   let exporting = $state<'csv' | 'xlsx' | null>(null);
   let error = $state('');
@@ -17,7 +18,7 @@ import Loader2 from 'lucide-svelte/icons/loader-2';
     try {
       await exportAngpaoReport($weddingId, format);
     } catch (e: any) {
-      error = e.message ?? 'Export failed';
+      error = e.message ?? t('toast.exportFailed');
     } finally {
       exporting = null;
     }
@@ -25,11 +26,11 @@ import Loader2 from 'lucide-svelte/icons/loader-2';
 </script>
 
 <svelte:head>
-  <title>{$weddingTitle ? `${$weddingTitle} – Reports` : 'Reports – WeddingDB'}</title>
+  <title>{$weddingTitle ? `${$weddingTitle} – ${t('nav.reports')}` : `${t('nav.reports')} – WeddingDB`}</title>
 </svelte:head>
 
 <div class="p-4 sm:p-7 max-w-2xl mx-auto">
-  <h1 class="text-xl font-bold text-gray-900 mb-6" style="letter-spacing: -0.02em;">Reports</h1>
+  <h1 class="text-xl font-bold text-gray-900 mb-6" style="letter-spacing: -0.02em;">{t('nav.reports')}</h1>
 
   <div class="space-y-4">
     <!-- Angpao Report Card -->
@@ -39,8 +40,8 @@ import Loader2 from 'lucide-svelte/icons/loader-2';
           <Download class="w-5 h-5" />
         </div>
         <div>
-          <h3 class="font-semibold text-gray-900 text-sm">Angpao Report</h3>
-          <p class="text-xs text-gray-500">Guest contributions, table totals, and gift items</p>
+          <h3 class="font-semibold text-gray-900 text-sm">{t('reports.title')}</h3>
+          <p class="text-xs text-gray-500">{t('reports.subtitle')}</p>
         </div>
       </div>
 
@@ -51,7 +52,7 @@ import Loader2 from 'lucide-svelte/icons/loader-2';
       {/if}
 
       <p class="text-xs text-gray-500 mb-4">
-        Includes per-guest angpao amounts, gift items, check-in status, and summary totals per table.
+        {t('reports.includes')}
       </p>
 
       <div class="flex gap-3">
@@ -61,7 +62,7 @@ import Loader2 from 'lucide-svelte/icons/loader-2';
           class="flex-1 px-4 py-3 bg-gray-50 hover:bg-gray-100 border border-gray-200 rounded-xl text-sm font-semibold text-gray-700 transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
         >
           {#if exporting === 'csv'}
-            <Loader2 class="w-4 h-4 animate-spin" /> Generating...
+            <Loader2 class="w-4 h-4 animate-spin" /> {t('reports.generating')}
           {:else}
             <FileText class="w-4 h-4" /> CSV
           {/if}
@@ -72,7 +73,7 @@ import Loader2 from 'lucide-svelte/icons/loader-2';
           class="flex-1 px-4 py-3 bg-red text-white rounded-xl text-sm font-semibold hover:bg-red-light transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
         >
           {#if exporting === 'xlsx'}
-            <Loader2 class="w-4 h-4 animate-spin" /> Generating...
+            <Loader2 class="w-4 h-4 animate-spin" /> {t('reports.generating')}
           {:else}
             <FileSpreadsheet class="w-4 h-4" /> Excel
           {/if}

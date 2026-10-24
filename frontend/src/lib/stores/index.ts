@@ -102,3 +102,17 @@ if (typeof window !== 'undefined') {
 		if (e.key === seatNumbersKey(currentWid)) showSeatNumbers.set(e.newValue !== '0');
 	});
 }
+
+// Kiosk idle auto-reset (opt-in). Same localStorage mirror so the kiosk tab
+// picks up the settings change without a reload.
+export const kioskIdleReset = writable(false);
+
+const idleResetKey = (wid: string) => `weddingdb_kiosk_idle_reset_${wid}`;
+
+export function setKioskIdleReset(wid: string, value: boolean) {
+	currentWid = wid;
+	kioskIdleReset.set(value);
+	try {
+		localStorage.setItem(idleResetKey(wid), value ? '1' : '0');
+	} catch {}
+}

@@ -23,6 +23,7 @@ import ArrowUpDown from 'lucide-svelte/icons/arrow-up-down';
   import { updateGuest, createGuest, checkInGuest, checkOutGuest, unassignSeat, getGuest, ConflictError } from '$lib/api/guests';
   import { get } from 'svelte/store';
   import { fade } from 'svelte/transition';
+  import { t } from '$lib/i18n';
   import { slideOut as drawerSlideOut } from '$lib/utils/motion';
 
   // Exit: WAAPI slide continuing from the panel's current (possibly mid-drag) transform.
@@ -207,7 +208,7 @@ import ArrowUpDown from 'lucide-svelte/icons/arrow-up-down';
           dietary: form.dietary, angbaoAmt: form.angbaoAmt ? Number(form.angbaoAmt) : null,
           giftItem: form.giftItem || null,
         });
-        addToast(`${created.name} created`, 'success');
+        addToast(t('toast.created', { name: created.name }), 'success');
         onClose();
       } else {
         const updated = await updateGuest(wid, guest!.id, {
@@ -227,11 +228,11 @@ import ArrowUpDown from 'lucide-svelte/icons/arrow-up-down';
           giftItem: updated.giftItem ?? '',
         });
         editing = false;
-        addToast('Guest updated', 'success');
+        addToast(t('toast.updated'), 'success');
         await refreshGuest();
       }
     } catch (e: any) {
-      addToast(e.message ?? 'Save failed', 'error');
+      addToast(e.message ?? t('toast.saveFailed'), 'error');
     } finally {
       saving = false;
     }
@@ -258,13 +259,13 @@ import ArrowUpDown from 'lucide-svelte/icons/arrow-up-down';
       pushGuestPatch(guest.id, { checkedIn: true, checkedInAt: guest.checkedInAt, rsvp: 'confirmed' });
       localGuest = { ...guest };
       showCheckInModal = false;
-      addToast(`${guest.name} checked in`, 'success');
+      addToast(t('toast.checkedIn', { name: guest.name }), 'success');
     } catch (e: any) {
       if (e instanceof ConflictError) {
         showCheckInModal = false;
-        addToast(`${guest.name} was already checked in`, 'info');
+        addToast(t('toast.alreadyCheckedIn', { name: guest.name }), 'info');
       } else {
-        addToast(e.message ?? 'Check-in failed', 'error');
+        addToast(e.message ?? t('toast.checkinFailed'), 'error');
       }
     }
   }
@@ -278,10 +279,10 @@ import ArrowUpDown from 'lucide-svelte/icons/arrow-up-down';
       guest.checkedInAt = undefined;
       pushGuestPatch(guest.id, { checkedIn: false, checkedInAt: undefined });
       localGuest = { ...guest };
-      addToast(`${guest.name} checked out`, 'success');
+      addToast(t('toast.checkedOut', { name: guest.name }), 'success');
       await refreshGuest();
     } catch (e: any) {
-      addToast(e.message ?? 'Check-out failed', 'error');
+      addToast(e.message ?? t('toast.checkoutFailed'), 'error');
     }
   }
 
@@ -300,9 +301,9 @@ import ArrowUpDown from 'lucide-svelte/icons/arrow-up-down';
       guest.seatNumber = null;
       pushGuestPatch(guest.id, { tableId: null, seatNumber: null });
       localGuest = { ...guest };
-      addToast(`${guest.name} unassigned from table`, 'success');
+      addToast(t('toast.unassigned', { name: guest.name }), 'success');
     } catch (e: any) {
-      addToast(e.message ?? 'Unassign failed', 'error');
+      addToast(e.message ?? t('toast.unassignFailed'), 'error');
     }
   }
 </script>
@@ -325,10 +326,10 @@ import ArrowUpDown from 'lucide-svelte/icons/arrow-up-down';
       <div class="drawer-pill-bar"></div>
     </div>
     <div class="drawer-header">
-      <h2 id="drawer-title" class="drawer-title">{createMode ? 'New Guest' : editing ? 'Edit Guest' : 'Guest Details'}</h2>
+      <h2 id="drawer-title" class="drawer-title">{createMode ? t('guest.new') : editing ? t('guest.edit') : t('guest.details')}</h2>
       <div class="drawer-actions">
         {#if !readonly}
-          <button onclick={() => editing = true} class="drawer-icon-btn flex" aria-label="Edit">
+          <button onclick={() => editing = true} class="drawer-icon-btn flex" aria-label={t("common.edit")}>
             <Pencil class="w-5 h-5" />
           </button>
           <button onclick={onClose} class="drawer-icon-btn hidden sm:flex" aria-label="Close">
@@ -346,55 +347,55 @@ import ArrowUpDown from 'lucide-svelte/icons/arrow-up-down';
       {#if editing}
         <div class="form-grid">
           <div class="form-field">
-            <label for="guest-name" class="form-label">Name</label>
+            <label for="guest-name" class="form-label">{t('common.name')}</label>
             <input id="guest-name" bind:value={form.name} class="form-input" />
           </div>
           <div class="form-field">
-            <label for="guest-email" class="form-label">Email</label>
+            <label for="guest-email" class="form-label">{t('common.email')}</label>
             <input id="guest-email" bind:value={form.email} class="form-input" />
           </div>
           <div class="form-row-2">
             <div class="form-field">
-              <label for="guest-pax" class="form-label">Pax</label>
+              <label for="guest-pax" class="form-label">{t('guest.paxLabel')}</label>
               <input id="guest-pax" type="number" min="1" bind:value={form.pax} class="form-input" />
             </div>
             <div class="form-field">
-              <label for="guest-rsvp" class="form-label">RSVP</label>
+              <label for="guest-rsvp" class="form-label">{t('guest.rsvp')}</label>
               <select id="guest-rsvp" bind:value={form.rsvp} class="form-input">
-                <option value="confirmed">Confirmed</option>
-                <option value="pending">Pending</option>
-                <option value="declined">Declined</option>
-                <option value="no_response">No Response</option>
+                <option value="confirmed">{t('rsvp.confirmed')}</option>
+                <option value="pending">{t('rsvp.pending')}</option>
+                <option value="declined">{t('rsvp.declined')}</option>
+                <option value="no_response">{t('rsvp.no_response')}</option>
               </select>
             </div>
           </div>
           <div class="form-field">
             <label class="form-check-label">
-              <input type="checkbox" bind:checked={form.isVip} class="rounded" /> VIP Guest
+              <input type="checkbox" bind:checked={form.isVip} class="rounded" /> {t('guest.vip')}
             </label>
           </div>
           <div class="form-field">
-            <label for="guest-notes" class="form-label">Notes</label>
+            <label for="guest-notes" class="form-label">{t('common.notes')}</label>
             <textarea id="guest-notes" bind:value={form.notes} rows="2" class="form-input form-textarea"></textarea>
           </div>
           <div class="form-field">
-            <div class="form-label">Dietary</div>
+            <div class="form-label">{t('guest.dietary')}</div>
             <div class="dietary-chips">
               {#each ['Halal', 'Vegetarian', 'Vegan', 'Gluten-Free', 'Nut-Free', 'No Seafood'] as opt}
                 <button type="button"
                   onclick={() => { form.dietary = form.dietary.includes(opt) ? form.dietary.filter(d => d !== opt) : [...form.dietary, opt]; }}
                   class={cn("dietary-chip", form.dietary.includes(opt) ? "dietary-chip-active" : "")}
-                >{opt}</button>
+                >{t(`dietary.${opt.toLowerCase().replace(/[^a-z]+/g, '_')}`)}</button>
               {/each}
             </div>
           </div>
           <div class="form-field">
-            <label for="guest-angbao" class="form-label">Angbao Amount (RM)</label>
+            <label for="guest-angbao" class="form-label">{t('guest.angbaoAmt')}</label>
             <input id="guest-angbao" type="number" min="0" bind:value={form.angbaoAmt} placeholder="0" class="form-input" />
           </div>
           <div class="form-field">
-            <label for="guest-gift" class="form-label">Gift Item</label>
-            <input id="guest-gift" bind:value={form.giftItem} placeholder="e.g. Kitchenware set" class="form-input" />
+            <label for="guest-gift" class="form-label">{t('guest.giftItem')}</label>
+            <input id="guest-gift" bind:value={form.giftItem} placeholder={t("guest.giftPlaceholder")} class="form-input" />
           </div>
         </div>
       {:else if localGuest}
@@ -411,7 +412,7 @@ import ArrowUpDown from 'lucide-svelte/icons/arrow-up-down';
             <div class="flex items-center gap-2 mt-0.5">
               <Badge status={localGuest.rsvp} />
               {#if localGuest.pax > 1}
-                <span class="text-xs text-gray-400">{localGuest.pax} pax</span>
+                <span class="text-xs text-gray-400">{t('pax', { n: localGuest.pax })}</span>
               {/if}
             </div>
           </div>
@@ -428,21 +429,21 @@ import ArrowUpDown from 'lucide-svelte/icons/arrow-up-down';
 
         <div class="detail-grid">
           <div class="detail-card">
-            <div class="detail-label">Table</div>
+            <div class="detail-label">{t('common.table')}</div>
             <div class="detail-value">{tableName}</div>
           </div>
           {#if showSeatNumbers}
             <div class="detail-card">
-              <div class="detail-label">Seat{localGuest.pax > 1 ? 's' : ''}</div>
+              <div class="detail-label">{t('guest.seat')}</div>
               <div class="detail-value">{formatSeatRange(localGuest.seatNumber, localGuest.pax)}</div>
             </div>
           {/if}
           <div class="detail-card">
-            <div class="detail-label">Party Size</div>
+            <div class="detail-label">{t('guest.partySize')}</div>
             <div class="detail-value">{localGuest.pax}</div>
           </div>
           <div class="detail-card">
-            <div class="detail-label">Checked In</div>
+            <div class="detail-label">{t('guest.checkedIn')}</div>
             <div class="detail-value {localGuest.checkedIn ? 'text-emerald-600' : 'text-gray-400'}">
               {localGuest.checkedIn ? '✓' : '—'}
             </div>
@@ -450,14 +451,14 @@ import ArrowUpDown from 'lucide-svelte/icons/arrow-up-down';
         </div>
 
         {#if localGuest.isVip}
-          <div class="vip-banner">⭐ VIP Guest</div>
+          <div class="vip-banner">⭐ {t('guest.vip')}</div>
         {/if}
 
         {#if localGuest.dietaryRequirements.length > 0}
           <div class="compact-section">
             <div class="section-header">
               <Utensils class="section-icon" />
-              Dietary
+              {t('guest.dietary')}
             </div>
             <div class="chip-group">
               {#each localGuest.dietaryRequirements as req}
@@ -471,7 +472,7 @@ import ArrowUpDown from 'lucide-svelte/icons/arrow-up-down';
           <div class="compact-section">
             <div class="section-header">
               <StickyNote class="section-icon" />
-              Notes
+              {t('common.notes')}
             </div>
             <p class="notes-text">{localGuest.notes}</p>
           </div>
@@ -479,19 +480,19 @@ import ArrowUpDown from 'lucide-svelte/icons/arrow-up-down';
 
         {#if localGuest.angbaoAmount || localGuest.giftItem}
           <div class="compact-section">
-            <div class="section-header">Gift Details</div>
+            <div class="section-header">{t('guest.giftDetails')}</div>
             <div class="gift-card">
               {#if localGuest.angbaoAmount}
                 <div class="gift-row">
                   <Banknote class="gift-icon text-emerald-600" />
-                  <span class="gift-label">Angbao:</span>
+                  <span class="gift-label">{t('guest.angbao')}:</span>
                   <span class="gift-value text-emerald-700">RM {localGuest.angbaoAmount}</span>
                 </div>
               {/if}
               {#if localGuest.giftItem}
                 <div class="gift-row">
                   <Gift class="gift-icon text-gold" />
-                  <span class="gift-label">Gift:</span>
+                  <span class="gift-label">{t('guest.gift')}:</span>
                   <span class="gift-value text-gold-dark">{localGuest.giftItem}</span>
                 </div>
               {/if}
@@ -503,16 +504,16 @@ import ArrowUpDown from 'lucide-svelte/icons/arrow-up-down';
           <div class="pt-1 pb-3 sm:pb-4">
             {#if localGuest.checkedIn}
               <button onclick={handleCheckOut} class="w-full py-2.5 sm:py-3 bg-emerald-50 text-emerald-700 rounded-xl text-sm font-semibold border border-emerald-200 hover:bg-emerald-100 transition-colors flex items-center justify-center gap-2">
-                <CheckCircle2 class="w-4 h-4" /> Checked In — Tap to Check Out
+                <CheckCircle2 class="w-4 h-4" /> {t('guest.checkOut')}
               </button>
             {:else}
               <button onclick={() => showCheckInModal = true} class="w-full py-2.5 sm:py-3 bg-red text-white rounded-xl text-sm font-semibold hover:bg-red-light transition-colors flex items-center justify-center gap-2">
-                <UserCheck class="w-4 h-4" /> Check In
+                <UserCheck class="w-4 h-4" /> {t('guest.checkIn')}
               </button>
             {/if}
             {#if localGuest.tableId}
               <button onclick={handleUnassign} class="w-full py-2.5 sm:py-3 bg-white text-gray-600 rounded-xl text-sm font-semibold border border-gray-200 hover:bg-gray-50 transition-colors flex items-center justify-center gap-2 mt-2">
-                <ArrowUpDown class="w-4 h-4" /> Unassign Table
+                <ArrowUpDown class="w-4 h-4" /> {t('guest.unassign')}
               </button>
             {/if}
           </div>
@@ -524,7 +525,7 @@ import ArrowUpDown from 'lucide-svelte/icons/arrow-up-down';
       <div class="drawer-footer flex">
         <button onclick={save} disabled={saving}
           class="w-full py-3 bg-red text-white rounded-xl text-sm font-semibold hover:bg-red-light transition-colors flex items-center justify-center gap-2">
-          <Check class="w-4 h-4" /> {saving ? 'Saving...' : 'Save'}
+          <Check class="w-4 h-4" /> {saving ? t('common.saving') : t('common.save')}
         </button>
       </div>
     {/if}
@@ -533,10 +534,10 @@ import ArrowUpDown from 'lucide-svelte/icons/arrow-up-down';
 
 <ConfirmDialog
   open={showUnassignConfirm}
-  title="Unassign Table"
-  message={`Remove ${guest?.name ?? 'this guest'} from their table? They will no longer have an assigned seat.`}
-  confirmLabel="Unassign"
-  cancelLabel="Cancel"
+  title={t('guest.unassign')}
+  message={t('guest.unassignMsg', { name: guest?.name ?? t('guest.thisGuest') })}
+  confirmLabel={t("guest.unassignAction")}
+  cancelLabel={t("common.cancel")}
   variant="warning"
   onConfirm={confirmUnassign}
   onCancel={() => showUnassignConfirm = false}

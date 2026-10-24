@@ -148,10 +148,10 @@ func TestGuestEvent_Serialization(t *testing.T) {
 	}
 }
 
-// TestCheckInPromotesRSVPAndAppendsNotes covers both check-in paths: the
-// online endpoint and the offline sync op. Arrival must promote RSVP to
-// confirmed and never wipe existing notes.
-func TestCheckInPromotesRSVPAndAppendsNotes(t *testing.T) {
+// TestCheckInStoresCheckinNote covers both check-in paths: the online
+// endpoint and the offline sync op. Arrival must promote RSVP to confirmed
+// and store the note on the dedicated check-in column, not guest notes.
+func TestCheckInStoresCheckinNote(t *testing.T) {
 	ctx := context.Background()
 
 	t.Run("online endpoint", func(t *testing.T) {
@@ -176,8 +176,11 @@ func TestCheckInPromotesRSVPAndAppendsNotes(t *testing.T) {
 		if got.CheckedInAt == nil {
 			t.Error("CheckedInAt is nil")
 		}
-		if got.Notes != "vegetarian\ncame with 2 kids" {
-			t.Errorf("Notes = %q", got.Notes)
+		if got.Notes != "vegetarian" {
+			t.Errorf("Notes = %q, want unchanged", got.Notes)
+		}
+		if got.CheckinNote != "came with 2 kids" {
+			t.Errorf("CheckinNote = %q", got.CheckinNote)
 		}
 
 		// FIFO conflict: a second check-in must not overwrite the first note.
@@ -215,8 +218,8 @@ func TestCheckInPromotesRSVPAndAppendsNotes(t *testing.T) {
 		if got.RSVP != "confirmed" {
 			t.Errorf("RSVP = %q, want confirmed", got.RSVP)
 		}
-		if got.Notes != "no gift" {
-			t.Errorf("Notes = %q", got.Notes)
+		if got.CheckinNote != "no gift" {
+			t.Errorf("CheckinNote = %q", got.CheckinNote)
 		}
 	})
 }

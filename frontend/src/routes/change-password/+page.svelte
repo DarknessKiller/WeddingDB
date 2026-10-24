@@ -1,6 +1,7 @@
 <script lang="ts">
   import { goto } from '$app/navigation';
   import { addToast, getAuth } from '$lib/stores';
+  import { t } from '$lib/i18n';
   import Eye from 'lucide-svelte/icons/eye';
 import EyeOff from 'lucide-svelte/icons/eye-off';
 import KeyRound from 'lucide-svelte/icons/key-round';
@@ -35,33 +36,33 @@ import KeyRound from 'lucide-svelte/icons/key-round';
         body: JSON.stringify({ password })
       });
       if (!res.ok) {
-        const err = await res.json().catch(() => ({ title: 'Failed to change password' }));
-        addToast(err.title || 'Failed to change password', 'error');
+        const err = await res.json().catch(() => ({ title: t('toast.changepwFailed') }));
+        addToast(err.title || t('toast.changepwFailed'), 'error');
         return;
       }
-      addToast('Password changed successfully', 'success');
+      addToast(t('toast.pwChanged'), 'success');
       goto('/', { replaceState: true });
     } catch {
-      addToast('Network error', 'error');
+      addToast(t('toast.netError'), 'error');
     } finally {
       loading = false;
     }
   }
 </script>
 
-<svelte:head><title>Change Password – WeddingDB</title></svelte:head>
+<svelte:head><title>{t('auth.titleChangePw')} – WeddingDB</title></svelte:head>
 
 <div class="auth-page">
   <div class="auth-card">
     <div class="auth-hero">
       <div class="auth-logo">囍</div>
-      <h1 class="auth-title">Change Password</h1>
-      <p class="auth-subtitle">Please set a new password before continuing</p>
+      <h1 class="auth-title">{t('auth.changePw')}</h1>
+      <p class="auth-subtitle">{t('auth.changePwSubtitle')}</p>
     </div>
 
     <form onsubmit={handleChangePassword} class="auth-form">
       <div class="form-field">
-        <label for="password" class="form-label">New Password</label>
+        <label for="password" class="form-label">{t('auth.newPw')}</label>
         <div class="password-wrap">
           <input
             id="password"
@@ -70,7 +71,7 @@ import KeyRound from 'lucide-svelte/icons/key-round';
             required
             minlength="8"
             class="form-input password-input"
-            placeholder="Min 8 chars, letter + number + symbol"
+            placeholder={t("auth.pwHint2")}
           />
           <button type="button" onclick={() => showPassword = !showPassword} class="password-toggle">
             {#if showPassword}<EyeOff size={18} />{:else}<Eye size={18} />{/if}
@@ -80,7 +81,7 @@ import KeyRound from 'lucide-svelte/icons/key-round';
       </div>
 
       <div class="form-field">
-        <label for="confirmPassword" class="form-label">Confirm Password</label>
+        <label for="confirmPassword" class="form-label">{t('auth.confirmPw')}</label>
         <input
           id="confirmPassword"
           type={showPassword ? 'text' : 'password'}
@@ -89,16 +90,16 @@ import KeyRound from 'lucide-svelte/icons/key-round';
           minlength="8"
           class="form-input"
           class:input-error={passwordMismatch}
-          placeholder="Repeat password"
+          placeholder={t("auth.repeatPw")}
         />
         {#if passwordMismatch}
-          <p class="field-error">Passwords do not match</p>
+          <p class="field-error">{t('auth.pwMismatch')}</p>
         {/if}
       </div>
 
       <button type="submit" disabled={loading || !canSubmit} class="auth-submit">
         {#if loading}<div class="btn-spinner"></div>{:else}<KeyRound size={18} />{/if}
-        {loading ? 'Updating...' : 'Update Password'}
+        {loading ? t('auth.updating') : t('auth.updatePw')}
       </button>
     </form>
   </div>

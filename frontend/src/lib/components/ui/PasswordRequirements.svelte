@@ -1,11 +1,13 @@
 <script lang="ts">
   let { password = '' } = $props();
 
+  import { t } from '$lib/i18n';
+
   const rules = [
-    { label: '8+ characters', test: (p: string) => p.length >= 8 },
-    { label: 'One letter', test: (p: string) => /[a-zA-Z]/.test(p) },
-    { label: 'One number', test: (p: string) => /\d/.test(p) },
-    { label: 'One symbol', test: (p: string) => /[^a-zA-Z0-9]/.test(p) },
+    { key: 'pw.length', test: (p: string) => p.length >= 8 },
+    { key: 'pw.letter', test: (p: string) => /[a-zA-Z]/.test(p) },
+    { key: 'pw.number', test: (p: string) => /\d/.test(p) },
+    { key: 'pw.symbol', test: (p: string) => /[^a-zA-Z0-9]/.test(p) },
   ];
 
   let passed = $derived(rules.filter(r => r.test(password)).length);
@@ -18,7 +20,7 @@
       {@const valid = rule.test(password)}
       <div class="req-item" class:valid>
         <span class="req-dot">{valid ? '✓' : '○'}</span>
-        <span class="req-label">{rule.label}</span>
+        <span class="req-label">{t(rule.key)}</span>
       </div>
     {/each}
   </div>

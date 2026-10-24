@@ -6,9 +6,10 @@ import Star from 'lucide-svelte/icons/star';
 import Users from 'lucide-svelte/icons/users';
   import { cn } from '$lib/utils';
   import { trapFocus } from '$lib/utils/focus';
+  import { t } from '$lib/i18n';
 
   let {
-    title = 'Add Table',
+    title = t('tables.add'),
     name = $bindable(''),
     capacity = $bindable(10),
     isVip = $bindable(false),
@@ -30,7 +31,7 @@ import Users from 'lucide-svelte/icons/users';
   } = $props();
 
   let editing = $state(startEditing);
-  const isEdit = $derived(title === 'Edit Table');
+  const isEdit = $derived(title !== t('tables.add'));
   const percentage = $derived(capacity > 0 ? Math.round((occupied / capacity) * 100) : 0);
 </script>
 
@@ -57,15 +58,15 @@ import Users from 'lucide-svelte/icons/users';
       {#if editing}
         <div class="form-grid">
           <div class="form-field">
-            <label for="table-name" class="form-label">Table Name</label>
-            <input id="table-name" type="text" bind:value={name} placeholder="e.g. Table 1, VIP A, 圆桌" class="form-input" />
+            <label for="table-name" class="form-label">{t('tables.name')}</label>
+            <input id="table-name" type="text" bind:value={name} placeholder={t("tables.namePlaceholder")} class="form-input" />
           </div>
           <div class="form-field">
-            <label for="table-capacity" class="form-label">Capacity</label>
+            <label for="table-capacity" class="form-label">{t('common.capacity')}</label>
             <input id="table-capacity" type="number" min="1" bind:value={capacity} class="form-input" />
           </div>
           <label class="form-check-label">
-            <input type="checkbox" bind:checked={isVip} class="rounded" /> VIP Table
+            <input type="checkbox" bind:checked={isVip} class="rounded" /> {t('tables.vip')}
           </label>
         </div>
       {:else}
@@ -75,7 +76,7 @@ import Users from 'lucide-svelte/icons/users';
             {name || 'T'}
           </div>
           <div class="min-w-0">
-            <h3 class="table-name-lg">{#if isVip}<span class="text-gold">★</span>{/if} {name || 'Table'}</h3>
+            <h3 class="table-name-lg">{#if isVip}<span class="text-gold">★</span>{/if} {name || t('tables.fallback')}</h3>
             <div class="flex items-center gap-2 mt-0.5">
               <span class="inline-flex items-center gap-1 px-2 py-0.5 bg-emerald-50 text-emerald-700 rounded-full text-xs font-semibold border border-emerald-200">
                 <Users class="w-3 h-3" /> {occupied}/{capacity}
@@ -91,18 +92,18 @@ import Users from 'lucide-svelte/icons/users';
 
         <div class="detail-grid">
           <div class="detail-card">
-            <div class="detail-label">Occupancy</div>
+            <div class="detail-label">{t('tables.occupancy')}</div>
             <div class="detail-value">{percentage}%</div>
           </div>
           <div class="detail-card">
-            <div class="detail-label">Seats Filled</div>
+            <div class="detail-label">{t('tables.seatsFilled')}</div>
             <div class="detail-value">{occupied}/{capacity}</div>
           </div>
         </div>
 
         <div class="pt-1 pb-3 sm:pb-4">
           <button onclick={() => editing = true} class="w-full py-2.5 sm:py-3 bg-white text-gray-600 rounded-xl text-sm font-semibold border border-gray-200 hover:bg-gray-50 transition-colors flex items-center justify-center gap-2">
-            <Pencil class="w-4 h-4" /> Edit Table
+            <Pencil class="w-4 h-4" /> {t('tables.edit')}
           </button>
         </div>
       {/if}
@@ -112,7 +113,7 @@ import Users from 'lucide-svelte/icons/users';
       <div class="drawer-footer flex">
         <button onclick={onSave} disabled={saving}
           class="w-full py-3 bg-red text-white rounded-xl text-sm font-semibold hover:bg-red-light transition-colors flex items-center justify-center gap-2">
-          <Check class="w-4 h-4" /> {saving ? 'Saving...' : 'Save'}
+          <Check class="w-4 h-4" /> {saving ? t('common.saving') : t('common.save')}
         </button>
       </div>
     {/if}

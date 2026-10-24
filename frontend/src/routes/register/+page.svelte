@@ -1,6 +1,7 @@
 <script lang="ts">
   import { goto } from '$app/navigation';
   import { addToast } from '$lib/stores';
+  import { t } from '$lib/i18n';
   import Eye from 'lucide-svelte/icons/eye';
 import EyeOff from 'lucide-svelte/icons/eye-off';
 import UserPlus from 'lucide-svelte/icons/user-plus';
@@ -36,43 +37,43 @@ import Mail from 'lucide-svelte/icons/mail';
         body: JSON.stringify({ name, email, password })
       });
       if (!res.ok) {
-        const err = await res.json().catch(() => ({ title: 'Registration failed' }));
-        addToast(err.title || 'Registration failed', 'error');
+        const err = await res.json().catch(() => ({ title: t('toast.registerFailed') }));
+        addToast(err.title || t('toast.registerFailed'), 'error');
         return;
       }
-      addToast('Account created! Email mrdarknesskiller@protonmail.com to get your wedding set up.', 'success');
+      addToast(t('toast.accountCreated'), 'success');
       goto('/login', { replaceState: true });
     } catch {
-      addToast('Network error', 'error');
+      addToast(t('toast.netError'), 'error');
     } finally {
       loading = false;
     }
   }
 </script>
 
-<svelte:head><title>Register – WeddingDB</title></svelte:head>
+<svelte:head><title>{t('auth.titleRegister')} – WeddingDB</title></svelte:head>
 
 <div class="auth-page">
   <div class="auth-card">
     <div class="auth-hero">
       <div class="auth-logo">囍</div>
       <h1 class="auth-title">WeddingDB</h1>
-      <p class="auth-subtitle">Create your account</p>
+      <p class="auth-subtitle">{t('auth.createAccount')}</p>
     </div>
 
     <form onsubmit={handleRegister} class="auth-form">
       <div class="form-field">
-        <label for="name" class="form-label">Full Name</label>
-        <input id="name" type="text" bind:value={name} required class="form-input" placeholder="Your name" />
+        <label for="name" class="form-label">{t('auth.fullName')}</label>
+        <input id="name" type="text" bind:value={name} required class="form-input" placeholder={t("auth.yourName")} />
       </div>
 
       <div class="form-field">
-        <label for="email" class="form-label">Email</label>
+        <label for="email" class="form-label">{t('common.email')}</label>
         <input id="email" type="email" bind:value={email} required class="form-input" placeholder="you@example.com" />
       </div>
 
       <div class="form-field">
-        <label for="password" class="form-label">Password</label>
+        <label for="password" class="form-label">{t('auth.password')}</label>
         <div class="password-wrap">
           <input
             id="password"
@@ -81,7 +82,7 @@ import Mail from 'lucide-svelte/icons/mail';
             required
             minlength="8"
             class="form-input password-input"
-            placeholder="Min 8 characters"
+            placeholder={t("auth.pwHint")}
           />
           <button type="button" onclick={() => showPassword = !showPassword} class="password-toggle">
             {#if showPassword}<EyeOff size={18} />{:else}<Eye size={18} />{/if}
@@ -91,7 +92,7 @@ import Mail from 'lucide-svelte/icons/mail';
       </div>
 
       <div class="form-field">
-        <label for="confirmPassword" class="form-label">Confirm Password</label>
+        <label for="confirmPassword" class="form-label">{t('auth.confirmPw')}</label>
         <input
           id="confirmPassword"
           type={showPassword ? 'text' : 'password'}
@@ -100,26 +101,26 @@ import Mail from 'lucide-svelte/icons/mail';
           minlength="8"
           class="form-input"
           class:input-error={passwordMismatch}
-          placeholder="Repeat password"
+          placeholder={t("auth.repeatPw")}
         />
         {#if passwordMismatch}
-          <p class="field-error">Passwords do not match</p>
+          <p class="field-error">{t('auth.pwMismatch')}</p>
         {/if}
       </div>
 
       <button type="submit" disabled={loading || !canSubmit} class="auth-submit">
         {#if loading}<div class="btn-spinner"></div>{:else}<UserPlus size={18} />{/if}
-        {loading ? 'Creating account...' : 'Create account'}
+        {loading ? t('auth.creatingAccount') : t('auth.createAccountBtn')}
       </button>
 
       <p class="auth-footer">
-        Already have an account? <a href="/login" class="auth-link">Sign in</a>
+        {t('auth.haveAccount')} <a href="/login" class="auth-link">{t('auth.signin')}</a>
       </p>
     </form>
 
     <div class="contact-note">
       <Mail size={14} />
-      <span>After registering, email <strong>mrdarknesskiller@protonmail.com</strong> to get your wedding set up.</span>
+      <span>{t('auth.contactNote')} <strong>mrdarknesskiller@protonmail.com</strong></span>
     </div>
   </div>
 </div>

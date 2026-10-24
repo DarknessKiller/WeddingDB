@@ -81,6 +81,7 @@ export interface GuestImportData {
 export interface GuestResponse {
 	id: string;
 	weddingId: string;
+	namePinyin?: string;
 	name: string;
 	email: string;
 	pax: number;
@@ -91,6 +92,8 @@ export interface GuestResponse {
 	tableId: string | null;
 	seatNum: number | null;
 	checkedInAt: string | null;
+	checkinNote: string;
+	checkedInBy: string;
 	angbaoAmt: number | null;
 	giftItem: string | null;
 	createdAt: string;
@@ -153,7 +156,7 @@ export async function createGuest(weddingId: string, data: GuestCreateData): Pro
 			const id = genId();
 			doQueue(id); optimisticPatch('create', id, data as unknown as Record<string, unknown>);
 			const now = nowIso();
-			return { id, weddingId, name: data.name, email: data.email || '', pax: data.pax, rsvp: data.rsvp, isVip: data.isVip, notes: data.notes, dietary: data.dietary, tableId: (data.tableId as string | null) ?? null, seatNum: data.seatNum ?? null, checkedInAt: null, angbaoAmt: data.angbaoAmt ?? null, giftItem: data.giftItem ?? null, createdAt: now, updatedAt: now };
+			return { id, weddingId, name: data.name, email: data.email || '', pax: data.pax, rsvp: data.rsvp, isVip: data.isVip, notes: data.notes, dietary: data.dietary, tableId: (data.tableId as string | null) ?? null, seatNum: data.seatNum ?? null, checkedInAt: null, checkinNote: '', checkedInBy: '', angbaoAmt: data.angbaoAmt ?? null, giftItem: data.giftItem ?? null, createdAt: now, updatedAt: now };
 		}
 		throw e;
 	}
@@ -161,7 +164,7 @@ export async function createGuest(weddingId: string, data: GuestCreateData): Pro
 
 export async function updateGuest(weddingId: string, guestId: string, data: GuestCreateData): Promise<GuestResponse> {
 	const doQueue = () => { enqueue(weddingId, { mutationId: genId(), op: 'update', guestId, clientUpdatedAt: nowIso(), payload: data as unknown as Record<string, unknown> }); optimisticPatch('update', guestId, data as unknown as Record<string, unknown>); };
-	if (isOffline()) { doQueue(); const now = nowIso(); return { id: guestId, weddingId, name: data.name, email: data.email || '', pax: data.pax, rsvp: data.rsvp, isVip: data.isVip, notes: data.notes, dietary: data.dietary, tableId: (data.tableId as string | null) ?? null, seatNum: data.seatNum ?? null, checkedInAt: null, angbaoAmt: data.angbaoAmt ?? null, giftItem: data.giftItem ?? null, createdAt: now, updatedAt: now }; }
+	if (isOffline()) { doQueue(); const now = nowIso(); return { id: guestId, weddingId, name: data.name, email: data.email || '', pax: data.pax, rsvp: data.rsvp, isVip: data.isVip, notes: data.notes, dietary: data.dietary, tableId: (data.tableId as string | null) ?? null, seatNum: data.seatNum ?? null, checkedInAt: null, checkinNote: '', checkedInBy: '', angbaoAmt: data.angbaoAmt ?? null, giftItem: data.giftItem ?? null, createdAt: now, updatedAt: now }; }
 	try {
 		const res = await apiFetch(`/api/weddings/${weddingId}/guests/${guestId}`, { method: 'PUT', body: JSON.stringify(data) });
 		if (!res.ok) throw new Error(`Failed to update guest: ${res.status}`);
@@ -169,7 +172,7 @@ export async function updateGuest(weddingId: string, guestId: string, data: Gues
 		applyGuestResponse(resp);
 		return resp;
 	} catch (e) {
-		if (isNetworkError(e)) { doQueue(); const now = nowIso(); return { id: guestId, weddingId, name: data.name, email: data.email || '', pax: data.pax, rsvp: data.rsvp, isVip: data.isVip, notes: data.notes, dietary: data.dietary, tableId: (data.tableId as string | null) ?? null, seatNum: data.seatNum ?? null, checkedInAt: null, angbaoAmt: data.angbaoAmt ?? null, giftItem: data.giftItem ?? null, createdAt: now, updatedAt: now }; }
+		if (isNetworkError(e)) { doQueue(); const now = nowIso(); return { id: guestId, weddingId, name: data.name, email: data.email || '', pax: data.pax, rsvp: data.rsvp, isVip: data.isVip, notes: data.notes, dietary: data.dietary, tableId: (data.tableId as string | null) ?? null, seatNum: data.seatNum ?? null, checkedInAt: null, checkinNote: '', checkedInBy: '', angbaoAmt: data.angbaoAmt ?? null, giftItem: data.giftItem ?? null, createdAt: now, updatedAt: now }; }
 		throw e;
 	}
 }
@@ -186,8 +189,8 @@ export async function deleteGuest(weddingId: string, guestId: string): Promise<v
 	}
 }
 
-// checkInGuest checks a guest in. Optional notes are appended to the guest's
-// notes server-side, atomically with the check-in.
+// checkInGuest checks a guest in. Optional note goes on the guest's dedicated
+// check-in note column, atomically with the check-in.
 export async function checkInGuest(weddingId: string, guestId: string, notes?: string): Promise<void> {
 	const trimmed = (notes ?? '').trim();
 	const payload = trimmed ? { notes: trimmed } : undefined;

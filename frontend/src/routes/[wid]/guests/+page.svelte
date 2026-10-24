@@ -3,6 +3,7 @@
   import { weddingTitle } from '$lib/stores/weddingTitle';
   import { selectedGuest, isDrawerOpen, drawerStartEditing, drawerCreateMode, addToast, showSeatNumbers } from '$lib/stores';
   import { weddingId } from '$lib/stores/weddingId';
+  import { t } from '$lib/i18n';
   import { guestList } from '$lib/stores/guestEvents';
   import { goto } from '$app/navigation';
   import { deleteGuest as apiDeleteGuest, searchGuests, assignSeat, unassignSeat, bulkImportGuests } from '$lib/api/guests';
@@ -208,12 +209,12 @@ import Users from 'lucide-svelte/icons/users';
   }
 
   const allColumns = [
-    { key: 'name', label: 'Name' },
-    { key: 'rsvp', label: 'RSVP' },
-    { key: 'pax', label: 'Pax' },
-    { key: 'tableId', label: 'Table' },
-    { key: 'seatNum', label: 'Seat' },
-    { key: 'checkedInAt', label: 'Check In' },
+    { key: 'name', label: t('common.name') },
+    { key: 'rsvp', label: t('guest.rsvp') },
+    { key: 'pax', label: t('guest.paxLabel') },
+    { key: 'tableId', label: t('common.table') },
+    { key: 'seatNum', label: t('guest.seat') },
+    { key: 'checkedInAt', label: t('guest.checkin') },
   ] as const;
 
   let columns = $derived(
@@ -227,7 +228,7 @@ import Users from 'lucide-svelte/icons/users';
   }
 
   function exportCSV() {
-    const headers = ['Name', 'Email', 'Table', 'Seat', 'Pax', 'RSVP', 'VIP', 'Checked In', 'Angbao', 'Gift', 'Notes'];
+    const headers = [t('common.name'), t('common.email'), t('common.table'), t('guest.seat'), t('guest.paxLabel'), t('guest.rsvp'), 'VIP', t('guest.checkedIn'), t('guest.angbao'), t('guest.gift'), t('common.notes')];
     const rows = filtered.map(g => {
       const table = tables.find(t => String(t.id) === String(g.tableId));
       return [
@@ -283,9 +284,9 @@ import Users from 'lucide-svelte/icons/users';
     try {
       await apiDeleteGuest(wid, guest.id);
       guestList.update(list => list.filter(g => g.id !== guest.id));
-      addToast(`${guest.name} deleted`, 'info');
+      addToast(t('toast.deleted', { name: guest.name }), 'info');
     } catch (e: any) {
-      addToast(e.message ?? 'Delete failed', 'error');
+      addToast(e.message ?? t('toast.deleteFailed'), 'error');
     }
     contextMenu = null;
   }
@@ -315,9 +316,9 @@ import Users from 'lucide-svelte/icons/users';
     try {
       await unassignSeat(wid, unassignTarget.id);
       guestList.update(list => list.map(g => g.id === unassignTarget!.id ? { ...g, tableId: null, seatNumber: null } : g));
-      addToast(`${unassignTarget.name} unassigned from table`, 'success');
+      addToast(t('toast.unassigned', { name: unassignTarget.name }), 'success');
     } catch (e: any) {
-      addToast(e.message ?? 'Unassign failed', 'error');
+      addToast(e.message ?? t('toast.unassignFailed'), 'error');
     }
     unassignTarget = null;
   }
@@ -336,7 +337,7 @@ import Users from 'lucide-svelte/icons/users';
     try {
       moveTables = await listTables(wid);
     } catch (e: any) {
-      addToast(e.message ?? 'Failed to load tables', 'error');
+      addToast(e.message ?? t('toast.loadTablesFailed'), 'error');
       return;
     }
     showMoveModal = true;
@@ -347,17 +348,17 @@ import Users from 'lucide-svelte/icons/users';
     const target = moveTables.find(t => String(t.id) === tableId);
     const cap = target?.capacity ?? 10;
     if (seatNum < 1 || seatNum + moveGuest.pax - 1 > cap) {
-      addToast(`No room for ${moveGuest.pax} pax starting at seat ${seatNum}`, 'error');
+      addToast(t('move.noRoom', { pax: moveGuest.pax, seat: seatNum, free: 0 }), 'error');
       return;
     }
     moveSaving = true;
     try {
       await assignSeat(wid, moveGuest.id, tableId, seatNum);
       // SSE will update the store automatically.
-      addToast(`${moveGuest.name} moved to table`, 'success');
+      addToast(t('toast.moved', { name: moveGuest.name }), 'success');
       showMoveModal = false;
     } catch (e: any) {
-      addToast(e.message ?? 'Move failed', 'error');
+      addToast(e.message ?? t('toast.moveFailed'), 'error');
     } finally {
       moveSaving = false;
     }
@@ -405,12 +406,12 @@ import Users from 'lucide-svelte/icons/users';
       try {
         const guests = parseCSV(reader.result as string);
         if (guests.length === 0) {
-          importError = 'No valid guests found. Make sure CSV has a "name" column.';
+          importError = t('guests.noValidCsv');
           return;
         }
         importPreview = guests;
       } catch {
-        importError = 'Failed to parse CSV file.';
+        importError = t('guests.parseFailed');
       }
     };
     reader.readAsText(file);
@@ -428,7 +429,6 @@ import Users from 'lucide-svelte/icons/users';
       });
       const result = await bulkImportGuests(resolved.map(g => ({
         name: g.name,
-        phone: g.phone,
         email: g.email,
         pax: g.pax,
         rsvp: g.rsvp,
@@ -438,13 +438,13 @@ import Users from 'lucide-svelte/icons/users';
         tableId: g.tableId,
         seatNum: g.seat,
       })));
-      addToast(`Imported ${result.imported} guests`, 'success');
+      addToast(t('toast.imported', { n: result.imported }), 'success');
       showImportModal = false;
       importPreview = [];
       importFile = null;
       // SSE will update the store with new guests automatically.
     } catch (e: any) {
-      addToast(e.message || 'Import failed', 'error');
+      addToast(e.message || t('toast.importFailed'), 'error');
     } finally {
       importing = false;
     }
@@ -461,10 +461,10 @@ import Users from 'lucide-svelte/icons/users';
     try {
       await Promise.all(ids.map(id => apiDeleteGuest(wid, id)));
       guestList.update(list => list.filter(g => !selectedIds.has(g.id)));
-      addToast(`Deleted ${ids.length} guests`, 'info');
+      addToast(t('toast.bulkDeleted', { n: ids.length }), 'info');
       selectedIds = new Set();
     } catch (e: any) {
-      addToast(e.message ?? 'Bulk delete failed', 'error');
+      addToast(e.message ?? t('toast.bulkDeleteFailed'), 'error');
     }
   }
 
@@ -514,13 +514,13 @@ import Users from 'lucide-svelte/icons/users';
     }, 0);
     // reject unless every pax fits after the starting seat
     if (bulkMoveSeatStart + seatsNeeded - 1 > capacity) {
-      addToast(`Not enough seats. Need ${seatsNeeded}, available from seat ${bulkMoveSeatStart}: ${capacity - bulkMoveSeatStart + 1}`, 'error');
+      addToast(t('toast.notEnoughSeats', { need: seatsNeeded, have: capacity - bulkMoveSeatStart + 1 }), 'error');
       return;
     }
     // reject if any seat in the run is occupied
     for (let s = bulkMoveSeatStart; s < bulkMoveSeatStart + seatsNeeded; s++) {
       if (bulkOccupiedSeats.has(s)) {
-        addToast(`Seat ${s} is occupied; pick a free starting seat`, 'error');
+        addToast(t('toast.seatOccupied', { n: s }), 'error');
         return;
       }
     }
@@ -536,18 +536,18 @@ import Users from 'lucide-svelte/icons/users';
         guestList.update(list => list.map(gg => gg.id === id ? { ...gg, tableId: bulkMoveTableId, seatNumber: seat } : gg));
         seat += g.pax;
       }
-      addToast(`Moved ${ids.length} guests to table`, 'success');
+      addToast(t('toast.bulkMoved', { n: ids.length }), 'success');
       selectedIds = new Set();
       showBulkMoveModal = false;
     } catch (e: any) {
-      addToast(e.message ?? 'Bulk move failed', 'error');
+      addToast(e.message ?? t('toast.bulkMoveFailed'), 'error');
     } finally {
       bulkMoveSaving = false;
     }
   }
 </script>
 
-<svelte:head> <title>{$weddingTitle ? `${$weddingTitle} – Guests` : 'Guests – WeddingDB'}</title></svelte:head>
+<svelte:head> <title>{$weddingTitle ? `${$weddingTitle} – ${t('nav.guests')}` : `${t('nav.guests')} – WeddingDB`}</title></svelte:head>
 <!-- svelte-ignore a11y_no_static_element_interactions a11y_click_events_have_key_events -->
 <div class="p-4 sm:p-7 max-w-[1400px]" onclick={() => contextMenu = null}>
   <!-- Toolbar -->
@@ -555,58 +555,58 @@ import Users from 'lucide-svelte/icons/users';
     <div class="relative flex-1 min-w-[160px] sm:min-w-[200px] max-w-md">
       <Search class="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 sm:w-[18px] sm:h-[18px] text-gray-400 pointer-events-none {searching ? 'animate-pulse' : ''}" />
       <input
-        type="text" placeholder="Search guests..." bind:value={searchQuery}
-        aria-label="Search guests by name"
+        type="text" placeholder={t("guests.search")} bind:value={searchQuery}
+        aria-label={t("search.aria")}
         class="w-full pl-10 sm:pl-11 pr-3 sm:pr-4 py-2.5 sm:py-3 border border-gray-200 rounded-xl text-sm bg-white focus:border-red focus:ring-2 focus:ring-red/10 outline-none transition-all min-h-[44px]"
       />
     </div>
     <div class="flex items-center gap-1 sm:gap-2 flex-wrap">
       <select bind:value={rsvpFilter} class="px-2 sm:px-3 py-1.5 sm:py-2 border border-gray-200 rounded-xl text-xs sm:text-sm bg-white focus:border-gold outline-none">
-        aria-label="Filter by RSVP status"
-        <option value="all">All Status</option>
-        <option value="confirmed">Confirmed</option>
-        <option value="pending">Pending</option>
-        <option value="declined">Declined</option>
-        <option value="no_response">No Response</option>
+        aria-label={t("guests.filterAria")}
+        <option value="all">{t('guests.allStatus')}</option>
+        <option value="confirmed">{t('rsvp.confirmed')}</option>
+        <option value="pending">{t('rsvp.pending')}</option>
+        <option value="declined">{t('rsvp.declined')}</option>
+        <option value="no_response">{t('rsvp.no_response')}</option>
       </select>
       <button onclick={() => { showImportModal = true; importPreview = []; importFile = null; importError = ''; }}
         class="px-2 sm:px-3 py-1.5 sm:py-2.5 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-xl text-xs sm:text-sm font-semibold transition-colors flex items-center gap-1 sm:gap-1.5">
-        <Upload class="w-3.5 h-3.5 sm:w-4 sm:h-4" /> <span class="hidden sm:inline">Import CSV</span><span class="sm:hidden">Import</span>
+        <Upload class="w-3.5 h-3.5 sm:w-4 sm:h-4" /> <span class="hidden sm:inline">{t('guests.importCsv')}</span><span class="sm:hidden">{t('guests.import')}</span>
       </button>
       <button onclick={exportCSV} class="px-2 sm:px-3 py-1.5 sm:py-2.5 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-xl text-xs sm:text-sm font-semibold transition-colors flex items-center gap-1 sm:gap-1.5">
-        <Download class="w-3.5 h-3.5 sm:w-4 sm:h-4" /> <span class="hidden sm:inline">Export CSV</span><span class="sm:hidden">Export</span>
+        <Download class="w-3.5 h-3.5 sm:w-4 sm:h-4" /> <span class="hidden sm:inline">{t('guests.exportCsv')}</span><span class="sm:hidden">{t('guests.export')}</span>
       </button>
       <button onclick={() => { $drawerCreateMode = true; $isDrawerOpen = true; }} class="flex items-center gap-1 sm:gap-2 px-2.5 sm:px-4 py-1.5 sm:py-2.5 bg-red text-white rounded-xl text-xs sm:text-sm font-semibold hover:bg-red-light transition-colors">
-        <Plus class="w-3.5 h-3.5 sm:w-4 sm:h-4" /> <span class="hidden sm:inline">Add Guest</span><span class="sm:hidden">Add</span>
+        <Plus class="w-3.5 h-3.5 sm:w-4 sm:h-4" /> <span class="hidden sm:inline">{t('guests.add')}</span><span class="sm:hidden">{t('guests.add')}</span>
       </button>
     </div>
   </div>
 
   {#if selectedIds.size > 0}
     <div class="mb-4 px-4 py-3 bg-red-50 border border-red-100 rounded-xl flex items-center gap-3 text-sm">
-      <span class="font-semibold text-red">{selectedIds.size} selected</span>
-      <button onclick={openBulkMove} class="px-3 py-1.5 bg-white/90 border border-black/[0.06] rounded-lg text-xs font-medium hover:bg-gray-50">Move Table</button>
-      <button onclick={bulkDelete} class="px-3 py-1.5 bg-white border border-red-200 rounded-lg text-xs font-medium text-red hover:bg-red-50">Delete</button>
+      <span class="font-semibold text-red">{selectedIds.size} {t('guests.selected')}</span>
+      <button onclick={openBulkMove} class="px-3 py-1.5 bg-white/90 border border-black/[0.06] rounded-lg text-xs font-medium hover:bg-gray-50">{t('move.title')}</button>
+      <button onclick={bulkDelete} class="px-3 py-1.5 bg-white border border-red-200 rounded-lg text-xs font-medium text-red hover:bg-red-50">{t('common.delete')}</button>
     </div>
   {/if}
 
   {#if loading}
-    <div class="flex items-center justify-center py-20 text-gray-400">Loading guests...</div>
+    <div class="flex items-center justify-center py-20 text-gray-400">{t('guests.loading')}</div>
   {:else if errored}
     <div class="flex flex-col items-center justify-center py-20 text-center">
       <div class="w-16 h-16 bg-red-50 rounded-full flex items-center justify-center mb-4">
         <AlertCircle class="w-8 h-8 text-red" />
       </div>
-      <p class="text-red font-medium">Failed to load guests</p>
+      <p class="text-red font-medium">{t('guests.loadFailed')}</p>
       <p class="text-sm text-gray-500 mt-1 mb-4">{error}</p>
       <button onclick={() => { currentPage = 0; }} class="px-4 py-2 bg-red text-white rounded-xl text-sm font-semibold hover:bg-red-light transition-colors">
-        Retry
+        {t('common.retry')}
       </button>
     </div>
   {:else if searchError}
     <div class="flex flex-col items-center justify-center py-20 text-center">
       <AlertCircle class="w-8 h-8 text-red mb-4" />
-      <p class="text-red font-medium">Search failed</p>
+      <p class="text-red font-medium">{t('toast.searchFailed')}</p>
       <p class="text-sm text-gray-500 mt-1">{searchError}</p>
     </div>
   {:else if allGuests.length === 0}
@@ -614,10 +614,21 @@ import Users from 'lucide-svelte/icons/users';
       <div class="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mb-4">
         <Users class="w-8 h-8 text-gray-400" />
       </div>
-      <p class="text-gray-500 font-medium">No guests yet</p>
-      <p class="text-sm text-gray-400 mt-1 mb-4">Add your first guest to get started.</p>
+      <p class="text-gray-500 font-medium">{t('guests.none')}</p>
+      <p class="text-sm text-gray-400 mt-1 mb-4">{t('guests.first')}</p>
       <button onclick={() => { $drawerCreateMode = true; $isDrawerOpen = true; }} class="px-4 py-2.5 bg-red text-white rounded-xl text-sm font-semibold hover:bg-red-light transition-colors flex items-center gap-2">
-        <Plus class="w-4 h-4" /> Add Guest
+        <Plus class="w-4 h-4" /> {t('guests.add')}
+      </button>
+    </div>
+  {:else if filtered.length === 0}
+    <div class="flex flex-col items-center justify-center py-20 text-center">
+      <div class="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mb-4">
+        <Search class="w-8 h-8 text-gray-400" />
+      </div>
+      <p class="text-gray-500 font-medium">{t('guests.noMatch')}</p>
+      <p class="text-sm text-gray-400 mt-1 mb-4">{t('guests.noMatchHint')}</p>
+      <button onclick={clearFilters} class="px-4 py-2.5 bg-white border border-gray-200 text-gray-700 rounded-xl text-sm font-semibold hover:bg-gray-50 transition-colors">
+        {t('guests.clearFilters')}
       </button>
     </div>
   {:else if filtered.length === 0}
@@ -649,7 +660,7 @@ import Users from 'lucide-svelte/icons/users';
                   <span class="inline-flex items-center gap-1">{col.label} <ArrowUpDown class="w-3 h-3" /></span>
                 </th>
               {/each}
-              <th class="px-4 py-3 text-left text-[12px] font-semibold uppercase tracking-wider text-gray-500">Notes</th>
+              <th class="px-4 py-3 text-left text-[12px] font-semibold uppercase tracking-wider text-gray-500">{t('common.notes')}</th>
               <th class="px-4 py-3 w-10"></th>
             </tr>
           </thead>
@@ -670,7 +681,6 @@ import Users from 'lucide-svelte/icons/users';
                     <span class="font-semibold text-gray-900">{guest.name}</span>
                   </div>
                 </td>
-                <td class="px-4 py-3.5 text-gray-600">{guest.phone}</td>
                 <td class="px-4 py-3.5"><Badge status={guest.rsvp as RSVPStatus} /></td>
                 <td class="px-4 py-3.5 text-gray-700 font-medium">{guest.pax}</td>
                 <td class="px-4 py-3.5 text-gray-700 font-medium">{tables.find(t => t.id === guest.tableId)?.name || (guest.tableId ?? '—')}</td>
@@ -680,15 +690,15 @@ import Users from 'lucide-svelte/icons/users';
                 <td class="px-4 py-3.5">
                   {#if guest.checkedInAt}
                     <span class="inline-flex items-center gap-1 px-2 py-0.5 bg-emerald-50 text-emerald-700 rounded-full text-xs font-semibold border border-emerald-200">
-                      <span class="w-1.5 h-1.5 rounded-full bg-emerald-500"></span> Yes
+                      <span class="w-1.5 h-1.5 rounded-full bg-emerald-500"></span> {t('common.yes')}
                     </span>
                   {:else}
-                    <span class="text-gray-400">No</span>
+                    <span class="text-gray-400">{t('common.no')}</span>
                   {/if}
                 </td>
                 <td class="px-4 py-3.5 text-gray-500 max-w-[140px] truncate">{guest.notes || '—'}</td>
                 <td class="px-4 py-3.5" onclick={(e) => e.stopPropagation()}>
-                  <button class="p-1.5 rounded-lg hover:bg-gray-100" aria-label="Actions"
+                  <button class="p-1.5 rounded-lg hover:bg-gray-100" aria-label={t("guests.actions")}
                     onclick={(e) => { e.stopPropagation(); handleCtx(e, guest); }}>
                     <MoreHorizontal class="w-4 h-4 text-gray-400" />
                   </button>
@@ -702,15 +712,15 @@ import Users from 'lucide-svelte/icons/users';
       <!-- Pagination -->
       <div class="px-5 py-4 border-t border-gray-100 flex items-center justify-between text-sm">
         <span class="text-gray-500">
-          Page {currentPage + 1}{totalPages > 0 ? ` of ${totalPages}` : ''} · {displayTotal} guests
+          Page {currentPage + 1}{totalPages > 0 ? t('guests.pageOf', { tp: totalPages }) : ''} · {t('guests.count', { n: displayTotal })}
         </span>
         <div class="flex items-center gap-2">
           <button onclick={prevPage} disabled={currentPage === 0}
-            class="p-2 rounded-lg border border-gray-200 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed" aria-label="Previous page">
+            class="p-2 rounded-lg border border-gray-200 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed" aria-label={t("guests.prevPage")}>
             <ChevronLeft class="w-4 h-4" />
           </button>
           <button onclick={nextPage} disabled={!hasNextPage}
-            class="p-2 rounded-lg border border-gray-200 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed" aria-label="Next page">
+            class="p-2 rounded-lg border border-gray-200 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed" aria-label={t("guests.nextPage")}>
             <ChevronRight class="w-4 h-4" />
           </button>
       </div>
@@ -724,10 +734,10 @@ import Users from 'lucide-svelte/icons/users';
   <div class="fixed inset-0 z-[700] flex items-center justify-center bg-black/30 backdrop-blur-md" onclick={() => showBulkMoveModal = false}>
     <!-- svelte-ignore a11y_no_static_element_interactions a11y_click_events_have_key_events -->
     <div class="bg-white/95 backdrop-blur-xl rounded-2xl shadow-2xl w-full max-w-md p-6" onclick={(e) => e.stopPropagation()}>
-      <h3 class="text-lg font-semibold text-gray-900 mb-4">Move {selectedIds.size} Guests</h3>
+      <h3 class="text-lg font-semibold text-gray-900 mb-4">{t('guests.moveN', { n: selectedIds.size })}</h3>
       <div class="space-y-3 mb-6">
         <div>
-          <label for="bulk-move-table" class="block text-xs font-medium text-gray-500 mb-1">New Table</label>
+          <label for="bulk-move-table" class="block text-xs font-medium text-gray-500 mb-1">{t('move.newTable')}</label>
           <select id="bulk-move-table" bind:value={bulkMoveTableId} onchange={() => { bulkMoveSeatStart = getNextBulkSeatNum(); }} class="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm bg-white focus:border-gold outline-none">
             {#each tables as t}
               <option value={String(t.id)}>{t.name}</option>
@@ -736,20 +746,20 @@ import Users from 'lucide-svelte/icons/users';
         </div>
         {#if bulkMoveTableId}
           <div>
-            <label for="bulk-move-seat" class="block text-xs font-medium text-gray-500 mb-1">Starting Seat Number (1–{getBulkTableCapacity()})</label>
+            <label for="bulk-move-seat" class="block text-xs font-medium text-gray-500 mb-1">{t('move.startSeat', { max: getBulkTableCapacity() })}</label>
             <input id="bulk-move-seat" type="number" min="1" max={getBulkTableCapacity()} bind:value={bulkMoveSeatStart}
               class="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm bg-white focus:border-gold focus:ring-2 focus:ring-gold/15 outline-none transition-all" />
           </div>
           <div class="text-xs text-gray-400">
-            Occupied: {bulkOccupiedSeats.size}/{getBulkTableCapacity()} seats
+            {t('guests.occupiedN', { n: bulkOccupiedSeats.size, cap: getBulkTableCapacity() })}
           </div>
         {/if}
       </div>
       <div class="flex justify-end gap-2">
-        <button onclick={() => showBulkMoveModal = false} class="px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 rounded-lg">Cancel</button>
+        <button onclick={() => showBulkMoveModal = false} class="px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 rounded-lg">{t('common.cancel')}</button>
         <button onclick={confirmBulkMove} disabled={!bulkMoveTableId || bulkMoveSaving}
           class="px-4 py-2 text-sm font-medium text-white bg-red rounded-lg hover:bg-red-light disabled:opacity-50 transition-colors">
-          {bulkMoveSaving ? 'Moving...' : `Move ${selectedIds.size} Guests`}
+          {bulkMoveSaving ? t('guests.moving') : t('guests.moveN', { n: selectedIds.size })}
         </button>
       </div>
     </div>
@@ -765,19 +775,19 @@ import Users from 'lucide-svelte/icons/users';
   <div class="fixed z-[600] bg-white/95 backdrop-blur-xl border border-black/[0.06] rounded-xl shadow-xl py-1.5 min-w-[180px]"
     style={getMenuStyle(contextMenu.x, contextMenu.y)} onclick={(e) => e.stopPropagation()}>
     <button class="w-full flex items-center gap-2.5 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50" onclick={() => { $drawerStartEditing = true; openGuest(contextMenu!.guest); contextMenu = null; }}>
-      <Pencil class="w-4 h-4" /> Edit
+      <Pencil class="w-4 h-4" /> {t('common.edit')}
     </button>
     <button class="w-full flex items-center gap-2.5 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50" onclick={() => openMoveTable(contextMenu!.guest)}>
-      <ArrowUpDown class="w-4 h-4" /> Move Table
+      <ArrowUpDown class="w-4 h-4" /> {t('move.title')}
     </button>
     {#if contextMenu!.guest.tableId}
       <button class="w-full flex items-center gap-2.5 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50" onclick={() => unassignGuest(contextMenu!.guest)}>
-        <ArrowUpDown class="w-4 h-4" /> Unassign Table
+        <ArrowUpDown class="w-4 h-4" /> {t('guest.unassign')}
       </button>
     {/if}
     <hr class="my-1 border-gray-100" />
     <button class="w-full flex items-center gap-2.5 px-4 py-2 text-sm text-red hover:bg-red-50" onclick={() => requestDelete(contextMenu!.guest)}>
-      <Trash2 class="w-4 h-4" /> Delete
+      <Trash2 class="w-4 h-4" /> {t('common.delete')}
     </button>
   </div>
 {/if}
@@ -801,13 +811,13 @@ import Users from 'lucide-svelte/icons/users';
     <div class="absolute inset-0 bg-black/30 backdrop-blur-md" onclick={() => showImportModal = false} role="presentation"></div>
     <div class="relative bg-white/95 backdrop-blur-xl rounded-2xl shadow-2xl w-full max-w-lg overflow-hidden">
       <div class="flex items-center justify-between p-5 border-b border-gray-100">
-        <h3 class="font-bold text-gray-900">Import Guests from CSV</h3>
+        <h3 class="font-bold text-gray-900">{t('guests.importTitle')}</h3>
         <button onclick={() => showImportModal = false} class="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-gray-100 transition-colors">
           <X class="w-4 h-4 text-gray-400" />
         </button>
       </div>
       <div class="p-5 space-y-4">
-        <p class="text-sm text-gray-600">Upload a CSV file with columns: <strong>name</strong> (required), email, pax, rsvp, vip, notes, dietary, table, seat</p>
+        <p class="text-sm text-gray-600">{t('guests.importHelp')} <strong>name</strong> (required), email, pax, rsvp, vip, notes, dietary, table, seat</p>
 
         <div class="border-2 border-dashed border-gray-200 rounded-xl p-6 text-center hover:border-red/50 transition-colors">
           <input type="file" accept=".csv" onchange={handleImportFile} class="hidden" id="csv-input" />
@@ -815,9 +825,9 @@ import Users from 'lucide-svelte/icons/users';
             <FileText class="w-8 h-8 text-gray-400 mx-auto mb-2" />
             {#if importFile}
               <p class="text-sm font-semibold text-gray-900">{importFile.name}</p>
-              <p class="text-xs text-gray-500">{importPreview.length} guests found</p>
+              <p class="text-xs text-gray-500">{t('toast.foundN', { n: importPreview.length })}</p>
             {:else}
-              <p class="text-sm text-gray-600">Click to select CSV file</p>
+              <p class="text-sm text-gray-600">{t('guests.selectCsv')}</p>
             {/if}
           </label>
         </div>
@@ -832,14 +842,14 @@ import Users from 'lucide-svelte/icons/users';
           <div class="max-h-48 overflow-y-auto border border-gray-200 rounded-xl">
             <table class="w-full text-xs">
               <thead><tr class="bg-gray-50 border-b border-gray-200">
-                <th class="px-3 py-2 text-left font-semibold text-gray-600">Name</th>
-                <th class="px-3 py-2 text-left font-semibold text-gray-600">Pax</th>
+                <th class="px-3 py-2 text-left font-semibold text-gray-600">{t('common.name')}</th>
+                <th class="px-3 py-2 text-left font-semibold text-gray-600">{t('guest.paxLabel')}</th>
                 <th class="px-3 py-2 text-left font-semibold text-gray-600">VIP</th>
                 {#if importPreview.some(g => g.table)}
-                  <th class="px-3 py-2 text-left font-semibold text-gray-600">Table</th>
+                  <th class="px-3 py-2 text-left font-semibold text-gray-600">{t('common.table')}</th>
                 {/if}
                 {#if importPreview.some(g => g.seat)}
-                  <th class="px-3 py-2 text-left font-semibold text-gray-600">Seat</th>
+                  <th class="px-3 py-2 text-left font-semibold text-gray-600">{t('guest.seat')}</th>
                 {/if}
               </tr></thead>
               <tbody>
@@ -859,7 +869,7 @@ import Users from 'lucide-svelte/icons/users';
               </tbody>
             </table>
             {#if importPreview.length > 20}
-              <p class="text-xs text-gray-400 text-center py-2">...and {importPreview.length - 20} more</p>
+              <p class="text-xs text-gray-400 text-center py-2">...{t('guests.andMore', { n: importPreview.length - 20 })}</p>
             {/if}
           </div>
         {/if}
@@ -868,14 +878,14 @@ import Users from 'lucide-svelte/icons/users';
         <button onclick={handleImport} disabled={importing || importPreview.length === 0}
           class="flex-1 py-2.5 bg-red text-white rounded-xl text-sm font-semibold hover:bg-red-light transition-colors disabled:opacity-50 flex items-center justify-center gap-2">
           {#if importing}
-            <div class="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"></div> Importing...
+            <div class="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"></div> {t('guests.importing')}
           {:else}
-            <Upload class="w-4 h-4" /> Import {importPreview.length} Guests
+            <Upload class="w-4 h-4" /> {t('guests.importN', { n: importPreview.length })}
           {/if}
         </button>
         <button onclick={() => showImportModal = false}
           class="px-5 py-2.5 border border-black/[0.06] bg-white/90 rounded-xl text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors">
-          Cancel
+          {t('common.cancel')}
         </button>
       </div>
     </div>
@@ -884,10 +894,10 @@ import Users from 'lucide-svelte/icons/users';
 
 <ConfirmDialog
   open={showUnassignConfirm}
-  title="Unassign Table"
-  message={`Remove ${unassignTarget?.name ?? 'this guest'} from their table? They will no longer have an assigned seat.`}
-  confirmLabel="Unassign"
-  cancelLabel="Cancel"
+  title={t('guest.unassign')}
+  message={t('guest.unassignMsg', { name: unassignTarget?.name ?? t('guest.thisGuest') })}
+  confirmLabel={t("guest.unassignAction")}
+  cancelLabel={t("common.cancel")}
   variant="warning"
   onConfirm={confirmUnassign}
   onCancel={() => { showUnassignConfirm = false; unassignTarget = null; }}
@@ -895,10 +905,10 @@ import Users from 'lucide-svelte/icons/users';
 
 <ConfirmDialog
   open={showDeleteConfirm}
-  title="Delete Guest"
-  message={`Delete ${deleteTarget?.name ?? 'this guest'}? This cannot be undone.`}
-  confirmLabel="Delete"
-  cancelLabel="Cancel"
+  title={t('guests.deleteTitle')}
+  message={t('guests.deleteMsg', { name: deleteTarget?.name ?? t('guest.thisGuest') })}
+  confirmLabel={t("common.delete")}
+  cancelLabel={t("common.cancel")}
   variant="danger"
   onConfirm={confirmDelete}
   onCancel={() => { showDeleteConfirm = false; deleteTarget = null; }}

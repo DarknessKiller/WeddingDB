@@ -4,6 +4,7 @@ import ArrowUpDown from 'lucide-svelte/icons/arrow-up-down';
   import { getInitials } from '$lib/utils';
   import type { Guest, BanquetTable } from '$lib/types';
   import { trapFocus } from '$lib/utils/focus';
+  import { t } from '$lib/i18n';
 
   let {
     guest,
@@ -85,7 +86,7 @@ import ArrowUpDown from 'lucide-svelte/icons/arrow-up-down';
       <div class="drawer-pill-bar"></div>
     </div>
     <div class="drawer-header">
-      <h2 id="drawer-title" class="drawer-title">Move Table</h2>
+      <h2 id="drawer-title" class="drawer-title">{t('move.title')}</h2>
       <div class="drawer-actions">
         <button onclick={onClose} class="drawer-icon-btn flex" aria-label="Close">
           <X class="w-5 h-5" />
@@ -99,25 +100,25 @@ import ArrowUpDown from 'lucide-svelte/icons/arrow-up-down';
         <div class="min-w-0">
           <h3 class="guest-name-lg">{guest.name}</h3>
           <div class="text-xs text-gray-500 mt-0.5">
-            <span>{guest.pax} pax</span>
+            <span>{t('pax', { n: guest.pax })}</span>
           </div>
         </div>
       </div>
 
       <div class="detail-grid">
         <div class="detail-card">
-          <div class="detail-label">Current Table</div>
+          <div class="detail-label">{t('move.currentTable')}</div>
           <div class="detail-value">{currentTableName}</div>
         </div>
         <div class="detail-card">
-          <div class="detail-label">Current Seat</div>
+          <div class="detail-label">{t('move.currentSeat')}</div>
           <div class="detail-value">{guest.seatNumber ?? '—'}</div>
         </div>
       </div>
 
       <div class="form-grid">
         <div class="form-field">
-          <label for="move-table" class="form-label">New Table</label>
+          <label for="move-table" class="form-label">{t('move.newTable')}</label>
           <select id="move-table" bind:value={tableId} class="form-input">
             {#each tables as t}
               <option value={String(t.id)}>{t.name}</option>
@@ -125,12 +126,12 @@ import ArrowUpDown from 'lucide-svelte/icons/arrow-up-down';
           </select>
         </div>
         <div class="form-field">
-          <label for="move-seat" class="form-label">Starting Seat (1–{capacity})</label>
+          <label for="move-seat" class="form-label">{t('move.startSeat', { max: capacity })}</label>
           <input id="move-seat" type="number" min="1" max={capacity} bind:value={seatNum} class="form-input {!rangeOk ? 'input-error' : ''}" />
           {#if !rangeOk}
-            <p class="text-xs text-red mt-1">No room for {guest.pax} pax starting at seat {seatNum}. Free seats: {freeCount}</p>
+            <p class="text-xs text-red mt-1">{t('move.noRoom', { pax: guest.pax, seat: seatNum, free: freeCount })}</p>
           {:else}
-            <p class="text-xs text-gray-400 mt-1">{guest.pax > 1 ? `Party of ${guest.pax}: seats ${seatNum}–${seatNum + guest.pax - 1}` : `Seat ${seatNum}`} · {freeCount} free</p>
+            <p class="text-xs text-gray-400 mt-1">{guest.pax > 1 ? t('move.partyOf', { n: guest.pax, a: seatNum, b: seatNum + guest.pax - 1 }) : t('move.seatN', { n: seatNum })} · {t('move.freeCount', { n: freeCount })}</p>
           {/if}
         </div>
       </div>
@@ -139,7 +140,7 @@ import ArrowUpDown from 'lucide-svelte/icons/arrow-up-down';
     <div class="drawer-footer flex">
       <button onclick={save} disabled={!rangeOk}
         class="w-full py-3 bg-red text-white rounded-xl text-sm font-semibold hover:bg-red-light transition-colors flex items-center justify-center gap-2 disabled:opacity-50">
-        <ArrowUpDown class="w-4 h-4" /> Move to Table
+        <ArrowUpDown class="w-4 h-4" /> {t('move.confirm')}
       </button>
     </div>
   </div>

@@ -5,6 +5,7 @@ import Loader2 from 'lucide-svelte/icons/loader-2';
   import { fade } from 'svelte/transition';
   import { onMount } from 'svelte';
   import { slideOut as sheetSlideOut } from '$lib/utils/motion';
+  import { t } from '$lib/i18n';
 
   function outfade(node: HTMLElement) {
     return { duration: sheetSlideOut(node, { dir: 'y', duration: 300 }) };
@@ -86,23 +87,23 @@ import Loader2 from 'lucide-svelte/icons/loader-2';
       <div class="w-10 h-1 bg-gray-300 rounded-full"></div>
     </div>
     <div class="flex items-center justify-between p-5 border-b border-gray-100">
-      <h3 id="check-in-title" class="font-bold text-gray-900">Check In {guestName}</h3>
+      <h3 id="check-in-title" class="font-bold text-gray-900">{t('checkin.title', { name: guestName })}</h3>
       <button onclick={onClose} aria-label="Close" class="min-w-[44px] min-h-[44px] rounded-lg flex items-center justify-center hover:bg-gray-100 transition-colors">
         <X class="w-4 h-4 text-gray-400" />
       </button>
     </div>
     <div class="p-5 space-y-4">
-      <p class="text-sm text-gray-600">Mark {guestName} as arrived. Angpao and gifts are recorded separately from the guest list.</p>
+      <p class="text-sm text-gray-600">{t('checkin.desc', { name: guestName })}</p>
       <div>
         <label for="checkin-notes" class="block text-sm font-medium text-gray-700 mb-1.5">
-          Notes <span class="text-gray-400 font-normal">(optional)</span>
+          {t('checkin.notesLabel')} <span class="text-gray-400 font-normal">{t('checkin.notesOptional')}</span>
         </label>
         <input
           id="checkin-notes"
           type="text"
           bind:value={notes}
           onkeydown={onNotesKeydown}
-          placeholder="e.g. arrived with 2 kids"
+          placeholder={t('checkin.notesPlaceholder')}
           class="w-full px-4 py-3 rounded-xl border border-black/[0.08] bg-white text-sm text-gray-900 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-red/20 focus:border-red transition-shadow"
         />
       </div>
@@ -111,14 +112,14 @@ import Loader2 from 'lucide-svelte/icons/loader-2';
       <button bind:this={confirmBtn} onclick={() => onConfirm(notes)} disabled={loading}
         class="flex-1 py-3 bg-red text-white rounded-xl text-sm font-semibold hover:bg-red-light transition-colors flex items-center justify-center gap-2 disabled:opacity-50">
         {#if loading}
-          <Loader2 class="w-4 h-4 text-white animate-spin" /> Processing...
+          <Loader2 class="w-4 h-4 text-white animate-spin" /> {t('checkin.processing')}
         {:else}
-          <UserCheck class="w-4 h-4" /> Confirm Check In
+          <UserCheck class="w-4 h-4" /> {t('checkin.confirm')}
         {/if}
       </button>
       <button onclick={onClose}
         class="px-6 py-3 border border-black/[0.06] bg-white/90 rounded-xl text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors">
-        Cancel
+        {t('checkin.cancel')}
       </button>
     </div>
   </div>

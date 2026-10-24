@@ -20,12 +20,13 @@ import (
 type GuestService struct {
 	guestRepo *repository.GuestRepo
 	tableRepo *repository.TableRepo
+	adminRepo *repository.AdminRepo
 	sseHub    *SSEHub
 	db        *gorm.DB
 }
 
-func NewGuestService(guestRepo *repository.GuestRepo, tableRepo *repository.TableRepo, sseHub *SSEHub, db *gorm.DB) *GuestService {
-	return &GuestService{guestRepo: guestRepo, tableRepo: tableRepo, sseHub: sseHub, db: db}
+func NewGuestService(guestRepo *repository.GuestRepo, tableRepo *repository.TableRepo, adminRepo *repository.AdminRepo, sseHub *SSEHub, db *gorm.DB) *GuestService {
+	return &GuestService{guestRepo: guestRepo, tableRepo: tableRepo, adminRepo: adminRepo, sseHub: sseHub, db: db}
 }
 
 // MaxGuestsPerWedding caps a wedding at 1000 guests. Party size counts: a
@@ -193,17 +194,9 @@ func (s *GuestService) AssignSeat(ctx context.Context, guestID, weddingID, table
 // receptionist (FIFO conflict).
 func (s *GuestService) CheckIn(ctx context.Context, id, weddingID uuid.UUID, notes string) error {
 	now := time.Now()
-	updatedNotes := ""
 	notes = strings.TrimSpace(notes)
-	if notes != "" {
-		existing, err := s.guestRepo.FindByID(ctx, id, weddingID)
-		if err != nil {
-			return err
-		}
-		updatedNotes = appendNote(existing.Notes, notes)
-	}
 	// Atomic conditional update: only check in if not already checked in
-	if err := s.guestRepo.ConditionalCheckIn(ctx, id, weddingID, now, updatedNotes); err != nil {
+	if err := s.guestRepo.ConditionalCheckIn(ctx, id, weddingID, now, notes, s.recorderName(ctx)); err != nil {
 		if errors.Is(err, repository.ErrAlreadyCheckedIn) {
 			return ErrAlreadyCheckedIn
 		}
@@ -391,6 +384,7 @@ type SyncMutation struct {
 
 type SyncResult struct {
 	GuestID      string              `json:"guestId"`
+	Op           SyncOp              `json:"op,omitempty"`
 	Status       string              `json:"status"` // applied | skipped | failed
 	Reason       string              `json:"reason,omitempty"`
 	ServerRecord *models.GuestRecord `json:"serverRecord,omitempty"`
@@ -402,6 +396,7 @@ func (s *GuestService) Sync(ctx context.Context, weddingID uuid.UUID, mutations 
 	results := make([]SyncResult, 0, len(mutations))
 	for _, m := range mutations {
 		res := s.applySyncMutation(ctx, weddingID, m)
+		res.Op = m.Op
 		results = append(results, res)
 	}
 	return results, nil
@@ -526,11 +521,16 @@ func (s *GuestService) applySyncMutation(ctx context.Context, weddingID uuid.UUI
 		if !found {
 			return SyncResult{GuestID: m.GuestID, Status: "skipped", Reason: "not found"}
 		}
+		if existing.CheckedInAt != nil && opTime.After(*existing.CheckedInAt) {
+			// Another device already checked this guest in; never overwrite.
+			return SyncResult{GuestID: m.GuestID, Status: "skipped", Reason: "already checked in", ServerRecord: existing}
+		}
 		if opTime.Before(existing.UpdatedAt) {
 			return SyncResult{GuestID: m.GuestID, Status: "skipped", Reason: "older than server", ServerRecord: existing}
 		}
 		existing.CheckedInAt = &opTime
 		existing.RSVP = "confirmed"
+		existing.CheckedInBy = s.recorderName(ctx)
 		if m.Payload != nil {
 			if m.Payload.AngbaoAmt != nil {
 				existing.AngbaoAmt = m.Payload.AngbaoAmt
@@ -538,9 +538,7 @@ func (s *GuestService) applySyncMutation(ctx context.Context, weddingID uuid.UUI
 			if m.Payload.GiftItem != nil {
 				existing.GiftItem = m.Payload.GiftItem
 			}
-			// A notes value in a checkin payload is appended to the guest's notes,
-			// never replacing them, so a queued note never wipes existing notes.
-			existing.Notes = appendNote(existing.Notes, strings.TrimSpace(m.Payload.Notes))
+			existing.CheckinNote = strings.TrimSpace(m.Payload.Notes)
 		}
 		existing.UpdatedAt = opTime
 		if err := s.guestRepo.SyncUpdate(ctx, existing); err != nil {
@@ -682,4 +680,24 @@ func guestToEventData(g *models.GuestRecord) *GuestEventData {
 		d.GiftItem = g.GiftItem
 	}
 	return d
+}
+
+// recorderName resolves the authenticated admin behind ctx to a display name
+// (falls back to email). Empty string when there is no auth context (tests).
+func (s *GuestService) recorderName(ctx context.Context) string {
+	if s.adminRepo == nil {
+		return ""
+	}
+	id, ok := ctx.Value(AdminIDKey).(uuid.UUID)
+	if !ok {
+		return ""
+	}
+	admin, err := s.adminRepo.FindByID(ctx, id)
+	if err != nil || admin == nil {
+		return ""
+	}
+	if admin.Name != "" {
+		return admin.Name
+	}
+	return admin.Email
 }

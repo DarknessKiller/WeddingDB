@@ -10,9 +10,11 @@
   import { validateToken } from '$lib/utils/auth';
   import { fetchAllGuests } from '$lib/api/guests';
   import { syncQueue } from '$lib/offline/queue';
+  import { addToast } from '$lib/stores';
   import { getWedding } from '$lib/api/weddings';
   import { listTables } from '$lib/api/tables';
   import { initializeSSE, refreshGuests } from '$lib/stores/guestEvents';
+  import { t } from '$lib/i18n';
   import type { BanquetTable } from '$lib/types';
 
   let { children } = $props();
@@ -65,7 +67,15 @@
     async function doSync() {
       if (!wid || typeof window === 'undefined' || !navigator.onLine) return;
       try {
-        await syncQueue(wid);
+        const { results: syncResults } = await syncQueue(wid);
+        // Surface server truth for check-ins another device already recorded.
+        const recordedBy = new Set<string>();
+        for (const r of syncResults as { op?: string; status: string; serverRecord?: { checkedInAt?: string; checkedInBy?: string } }[]) {
+          if (r.status === 'skipped' && r.op === 'checkin' && r.serverRecord?.checkedInAt) {
+            recordedBy.add(r.serverRecord.checkedInBy || t('checkin.unknownDevice'));
+          }
+        }
+        for (const by of recordedBy) addToast(t('checkin.byOther', { by }), 'info');
         // Refresh inside the syncing window so SSE events arriving mid-fetch
         // are queued and replayed after the seed instead of being clobbered.
         const guests = await refreshGuests(loadGuests);
@@ -132,7 +142,7 @@
         onkeydown={(e) => { if (e.key === 'Escape') $sidebarCollapsed = true; }}
         role="button"
         tabindex="-1"
-        aria-label="Close sidebar"
+        aria-label={t("common.closeSidebar")}
       ></div>
     {/if}
 
@@ -140,9 +150,9 @@
 
     <div class="main-area">
       {#if offline}
-        <div class="offline-banner">Offline — changes queued{queued ? ` (${queued})` : ''}</div>
+        <div class="offline-banner">{t('offline.banner')}{queued ? ` (${queued})` : ''}</div>
       {:else if queued}
-        <div class="offline-banner queued">{queued} queued — syncing on reconnect <button onclick={async () => { await syncQueue(wid); refreshQueued(); }}>Sync now</button></div>
+        <div class="offline-banner queued">{t('offline.queued', { n: queued })} <button onclick={async () => { await syncQueue(wid); refreshQueued(); }}>{t('offline.syncNow')}</button></div>
       {/if}
       <Header />
       <main class="main-content">

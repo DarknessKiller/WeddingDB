@@ -1,5 +1,6 @@
 <script lang="ts">
-  import { searchGuests, listTables } from '$lib/api/search';
+  import { listTables } from '$lib/api/search';
+  import { searchGuestsLocal } from '$lib/utils/guestSearch';
   import { weddingTitle } from '$lib/stores/weddingTitle';
   import { getLayout } from '$lib/api/layout';
   import { addToast, selectedGuest, isDrawerOpen } from '$lib/stores';
@@ -14,6 +15,7 @@ import CheckCircle2 from 'lucide-svelte/icons/check-circle-2';
   import { onMount } from 'svelte';
   import type { Guest, BanquetTable, HallElement } from '$lib/types';
   import HallMap from '$lib/components/seating/HallMap.svelte';
+  import { t } from '$lib/i18n';
 
   let query = $state('');
   let results = $state<Guest[]>([]);
@@ -100,38 +102,26 @@ import CheckCircle2 from 'lucide-svelte/icons/check-circle-2';
         hallHeight = layout.hallHeight;
       }
     } catch {
-      addToast('Failed to load data', 'error');
+      addToast(t('toast.loadFailed'), 'error');
     } finally {
       dataLoading = false;
     }
   }
 
-  async function doSearch() {
+  function doSearch() {
     const q = query.trim();
-    if (!q) { results = []; return; }
-    loading = true;
-    try {
-      results = await searchGuests(q);
-    } catch {
-      addToast('Search failed', 'error');
-      results = [];
-    } finally {
-      loading = false;
-    }
+    // Local search over the SSE-synced guestList: instant, works offline.
+    results = q ? searchGuestsLocal(allGuests, q) : [];
   }
 
   $effect(() => {
-    let timer: ReturnType<typeof setTimeout> | undefined;
     if (query.trim().length > 0) {
       showResults = true;
-      loading = true;
-      timer = setTimeout(doSearch, 300);
+      doSearch();
     } else {
       results = [];
       showResults = false;
-      loading = false;
     }
-    return () => clearTimeout(timer);
   });
 
   function openGuest(guest: Guest) {
@@ -161,14 +151,14 @@ import CheckCircle2 from 'lucide-svelte/icons/check-circle-2';
   let highlightedTableId = $derived($selectedGuest?.tableId ?? highlightTableId);
 </script>
 
-<svelte:head> <title>{$weddingTitle ? `${$weddingTitle} – Search` : 'Search – WeddingDB'}</title></svelte:head>
+<svelte:head> <title>{$weddingTitle ? `${$weddingTitle} – ${t('nav.checkin')}` : `${t('nav.checkin')} – WeddingDB`}</title></svelte:head>
 
 
 {#if dataLoading}
   <div class="flex items-center justify-center h-full">
     <div class="text-center text-gray-400">
       <div class="w-8 h-8 border-2 border-red/30 border-t-red rounded-full animate-spin mx-auto mb-3"></div>
-      <p class="text-sm">Loading check-in data...</p>
+      <p class="text-sm">{t('search.loading')}</p>
     </div>
   </div>
 {:else}
@@ -190,8 +180,8 @@ import CheckCircle2 from 'lucide-svelte/icons/check-circle-2';
       <!-- svelte-ignore a11y_autofocus -->
       <input
         type="text"
-        placeholder="Search by name..."
-        aria-label="Search guests by name"
+        placeholder={t("search.placeholder")}
+        aria-label={t("search.aria")}
         bind:value={query}
         onfocus={() => { if (query.trim()) showResults = true; }}
         class="w-full pl-12 pr-11 py-3.5 bg-white/80 rounded-2xl text-base border border-black/[0.06] focus:border-red focus:ring-2 focus:ring-red/10 outline-none transition-all placeholder-gray-400 min-h-[48px] shadow-sm"
@@ -241,8 +231,8 @@ import CheckCircle2 from 'lucide-svelte/icons/check-circle-2';
         {:else if !loading}
           <div class="px-4 py-6 text-center text-gray-400">
             <Search class="w-8 h-8 mx-auto mb-2 opacity-40" />
-            <p class="text-sm font-medium">No guests found</p>
-            <p class="text-xs mt-1">Try fewer letters, or the pinyin of the name.</p>
+            <p class="text-sm font-medium">{t('kiosk.noResults')}</p>
+            <p class="text-xs mt-1">{t('kiosk.tryFewer')}</p>
           </div>
         {/if}
       </div>
@@ -256,13 +246,13 @@ import CheckCircle2 from 'lucide-svelte/icons/check-circle-2';
       <div class="md:w-80 lg:w-96 md:border-r border-gray-200 bg-white overflow-y-auto flex-shrink-0 max-h-[35vh] md:max-h-none">
         {#if allGuests.length === 0}
           <div class="p-8 text-center text-gray-400">
-            <p class="text-sm">Loading guests...</p>
+            <p class="text-sm">{t('common.loading')}</p>
           </div>
         {:else}
           <div class="flex items-center gap-2 px-3 py-1.5 border-b border-gray-100 bg-gray-50 text-xs">
-            <button onclick={() => toggleSort('name')} class="{sortCol === 'name' ? 'text-red font-bold' : 'text-gray-500'}">Name</button>
-            <button onclick={() => toggleSort('rsvp')} class="{sortCol === 'rsvp' ? 'text-red font-bold' : 'text-gray-500'}">RSVP</button>
-            <button onclick={() => toggleSort('checkedIn')} class="{sortCol === 'checkedIn' ? 'text-red font-bold' : 'text-gray-500'}">Status</button>
+            <button onclick={() => toggleSort('name')} class="{sortCol === 'name' ? 'text-red font-bold' : 'text-gray-500'}">{t('common.name')}</button>
+            <button onclick={() => toggleSort('rsvp')} class="{sortCol === 'rsvp' ? 'text-red font-bold' : 'text-gray-500'}">{t('guest.rsvp')}</button>
+            <button onclick={() => toggleSort('checkedIn')} class="{sortCol === 'checkedIn' ? 'text-red font-bold' : 'text-gray-500'}">{t('search.status')}</button>
           </div>
           <div class="divide-y divide-gray-100">
             {#each sortedGuests as guest (guest.id)}
@@ -286,7 +276,7 @@ import CheckCircle2 from 'lucide-svelte/icons/check-circle-2';
                   <div class="flex items-center gap-2 text-xs text-gray-500">
                     <span>{tables.find(t => t.id === guest.tableId)?.name || '—'}</span>
                     <span>•</span>
-                    <span>{guest.pax} pax</span>
+                    <span>{t('pax', { n: guest.pax })}</span>
                   </div>
                 </div>
                 <Badge status={guest.rsvp} />

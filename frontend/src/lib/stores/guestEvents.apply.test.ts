@@ -18,7 +18,7 @@ function resp(id: string, name = 'Alice'): GuestResponse {
 	return {
 		id, weddingId: 'w1', name, email: '', pax: 2,
 		rsvp: 'confirmed', isVip: false, notes: '', dietary: [], tableId: null,
-		seatNum: null, checkedInAt: null, angbaoAmt: null, giftItem: null,
+		seatNum: null, checkedInAt: null, checkinNote: '', checkedInBy: '', angbaoAmt: null, giftItem: null,
 		createdAt: '2026-01-01T00:00:00Z', updatedAt: '2026-01-01T00:00:00Z'
 	};
 }

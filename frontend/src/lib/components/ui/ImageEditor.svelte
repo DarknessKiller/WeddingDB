@@ -5,6 +5,7 @@ import Move from 'lucide-svelte/icons/move';
 import Maximize2 from 'lucide-svelte/icons/maximize-2';
   import { uploadFile } from '$lib/api/client';
   import { addToast } from '$lib/stores';
+  import { t } from '$lib/i18n';
 
   let {
     value = $bindable(''),
@@ -38,9 +39,9 @@ import Maximize2 from 'lucide-svelte/icons/maximize-2';
     try {
       const result = await uploadFile(file);
       value = window.location.origin + result.url;
-      addToast(`${label} uploaded`, 'success');
+      addToast(t('img.uploaded', { label }), 'success');
     } catch (err: any) {
-      addToast(err.message || 'Upload failed', 'error');
+      addToast(err.message || t('img.uploadFailed'), 'error');
     } finally {
       uploading = false;
       input.value = '';
@@ -71,7 +72,7 @@ import Maximize2 from 'lucide-svelte/icons/maximize-2';
           ></div>
         {/if}
         <!-- Remove button -->
-        <button onclick={clear} class="absolute top-2 right-2 p-1.5 bg-white/90 rounded-lg hover:bg-white transition-colors shadow-sm z-10" aria-label="Remove image">
+        <button onclick={clear} class="absolute top-2 right-2 p-1.5 bg-white/90 rounded-lg hover:bg-white transition-colors shadow-sm z-10" aria-label={t("img.remove")}>
           <X class="w-4 h-4 text-gray-600" />
         </button>
       </div>
@@ -81,7 +82,7 @@ import Maximize2 from 'lucide-svelte/icons/maximize-2';
         <!-- Size -->
         <div>
           <label class="flex items-center gap-1.5 text-xs font-medium text-gray-600 mb-1">
-            <Maximize2 class="w-3 h-3" /> Size
+            <Maximize2 class="w-3 h-3" /> {t('img.size')}
           </label>
           <div class="flex gap-1">
             {#each ['cover', 'contain', 'auto'] as opt}
@@ -99,7 +100,7 @@ import Maximize2 from 'lucide-svelte/icons/maximize-2';
         <div class="grid grid-cols-2 gap-3">
           <div>
             <label class="flex items-center justify-between text-xs font-medium text-gray-600 mb-1">
-              <span class="flex items-center gap-1"><Move class="w-3 h-3" /> Position X</span>
+              <span class="flex items-center gap-1"><Move class="w-3 h-3" /> {t('img.posX')}</span>
               <span class="text-gray-400">{posX}</span>
             </label>
             <input type="range" min="0" max="100" step="1" value={parseInt(posX) || 50}
@@ -108,7 +109,7 @@ import Maximize2 from 'lucide-svelte/icons/maximize-2';
           </div>
           <div>
             <label class="flex items-center justify-between text-xs font-medium text-gray-600 mb-1">
-              <span class="flex items-center gap-1"><Move class="w-3 h-3" /> Position Y</span>
+              <span class="flex items-center gap-1"><Move class="w-3 h-3" /> {t('img.posY')}</span>
               <span class="text-gray-400">{posY}</span>
             </label>
             <input type="range" min="0" max="100" step="1" value={parseInt(posY) || 50}
@@ -121,7 +122,7 @@ import Maximize2 from 'lucide-svelte/icons/maximize-2';
         {#if showBlur}
           <div>
             <label for="blur-range" class="flex items-center justify-between text-xs font-medium text-gray-600 mb-1">
-              <span>Blur</span>
+              <span>{t('img.blur')}</span>
               <span class="text-gray-400">{blur}px</span>
             </label>
             <input id="blur-range" type="range" min="0" max="20" step="1" bind:value={blur}
@@ -135,11 +136,11 @@ import Maximize2 from 'lucide-svelte/icons/maximize-2';
     <label for="image-upload" class="flex flex-col items-center justify-center h-32 border-2 border-dashed border-gray-200 rounded-xl cursor-pointer hover:border-red/50 hover:bg-red-50/30 transition-colors">
       {#if uploading}
         <div class="w-6 h-6 border-2 border-red/30 border-t-red rounded-full animate-spin mb-2"></div>
-        <span class="text-xs text-gray-500">Uploading...</span>
+        <span class="text-xs text-gray-500">{t('img.uploading')}</span>
       {:else}
         <Upload class="w-6 h-6 text-gray-400 mb-2" />
-        <span class="text-xs text-gray-500">Click or drag to upload {label}</span>
-        <span class="text-[10px] text-gray-400 mt-0.5">or paste a URL below</span>
+        <span class="text-xs text-gray-500">{t('img.drop', { label })}</span>
+        <span class="text-[10px] text-gray-400 mt-0.5">{t('img.pasteBelow')}</span>
       {/if}
       <input id="image-upload" type="file" {accept} class="hidden" onchange={handleFile} />
     </label>
@@ -150,7 +151,7 @@ import Maximize2 from 'lucide-svelte/icons/maximize-2';
         type="url"
         {value}
         oninput={(e) => value = (e.target as HTMLInputElement).value}
-        placeholder="Or paste image URL..."
+        placeholder={t("img.pasteUrl")}
         class="w-full px-3 py-2 border border-gray-200 rounded-lg text-xs bg-white focus:border-red focus:ring-1 focus:ring-red/15 outline-none transition-all"
       />
     </div>

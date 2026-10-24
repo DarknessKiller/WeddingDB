@@ -4,6 +4,7 @@
   import { getPublicLayout } from '$lib/api/layout';
   import { cn, getInitials } from '$lib/utils';
   import { formatSeatRange, formatPartySize } from '$lib/utils/seat';
+  import { searchGuestsLocal } from '$lib/utils/guestSearch';
   import Maximize from 'lucide-svelte/icons/maximize';
 import Minimize from 'lucide-svelte/icons/minimize';
 import Monitor from 'lucide-svelte/icons/monitor';
@@ -13,10 +14,12 @@ import MapPin from 'lucide-svelte/icons/map-pin';
 import Users from 'lucide-svelte/icons/users';
 import Star from 'lucide-svelte/icons/star';
   import { onMount, onDestroy } from 'svelte';
+  import { get } from 'svelte/store';
   import { fade, fly } from 'svelte/transition';
   import { page } from '$app/state';
   import { setWeddingId } from '$lib/stores/weddingId';
-  import { showSeatNumbers, setShowSeatNumbers } from '$lib/stores';
+  import { showSeatNumbers, setShowSeatNumbers, kioskIdleReset } from '$lib/stores';
+  import { t } from '$lib/i18n';
   import type { Guest, BanquetTable, HallElement } from '$lib/types';
 
   let query = $state('');
@@ -35,6 +38,23 @@ import Star from 'lucide-svelte/icons/star';
   // AbortController tied to the page lifecycle: aborted on destroy so slow
   // responses (e.g. network handoff) cannot stack after navigation/refresh.
   let pageAbort = new AbortController();
+
+  // Idle reset: kiosk reads as broken when someone else's result stays on
+  // screen. 15s of no input returns it to the search view.
+  const IDLE_RESET_MS = 15_000;
+  let idleTimer: ReturnType<typeof setTimeout> | undefined;
+  function resetIdleTimer() {
+    if (!get(kioskIdleReset)) return;
+    if (idleTimer) clearTimeout(idleTimer);
+    idleTimer = setTimeout(() => {
+      if (selectedGuest || query.trim()) {
+        backToSearch();
+        sheetCollapsed = false;
+        sheetY = 0;
+      }
+    }, IDLE_RESET_MS);
+  }
+  function onKioskInput() { resetIdleTimer(); }
 
   // Guest list polling: kiosks run for hours, so re-fetch every 60s.
   let pollTimer: ReturnType<typeof setInterval> | undefined;
@@ -59,6 +79,7 @@ import Star from 'lucide-svelte/icons/star';
     // Apply the server value even when it's an empty string — only
     // undefined (field absent) means "keep the default".
     if (data.kioskDescription !== undefined) kioskDescription = data.kioskDescription;
+    if (data.kioskIdleReset !== undefined) kioskIdleReset.set(data.kioskIdleReset);
     if (data.kioskLogoUrl) kioskLogoUrl = data.kioskLogoUrl;
     if (data.kioskBackgroundUrl) kioskBackgroundUrl = data.kioskBackgroundUrl;
     if (data.kioskBackgroundSize) kioskBackgroundSize = data.kioskBackgroundSize;
@@ -125,25 +146,10 @@ import Star from 'lucide-svelte/icons/star';
   let hasValidTable = $derived(selectedGuest?.tableId != null && selectedTable !== null);
 
   $effect(() => {
+    // Local search over the polled guest list: instant, works when venue WiFi dies.
     const q = query.trim();
-    if (!q) { results = []; searching = false; return; }
-    searching = true;
-    let cancelled = false;
-    abortController?.abort();
-    const controller = new AbortController();
-    abortController = controller;
-    const timer = setTimeout(async () => {
-      try {
-        const wid = page.params.wid ?? '';
-        const res = await fetch(`/api/public/weddings/${wid}/guests/search?q=${encodeURIComponent(q)}`, { signal: controller.signal });
-        if (!res.ok) throw new Error('Search failed');
-        const data = await res.json();
-        if (!cancelled && !controller.signal.aborted) { results = data.map(mapGuest); searching = false; }
-      } catch (e) {
-        if (!cancelled && !controller.signal.aborted && !(e instanceof DOMException && e.name === 'AbortError')) { results = []; searching = false; }
-      }
-    }, 300);
-    return () => { cancelled = true; clearTimeout(timer); controller.abort(); };
+    results = q ? searchGuestsLocal(allGuests, q) : [];
+    searching = !!q && allGuests.length === 0;
   });
 
   onMount(() => {
@@ -161,6 +167,9 @@ import Star from 'lucide-svelte/icons/star';
     getPublicLayout(wid, { signal: pageAbort.signal }).then(l => { tables = l.tables; elements = l.elements; hallWidth = l.hallWidth; hallHeight = l.hallHeight; }).catch(() => {});
     loadKioskConfig();
     document.addEventListener('visibilitychange', onKioskVisible);
+    document.addEventListener('pointerdown', onKioskInput);
+    document.addEventListener('keydown', onKioskInput);
+    resetIdleTimer();
   });
 
   onDestroy(() => {
@@ -170,6 +179,9 @@ import Star from 'lucide-svelte/icons/star';
     pageAbort.abort(); // cancel any in-flight initial fetches
     pageAbort = new AbortController(); // fresh controller if component remounts
     document.removeEventListener('visibilitychange', onKioskVisible);
+    document.removeEventListener('pointerdown', onKioskInput);
+    document.removeEventListener('keydown', onKioskInput);
+    if (idleTimer) clearTimeout(idleTimer);
     if (mqHandler) {
       const mq = window.matchMedia('(prefers-reduced-motion: reduce)');
       mq.removeEventListener('change', mqHandler);
@@ -353,7 +365,7 @@ import Star from 'lucide-svelte/icons/star';
         {:else}
           <div class="top-bar-brand">
             <Monitor class="icon-sm text-red" />
-            <span class="top-bar-wedding-name text-align-left">{weddingName || 'Wedding'}</span>
+            <span class="top-bar-wedding-name text-align-left">{weddingName || t('weddings.fallback')}</span>
           </div>
         {/if}
       </div>
@@ -361,7 +373,7 @@ import Star from 'lucide-svelte/icons/star';
       <!-- Center: always show kiosk title -->
       <div class="top-bar-center">
         {#if selectedGuest}
-          <span class="top-bar-wedding-name">{weddingName || 'Wedding'}</span>
+          <span class="top-bar-wedding-name">{weddingName || t('weddings.fallback')}</span>
         {/if}
       </div>
 
@@ -495,7 +507,7 @@ import Star from 'lucide-svelte/icons/star';
           {:else}
             <div class="hero-icon">囍</div>
           {/if}
-          <h1 class="hero-title">{weddingName || 'Wedding'}</h1>
+          <h1 class="hero-title">{weddingName || t('weddings.fallback')}</h1>
           {#if weddingDate}
             <p class="hero-date">{formatWeddingDate(weddingDate)}</p>
           {/if}
@@ -514,6 +526,8 @@ import Star from 'lucide-svelte/icons/star';
           {/if}
           {#if kioskDescription}
             <p class="hero-subtitle">{kioskDescription}</p>
+          {:else}
+            <p class="hero-subtitle">{t('kiosk.defaultDescription')}</p>
           {/if}
         </div>
 
@@ -524,7 +538,7 @@ import Star from 'lucide-svelte/icons/star';
           <input
             type="text"
             aria-label="Search your name"
-            placeholder="Type your name..."
+            placeholder={t('kiosk.searchPlaceholder')}
             bind:value={query}
             class="search-input"
             autofocus
@@ -532,7 +546,7 @@ import Star from 'lucide-svelte/icons/star';
         </div>
 
         <!-- Results -->
-        <p class="sr-only" role="status">{query.trim() ? (searching ? 'Searching' : `${results.length} results`) : ''}</p>
+        <p class="sr-only" role="status">{query.trim() ? (searching ? t('kiosk.searching') : t('kiosk.nResults', { n: results.length })) : ''}</p>
         {#if results.length > 0}
           <div class="results-list">
             {#each results.slice(0, 8) as guest, i (guest.id)}
@@ -582,7 +596,7 @@ import Star from 'lucide-svelte/icons/star';
         {:else if searching}
           <div class="empty-state">
             <div class="spinner"></div>
-            <p class="font-medium text-gray-500">Searching...</p>
+            <p class="font-medium text-gray-500">{t('kiosk.searching')}</p>
           </div>
         {:else}
           <div class="empty-state">
