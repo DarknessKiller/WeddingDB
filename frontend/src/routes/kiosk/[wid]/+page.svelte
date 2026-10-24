@@ -38,6 +38,22 @@ import Star from 'lucide-svelte/icons/star';
   // responses (e.g. network handoff) cannot stack after navigation/refresh.
   let pageAbort = new AbortController();
 
+  // Idle reset: kiosk reads as broken when someone else's result stays on
+  // screen. 15s of no input returns it to the search view.
+  const IDLE_RESET_MS = 15_000;
+  let idleTimer: ReturnType<typeof setTimeout> | undefined;
+  function resetIdleTimer() {
+    if (idleTimer) clearTimeout(idleTimer);
+    idleTimer = setTimeout(() => {
+      if (selectedGuest || query) {
+        backToSearch();
+        sheetCollapsed = false;
+        sheetY = 0;
+      }
+    }, IDLE_RESET_MS);
+  }
+  function onKioskInput() { resetIdleTimer(); }
+
   // Guest list polling: kiosks run for hours, so re-fetch every 60s.
   let pollTimer: ReturnType<typeof setInterval> | undefined;
   let guestsInFlight = false;
@@ -148,6 +164,9 @@ import Star from 'lucide-svelte/icons/star';
     getPublicLayout(wid, { signal: pageAbort.signal }).then(l => { tables = l.tables; elements = l.elements; hallWidth = l.hallWidth; hallHeight = l.hallHeight; }).catch(() => {});
     loadKioskConfig();
     document.addEventListener('visibilitychange', onKioskVisible);
+    document.addEventListener('pointerdown', onKioskInput);
+    document.addEventListener('keydown', onKioskInput);
+    resetIdleTimer();
   });
 
   onDestroy(() => {
@@ -157,6 +176,9 @@ import Star from 'lucide-svelte/icons/star';
     pageAbort.abort(); // cancel any in-flight initial fetches
     pageAbort = new AbortController(); // fresh controller if component remounts
     document.removeEventListener('visibilitychange', onKioskVisible);
+    document.removeEventListener('pointerdown', onKioskInput);
+    document.removeEventListener('keydown', onKioskInput);
+    if (idleTimer) clearTimeout(idleTimer);
     if (mqHandler) {
       const mq = window.matchMedia('(prefers-reduced-motion: reduce)');
       mq.removeEventListener('change', mqHandler);
