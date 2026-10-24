@@ -316,6 +316,8 @@ const zh: Record<string, string> = {
   'move.seatNone': '未分配座位',
   'dash.kiosk': '迎宾台',
   'tables.delete': '删除桌位',
+  'settings.idleReset': '迎宾台闲置复位',
+  'settings.idleResetHint': '开启后，迎宾台闲置 15 秒自动回到查询首屏',
 };
 
 export default zh;

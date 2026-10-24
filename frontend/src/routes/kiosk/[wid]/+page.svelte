@@ -14,10 +14,11 @@ import MapPin from 'lucide-svelte/icons/map-pin';
 import Users from 'lucide-svelte/icons/users';
 import Star from 'lucide-svelte/icons/star';
   import { onMount, onDestroy } from 'svelte';
+  import { get } from 'svelte/store';
   import { fade, fly } from 'svelte/transition';
   import { page } from '$app/state';
   import { setWeddingId } from '$lib/stores/weddingId';
-  import { showSeatNumbers, setShowSeatNumbers } from '$lib/stores';
+  import { showSeatNumbers, setShowSeatNumbers, kioskIdleReset } from '$lib/stores';
   import { t } from '$lib/i18n';
   import type { Guest, BanquetTable, HallElement } from '$lib/types';
 
@@ -43,9 +44,10 @@ import Star from 'lucide-svelte/icons/star';
   const IDLE_RESET_MS = 15_000;
   let idleTimer: ReturnType<typeof setTimeout> | undefined;
   function resetIdleTimer() {
+    if (!get(kioskIdleReset)) return;
     if (idleTimer) clearTimeout(idleTimer);
     idleTimer = setTimeout(() => {
-      if (selectedGuest || query) {
+      if (selectedGuest || query.trim()) {
         backToSearch();
         sheetCollapsed = false;
         sheetY = 0;
@@ -77,6 +79,7 @@ import Star from 'lucide-svelte/icons/star';
     // Apply the server value even when it's an empty string — only
     // undefined (field absent) means "keep the default".
     if (data.kioskDescription !== undefined) kioskDescription = data.kioskDescription;
+    if (data.kioskIdleReset !== undefined) kioskIdleReset.set(data.kioskIdleReset);
     if (data.kioskLogoUrl) kioskLogoUrl = data.kioskLogoUrl;
     if (data.kioskBackgroundUrl) kioskBackgroundUrl = data.kioskBackgroundUrl;
     if (data.kioskBackgroundSize) kioskBackgroundSize = data.kioskBackgroundSize;

@@ -315,6 +315,8 @@ const en: Record<string, string> = {
   'move.seatNone': 'No seat assigned',
   'dash.kiosk': 'Kiosk',
   'tables.delete': 'Delete Table',
+  'settings.idleReset': 'Kiosk idle reset',
+  'settings.idleResetHint': 'Kiosk returns to the search screen after 15 seconds idle',
 };
 
 export default en;

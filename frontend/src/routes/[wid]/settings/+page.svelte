@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { weddingTitle } from '$lib/stores/weddingTitle';
-  import { addToast, showSeatNumbers, setShowSeatNumbers } from '$lib/stores';
+  import { addToast, showSeatNumbers, setShowSeatNumbers, kioskIdleReset, setKioskIdleReset } from '$lib/stores';
   import { weddingId } from '$lib/stores/weddingId';
   import { get } from 'svelte/store';
   import { getWedding, updateKioskSettings, type Wedding, type KioskSettings } from '$lib/api/weddings';
@@ -57,6 +57,7 @@ import MapPin from 'lucide-svelte/icons/map-pin';
         if (wedding.kioskLogoPosX) kioskLogoPosX = wedding.kioskLogoPosX;
         if (wedding.kioskLogoPosY) kioskLogoPosY = wedding.kioskLogoPosY;
         setShowSeatNumbers(wedding.id, wedding.showSeatNumbers ?? false);
+        setKioskIdleReset(wedding.id, wedding.kioskIdleReset ?? false);
       }
     } catch {
       addToast(t('toast.loadFailed'), 'error');
@@ -70,7 +71,7 @@ import MapPin from 'lucide-svelte/icons/map-pin';
       venueName, venueAddress, kioskDescription, kioskLogoUrl,
       kioskBackgroundUrl, kioskBackgroundBlur, kioskBackgroundSize,
       kioskBackgroundPosX, kioskBackgroundPosY, kioskLogoSize,
-      kioskLogoPosX, kioskLogoPosY, showSeatNumbers: $showSeatNumbers,
+      kioskLogoPosX, kioskLogoPosY, showSeatNumbers: $showSeatNumbers, kioskIdleReset: $kioskIdleReset,
     };
   }
 
@@ -83,6 +84,18 @@ import MapPin from 'lucide-svelte/icons/map-pin';
     } catch (e: any) {
       setShowSeatNumbers(wedding.id, !next);
       addToast(e.message ?? t('toast.saveFailed'), 'error');
+    }
+  }
+  async function toggleIdleReset() {
+    if (!wedding) return;
+    const next = !$kioskIdleReset;
+    setKioskIdleReset(wedding.id, next);
+    try {
+      await updateKioskSettings(wedding.id, { ...kioskPayload(), kioskIdleReset: next });
+      addToast(t('toast.settingsSaved'), 'success');
+    } catch {
+      setKioskIdleReset(wedding.id, !next);
+      addToast(t('toast.saveFailed'), 'error');
     }
   }
   async function handleSave() {
@@ -268,6 +281,23 @@ import MapPin from 'lucide-svelte/icons/map-pin';
             aria-checked={$showSeatNumbers}
             class="relative inline-flex h-6 w-11 items-center rounded-full transition-colors {$showSeatNumbers ? 'bg-deep-red' : 'bg-gray-200'}">
             <span class="inline-block h-4 w-4 transform rounded-full bg-white transition-transform {$showSeatNumbers ? 'translate-x-6' : 'translate-x-1'}"></span>
+          </button>
+        </div>
+      </div>
+
+      <!-- Idle Reset Toggle -->
+      <div class="bg-white/90 backdrop-blur-xl border border-black/[0.06] rounded-2xl p-5 shadow-sm">
+        <div class="flex items-center justify-between py-1">
+          <div>
+            <p class="text-sm font-semibold text-gray-900">{t('settings.idleReset')}</p>
+            <p class="text-xs text-gray-500">{t('settings.idleResetHint')}</p>
+          </div>
+          <button onclick={toggleIdleReset}
+            aria-label={t("settings.idleReset")}
+            role="switch"
+            aria-checked={$kioskIdleReset}
+            class="relative inline-flex h-6 w-11 items-center rounded-full transition-colors {$kioskIdleReset ? 'bg-deep-red' : 'bg-gray-200'}">
+            <span class="inline-block h-4 w-4 transform rounded-full bg-white transition-transform {$kioskIdleReset ? 'translate-x-6' : 'translate-x-1'}"></span>
           </button>
         </div>
       </div>
