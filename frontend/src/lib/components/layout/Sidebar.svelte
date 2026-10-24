@@ -5,8 +5,8 @@
   import LayoutDashboard from 'lucide-svelte/icons/layout-dashboard';
 import Users from 'lucide-svelte/icons/users';
 import MapPin from 'lucide-svelte/icons/map-pin';
-import Search from 'lucide-svelte/icons/search';
 import Monitor from 'lucide-svelte/icons/monitor';
+import Search from 'lucide-svelte/icons/search';
 import Calendar from 'lucide-svelte/icons/calendar';
 import Settings from 'lucide-svelte/icons/settings';
 import BarChart3 from 'lucide-svelte/icons/bar-chart-3';
@@ -36,6 +36,7 @@ import FileDown from 'lucide-svelte/icons/file-down';
       label: t('nav.operations'),
       items: [
         { href: `/${wid}/seating`, label: t('nav.seating'), icon: MapPin },
+        { href: `/${wid}/wall`, label: t('nav.wall'), icon: Monitor },
         { href: `/${wid}/search`, label: t('nav.checkin'), icon: Search },
         { href: `/${wid}/reports`, label: t('nav.reports'), icon: FileDown },
       ]
