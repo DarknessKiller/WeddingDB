@@ -18,7 +18,6 @@ func NewGuestHandler(guestService *services.GuestService) *GuestHandler {
 
 type GuestCreateRequest struct {
 	Name      string   `json:"name"`
-	Phone     string   `json:"phone"`
 	Email     string   `json:"email"`
 	Pax       int      `json:"pax"`
 	RSVP      string   `json:"rsvp"`
@@ -102,7 +101,6 @@ func (h *GuestHandler) Create(c fuego.ContextWithBody[GuestCreateRequest]) (any,
 	guest := &models.GuestRecord{
 		WeddingID: wid,
 		Name:      body.Name,
-		Phone:     body.Phone,
 		Email:     body.Email,
 		Pax:       body.Pax,
 		RSVP:      body.RSVP,
@@ -166,7 +164,6 @@ func (h *GuestHandler) Update(c fuego.ContextWithBody[GuestCreateRequest]) (any,
 		return nil, fuego.NotFoundError{Title: "Guest not found"}
 	}
 	guest.Name = body.Name
-	guest.Phone = body.Phone
 	guest.Email = body.Email
 	guest.Pax = body.Pax
 	guest.RSVP = body.RSVP
@@ -336,7 +333,6 @@ func (h *GuestHandler) BulkImport(c fuego.ContextWithBody[BulkImportRequest]) (a
 		gr := models.GuestRecord{
 			WeddingID: wid,
 			Name:      g.Name,
-			Phone:     g.Phone,
 			Email:     g.Email,
 			Pax:       g.Pax,
 			RSVP:      g.RSVP,

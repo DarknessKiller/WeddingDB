@@ -53,6 +53,9 @@ import ExternalLink from 'lucide-svelte/icons/external-link';
   });
 
   // Recent activity derived from the SSE-backed guestList store — updates in real time.
+  const RSVP_LABELS: Record<string, string> = {
+    confirmed: 'Confirmed', pending: 'Pending', declined: 'Declined', no_response: 'No response',
+  };
   let activity = $derived.by((): ActivityItem[] => {
     const recent = [...$guestList]
       .sort((a, b) => getActivityTimestamp(b).getTime() - getActivityTimestamp(a).getTime())
@@ -60,7 +63,7 @@ import ExternalLink from 'lucide-svelte/icons/external-link';
     return recent.map((g: Guest) => ({
       id: g.id,
       type: g.checkedIn ? 'check_in' as const : 'rsvp_update' as const,
-      message: g.checkedIn ? 'checked in' : `RSVP: ${g.rsvp}`,
+      message: g.checkedIn ? 'checked in' : `RSVP: ${RSVP_LABELS[g.rsvp] ?? g.rsvp}`,
       guestName: g.name,
       timestamp: getActivityTimestamp(g),
       icon: g.checkedIn ? 'check-circle' : 'user-check'
@@ -69,6 +72,7 @@ import ExternalLink from 'lucide-svelte/icons/external-link';
   let totalPax = $derived(stats.totalPax || 1);
   let confirmedPct = $derived(stats.confirmedGuests / totalPax);
   let pendingPct = $derived(stats.pendingRsvp / totalPax);
+  let declinedPct = $derived(stats.declined / totalPax);
   const DONUT_R = 40;
   const DONUT_CIRCUM = 2 * Math.PI * DONUT_R;
 
@@ -185,6 +189,12 @@ import ExternalLink from 'lucide-svelte/icons/external-link';
               stroke-dashoffset={-DONUT_CIRCUM * confirmedPct}
               stroke-linecap="round" />
           {/if}
+          {#if declinedPct > 0}
+            <circle cx="50" cy="50" r={DONUT_R} fill="none" stroke="#A11217" stroke-width="10"
+              stroke-dasharray="{DONUT_CIRCUM * declinedPct} {DONUT_CIRCUM * (1 - declinedPct)}"
+              stroke-dashoffset={-DONUT_CIRCUM * (confirmedPct + pendingPct)}
+              stroke-linecap="round" />
+          {/if}
         </svg>
       </div>
         <div class="flex justify-center gap-5 flex-wrap text-sm">
@@ -209,6 +219,8 @@ import ExternalLink from 'lucide-svelte/icons/external-link';
               </div>
               <span class="w-10 text-xs font-semibold text-gray-600">{t.percentage}%</span>
             </div>
+          {:else}
+            <p class="text-sm text-gray-400">No tables yet. <a href="/{get(weddingId)}/seating" class="text-red font-medium hover:underline">Set up seating</a>.</p>
           {/each}
         </div>
       </div>
@@ -231,6 +243,8 @@ import ExternalLink from 'lucide-svelte/icons/external-link';
                 <time class="text-xs text-gray-400">{dayjs(item.timestamp).fromNow()}</time>
               </div>
             </div>
+          {:else}
+            <p class="text-sm text-gray-400">No activity yet.</p>
           {/each}
         </div>
       </div>

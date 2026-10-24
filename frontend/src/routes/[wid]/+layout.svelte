@@ -41,7 +41,7 @@
     const toGuest = (g: any) => {
       const createdAt = g.createdAt ? new Date(g.createdAt) : new Date();
       return {
-        id: g.id, name: g.name, phone: g.phone, email: g.email,
+        id: g.id, name: g.name, email: g.email,
         rsvp: g.rsvp as any, pax: g.pax, tableId: g.tableId, seatNumber: g.seatNum,
         checkedIn: !!g.checkedInAt, checkedInAt: g.checkedInAt ? new Date(g.checkedInAt) : undefined,
         notes: g.notes, dietaryRequirements: g.dietary ?? [], isVip: g.isVip,

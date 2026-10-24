@@ -262,6 +262,8 @@ import MapPin from 'lucide-svelte/icons/map-pin';
           </div>
           <button onclick={toggleSeatNumbers}
             aria-label="Toggle seat numbers"
+            role="switch"
+            aria-checked={$showSeatNumbers}
             class="relative inline-flex h-6 w-11 items-center rounded-full transition-colors {$showSeatNumbers ? 'bg-deep-red' : 'bg-gray-200'}">
             <span class="inline-block h-4 w-4 transform rounded-full bg-white transition-transform {$showSeatNumbers ? 'translate-x-6' : 'translate-x-1'}"></span>
           </button>

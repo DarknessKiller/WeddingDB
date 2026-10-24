@@ -4,7 +4,6 @@ import type { DashboardStats, TableOccupancy } from '$lib/types';
 interface RawGuest {
   id: string;
   name: string;
-  phone: string;
   email?: string;
   pax: number;
   rsvp: string;

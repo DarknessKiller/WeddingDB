@@ -41,7 +41,6 @@ func TestGuestToEventData_FullGuest(t *testing.T) {
 	guest := &models.GuestRecord{
 		ID:          gid,
 		Name:        "张三",
-		Phone:       "13800138000",
 		Email:       "zhang@example.com",
 		Pax:         4,
 		RSVP:        "confirmed",

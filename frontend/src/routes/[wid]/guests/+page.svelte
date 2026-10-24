@@ -148,7 +148,6 @@ import Users from 'lucide-svelte/icons/users';
       let av: string | number | null, bv: string | number | null;
       switch (sortCol) {
         case 'name': av = a.name; bv = b.name; break;
-        case 'phone': av = a.phone; bv = b.phone; break;
         case 'rsvp': av = a.rsvp; bv = b.rsvp; break;
         case 'pax': av = a.pax; bv = b.pax; break;
         case 'tableId': av = a.tableId ?? ''; bv = b.tableId ?? ''; break;
@@ -165,6 +164,14 @@ import Users from 'lucide-svelte/icons/users';
   // Paginated slice of the already-filtered list.
   let guests = $derived(filtered.slice(currentPage * pageSize, (currentPage + 1) * pageSize));
   let hasNextPage = $derived((currentPage + 1) * pageSize < filtered.length);
+
+  function clearFilters() {
+    searchQuery = '';
+    rsvpFilter = 'all';
+    searchResults = null;
+    searchError = null;
+    currentPage = 0;
+  }
 
   function nextPage() {
     if (!hasNextPage) return;
@@ -184,7 +191,6 @@ import Users from 'lucide-svelte/icons/users';
     return {
       id: r.id,
       name: r.name,
-      phone: r.phone,
       email: r.email || undefined,
       rsvp: r.rsvp as RSVPStatus,
       pax: r.pax,
@@ -203,7 +209,6 @@ import Users from 'lucide-svelte/icons/users';
 
   const allColumns = [
     { key: 'name', label: 'Name' },
-    { key: 'phone', label: 'Phone' },
     { key: 'rsvp', label: 'RSVP' },
     { key: 'pax', label: 'Pax' },
     { key: 'tableId', label: 'Table' },
@@ -222,12 +227,11 @@ import Users from 'lucide-svelte/icons/users';
   }
 
   function exportCSV() {
-    const headers = ['Name', 'Phone', 'Email', 'Table', 'Seat', 'Pax', 'RSVP', 'VIP', 'Checked In', 'Angbao', 'Gift', 'Notes'];
+    const headers = ['Name', 'Email', 'Table', 'Seat', 'Pax', 'RSVP', 'VIP', 'Checked In', 'Angbao', 'Gift', 'Notes'];
     const rows = filtered.map(g => {
       const table = tables.find(t => String(t.id) === String(g.tableId));
       return [
         g.name,
-        g.phone,
         g.email || '',
         table?.name || '',
         g.seatNumber ?? '',
@@ -365,7 +369,6 @@ import Users from 'lucide-svelte/icons/users';
     const headers = lines[0].split(',').map(h => h.trim().toLowerCase());
     const nameIdx = headers.findIndex(h => h === 'name');
     if (nameIdx === -1) return [];
-    const phoneIdx = headers.findIndex(h => h === 'phone');
     const emailIdx = headers.findIndex(h => h === 'email');
     const paxIdx = headers.findIndex(h => h === 'pax');
     const rsvpIdx = headers.findIndex(h => h === 'rsvp');
@@ -379,7 +382,6 @@ import Users from 'lucide-svelte/icons/users';
       const cols = line.split(',').map(c => c.trim().replace(/^"|"$/g, ''));
       return {
         name: cols[nameIdx] || '',
-        phone: phoneIdx >= 0 ? cols[phoneIdx] : undefined,
         email: emailIdx >= 0 ? cols[emailIdx] : undefined,
         pax: paxIdx >= 0 ? parseInt(cols[paxIdx]) || 1 : 1,
         rsvp: rsvpIdx >= 0 ? cols[rsvpIdx] : 'no_response',
@@ -554,11 +556,13 @@ import Users from 'lucide-svelte/icons/users';
       <Search class="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 sm:w-[18px] sm:h-[18px] text-gray-400 pointer-events-none {searching ? 'animate-pulse' : ''}" />
       <input
         type="text" placeholder="Search guests..." bind:value={searchQuery}
+        aria-label="Search guests by name"
         class="w-full pl-10 sm:pl-11 pr-3 sm:pr-4 py-2.5 sm:py-3 border border-gray-200 rounded-xl text-sm bg-white focus:border-red focus:ring-2 focus:ring-red/10 outline-none transition-all min-h-[44px]"
       />
     </div>
     <div class="flex items-center gap-1 sm:gap-2 flex-wrap">
       <select bind:value={rsvpFilter} class="px-2 sm:px-3 py-1.5 sm:py-2 border border-gray-200 rounded-xl text-xs sm:text-sm bg-white focus:border-gold outline-none">
+        aria-label="Filter by RSVP status"
         <option value="all">All Status</option>
         <option value="confirmed">Confirmed</option>
         <option value="pending">Pending</option>
@@ -605,7 +609,7 @@ import Users from 'lucide-svelte/icons/users';
       <p class="text-red font-medium">Search failed</p>
       <p class="text-sm text-gray-500 mt-1">{searchError}</p>
     </div>
-  {:else if guests.length === 0}
+  {:else if allGuests.length === 0}
     <div class="flex flex-col items-center justify-center py-20 text-center">
       <div class="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mb-4">
         <Users class="w-8 h-8 text-gray-400" />
@@ -614,6 +618,17 @@ import Users from 'lucide-svelte/icons/users';
       <p class="text-sm text-gray-400 mt-1 mb-4">Add your first guest to get started.</p>
       <button onclick={() => { $drawerCreateMode = true; $isDrawerOpen = true; }} class="px-4 py-2.5 bg-red text-white rounded-xl text-sm font-semibold hover:bg-red-light transition-colors flex items-center gap-2">
         <Plus class="w-4 h-4" /> Add Guest
+      </button>
+    </div>
+  {:else if filtered.length === 0}
+    <div class="flex flex-col items-center justify-center py-20 text-center">
+      <div class="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mb-4">
+        <Search class="w-8 h-8 text-gray-400" />
+      </div>
+      <p class="text-gray-500 font-medium">No guests match</p>
+      <p class="text-sm text-gray-400 mt-1 mb-4">Try another name, or clear the status filter.</p>
+      <button onclick={clearFilters} class="px-4 py-2.5 bg-white border border-gray-200 text-gray-700 rounded-xl text-sm font-semibold hover:bg-gray-50 transition-colors">
+        Clear search and filters
       </button>
     </div>
   {:else}
@@ -792,7 +807,7 @@ import Users from 'lucide-svelte/icons/users';
         </button>
       </div>
       <div class="p-5 space-y-4">
-        <p class="text-sm text-gray-600">Upload a CSV file with columns: <strong>name</strong> (required), phone, email, pax, rsvp, vip, notes, dietary, table, seat</p>
+        <p class="text-sm text-gray-600">Upload a CSV file with columns: <strong>name</strong> (required), email, pax, rsvp, vip, notes, dietary, table, seat</p>
 
         <div class="border-2 border-dashed border-gray-200 rounded-xl p-6 text-center hover:border-red/50 transition-colors">
           <input type="file" accept=".csv" onchange={handleImportFile} class="hidden" id="csv-input" />
@@ -818,7 +833,6 @@ import Users from 'lucide-svelte/icons/users';
             <table class="w-full text-xs">
               <thead><tr class="bg-gray-50 border-b border-gray-200">
                 <th class="px-3 py-2 text-left font-semibold text-gray-600">Name</th>
-                <th class="px-3 py-2 text-left font-semibold text-gray-600">Phone</th>
                 <th class="px-3 py-2 text-left font-semibold text-gray-600">Pax</th>
                 <th class="px-3 py-2 text-left font-semibold text-gray-600">VIP</th>
                 {#if importPreview.some(g => g.table)}
@@ -832,7 +846,6 @@ import Users from 'lucide-svelte/icons/users';
                 {#each importPreview.slice(0, 20) as g}
                   <tr class="border-b border-gray-100">
                     <td class="px-3 py-2 font-medium text-gray-900">{g.name}</td>
-                    <td class="px-3 py-2 text-gray-500">{g.phone || '—'}</td>
                     <td class="px-3 py-2 text-gray-500">{g.pax}</td>
                     <td class="px-3 py-2 text-gray-500">{g.isVip ? '★' : ''}</td>
                     {#if importPreview.some(g => g.table)}

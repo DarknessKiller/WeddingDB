@@ -177,7 +177,6 @@ export function applyGuestResponse(resp: GuestResponse) {
 	const guest: Guest = {
 		id: resp.id,
 		name: resp.name,
-		phone: resp.phone,
 		email: resp.email,
 		rsvp: resp.rsvp as RSVPStatus,
 		pax: resp.pax,
@@ -214,7 +213,6 @@ function eventGuestToGuest(d: NonNullable<GuestEvent['guest']>, eventTimestamp: 
 	return {
 		id: d.id,
 		name: d.name,
-		phone: d.phone,
 		email: d.email,
 		rsvp: d.rsvp as RSVPStatus,
 		pax: d.pax,

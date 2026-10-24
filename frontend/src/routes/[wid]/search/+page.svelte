@@ -8,9 +8,9 @@
   import { get } from 'svelte/store';
   import Badge from '$lib/components/ui/Badge.svelte';
   import { getInitials, cn } from '$lib/utils';
+  import { formatPartySize } from '$lib/utils/seat';
   import Search from 'lucide-svelte/icons/search';
 import CheckCircle2 from 'lucide-svelte/icons/check-circle-2';
-import Phone from 'lucide-svelte/icons/phone';
   import { onMount } from 'svelte';
   import type { Guest, BanquetTable, HallElement } from '$lib/types';
   import HallMap from '$lib/components/seating/HallMap.svelte';
@@ -191,6 +191,7 @@ import Phone from 'lucide-svelte/icons/phone';
       <input
         type="text"
         placeholder="Search by name..."
+        aria-label="Search guests by name"
         bind:value={query}
         onfocus={() => { if (query.trim()) showResults = true; }}
         class="w-full pl-12 pr-11 py-3.5 bg-white/80 rounded-2xl text-base border border-black/[0.06] focus:border-red focus:ring-2 focus:ring-red/10 outline-none transition-all placeholder-gray-400 min-h-[48px] shadow-sm"
@@ -224,11 +225,9 @@ import Phone from 'lucide-svelte/icons/phone';
                   <span class="font-semibold text-sm text-gray-900 truncate">{guest.name}</span>
                 </div>
                 <div class="flex items-center gap-2 text-xs text-gray-500">
-                  <span class="flex items-center gap-0.5"><Phone class="w-3 h-3" />{guest.phone}</span>
-                  <span>•</span>
                   <span>{tables.find(t => t.id === guest.tableId)?.name || `T${guest.tableId ?? '?'}`}</span>
                   <span>•</span>
-                  <span>{guest.pax} pax</span>
+                  <span>{formatPartySize(guest.pax)}</span>
                 </div>
               </div>
               <Badge status={guest.rsvp} />
@@ -243,6 +242,7 @@ import Phone from 'lucide-svelte/icons/phone';
           <div class="px-4 py-6 text-center text-gray-400">
             <Search class="w-8 h-8 mx-auto mb-2 opacity-40" />
             <p class="text-sm font-medium">No guests found</p>
+            <p class="text-xs mt-1">Try fewer letters, or the pinyin of the name.</p>
           </div>
         {/if}
       </div>

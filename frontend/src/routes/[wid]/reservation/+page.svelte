@@ -26,7 +26,6 @@ import AlertCircle from 'lucide-svelte/icons/alert-circle';
     return {
       id: r.id,
       name: r.name,
-      phone: r.phone,
       email: r.email,
       rsvp: (r.rsvp as RSVPStatus) ?? 'no_response',
       pax: r.pax,
@@ -100,7 +99,6 @@ import AlertCircle from 'lucide-svelte/icons/alert-circle';
 
   const schema = z.object({
     name: z.string().min(1, 'Name is required'),
-    phone: z.string().optional().refine(val => !val || /^\+?[\d\s\-()]+$/.test(val), 'Invalid phone number'),
     email: z.string().email('Invalid email').optional().or(z.literal('')),
     pax: z.number().min(1, 'At least 1 guest').max(10, 'Max 10 guests'),
     rsvp: z.enum(['confirmed', 'pending', 'declined']),
@@ -115,7 +113,6 @@ import AlertCircle from 'lucide-svelte/icons/alert-circle';
 
   let form = $state<FormData>({
     name: '',
-    phone: '',
     email: '',
     pax: 1,
     rsvp: 'pending',
@@ -231,7 +228,6 @@ import AlertCircle from 'lucide-svelte/icons/alert-circle';
       
       await createGuest(wid, {
         name: form.name,
-        phone: form.phone ?? '',
         email: form.email || undefined,
         pax: assignedPax,
         rsvp: form.rsvp,
@@ -281,7 +277,7 @@ import AlertCircle from 'lucide-svelte/icons/alert-circle';
       </div>
 
       <form onsubmit={(e) => { e.preventDefault(); handleSubmit(); }} class="space-y-5">
-        <!-- Name + Phone -->
+        <!-- Name -->
         <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div>
             <label for="name" class="block text-sm font-semibold text-gray-700 mb-1.5">Full Name *</label>
@@ -296,21 +292,6 @@ import AlertCircle from 'lucide-svelte/icons/alert-circle';
             />
             {#if errors.name}
               <p class="mt-1 text-xs text-red flex items-center gap-1"><AlertCircle class="w-3 h-3" />{errors.name}</p>
-            {/if}
-          </div>
-          <div>
-            <label for="phone" class="block text-sm font-semibold text-gray-700 mb-1.5">Phone</label>
-            <input
-              id="phone"
-              type="tel"
-              bind:value={form.phone}
-              class={cn("w-full px-4 py-2.5 border rounded-xl text-sm bg-white outline-none transition-all",
-                errors.phone ? "border-red focus:ring-2 focus:ring-red/15" : "border-gray-200 focus:border-gold focus:ring-2 focus:ring-gold/15"
-              )}
-              placeholder="+60 12-345 6789"
-            />
-            {#if errors.phone}
-              <p class="mt-1 text-xs text-red flex items-center gap-1"><AlertCircle class="w-3 h-3" />{errors.phone}</p>
             {/if}
           </div>
         </div>
