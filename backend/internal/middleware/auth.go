@@ -7,12 +7,12 @@ import (
 	"weddingdb/internal/services"
 )
 
-type contextKey string
-
+// Context keys live in the services package so services can read them
+// without importing middleware (import cycle).
 const (
-	AdminIDKey   contextKey = "adminId"
-	WeddingIDKey contextKey = "weddingId"
-	RoleKey      contextKey = "role"
+	AdminIDKey   = services.AdminIDKey
+	WeddingIDKey = services.WeddingIDKey
+	RoleKey      = services.RoleKey
 )
 
 func AuthMiddleware(authService *services.AuthService) func(http.Handler) http.Handler {

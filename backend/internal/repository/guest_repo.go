@@ -79,7 +79,7 @@ func (r *GuestRepo) SearchByWedding(ctx context.Context, weddingID uuid.UUID, qu
 	prefix := fmt.Sprintf("%s%%", lowerQ)
 	err := r.db.WithContext(ctx).Raw(`
 		SELECT * FROM guest_records
-		WHERE wedding_id = ? AND (name ILIKE ? OR name_pinyin ILIKE ?)
+		WHERE wedding_id = ? AND (name ILIKE ? OR name_pinyin ILIKE ? OR notes ILIKE ? OR checkin_note ILIKE ?)
 		ORDER BY
 			CASE
 				WHEN LOWER(name) = ? THEN 0
@@ -110,6 +110,8 @@ func (r *GuestRepo) Update(ctx context.Context, g *models.GuestRecord) error {
 		"seat_num":      g.SeatNum,
 		"rsvp":          g.RSVP,
 		"checked_in_at": g.CheckedInAt,
+		"checkin_note":  g.CheckinNote,
+		"checked_in_by": g.CheckedInBy,
 		"notes":         g.Notes,
 		"dietary":       g.Dietary,
 		"is_vip":        g.IsVip,
@@ -140,6 +142,8 @@ func (r *GuestRepo) SyncUpdate(ctx context.Context, g *models.GuestRecord) error
 		"seat_num":      g.SeatNum,
 		"rsvp":          g.RSVP,
 		"checked_in_at": g.CheckedInAt,
+		"checkin_note":  g.CheckinNote,
+		"checked_in_by": g.CheckedInBy,
 		"notes":         g.Notes,
 		"dietary":       g.Dietary,
 		"is_vip":        g.IsVip,
@@ -157,13 +161,16 @@ func (r *GuestRepo) UnassignByTable(ctx context.Context, weddingID, tableID uuid
 }
 
 // ConditionalCheckIn atomically checks in a guest only if not already checked in,
-// and promotes their RSVP to confirmed. A non-empty notes value replaces the stored
-// notes (callers pass the already-joined text).
+// and promotes their RSVP to confirmed. note/recordedBy go on dedicated check-in
+// columns (checkin_note / checked_in_by).
 // Returns ErrAlreadyCheckedIn if the guest was already checked in.
-func (r *GuestRepo) ConditionalCheckIn(ctx context.Context, id, weddingID uuid.UUID, now time.Time, notes string) error {
+func (r *GuestRepo) ConditionalCheckIn(ctx context.Context, id, weddingID uuid.UUID, now time.Time, note, recordedBy string) error {
 	updates := map[string]any{"checked_in_at": now, "rsvp": "confirmed"}
-	if notes != "" {
-		updates["notes"] = notes
+	if note != "" {
+		updates["checkin_note"] = note
+	}
+	if recordedBy != "" {
+		updates["checked_in_by"] = recordedBy
 	}
 	result := r.db.WithContext(ctx).Model(&models.GuestRecord{}).
 		Where("id = ? AND wedding_id = ? AND checked_in_at IS NULL", id, weddingID).

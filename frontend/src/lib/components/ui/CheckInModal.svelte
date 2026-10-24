@@ -95,14 +95,14 @@ import Loader2 from 'lucide-svelte/icons/loader-2';
       <p class="text-sm text-gray-600">Mark {guestName} as arrived. Angpao and gifts are recorded separately from the guest list.</p>
       <div>
         <label for="checkin-notes" class="block text-sm font-medium text-gray-700 mb-1.5">
-          Notes <span class="text-gray-400 font-normal">(optional)</span>
+          备注 <span class="text-gray-400 font-normal">(可选)</span>
         </label>
         <input
           id="checkin-notes"
           type="text"
           bind:value={notes}
           onkeydown={onNotesKeydown}
-          placeholder="e.g. arrived with 2 kids"
+          placeholder="只到1人 / 加凳 / 缺席但是送礼"
           class="w-full px-4 py-3 rounded-xl border border-black/[0.08] bg-white text-sm text-gray-900 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-red/20 focus:border-red transition-shadow"
         />
       </div>

@@ -428,7 +428,6 @@ import Users from 'lucide-svelte/icons/users';
       });
       const result = await bulkImportGuests(resolved.map(g => ({
         name: g.name,
-        phone: g.phone,
         email: g.email,
         pax: g.pax,
         rsvp: g.rsvp,
@@ -670,7 +669,6 @@ import Users from 'lucide-svelte/icons/users';
                     <span class="font-semibold text-gray-900">{guest.name}</span>
                   </div>
                 </td>
-                <td class="px-4 py-3.5 text-gray-600">{guest.phone}</td>
                 <td class="px-4 py-3.5"><Badge status={guest.rsvp as RSVPStatus} /></td>
                 <td class="px-4 py-3.5 text-gray-700 font-medium">{guest.pax}</td>
                 <td class="px-4 py-3.5 text-gray-700 font-medium">{tables.find(t => t.id === guest.tableId)?.name || (guest.tableId ?? '—')}</td>

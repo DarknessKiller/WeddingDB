@@ -48,7 +48,7 @@ func TestGuestCap_PostgresConcurrent(t *testing.T) {
 		t.Fatalf("migrate: %v", err)
 	}
 
-	svc := NewGuestService(repository.NewGuestRepo(db), repository.NewTableRepo(db), nil, db)
+	svc := NewGuestService(repository.NewGuestRepo(db), repository.NewTableRepo(db), nil, nil, db)
 	ctx := context.Background()
 	wid := uuid.New()
 	if err := db.Create(&models.WeddingEvent{ID: wid, Name: "Cap Test"}).Error; err != nil {

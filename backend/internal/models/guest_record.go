@@ -46,6 +46,8 @@ type GuestRecord struct {
 	SeatNum     *int        `json:"seatNum"`
 	RSVP        string      `gorm:"size:20;default:no_response" json:"rsvp"`
 	CheckedInAt *time.Time  `json:"checkedInAt"`
+	CheckinNote string      `gorm:"type:text" json:"checkinNote"`
+	CheckedInBy string      `gorm:"size:255" json:"checkedInBy"`
 	Notes       string      `gorm:"type:text" json:"notes"`
 	Dietary     StringSlice `gorm:"type:text" json:"dietary"`
 	IsVip       bool        `json:"isVip"`
