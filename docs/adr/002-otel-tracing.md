@@ -32,4 +32,4 @@ Debugging request issues needs visibility across frontend → backend → DB. Tr
 
 ## Status
 
-Accepted.
+Implemented: `backend/internal/tracing/tracing.go`, `backend/internal/tracing/server_timing.go`. Code paths and env vars below are the shipped behaviour.

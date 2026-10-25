@@ -200,7 +200,7 @@ claims, err := authService.ValidateToken(token)
 claims, err := authService.ValidateToken(r.Context(), token)
 ```
 
-No other changes needed. The middleware already has `r.Context()` and passes it to the next handler. The `extractBearer` helper stays as-is.
+No other changes needed. The middleware already has `r.Context()` and passes it to the next handler. The `ExtractBearer` helper stays as-is.
 
 ---
 
@@ -208,14 +208,14 @@ No other changes needed. The middleware already has `r.Context()` and passes it 
 
 ### 3b. Modify `Refresh` handler
 
-- Extract old access token from Authorization header via `extractBearer(c.Request())`.
+- Extract old access token from Authorization header via `ExtractBearer(r)`.
 - Pass it to `h.authService.Refresh(c.Context(), body.RefreshToken, oldAccessToken)`.
 - The service blacklists the old token's JTI after rotation.
 
-### 3c. Add `extractBearer` helper
+### 3c. Existing `ExtractBearer` helper
 
 ```go
-func extractBearer(r *http.Request) string
+func ExtractBearer(r *http.Request) string
 ```
 
 - Gets `Authorization` header, strips `"Bearer "` prefix via `strings.CutPrefix`.
@@ -400,7 +400,7 @@ Client → PUT /api/users/{id}/revoke + Authorization: Bearer <admin-token>
 
 ```
 Request → AuthMiddleware
-  → extractBearer(r) → token string
+  → ExtractBearer(r) → token string
   → authService.ValidateToken(ctx, token)
     → jwt.ParseWithClaims → claims (includes tv, jti)
     → IsTokenBlacklisted(ctx, claims.ID)

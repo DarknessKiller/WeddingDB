@@ -1,0 +1,6 @@
+# Tokens check-docs.mjs must ignore: historical mentions of removed code,
+# and docs describing the lint itself.
+export function NAME
+export async function NAME
+type NAME
+func (…) NAME

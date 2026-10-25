@@ -18,6 +18,7 @@ WeddingDB changes the door:
 - **The whole team checks in from their phone.** Anyone with the app finds a guest by name and taps check-in, so the reception desk is not one person with a clipboard.
 - **Angpao is keyed separately, per guest.** Check-in stays one tap. The angpao amount and gift item are recorded from the guest list, so a declined guest who still sent a gift gets an entry too. CSV or Excel export happens after the night, with no transcription.
 - **Seats update live.** Cross off a guest at the door and every screen shows it. A no-show frees a table for a last-minute guest.
+- **Venue WiFi drops, check-in keeps working.** Missed mutations queue in the browser and replay when the connection returns. Later wins on conflict, so two phones checking in the same guest cannot lose the first record. Guest list only; seating and bulk import need a connection.
 
 ## What you get
 
