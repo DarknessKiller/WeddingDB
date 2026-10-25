@@ -17,6 +17,24 @@ Chinese wedding seating & reservation management system.
 └── ui-prototype/   # HTML/CSS/JS design preview (gitignored)
 ```
 
+## Where features live
+
+`docs/` describes intent and decisions; this table is the map from feature to code. Behaviour questions are answered from the code, not from an ADR's prose.
+
+| Feature | Backend | Frontend |
+|---|---|---|
+| Guest CRUD, search, pinyin index | `backend/internal/handlers/guest.go`, `backend/internal/models/pinyin.go` | `frontend/src/lib/api/guests.ts`, `frontend/src/lib/utils/guestSearch.ts` |
+| Offline queue + newer-time-wins sync | `backend/internal/handlers/guest.go` (`GuestHandler.Sync`), `backend/internal/services/guest_service.go` (`GuestService.Sync`) | `frontend/src/lib/offline/queue.ts`, `frontend/src/routes/[wid]/+layout.svelte` |
+| Live updates (SSE) | `backend/internal/services/sse.go`, `backend/internal/handlers/sse.go` | `frontend/src/lib/api/sse.ts`, `frontend/src/lib/stores/guestEvents.ts` |
+| Seating, hall map, tables | `backend/internal/handlers/layout.go`, `backend/internal/handlers/table.go` | `frontend/src/lib/components/seating/` |
+| Angpao reports, CSV/XLSX export | `backend/internal/services/report_service.go`, `backend/internal/handlers/report.go` | `frontend/src/routes/[wid]/reports/+page.svelte` |
+| Auth, JWT refresh rotation, revocation | `backend/internal/services/auth_service.go`, `backend/internal/handlers/auth.go` | `frontend/src/lib/api/client.ts` |
+| Guest kiosk (no login) | `backend/internal/handlers/public_guest.go` | `frontend/src/routes/kiosk/[wid]/+page.svelte` |
+
+Docs: `docs/adr/` for decisions, `docs/specs/` for implementation specs, `docs/dev/README.md` (this file) for setup.
+
+Docs are linted against the code: `node scripts/check-docs.mjs` (run in CI) fails on a doc that names a missing path, a missing function, or an ADR `Status:` other than `Proposed` / `Accepted — not implemented` / `Implemented: <paths>`. Tokens for historical mentions of removed code go in `scripts/docs-allow.txt`.
+
 ## Tech stack
 
 ### Frontend
@@ -93,6 +111,13 @@ The bootstrap only runs when the admin table is empty. After the first admin exi
 | `REDIS_PASSWORD` | unset (no auth) | Optional. When set, Dragonfly runs with `--requirepass` and the app authenticates via `REDIS_URL` |
 | `ADMIN_BOOTSTRAP_PASSWORD` | none | First-boot admin password (required when the database is empty) |
 | `TZ` | `Asia/Kuala_Lumpur` | Report timestamps follow this |
+| `PUBLIC_URL` | `http://localhost:{PORT}` | Public server URL, used in the OpenAPI spec |
+| `CORS_ORIGIN` | `http://localhost:5173` | Allowed origin. Credentials are allowed only for this origin; unset reflects the request origin without credentials |
+| `TRUSTED_PROXIES` | unset | Comma-separated IPs/CIDRs of reverse proxies whose `X-Forwarded-For` is trusted; unset ignores the header |
+| `OTEL_ENABLED` | `false` | Enables OpenTelemetry tracing. See ADR 002 |
+| `OTEL_EXPORTER_OTLP_ENDPOINT` | `http://localhost:4318/v1/traces` | OTLP HTTP endpoint |
+| `OTEL_LOG_SQL` | off | `all` records SQL text on `gorm.query` spans (may contain PII) |
+| `OTEL_LOG_BODY` | off | `all` records JSON request/response bodies on request spans (passwords masked) |
 
 ### Building locally instead
 
@@ -149,19 +174,9 @@ Server runs at `http://localhost:8080`.
 
 ### Environment variables
 
-| Variable | Description | Default |
-|----------|-------------|---------|
-| `DATABASE_URL` | PostgreSQL connection string | none |
-| `REDIS_URL` | Redis connection string | `redis://localhost:6379` |
-| `JWT_SECRET` | Secret for JWT signing (required) | none |
-| `PORT` | Server port | `8080` |
-| `PUBLIC_URL` | Public server URL (used in OpenAPI spec) | `http://localhost:{PORT}` |
-| `CORS_ORIGIN` | Allowed CORS origin (credentials allowed only for this origin; unset reflects request origin without credentials) | `http://localhost:5173` |
-| `TRUSTED_PROXIES` | Comma-separated IPs/CIDRs of reverse proxies whose `X-Forwarded-For` is trusted | unset (header ignored) |
-| `OTEL_ENABLED` | Enable OpenTelemetry tracing | `false` |
-| `OTEL_EXPORTER_OTLP_ENDPOINT` | OTLP HTTP endpoint | `http://localhost:4318/v1/traces` |
-| `OTEL_LOG_SQL` | `all` records SQL text on `gorm.query` spans (may contain PII) | off |
-| `OTEL_LOG_BODY` | `all` records JSON request/response bodies on request spans (passwords masked) | off |
+Full list: [Configuration](#configuration). Nothing is set twice in this file.
+
+For local runs the values differ from compose: `DATABASE_URL` and `REDIS_URL` point at `localhost`, and `ADMIN_BOOTSTRAP_PASSWORD` is not needed after the first boot.
 
 ### Tracing (Jaeger)
 
