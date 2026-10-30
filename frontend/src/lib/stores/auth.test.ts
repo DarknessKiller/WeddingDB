@@ -17,6 +17,7 @@ beforeEach(() => {
 	vi.resetModules();
 	storage = memoryStorage();
 	storage.setItem('weddingdb_access_token', 'old-access');
+	// Legacy key from an older build; the store must stop reading it.
 	storage.setItem('weddingdb_refresh_token', 'refresh-1');
 	Object.defineProperty(globalThis, 'localStorage', { value: storage, configurable: true });
 	listeners = {};
@@ -41,10 +42,9 @@ describe('auth tab sync', () => {
 		expect(getAuth().accessToken).toBe('old-access');
 
 		storage.setItem('weddingdb_access_token', 'new-access');
-		storage.setItem('weddingdb_refresh_token', 'refresh-2');
 		listeners.storage[0]({ key: 'weddingdb_access_token' } as StorageEvent);
 
-		expect(getAuth()).toMatchObject({ accessToken: 'new-access', refreshToken: 'refresh-2' });
+		expect(getAuth()).toMatchObject({ accessToken: 'new-access' });
 	});
 
 	it('mirrors another tab logging out', async () => {
@@ -54,6 +54,6 @@ describe('auth tab sync', () => {
 		storage.clear();
 		listeners.storage[0]({ key: null } as StorageEvent);
 
-		expect(getAuth()).toMatchObject({ accessToken: null, refreshToken: null });
+		expect(getAuth()).toMatchObject({ accessToken: null });
 	});
 });

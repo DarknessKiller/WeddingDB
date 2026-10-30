@@ -27,7 +27,9 @@ jobs:
           cache: true
           cache-dependency-path: backend/go.sum
       - name: Test
-        run: CGO_ENABLED=0 go test ./...
+        # cgo stays on: the suite opens sqlite through go-sqlite3, which is a
+        # stub under CGO_ENABLED=0. The release image still builds with cgo off.
+        run: go test ./...
       - name: Vulnerable dependencies (reachable only)
         # Symbol-level reachability, so unreachable advisories in imported
         # packages stay informational instead of failing the build.
