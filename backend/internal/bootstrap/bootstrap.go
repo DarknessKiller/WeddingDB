@@ -162,6 +162,8 @@ func Init(env config.Env, version string) *App {
 		fuego.Use(server, tracing.Middleware)
 	}
 	fuego.Use(server, middleware.CORSMiddleware)
+	// Cap request bodies: docker-compose ships no reverse proxy to do it.
+	fuego.Use(server, middleware.LimitBody)
 
 	// Serve uploaded files (block directory listing)
 	server.Mux.HandleFunc("GET /uploads/{file}", func(w http.ResponseWriter, r *http.Request) {

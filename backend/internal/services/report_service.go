@@ -81,36 +81,36 @@ func (s *ReportService) GenerateCSV(ctx context.Context, weddingID uuid.UUID) ([
 	w := csv.NewWriter(&buf)
 
 	// Header
-	w.Write([]string{"Guest Name", "Table", "Seat", "Angbao (RM)", "Gift Item", "Checked In"})
+	writeCSV(w, "Guest Name", "Table", "Seat", "Angbao (RM)", "Gift Item", "Checked In")
 
 	// Data rows
 	for _, r := range rows {
-		w.Write([]string{r.GuestName, r.TableName, r.SeatStr, r.AngbaoStr, r.GiftItem, r.CheckedIn})
+		writeCSV(w, r.GuestName, r.TableName, r.SeatStr, r.AngbaoStr, r.GiftItem, r.CheckedIn)
 	}
 
 	// Blank row separator
-	w.Write([]string{})
+	writeCSV(w)
 
 	// Summary
-	w.Write([]string{"SUMMARY", "", "", "", "", ""})
-	w.Write([]string{"Total Angbao", fmt.Sprintf("RM %d", summary.TotalAngbao), "", "", "", ""})
-	w.Write([]string{"Total Guests", strconv.Itoa(summary.TotalGuests), "", "", "", ""})
-	w.Write([]string{"Checked In", strconv.Itoa(summary.CheckedInGuests), "", "", "", ""})
-	w.Write([]string{})
+	writeCSV(w, "SUMMARY")
+	writeCSV(w, "Total Angbao", fmt.Sprintf("RM %d", summary.TotalAngbao))
+	writeCSV(w, "Total Guests", strconv.Itoa(summary.TotalGuests))
+	writeCSV(w, "Checked In", strconv.Itoa(summary.CheckedInGuests))
+	writeCSV(w)
 
 	// Per-table totals
-	w.Write([]string{"TABLE TOTALS", "Angbao (RM)", "", "", "", ""})
+	writeCSV(w, "TABLE TOTALS", "Angbao (RM)")
 	sortedTableNames := s.sortedTableKeys(summary.TotalByTable)
 	for _, tName := range sortedTableNames {
-		w.Write([]string{tName, fmt.Sprintf("RM %d", summary.TotalByTable[tName]), "", "", "", ""})
+		writeCSV(w, tName, fmt.Sprintf("RM %d", summary.TotalByTable[tName]))
 	}
 
 	// Gift items
 	if len(summary.GiftItems) > 0 {
-		w.Write([]string{})
-		w.Write([]string{"GIFT ITEMS", "", "", "", "", ""})
+		writeCSV(w)
+		writeCSV(w, "GIFT ITEMS")
 		for _, g := range summary.GiftItems {
-			w.Write([]string{g, "", "", "", "", ""})
+			writeCSV(w, g)
 		}
 	}
 
@@ -125,6 +125,19 @@ func (s *ReportService) GenerateCSV(ctx context.Context, weddingID uuid.UUID) ([
 
 	return buf.Bytes(), filename, nil
 }
+
+// writeCSV writes one row, prefixing any cell Excel would evaluate as a formula.
+// Guest names and gift items are free text and the export is opened in Excel,
+// so a cell starting with = + - @ tab or CR is a storable payload.
+func writeCSV(w *csv.Writer, cells ...string) {
+	for i, c := range cells {
+		if c != "" && strings.ContainsRune("=+-@\t\r", rune(c[0])) {
+			cells[i] = "'" + c
+		}
+	}
+	w.Write(cells)
+}
+
 
 func (s *ReportService) GenerateXLSX(ctx context.Context, weddingID uuid.UUID) ([]byte, string, error) {
 	wedding, err := s.weddingRepo.FindByID(ctx, weddingID)

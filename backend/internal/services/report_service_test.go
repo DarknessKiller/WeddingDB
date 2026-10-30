@@ -329,3 +329,21 @@ func TestXLSXOutputStructure(t *testing.T) {
 		t.Errorf("Summary B8 (table total): %q, want 450", cell)
 	}
 }
+
+func TestWriteCSV_NeutralizesFormulaCells(t *testing.T) {
+	var buf bytes.Buffer
+	w := csv.NewWriter(&buf)
+	writeCSV(w, "=cmd|'/c calc'!A0", "@SUM(1+1)", "-2+3", "+1", "Alice")
+	writeCSV(w, "Total Angbao", "RM 700")
+	w.Flush()
+
+	out := buf.String()
+	for _, want := range []string{"'=cmd", "'@SUM", "'-2+3", "'+1", "Alice", "Total Angbao"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("missing %q in %q", want, out)
+		}
+	}
+	if strings.Contains(out, "\n=") || strings.Contains(out, "\n@") || strings.Contains(out, "\n-") || strings.Contains(out, "\n+") {
+		t.Fatalf("unprefixed formula cell: %q", out)
+	}
+}
