@@ -12,14 +12,15 @@ export function getAccessToken(): string {
 }
 
 async function doRefresh(): Promise<boolean> {
-	const { refreshToken } = getAuth();
-	if (!refreshToken) return false;
+	// The refresh token is an HttpOnly cookie; the body carries nothing.
+	if (!getAuth().accessToken && !getAuth().name) return false;
 	let refreshRes: Response;
 	try {
 		refreshRes = await fetch(`${BASE}/api/auth/refresh`, {
 			method: 'POST',
+			credentials: 'include',
 			headers: { 'Content-Type': 'application/json' },
-			body: JSON.stringify({ refreshToken })
+			body: '{}'
 		});
 	} catch {
 		// Network failure — the token was never seen by the server, so keep the session.
@@ -28,11 +29,11 @@ async function doRefresh(): Promise<boolean> {
 	if (refreshRes.ok) {
 		const data = await refreshRes.json();
 		if (data.forcePasswordChange) {
-			setAuth(data.accessToken, data.refreshToken, data.role ?? getAuth().role ?? '', data.name ?? getAuth().name ?? '');
+			setAuth(data.accessToken, data.role ?? getAuth().role ?? '', data.name ?? getAuth().name ?? '');
 			if (typeof window !== 'undefined') window.location.href = '/change-password';
 			return false;
 		}
-		setAuth(data.accessToken, data.refreshToken, data.role ?? getAuth().role ?? '', data.name ?? getAuth().name ?? '');
+		setAuth(data.accessToken, data.role ?? getAuth().role ?? '', data.name ?? getAuth().name ?? '');
 		return true;
 	}
 	// Only a definite rejection means the refresh token is dead. Keep the session on 5xx.

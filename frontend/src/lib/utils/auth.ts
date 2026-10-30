@@ -15,7 +15,7 @@ function toLogin() {
  * still valid, and offline pages must keep working.
  */
 export async function validateToken(): Promise<boolean> {
-  const { accessToken, refreshToken } = getAuth();
+  const { accessToken } = getAuth();
   if (!accessToken) {
     goto('/login', { replaceState: true });
     return false;
@@ -33,13 +33,14 @@ export async function validateToken(): Promise<boolean> {
   if (res.ok) return true;
 
   // Only a rejected access token can be recovered with the refresh token.
-  if (res.status === 401 && refreshToken) {
+  if (res.status === 401) {
     let refreshRes: Response;
     try {
       refreshRes = await fetch('/api/auth/refresh', {
+        credentials: 'include',
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ refreshToken })
+        body: '{}'
       });
     } catch {
       // Network failure — the refresh token was never seen by the server, so keep it.
@@ -47,7 +48,7 @@ export async function validateToken(): Promise<boolean> {
     }
     if (refreshRes.ok) {
       const data = await refreshRes.json();
-      setAuth(data.accessToken, data.refreshToken, data.role ?? getAuth().role ?? '', data.name ?? getAuth().name ?? '');
+      setAuth(data.accessToken, data.role ?? getAuth().role ?? '', data.name ?? getAuth().name ?? '');
       return true;
     }
     if (refreshRes.status !== 400 && refreshRes.status !== 401) return true;

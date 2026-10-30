@@ -138,7 +138,6 @@ func writeCSV(w *csv.Writer, cells ...string) {
 	w.Write(cells)
 }
 
-
 func (s *ReportService) GenerateXLSX(ctx context.Context, weddingID uuid.UUID) ([]byte, string, error) {
 	wedding, err := s.weddingRepo.FindByID(ctx, weddingID)
 	if err != nil {

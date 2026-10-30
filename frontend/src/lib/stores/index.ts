@@ -26,9 +26,10 @@ export function addToast(message: string, type: Toast['type'] = 'info') {
 // Sidebar state
 export const sidebarCollapsed = writable(false);
 
-// Auth state (backed by localStorage for persistence)
+// Auth state. Only the short-lived access token is persisted: the refresh
+// token lives in an HttpOnly cookie that page script cannot read, so an XSS
+// costs one access-token lifetime instead of the whole session.
 let _accessToken: string | null = null;
-let _refreshToken: string | null = null;
 let _role: string | null = null;
 let _name: string | null = null;
 
@@ -36,15 +37,13 @@ function loadAuth() {
   if (typeof window === 'undefined') return;
   try {
     _accessToken = localStorage.getItem('weddingdb_access_token');
-    _refreshToken = localStorage.getItem('weddingdb_refresh_token');
     _role = localStorage.getItem('weddingdb_role');
     _name = localStorage.getItem('weddingdb_name');
   } catch {}
 }
 loadAuth();
 
-// Another tab can refresh or clear the session. Mirror it instead of replaying
-// a refresh token that tab already consumed (single-use rotation).
+// Another tab can refresh or sign out. Mirror it instead of holding a stale token.
 if (typeof window !== 'undefined') {
   window.addEventListener('storage', (e) => {
     if (e.key === null || e.key.startsWith('weddingdb_')) loadAuth();
@@ -52,25 +51,27 @@ if (typeof window !== 'undefined') {
 }
 
 export function getAuth() {
-  return { accessToken: _accessToken, refreshToken: _refreshToken, role: _role, name: _name };
+  return { accessToken: _accessToken, role: _role, name: _name };
 }
 
-export function setAuth(access: string, refresh: string, r: string, n: string) {
+function dropLegacyRefreshToken() {
+  try { localStorage.removeItem('weddingdb_refresh_token'); } catch {}
+}
+
+export function setAuth(access: string, r: string, n: string) {
   _accessToken = access;
-  _refreshToken = refresh;
   _role = r;
   _name = n;
   if (typeof window !== 'undefined') {
     localStorage.setItem('weddingdb_access_token', access);
-    localStorage.setItem('weddingdb_refresh_token', refresh);
     localStorage.setItem('weddingdb_role', r);
     localStorage.setItem('weddingdb_name', n);
+    dropLegacyRefreshToken();
   }
 }
 
 export function clearAuth() {
   _accessToken = null;
-  _refreshToken = null;
   _role = null;
   _name = null;
   if (typeof window !== 'undefined') {

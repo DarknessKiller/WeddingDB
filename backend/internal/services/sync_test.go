@@ -31,6 +31,8 @@ func newGuestSyncService(t *testing.T) (*GuestService, *gorm.DB, uuid.UUID) {
 		rsvp TEXT DEFAULT 'no_response',
 		checked_in_at DATETIME,
 		notes TEXT,
+		checkin_note TEXT,
+		checked_in_by TEXT,
 		dietary TEXT,
 		is_vip INTEGER,
 		angbao_amt INTEGER,

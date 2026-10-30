@@ -27,19 +27,18 @@ import LogOut from 'lucide-svelte/icons/log-out';
   );
 
   async function handleLogout() {
-    const { refreshToken, accessToken } = getAuth();
-    if (refreshToken) {
-      try {
-        await fetch('/api/auth/logout', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {})
-          },
-          body: JSON.stringify({ refreshToken })
-        });
-      } catch { /* ignore */ }
-    }
+    const { accessToken } = getAuth();
+    try {
+      await fetch('/api/auth/logout', {
+        method: 'POST',
+        credentials: 'include',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {})
+        },
+        body: '{}'
+      });
+    } catch { /* ignore */ }
     clearAuth();
     setWeddingId('');
     goto('/login', { replaceState: true });

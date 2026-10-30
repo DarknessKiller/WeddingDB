@@ -111,7 +111,6 @@ The bootstrap only runs when the admin table is empty. After the first admin exi
 | `REDIS_PASSWORD` | unset (no auth) | Optional. When set, Dragonfly runs with `--requirepass` and the app authenticates via `REDIS_URL` |
 | `ADMIN_BOOTSTRAP_PASSWORD` | none | First-boot admin password (required when the database is empty) |
 | `TZ` | `Asia/Kuala_Lumpur` | Report timestamps follow this |
-| `PUBLIC_URL` | `http://localhost:{PORT}` | Public server URL, used in the OpenAPI spec |
 | `CORS_ORIGIN` | `http://localhost:5173` | Allowed origin. Credentials are allowed only for this origin; unset reflects the request origin without credentials |
 | `TRUSTED_PROXIES` | unset | Comma-separated IPs/CIDRs of reverse proxies whose `X-Forwarded-For` is trusted; unset ignores the header |
 | `OTEL_ENABLED` | `false` | Enables OpenTelemetry tracing. See ADR 002 |

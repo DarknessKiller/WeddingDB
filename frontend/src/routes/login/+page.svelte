@@ -20,7 +20,6 @@ import ChevronRight from 'lucide-svelte/icons/chevron-right';
   let loginRole = $state('');
   let loginName = $state('');
   let loginAccessToken = $state('');
-  let loginRefreshToken = $state('');
 
   let showCreate = $state(false);
   let newName = $state('');
@@ -70,12 +69,11 @@ import ChevronRight from 'lucide-svelte/icons/chevron-right';
       }
       const data = await res.json();
       loginAccessToken = data.accessToken;
-      loginRefreshToken = data.refreshToken;
       loginRole = data.role ?? '';
       loginName = data.name ?? '';
 
       if (data.forcePasswordChange) {
-        setAuth(loginAccessToken, loginRefreshToken, loginRole, loginName);
+        setAuth(loginAccessToken, loginRole, loginName);
         goto('/change-password', { replaceState: true });
         return;
       }
@@ -120,7 +118,7 @@ import ChevronRight from 'lucide-svelte/icons/chevron-right';
         return;
       }
       const data = await res.json();
-      setAuth(data.accessToken, loginRefreshToken, loginRole, loginName);
+      setAuth(data.accessToken, loginRole, loginName);
       setWeddingId(weddingIdValue);
       addToast(t('toast.loginOk'), 'success');
       goto(`/${weddingIdValue}/dashboard`, { replaceState: true });

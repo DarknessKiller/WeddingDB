@@ -1,26 +1,13 @@
 package config
 
-import (
-	"net/http"
+import "github.com/go-fuego/fuego"
 
-	"github.com/getkin/kin-openapi/openapi3"
-	"github.com/go-fuego/fuego"
-)
-
-func NewFuegoServer(env Env, version string) *fuego.Server {
+func NewFuegoServer(env Env) *fuego.Server {
 	s := fuego.NewServer(
-		fuego.WithAddr(":" + env.Port),
+		fuego.WithAddr(":"+env.Port),
 		fuego.WithEngineOptions(
-			fuego.WithOpenAPIConfig(fuego.OpenAPIConfig{
-				Info: &openapi3.Info{
-					Title:       "WeddingDB API",
-					Description: "Wedding guest management and seating API",
-					Version:     version,
-				},
-				UIHandler: func(specURL string) http.Handler {
-					return fuego.DefaultOpenAPIHandler(specURL)
-				},
-			}),
+			// The API surface is not published: no swagger UI, no spec route.
+			fuego.WithOpenAPIConfig(fuego.OpenAPIConfig{Disabled: true}),
 		),
 	)
 
@@ -29,17 +16,9 @@ func NewFuegoServer(env Env, version string) *fuego.Server {
 	// a reconnect/resync loop. Keepalive pings cannot extend it.
 	s.Server.WriteTimeout = 0
 	// Large/slow uploads must not be reset mid-transfer (fuego defaults
-	// ReadTimeout to 30s). The reverse proxy owns body-size limits and request
-	// timeouts; ReadHeaderTimeout still applies so slowloris headers die.
+	// ReadTimeout to 30s). middleware.LimitBody caps the body; ReadHeaderTimeout
+	// still applies so slowloris headers die.
 	s.Server.ReadTimeout = 0
-
-	// Set the public server URL in the OpenAPI spec
-	if env.PublicURL != "" {
-		spec := s.Engine.OutputOpenAPISpec()
-		spec.Servers = openapi3.Servers{
-			&openapi3.Server{URL: env.PublicURL},
-		}
-	}
 
 	return s
 }

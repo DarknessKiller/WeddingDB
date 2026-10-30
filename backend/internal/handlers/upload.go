@@ -63,10 +63,10 @@ func (h *UploadHandler) Upload(c fuego.ContextWithBody[any]) (any, error) {
 		}
 	}
 
-	// NOTE: request body size is intentionally uncapped here — the reverse proxy in front owns that limit (nginx client_max_body_size, Caddy request_body). Keep magic-byte checks as the app guard.
+	// Request body size is capped app-side by middleware.LimitBody; magic-byte checks remain the file guard.
 	// Create uploads directory
 	uploadDir := "./uploads"
-	if err := os.MkdirAll(uploadDir, 0755); err != nil {
+	if err := os.MkdirAll(uploadDir, 0750); err != nil {
 		return nil, fuego.InternalServerError{Title: "Failed to create upload directory"}
 	}
 
@@ -79,7 +79,7 @@ func (h *UploadHandler) Upload(c fuego.ContextWithBody[any]) (any, error) {
 
 	// Check if file with same hash already exists via index file
 	indexPath := filepath.Join(uploadDir, ".hash-index")
-	if idx, err := os.ReadFile(indexPath); err == nil {
+	if idx, err := os.ReadFile(indexPath); err == nil { // #nosec G304 -- fixed index path under our upload dir
 		for _, line := range strings.Split(string(idx), "\n") {
 			parts := strings.SplitN(line, " ", 2)
 			if len(parts) == 2 && parts[0] == hash {
@@ -96,7 +96,7 @@ func (h *UploadHandler) Upload(c fuego.ContextWithBody[any]) (any, error) {
 	filename := fmt.Sprintf("%s-%s%s", hash[:8], uuid.New().String()[:8], ext)
 	filePath := filepath.Join(uploadDir, filename)
 
-	dst, err := os.Create(filePath)
+	dst, err := os.OpenFile(filePath, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0600) // #nosec G304 -- name is our own hash+uuid, never client input
 	if err != nil {
 		return nil, fuego.InternalServerError{Title: "Failed to save file"}
 	}
@@ -112,13 +112,13 @@ func (h *UploadHandler) Upload(c fuego.ContextWithBody[any]) (any, error) {
 
 	// Append hash to index file with file lock
 	lockPath := indexPath + ".lock"
-	lockFile, err := os.OpenFile(lockPath, os.O_CREATE|os.O_RDWR, 0644)
+	lockFile, err := os.OpenFile(lockPath, os.O_CREATE|os.O_RDWR, 0600) // #nosec G304 -- fixed lock path under our upload dir
 	if err == nil {
 		defer lockFile.Close()
 		syscall.Flock(int(lockFile.Fd()), syscall.LOCK_EX)
 		defer syscall.Flock(int(lockFile.Fd()), syscall.LOCK_UN)
 	}
-	f, err := os.OpenFile(indexPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	f, err := os.OpenFile(indexPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0600) // #nosec G304 -- fixed index path under our upload dir
 	if err != nil {
 		// ponytail: index write failure is non-critical — file is already saved
 	} else {

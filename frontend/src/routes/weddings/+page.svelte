@@ -59,7 +59,7 @@ import ChevronRight from 'lucide-svelte/icons/chevron-right';
       }
       const data = await res.json();
       const current = getAuth();
-      setAuth(data.accessToken, current.refreshToken ?? '', current.role ?? '', current.name ?? '');
+      setAuth(data.accessToken, current.role ?? '', current.name ?? '');
       setWeddingId(w.id);
       addToast(t('toast.switched', { name: w.name }), 'success');
       targetUrl = `/${w.id}/dashboard`;

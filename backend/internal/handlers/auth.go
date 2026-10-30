@@ -4,6 +4,7 @@ import (
 	"net"
 	"net/http"
 	"net/mail"
+	"strings"
 	"unicode"
 	"weddingdb/internal/middleware"
 	"weddingdb/internal/models"
@@ -15,6 +16,51 @@ import (
 	"github.com/google/uuid"
 	"golang.org/x/crypto/bcrypt"
 )
+
+// The refresh token lives in an HttpOnly cookie: script on the page must never
+// be able to read it, so an XSS costs one access-token lifetime instead of the
+// whole 7-day session. SameSite=Strict keeps the cookie off cross-site POSTs,
+// which is what makes a cookie-based refresh endpoint safe without a CSRF token.
+const (
+	refreshCookieName   = "weddingdb_rt"
+	refreshCookieMaxAge = 7 * 24 * 60 * 60
+)
+
+func isHTTPS(r *http.Request) bool {
+	return r.TLS != nil || strings.EqualFold(r.Header.Get("X-Forwarded-Proto"), "https")
+}
+
+func refreshCookie(r *http.Request, token string) http.Cookie {
+	// Secure is conditional because a plain-HTTP deployment would never have the
+	// cookie stored back; HttpOnly and SameSite=Strict are unconditional.
+	return http.Cookie{ // #nosec G124 -- Secure follows the request scheme
+		Name:     refreshCookieName,
+		Value:    token,
+		Path:     "/api/auth",
+		MaxAge:   refreshCookieMaxAge,
+		HttpOnly: true,
+		Secure:   isHTTPS(r),
+		SameSite: http.SameSiteStrictMode,
+	}
+}
+
+func clearedRefreshCookie(r *http.Request) http.Cookie {
+	c := refreshCookie(r, "") // #nosec G124 -- inherited from refreshCookie
+	c.MaxAge = -1
+	return c
+}
+
+// refreshTokenFrom prefers the cookie and falls back to the request body so
+// non-browser clients that predate the cookie keep working.
+func refreshTokenFrom(r *http.Request, bodyValue string) string {
+	if bodyValue != "" {
+		return bodyValue
+	}
+	if c, err := r.Cookie(refreshCookieName); err == nil {
+		return c.Value
+	}
+	return ""
+}
 
 func validatePassword(password string) error {
 	if len(password) < 8 {
@@ -59,7 +105,6 @@ type WeddingInfo struct {
 
 type TokenResponse struct {
 	AccessToken         string        `json:"accessToken"`
-	RefreshToken        string        `json:"refreshToken"`
 	Role                string        `json:"role"`
 	Name                string        `json:"name"`
 	Weddings            []WeddingInfo `json:"weddings"`
@@ -109,9 +154,9 @@ func (h *AuthHandler) Login(c fuego.ContextWithBody[LoginRequest]) (TokenRespons
 		h.authService.RecordLoginFailure(c.Context(), body.Email)
 		return TokenResponse{}, fuego.UnauthorizedError{Title: err.Error()}
 	}
+	c.SetCookie(refreshCookie(c.Request(), result.RefreshToken))
 	return TokenResponse{
 		AccessToken:         result.AccessToken,
-		RefreshToken:        result.RefreshToken,
 		Role:                result.Role,
 		Name:                result.Name,
 		Weddings:            weddingInfos(result.Weddings),
@@ -139,7 +184,11 @@ func (h *AuthHandler) SelectWedding(c fuego.ContextWithBody[SelectWeddingRequest
 func (h *AuthHandler) Refresh(c fuego.ContextWithBody[RefreshRequest]) (TokenResponse, error) {
 	body, err := c.Body()
 	if err != nil {
-		return TokenResponse{}, fuego.BadRequestError{Title: "Invalid request"}
+		body = RefreshRequest{}
+	}
+	body.RefreshToken = refreshTokenFrom(c.Request(), body.RefreshToken)
+	if body.RefreshToken == "" {
+		return TokenResponse{}, fuego.UnauthorizedError{Title: "No refresh token"}
 	}
 	// Extract old access token from Authorization header for blacklisting on rotation
 	oldAccessToken := middleware.ExtractBearer(c.Request())
@@ -150,9 +199,9 @@ func (h *AuthHandler) Refresh(c fuego.ContextWithBody[RefreshRequest]) (TokenRes
 	if err != nil {
 		return TokenResponse{}, fuego.UnauthorizedError{Title: err.Error()}
 	}
+	c.SetCookie(refreshCookie(c.Request(), result.RefreshToken))
 	return TokenResponse{
 		AccessToken:         result.AccessToken,
-		RefreshToken:        result.RefreshToken,
 		Role:                result.Role,
 		Name:                result.Name,
 		Weddings:            weddingInfos(result.Weddings),
@@ -163,12 +212,18 @@ func (h *AuthHandler) Refresh(c fuego.ContextWithBody[RefreshRequest]) (TokenRes
 func (h *AuthHandler) Logout(c fuego.ContextWithBody[RefreshRequest]) (any, error) {
 	body, err := c.Body()
 	if err != nil {
-		return nil, fuego.BadRequestError{Title: "Invalid request"}
+		body = RefreshRequest{}
 	}
+	body.RefreshToken = refreshTokenFrom(c.Request(), body.RefreshToken)
 
 	// Extract access token from Authorization header for blacklisting
 	accessToken := middleware.ExtractBearer(c.Request())
 
+	c.SetCookie(clearedRefreshCookie(c.Request()))
+	if body.RefreshToken == "" {
+		c.SetStatus(204)
+		return nil, nil
+	}
 	if err := h.authService.Logout(c.Context(), body.RefreshToken, accessToken); err != nil {
 		return nil, fuego.InternalServerError{Title: "Failed to logout"}
 	}

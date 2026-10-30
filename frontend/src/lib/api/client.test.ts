@@ -14,7 +14,7 @@ function res(body: unknown, status = 200): Response {
 	return { ok: status >= 200 && status < 300, status, json: async () => body } as Response;
 }
 
-const REFRESH_OK = { accessToken: 'new-access', refreshToken: 'refresh-2', role: 'admin', name: 'A' };
+const REFRESH_OK = { accessToken: 'new-access', role: 'admin', name: 'A' };
 
 let fetchMock: ReturnType<typeof vi.fn>;
 let location: { href: string };
@@ -23,6 +23,7 @@ beforeEach(() => {
 	vi.resetModules();
 	Object.defineProperty(globalThis, 'localStorage', { value: memoryStorage(), configurable: true });
 	localStorage.setItem('weddingdb_access_token', 'old-access');
+	// Left behind by an older build; the client must evict it.
 	localStorage.setItem('weddingdb_refresh_token', 'refresh-1');
 	location = { href: '' };
 	Object.defineProperty(globalThis, 'window', { value: { location, addEventListener: () => {} }, configurable: true });
@@ -49,6 +50,10 @@ describe('apiFetch refresh recovery', () => {
 		expect(result.status).toBe(200);
 		expect(fetchMock).toHaveBeenCalledTimes(3);
 		expect(fetchMock.mock.calls[1][0]).toContain('/api/auth/refresh');
+		// The refresh token is an HttpOnly cookie: the body must not carry it.
+		const refreshInit = fetchMock.mock.calls[1][1] as RequestInit;
+		expect(refreshInit.credentials).toBe('include');
+		expect(refreshInit.body).toBe('{}');
 		expect((fetchMock.mock.calls[2][1].headers as Record<string, string>).Authorization).toBe('Bearer new-access');
 		expect(location.href).toBe('');
 	});
@@ -62,7 +67,7 @@ describe('apiFetch refresh recovery', () => {
 
 		expect(result.status).toBe(401);
 		expect(location.href).toBe('');
-		expect(getAuth()).toMatchObject({ accessToken: 'old-access', refreshToken: 'refresh-1' });
+		expect(getAuth()).toMatchObject({ accessToken: 'old-access' });
 		expect(localStorage.getItem('weddingdb_refresh_token')).toBe('refresh-1');
 	});
 
@@ -74,7 +79,7 @@ describe('apiFetch refresh recovery', () => {
 		await apiFetch('/api/guests');
 
 		expect(location.href).toBe('');
-		expect(getAuth()).toMatchObject({ accessToken: 'old-access', refreshToken: 'refresh-1' });
+		expect(getAuth()).toMatchObject({ accessToken: 'old-access' });
 	});
 
 	it('clears the session when the server rejects the refresh token', async () => {

@@ -41,6 +41,8 @@ func TestTableDelete_PublishesUnassignedGuests(t *testing.T) {
 		rsvp TEXT DEFAULT 'no_response',
 		checked_in_at DATETIME,
 		notes TEXT,
+		checkin_note TEXT,
+		checked_in_by TEXT,
 		dietary TEXT,
 		is_vip INTEGER,
 		angbao_amt INTEGER,

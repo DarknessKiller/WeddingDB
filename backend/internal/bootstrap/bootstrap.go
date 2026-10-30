@@ -151,7 +151,7 @@ func Init(env config.Env, version string) *App {
 	layoutService := services.NewLayoutService(layoutRepo)
 	reportService := services.NewReportService(guestRepo, tableRepo, weddingRepo)
 
-	server := config.NewFuegoServer(env, version)
+	server := config.NewFuegoServer(env)
 
 	// ProxyAware must run outside tracing: it rewrites RemoteAddr in place, and
 	// both fuego's logger and the tracing span read RemoteAddr afterwards.
@@ -180,7 +180,7 @@ func Init(env config.Env, version string) *App {
 		// localStorage). <img> embedding still renders — images never run scripts.
 		w.Header().Set("Content-Security-Policy", "sandbox; default-src 'none'")
 		w.Header().Set("X-Content-Type-Options", "nosniff")
-		http.ServeFile(w, r, filePath)
+		http.ServeFile(w, r, filePath) // #nosec G703 -- name rejected above if it has "/" or ".."
 	})
 
 	handlers.RegisterRoutes(server, authService, guestService, tableService, weddingService, layoutService, reportService, adminRepo)
@@ -200,7 +200,13 @@ func Init(env config.Env, version string) *App {
 			path = "index.html"
 		}
 		filePath := filepath.Join(staticDir, path)
-		if info, err := os.Stat(filePath); err == nil && !info.IsDir() {
+		// filepath.Join cleans "..", but this handler reads from disk with a
+		// URL-derived path, so assert containment explicitly.
+		if rel, err := filepath.Rel(staticDir, filePath); err != nil || strings.HasPrefix(rel, "..") {
+			http.NotFound(w, r)
+			return
+		}
+		if info, err := os.Stat(filePath); err == nil && !info.IsDir() { // #nosec G703 -- contained in staticDir above
 			stripped := strings.TrimPrefix(path, "/")
 			if strings.HasPrefix(stripped, "_app/") || strings.HasPrefix(stripped, "assets/") {
 				w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
@@ -210,7 +216,7 @@ func Init(env config.Env, version string) *App {
 			if path == "favicon.svg" {
 				w.Header().Set("Cache-Control", "public, max-age=86400, s-maxage=604800, stale-while-revalidate=86400")
 			}
-			http.ServeFile(w, r, filePath)
+			http.ServeFile(w, r, filePath) // #nosec G703 -- contained in staticDir above
 			return
 		}
 		// SPA fallback: serve index.html for client-side routing

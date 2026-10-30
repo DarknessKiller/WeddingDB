@@ -12,7 +12,6 @@ type Env struct {
 	RedisURL    string
 	JWTSecret   string
 	Port        string
-	PublicURL   string
 }
 
 func LoadEnv() Env {
@@ -25,13 +24,11 @@ func LoadEnv() Env {
 		log.Fatal("JWT_SECRET must not be a value shipped in .env.example; generate one with: openssl rand -hex 32")
 	}
 	port := getEnv("PORT", "8080")
-	publicURL := getEnv("PUBLIC_URL", "http://localhost:"+port)
 	return Env{
 		DatabaseURL: os.Getenv("DATABASE_URL"),
 		RedisURL:    getEnv("REDIS_URL", "redis://localhost:6379"),
 		JWTSecret:   secret,
 		Port:        port,
-		PublicURL:   publicURL,
 	}
 }
 

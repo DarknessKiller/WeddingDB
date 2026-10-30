@@ -75,6 +75,7 @@ func newIntegrationAuthService(t *testing.T, secret string) (*AuthService, *mini
 		kiosk_logo_pos_x TEXT,
 		kiosk_logo_pos_y TEXT,
 		show_seat_numbers INTEGER DEFAULT 1,
+		kiosk_idle_reset INTEGER DEFAULT 0,
 		hall_width INTEGER DEFAULT 860,
 		hall_height INTEGER DEFAULT 1000,
 		created_at DATETIME,
