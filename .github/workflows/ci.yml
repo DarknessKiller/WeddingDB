@@ -2,9 +2,9 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    branches: [master]
   pull_request:
-    branches: [main]
+    branches: [master]
 
 permissions:
   contents: read
@@ -23,7 +23,7 @@ jobs:
           cache: true
           cache-dependency-path: backend/go.sum
       - name: Test
-        run: CGO_ENABLED=0 go test ./...
+        run: CGO_ENABLED=1 go test ./...
 
   frontend:
     runs-on: ubuntu-latest
