@@ -106,20 +106,6 @@ import Map from 'lucide-svelte/icons/map';
   }
 
   // ponytail: previously the modal's live preview; no longer rendered
-  let _previewTable = $derived.by(() => {
-    const pos = defaultSlot(tables);
-    return {
-      id: '',
-      name: formName || 'New',
-      capacity: formCapacity,
-      x: pos.x,
-      y: pos.y,
-      degree: 0,
-      isVip: formVip,
-    };
-  });
-
-  void _previewTable;
 
   const wid = get(weddingId);
 
@@ -325,7 +311,8 @@ import Map from 'lucide-svelte/icons/map';
     <div class="grid {gridCols} gap-4">
       {#each sortedTables as table (table.id)}
         {@const occ = getOcc(table.id)}
-        <!-- svelte-ignore a11y_no_static_element_interactions a11y_click_events_have_key_events -->
+        <!-- svelte-ignore a11y_no_static_element_interactions -->
+        <!-- svelte-ignore a11y_click_events_have_key_events -->
         <div
           onclick={() => goto(`/${$weddingId}/seating?table=${table.id}`)}
           oncontextmenu={(e) => handleCtx(e, table)}
@@ -388,7 +375,8 @@ import Map from 'lucide-svelte/icons/map';
 {#if contextMenu}
   <!-- svelte-ignore a11y_click_events_have_key_events -->
   <div class="fixed inset-0 z-[599]" onclick={() => contextMenu = null} role="presentation"></div>
-  <!-- svelte-ignore a11y_no_static_element_interactions a11y_click_events_have_key_events -->
+  <!-- svelte-ignore a11y_no_static_element_interactions -->
+  <!-- svelte-ignore a11y_click_events_have_key_events -->
   <div onclick={(e) => e.stopPropagation()}
     class="fixed z-[600] bg-white/95 backdrop-blur-xl border border-black/[0.06] rounded-xl shadow-xl py-1.5 min-w-[180px]"
     style={getMenuStyle(contextMenu.x, contextMenu.y)}>

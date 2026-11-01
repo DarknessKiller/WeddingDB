@@ -6,6 +6,7 @@ import Star from 'lucide-svelte/icons/star';
 import Users from 'lucide-svelte/icons/users';
   import { cn } from '$lib/utils';
   import { trapFocus } from '$lib/utils/focus';
+  import { untrack } from 'svelte';
 
   let {
     title = 'Add Table',
@@ -29,7 +30,7 @@ import Users from 'lucide-svelte/icons/users';
     onClose: () => void;
   } = $props();
 
-  let editing = $state(startEditing);
+  let editing = $state(untrack(() => startEditing));
   const isEdit = $derived(title === 'Edit Table');
   const percentage = $derived(capacity > 0 ? Math.round((occupied / capacity) * 100) : 0);
 </script>
@@ -40,6 +41,7 @@ import Users from 'lucide-svelte/icons/users';
 <div class="drawer-overlay" onclick={onClose} role="presentation">
   <div class="drawer-backdrop" aria-hidden="true"></div>
   <!-- svelte-ignore a11y_no_static_element_interactions -->
+  <!-- svelte-ignore a11y_click_events_have_key_events -->
   <div class="drawer-panel" role="dialog" aria-modal="true" aria-labelledby="drawer-title" onclick={(e) => e.stopPropagation()} use:trapFocus tabindex="-1">
     <div class="drawer-pill flex sm:hidden" onclick={onClose} role="presentation">
       <div class="drawer-pill-bar"></div>

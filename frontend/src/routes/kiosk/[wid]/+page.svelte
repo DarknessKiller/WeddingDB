@@ -349,7 +349,7 @@ import X from 'lucide-svelte/icons/x';
 </svelte:head>
 
 <!-- svelte-ignore a11y_no_static_element_interactions -->
-<div class="kiosk-root" class:reduced-motion={prefersReducedMotion}>
+<main class="kiosk-root" class:reduced-motion={prefersReducedMotion}>
   <!-- Top Bar — translucent material, Apple-style -->
   <header class="top-bar">
     <div class="top-bar-inner">
@@ -609,7 +609,7 @@ import X from 'lucide-svelte/icons/x';
       </div>
     </div>
   {/if}
-</div>
+</main>
 
 <style>
   /* ---------- Root ---------- */

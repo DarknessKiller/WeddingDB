@@ -547,7 +547,8 @@ import Users from 'lucide-svelte/icons/users';
 </script>
 
 <svelte:head> <title>{$weddingTitle ? `${$weddingTitle} – Guests` : 'Guests – WeddingDB'}</title></svelte:head>
-<!-- svelte-ignore a11y_no_static_element_interactions a11y_click_events_have_key_events -->
+<!-- svelte-ignore a11y_no_static_element_interactions -->
+<!-- svelte-ignore a11y_click_events_have_key_events -->
 <div class="p-4 sm:p-7 max-w-[1400px]" onclick={() => contextMenu = null}>
   <h1 class="sr-only">Guests</h1>
   <!-- Toolbar -->
@@ -718,10 +719,12 @@ import Users from 'lucide-svelte/icons/users';
 {/if}
 
 <!-- Bulk Move Table Modal -->
-<!-- svelte-ignore a11y_no_static_element_interactions a11y_click_events_have_key_events -->
 {#if showBulkMoveModal}
+  <!-- svelte-ignore a11y_no_static_element_interactions -->
+  <!-- svelte-ignore a11y_click_events_have_key_events -->
   <div class="fixed inset-0 z-[700] flex items-center justify-center bg-black/30 backdrop-blur-md" onclick={() => showBulkMoveModal = false}>
-    <!-- svelte-ignore a11y_no_static_element_interactions a11y_click_events_have_key_events -->
+    <!-- svelte-ignore a11y_no_static_element_interactions -->
+    <!-- svelte-ignore a11y_click_events_have_key_events -->
     <div class="bg-white/95 backdrop-blur-xl rounded-2xl shadow-2xl w-full max-w-md p-6" onclick={(e) => e.stopPropagation()}>
       <h3 class="text-lg font-semibold text-gray-900 mb-4">Move {selectedIds.size} Guests</h3>
       <div class="space-y-3 mb-6">
@@ -758,9 +761,11 @@ import Users from 'lucide-svelte/icons/users';
 
 <!-- Context Menu -->
 {#if contextMenu}
-<!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
+<!-- svelte-ignore a11y_click_events_have_key_events -->
+<!-- svelte-ignore a11y_no_static_element_interactions -->
   <div class="fixed inset-0 z-[599]" onclick={() => contextMenu = null} role="presentation"></div>
-  <!-- svelte-ignore a11y_no_static_element_interactions a11y_click_events_have_key_events -->
+  <!-- svelte-ignore a11y_no_static_element_interactions -->
+  <!-- svelte-ignore a11y_click_events_have_key_events -->
   <div class="fixed z-[600] bg-white/95 backdrop-blur-xl border border-black/[0.06] rounded-xl shadow-xl py-1.5 min-w-[180px]"
     style={getMenuStyle(contextMenu.x, contextMenu.y)} onclick={(e) => e.stopPropagation()}>
     <button class="w-full flex items-center gap-2.5 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50" onclick={() => { $drawerStartEditing = true; openGuest(contextMenu!.guest); contextMenu = null; }}>
@@ -796,7 +801,8 @@ import Users from 'lucide-svelte/icons/users';
 
 {#if showImportModal}
   <div class="fixed inset-0 z-50 flex items-center justify-center p-4">
-<!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
+<!-- svelte-ignore a11y_click_events_have_key_events -->
+<!-- svelte-ignore a11y_no_static_element_interactions -->
     <div class="absolute inset-0 bg-black/30 backdrop-blur-md" onclick={() => showImportModal = false} role="presentation"></div>
     <div class="relative bg-white/95 backdrop-blur-xl rounded-2xl shadow-2xl w-full max-w-lg overflow-hidden">
       <div class="flex items-center justify-between p-5 border-b border-gray-100">

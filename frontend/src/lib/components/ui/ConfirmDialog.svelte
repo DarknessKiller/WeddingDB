@@ -50,10 +50,12 @@ import AlertTriangle from 'lucide-svelte/icons/alert-triangle';
 
 {#if open}
   <!-- svelte-ignore a11y_no_static_element_interactions -->
+  <!-- svelte-ignore a11y_click_events_have_key_events -->
   <div
     class="fixed inset-0 z-[800] flex items-center justify-center p-4"
     onclick={handleBackdropClick}
     role="dialog"
+    tabindex="-1"
     aria-modal="true"
     aria-labelledby="confirm-title"
   >
@@ -62,6 +64,9 @@ import AlertTriangle from 'lucide-svelte/icons/alert-triangle';
 
     <!-- Dialog -->
     <!-- svelte-ignore a11y_no_static_element_interactions -->
+    <!-- click guard only: stops backdrop dismissal; Escape already closes -->
+    <!-- svelte-ignore a11y_no_static_element_interactions -->
+    <!-- svelte-ignore a11y_click_events_have_key_events -->
     <div
       bind:this={dialogEl}
       class="relative bg-white/95 backdrop-blur-xl rounded-2xl shadow-2xl w-full max-w-sm overflow-hidden dialog-motion"
