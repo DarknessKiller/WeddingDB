@@ -177,6 +177,7 @@ export function applyGuestResponse(resp: GuestResponse) {
 	const guest: Guest = {
 		id: resp.id,
 		name: resp.name,
+		pinyin: resp.pinyin,
 		email: resp.email,
 		rsvp: resp.rsvp as RSVPStatus,
 		pax: resp.pax,

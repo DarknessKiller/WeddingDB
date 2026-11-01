@@ -15,6 +15,8 @@ Two hundred guests arrive in under two hours. Each one needs a welcome, a table 
 WeddingDB changes the door:
 
 - **Check-in takes seconds.** The receptionist types part of a name, or the pinyin of a Chinese name, and the guest pops up. One tap marks them arrived.
+- **Search never waits for the network.** The kiosk and staff search match name or pinyin from the synced guest list as you type.
+- **A check-in survives a WiFi drop.** It carries an optional note, queues locally, survives reload, and syncs when the connection returns.
 - **The whole team checks in from their phone.** Anyone with the app finds a guest by name and taps check-in, so the reception desk is not one person with a clipboard.
 - **Angpao is keyed separately, per guest.** Check-in stays one tap. The angpao amount and gift item are recorded from the guest list, so a declined guest who still sent a gift gets an entry too. CSV or Excel export happens after the night, with no transcription.
 - **Seats update live.** Cross off a guest at the door and every screen shows it. A no-show frees a table for a last-minute guest.

@@ -32,6 +32,7 @@ import MapPin from 'lucide-svelte/icons/map-pin';
   let kioskLogoSize = $state('contain');
   let kioskLogoPosX = $state('50%');
   let kioskLogoPosY = $state('50%');
+  let kioskIdleResetSeconds = $state(0);
   let kioskLogoBlur = $state(0);
   let weddingNameEdit = $state('');
   let venueName = $state('');
@@ -56,6 +57,7 @@ import MapPin from 'lucide-svelte/icons/map-pin';
         if (wedding.kioskLogoPosX) kioskLogoPosX = wedding.kioskLogoPosX;
         if (wedding.kioskLogoPosY) kioskLogoPosY = wedding.kioskLogoPosY;
         setShowSeatNumbers(wedding.id, wedding.showSeatNumbers ?? false);
+        kioskIdleResetSeconds = wedding.kioskIdleResetSeconds ?? 0;
       }
     } catch {
       addToast('Failed to load settings', 'error');
@@ -70,6 +72,7 @@ import MapPin from 'lucide-svelte/icons/map-pin';
       kioskBackgroundUrl, kioskBackgroundBlur, kioskBackgroundSize,
       kioskBackgroundPosX, kioskBackgroundPosY, kioskLogoSize,
       kioskLogoPosX, kioskLogoPosY, showSeatNumbers: $showSeatNumbers,
+      kioskIdleResetSeconds,
     };
   }
 
@@ -237,6 +240,18 @@ import MapPin from 'lucide-svelte/icons/map-pin';
               bind:blur={kioskBackgroundBlur}
               label="Background"
             />
+          </div>
+          <!-- Idle reset -->
+          <div class="pt-2 border-t border-gray-100">
+            <label for="kiosk-idle-reset" class="text-sm font-semibold text-gray-700 mb-1.5 block">Auto-reset after inactivity</label>
+            <select id="kiosk-idle-reset" bind:value={kioskIdleResetSeconds}
+              class="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm bg-white focus:border-red focus:ring-2 focus:ring-red/15 outline-none transition-all">
+              <option value={0}>Off</option>
+              <option value={120}>2 minutes</option>
+              <option value={300}>5 minutes</option>
+              <option value={600}>10 minutes</option>
+            </select>
+            <p class="text-xs text-gray-400 mt-1">Clears the search and any guest name from the kiosk. Off by default.</p>
           </div>
         </div>
 

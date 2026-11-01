@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { searchGuests, listTables } from '$lib/api/search';
+  import { listTables } from '$lib/api/search';
   import { weddingTitle } from '$lib/stores/weddingTitle';
   import { getLayout } from '$lib/api/layout';
   import { addToast, selectedGuest, isDrawerOpen } from '$lib/stores';
@@ -13,11 +13,11 @@
 import CheckCircle2 from 'lucide-svelte/icons/check-circle-2';
   import { onMount } from 'svelte';
   import type { Guest, BanquetTable, HallElement } from '$lib/types';
+  import { rankGuests } from '$lib/utils/guestSearch';
   import HallMap from '$lib/components/seating/HallMap.svelte';
 
   let query = $state('');
   let results = $state<Guest[]>([]);
-  let loading = $state(false);
 
   let tables = $state<BanquetTable[]>([]);
   let allGuests = $state<Guest[]>([]);
@@ -106,32 +106,11 @@ import CheckCircle2 from 'lucide-svelte/icons/check-circle-2';
     }
   }
 
-  async function doSearch() {
-    const q = query.trim();
-    if (!q) { results = []; return; }
-    loading = true;
-    try {
-      results = await searchGuests(q);
-    } catch {
-      addToast('Search failed', 'error');
-      results = [];
-    } finally {
-      loading = false;
-    }
-  }
 
   $effect(() => {
-    let timer: ReturnType<typeof setTimeout> | undefined;
-    if (query.trim().length > 0) {
-      showResults = true;
-      loading = true;
-      timer = setTimeout(doSearch, 300);
-    } else {
-      results = [];
-      showResults = false;
-      loading = false;
-    }
-    return () => clearTimeout(timer);
+    const q = query.trim();
+    showResults = q.length > 0;
+    results = q ? rankGuests(allGuests, q) : [];
   });
 
   function openGuest(guest: Guest) {
@@ -197,9 +176,6 @@ import CheckCircle2 from 'lucide-svelte/icons/check-circle-2';
         class="w-full pl-12 pr-11 py-3.5 bg-white/80 rounded-2xl text-base border border-black/[0.06] focus:border-red focus:ring-2 focus:ring-red/10 outline-none transition-all placeholder-gray-400 min-h-[48px] shadow-sm"
         autofocus
       />
-      {#if loading}
-        <div class="absolute right-4 top-1/2 -translate-y-1/2 w-5 h-5 border-2 border-red/30 border-t-red rounded-full animate-spin"></div>
-      {/if}
     </div>
 
     <!-- Search Results Dropdown -->
@@ -238,7 +214,7 @@ import CheckCircle2 from 'lucide-svelte/icons/check-circle-2';
               {/if}
             </button>
           {/each}
-        {:else if !loading}
+        {:else}
           <div class="px-4 py-6 text-center text-gray-400">
             <Search class="w-8 h-8 mx-auto mb-2 opacity-40" />
             <p class="text-sm font-medium">No guests found</p>

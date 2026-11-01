@@ -48,6 +48,7 @@ function mapGuest(raw: any): Guest {
 	return {
 		id: String(raw.id),
 		name: raw.name ?? '',
+		pinyin: raw.pinyin ?? undefined,
 		email: raw.email,
 		rsvp: safeRsvp(raw.rsvp),
 		pax: raw.pax ?? 1,

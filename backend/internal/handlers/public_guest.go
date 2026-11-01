@@ -16,6 +16,7 @@ type publicGuest struct {
 	SeatNum *int    `json:"seatNum"`
 	Pax     int     `json:"pax"`
 	IsVip   bool    `json:"isVip"`
+	Pinyin  string  `json:"pinyin"`
 }
 
 type PublicGuestHandler struct {
@@ -66,6 +67,7 @@ func (h *PublicGuestHandler) List(c fuego.ContextNoBody) (any, error) {
 			SeatNum: g.SeatNum,
 			Pax:     g.Pax,
 			IsVip:   g.IsVip,
+			Pinyin:  g.NamePinyin,
 		})
 	}
 	return map[string]any{"guests": out, "nextCursor": nextCursor}, nil
@@ -90,21 +92,22 @@ func (h *PublicKioskHandler) GetKioskSettings(c fuego.ContextNoBody) (any, error
 		return nil, fuego.NotFoundError{Title: "Wedding not found"}
 	}
 	return map[string]any{
-		"venueName":           w.VenueName,
-		"venueAddress":        w.VenueAddress,
-		"kioskDescription":    w.KioskDescription,
-		"kioskLogoUrl":        w.KioskLogoUrl,
-		"kioskBackgroundUrl":  w.KioskBackgroundUrl,
-		"kioskBackgroundBlur": w.KioskBackgroundBlur,
-		"kioskBackgroundSize": w.KioskBackgroundSize,
-		"kioskBackgroundPosX": w.KioskBackgroundPosX,
-		"kioskBackgroundPosY": w.KioskBackgroundPosY,
-		"kioskLogoSize":       w.KioskLogoSize,
-		"kioskLogoPosX":       w.KioskLogoPosX,
-		"kioskLogoPosY":       w.KioskLogoPosY,
-		"showSeatNumbers":     w.ShowSeatNumbers,
-		"name":                w.Name,
-		"date":                w.Date,
+		"venueName":             w.VenueName,
+		"venueAddress":          w.VenueAddress,
+		"kioskDescription":      w.KioskDescription,
+		"kioskLogoUrl":          w.KioskLogoUrl,
+		"kioskBackgroundUrl":    w.KioskBackgroundUrl,
+		"kioskBackgroundBlur":   w.KioskBackgroundBlur,
+		"kioskBackgroundSize":   w.KioskBackgroundSize,
+		"kioskBackgroundPosX":   w.KioskBackgroundPosX,
+		"kioskBackgroundPosY":   w.KioskBackgroundPosY,
+		"kioskLogoSize":         w.KioskLogoSize,
+		"kioskLogoPosX":         w.KioskLogoPosX,
+		"kioskLogoPosY":         w.KioskLogoPosY,
+		"showSeatNumbers":       w.ShowSeatNumbers,
+		"kioskIdleResetSeconds": w.KioskIdleResetSeconds,
+		"name":                  w.Name,
+		"date":                  w.Date,
 	}, nil
 }
 
@@ -140,6 +143,7 @@ func (h *PublicGuestHandler) Search(c fuego.ContextNoBody) (any, error) {
 			SeatNum: g.SeatNum,
 			Pax:     g.Pax,
 			IsVip:   g.IsVip,
+			Pinyin:  g.NamePinyin,
 		})
 	}
 	return out, nil

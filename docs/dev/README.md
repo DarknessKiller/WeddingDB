@@ -251,6 +251,7 @@ Jaeger UI at `http://localhost:16686`. Request spans record the route pattern, t
 | POST | `/api/weddings/{wid}/guests/{id}/checkin` | Check in guest (optional body `{"notes": "..."}`; promotes RSVP to confirmed) |
 | POST | `/api/weddings/{wid}/guests/{id}/checkout` | Check out guest |
 | POST | `/api/weddings/{wid}/guests/{id}/seat` | Assign seat |
+| POST | `/api/weddings/{wid}/guests/sync` | Replay queued offline mutations (batch, per-item result) |
 | POST | `/api/weddings/{wid}/guests/import` | Bulk import guests (1,000 guests per wedding, counted per person) |
 | GET | `/api/weddings/{wid}/guests/search?q=` | Search guests |
 | GET | `/api/weddings/{wid}/occupancy` | Table occupancy |
@@ -270,11 +271,19 @@ Guest limit: 1,000 guests per wedding, counted per person. A guest entry for a c
 
 | Method | Path | Description |
 |--------|------|-------------|
-| GET | `/api/public/weddings/{wid}/guests` | List guests (public view) |
+| GET | `/api/public/weddings/{wid}/guests` | List guests (public view; includes `pinyin`, no contact fields or attendance status) |
 | GET | `/api/public/weddings/{wid}/guests/search?q=` | Search guests (public) |
 | GET | `/api/public/weddings/{wid}/tables` | List tables (public) |
-| GET | `/api/public/weddings/{wid}/kiosk` | Get kiosk settings |
+| GET | `/api/public/weddings/{wid}/kiosk` | Get kiosk settings (includes `kioskIdleResetSeconds`, 0 = off) |
 | GET | `/api/public/weddings/{wid}/layout` | Get hall layout (public view) |
+
+### Offline and kiosk behavior
+
+- Guest mutations, including check-in with an optional note, queue in `localStorage` (`offline_queue_{wid}`) and replay through `/guests/sync`. Notes append, they do not replace.
+- Staff and kiosk guest lists cache in `localStorage` (`offline_cache_{wid}`). A failed fetch falls back to the cache; the kiosk labels it "Offline copy".
+- Kiosk and staff search run in the browser over the synced guest list. Public guest JSON includes `pinyin` so Chinese names match romanized input. No request is made while typing.
+- `kioskIdleResetSeconds` is opt-in per wedding and defaults to 0 (off). Set it through `PUT /api/weddings/{id}/kiosk`; the kiosk clears the query and selected guest after that much inactivity.
+- Cold offline start is not supported yet: there is no service worker, so the SPA shell must be loaded once before the network drops.
 
 ---
 
@@ -287,4 +296,6 @@ nohup sh -c 'cd frontend && npm run dev -- --host 0.0.0.0 --port 5173' > /tmp/we
 ## Reference docs
 
 - [`docs/specs/jwt-revocation-spec.md`](../specs/jwt-revocation-spec.md): JWT refresh rotation and revocation design
+- [`docs/adr/001-offline-sync.md`](../adr/001-offline-sync.md): local-first door operations and offline sync
+- [`docs/specs/offline-sync-spec.md`](../specs/offline-sync-spec.md): offline queue, cache, local search, and kiosk idle reset
 - [`docs/adr/002-otel-tracing.md`](../adr/002-otel-tracing.md): OpenTelemetry tracing design
