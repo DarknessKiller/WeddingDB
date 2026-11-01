@@ -42,6 +42,7 @@
       const createdAt = g.createdAt ? new Date(g.createdAt) : new Date();
       return {
         id: g.id, name: g.name, email: g.email,
+        pinyin: g.pinyin,
         rsvp: g.rsvp as any, pax: g.pax, tableId: g.tableId, seatNumber: g.seatNum,
         checkedIn: !!g.checkedInAt, checkedInAt: g.checkedInAt ? new Date(g.checkedInAt) : undefined,
         notes: g.notes, dietaryRequirements: g.dietary ?? [], isVip: g.isVip,

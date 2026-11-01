@@ -1,76 +1,100 @@
 # Offline Sync — Implementation Spec
 
-Guest-only offline with newer-time-wins. Queued mutations replay when back online.
+Guest-only offline with newer-time-wins, a local guest cache, and device-local
+search. Queued mutations replay when the network returns.
 
 ## Glossary
 
 | Term | Meaning |
 |---|---|
 | Guest | `GuestRecord` row, scoped to `wedding_id`. Has `UpdatedAt`. |
-| Mutation | One offline intent: `create`, `update`, `delete`, `checkin`, `checkout`. Stored in `localStorage` queue per wedding. |
-| Queue | `localStorage` key `offline_queue_{wid}`: FIFO array of `QueuedMutation`. Survives reload. Cap 500. |
-| Sync | `POST /api/weddings/{wid}/guests/sync` batch. Server applies LWW per item, returns per-item result. |
-| Base version | `baseUpdatedAt` client last saw for that guest. If mismatch, still fall back to `clientUpdatedAt > server.UpdatedAt`. |
-| Optimistic | UI updates local `guestList` immediately, marks pending. Reverted if server skips. |
+| Mutation | One offline intent: `create`, `update`, `delete`, `checkin`, `checkout`. Stored in a `localStorage` queue per wedding. |
+| Queue | `localStorage` key `offline_queue_{wid}`: FIFO array of `QueuedMutation`. |
+| Cache | `localStorage` key `offline_cache_{wid}`: last complete guest list for the wedding. |
+| LWW | Last-write-wins on the guest's `UpdatedAt`, with the client timestamp as the candidate. |
 
 ## Domain model
 
 ```
-GuestRecord { id uuid, weddingId uuid, name, pax, tableId?, seatNum?, checkedInAt?, ... , updatedAt time }
-QueuedMutation { mutationId uuid, op enum, guestId uuid, clientUpdatedAt iso, baseUpdatedAt iso|null, payload json }
+GuestRecord { id uuid, weddingId uuid, name, namePinyin, pax, tableId?, seatNum?,
+              checkedInAt?, notes, ..., updatedAt time }
+QueuedMutation { mutationId uuid, op enum, guestId uuid, clientUpdatedAt iso,
+                 baseUpdatedAt iso|null, payload json }
 SyncRequest { mutations: QueuedMutation[] }
-SyncResult { guestId string, status: applied|skipped, reason?: string, serverRecord?: GuestRecord }
+SyncResult { guestId string, status: applied|skipped|failed, reason?: string,
+             serverRecord?: GuestRecord }
 ```
 
-Client generates `guestId` for creates. `clientUpdatedAt` is `new Date().toISOString()` at enqueue time. Queue FIFO.
+`namePinyin` stays hidden on the admin model by default but is included as
+`pinyin` in guest JSON. The kiosk uses it to search Chinese names by romanized
+input without a server round trip.
 
-## Decisions (from grill, Q1-14)
+## Decisions
 
-- Q1 scope guest-only v1. Tables/layout blocked offline.
-- Q2 whole-record LWW, one `updatedAt` per guest.
-- Q3 client `clientUpdatedAt` + `baseUpdatedAt` sent, server picks newer.
-- Q4 `localStorage` per wedding, batch sync, per-item result, dropped on applied.
-- Q5 auto sync on `online`, `visibilitychange`, mount, plus manual button. Optimistic + cache guests + banner.
-- Q6 one batch endpoint `POST /api/weddings/{wid}/guests/sync`.
-- Q7 FIFO, no server dedup v1, LWW makes retry idempotent.
-- Q8 sync uses `apiFetch` refresh first, queue kept if refresh fails.
-- Q9 online checkin keeps FIFO `ConditionalCheckIn`, sync checkin is LWW on `checkedInAt`. Both promote `rsvp` to `confirmed` and append optional check-in notes to the guest's `notes`.
-- Q10 skipped reverts to server record, toast.
-- Q11 delete tombstone with LWW, `pendingDelete` flag until applied.
-- Q12 drain sync before `seedGuests` fetch, SSE re-broadcast normal.
-- Q13 bulk import blocked offline.
-- Q14 cap 500, header badge, `window.__offlineQueue`, console log.
+- Guest-only offline. Tables and layout edits need a connection.
+- Whole-record LWW on `GuestRecord.UpdatedAt`. One timestamp per guest.
+- The client sends `clientUpdatedAt` and `baseUpdatedAt`; the server applies the
+  mutation when the client timestamp is not older. A future client clock is
+  clamped to server time.
+- Queue is FIFO, capped at 500, with an optimistic UI update and a header badge.
+- Check-in notes are appended to the guest's existing notes during sync. A
+  queued note never replaces notes written elsewhere.
+- Bulk import is blocked offline.
+- Sync runs on `online`, visibility, mount, and manual retry. The queue drains
+  before the guest list is reseeded.
+- The kiosk is read-only. Check-in stays on the staff seating screen.
 
 ## Files
 
 ### Backend
 
-**`backend/internal/services/guest_service.go`** — add `Sync(ctx, weddingID, mutations) ([]SyncResult, error)`. For each mutation in order: fetch guest, if not found and op != create -> skipped. Compare: if `clientUpdatedAt.After(server.UpdatedAt)` apply, else skipped. For LWW apply does `guestRepo.Update` or `Create` or `Delete`. Publish SSE `sync_*` events for applied. For checkin/checkout map to `CheckedInAt` set/clear.
+**`backend/internal/services/guest_service.go`** — `Sync(ctx, weddingID,
+mutations)` applies each mutation in order. A missing guest is skipped unless
+the op is `create`. Older mutations are skipped and return the server record.
+Applied check-in/check-out mutations publish SSE events. Check-in notes are
+appended with `appendNote`.
 
-**`backend/internal/handlers/guest.go`** — add `Sync` handler, types `SyncRequest`, `SyncMutation`, `SyncResult`. Parse `wid`, loop service, return results. Add route `POST /guests/sync`.
+**`backend/internal/handlers/guest.go`** — `POST
+/api/weddings/{wid}/guests/sync` decodes, validates and returns per-item
+results.
 
-**`backend/internal/handlers/register.go`** — register `fuego.Post(scoped, "/guests/sync", guestHandler.Sync)`.
+**`backend/internal/handlers/public_guest.go`** — public list/search responses
+include `pinyin` and `checkedInAt`. The kiosk settings response includes
+`kioskIdleResetSeconds`.
 
-**`backend/internal/repository/guest_repo.go`** — no new method, reuse `FindByID`, `Create`, `Update`, `Delete`.
+**`backend/internal/models/wedding_event.go`** — `KioskIdleResetSeconds int`,
+default 0 (off), capped at 1 hour by the update handler.
+
+**`backend/internal/bootstrap/bootstrap.go`** — drops the legacy
+`guest_records.phone` column after `AutoMigrate` when present.
 
 ### Frontend
 
-**`frontend/src/lib/offline/queue.ts`** — new. Exports `enqueue(wid, mutation)`, `peek(wid)`, `dequeue(wid, ids)`, `clear(wid)`, `syncQueue(wid)`. Uses `localStorage`. `syncQueue` calls `POST /api/weddings/{wid}/guests/sync` via `apiFetch`. Handles per-item applied/skipped, updates stores, toasts.
+**`frontend/src/lib/offline/queue.ts`** — queue read/write, cap, count, guest
+cache helpers, and `syncQueue(wid)`.
 
-**`frontend/src/lib/api/guests.ts`** — wrap `createGuest`, `updateGuest`, `deleteGuest`, `checkInGuest`, `checkOutGuest`, `assignSeat` to try `apiFetch` first, on network error (`TypeError` or `!navigator.onLine`) enqueue and optimistic update `guestList`/`guestMap`. Export `syncOfflineQueue(wid)`.
+**`frontend/src/lib/api/guests.ts`** — create/update/delete/check-in/check-out/
+seat wrappers try the API first. A network error, including Safari's
+`Load failed` and Firefox's `NetworkError`, enqueues and applies an optimistic
+patch. `syncOfflineQueue` wraps `syncQueue`.
 
-**`frontend/src/lib/stores/guestEvents.ts`** — add `cacheGuests(wid, guests)` to `localStorage` on `seedGuests`, `loadCachedGuests(wid)` fallback. Export `offlineQueuedCount` writable.
+**`frontend/src/lib/utils/guestSearch.ts`** — normalization and ranking for the
+kiosk and staff search. Name beats pinyin; prefix beats substring. No debounce.
 
-**`frontend/src/lib/api/client.ts`** — no change, `apiFetch` already handles refresh.
+**`frontend/src/routes/[wid]/+layout.svelte`** — caches the staff guest list and
+falls back to it when the initial fetch fails.
 
-**`frontend/src/routes/[wid]/+layout.svelte`** — init queue sync on mount and `online` event, show banner and badge.
+**`frontend/src/routes/kiosk/[wid]/+page.svelte`** — caches the public guest
+list, searches locally, labels a cache fallback, and optionally clears itself
+after `kioskIdleResetSeconds` of inactivity.
 
-No new deps.
+**`frontend/src/routes/[wid]/search/+page.svelte`** — searches the SSE-backed
+guest store locally instead of calling the search endpoint per keystroke.
 
 ## Data flow: enqueue (offline)
 
 ```
-UI action -> guests.ts wrapper -> fetch -> throws NetworkError / !online
+UI action -> guests.ts wrapper -> fetch throws / navigator.onLine is false
   -> queue.ts enqueue(wid, {op, guestId, clientUpdatedAt, baseUpdatedAt, payload})
   -> optimistic patch guestList/guestMap + toast "queued offline (N)"
 ```
@@ -79,16 +103,42 @@ UI action -> guests.ts wrapper -> fetch -> throws NetworkError / !online
 
 ```
 online / visibility / mount -> queue.syncQueue(wid)
-  -> apiFetch POST /api/weddings/{wid}/guests/sync {mutations}
-  -> for each result: if applied -> drop from queue, keep optimistic (SSE will confirm)
-                   if skipped -> revert guest to serverRecord, drop, toast
+  -> POST /api/weddings/{wid}/guests/sync {mutations}
+  -> applied -> drop from queue, keep optimistic state (SSE confirms)
+  -> skipped -> revert guest to serverRecord, drop, toast
+  -> failed  -> keep queued for the next retry
   -> seedGuests(fetchAllGuests) after batch
+```
+
+## Data flow: local search (kiosk and staff)
+
+```
+initial load -> GET /api/public/weddings/{wid}/guests (paged, includes pinyin)
+             -> cacheGuests(wid, list)
+keystroke    -> rankGuests(allGuests, query) in memory
+             -> exact name, name prefix, pinyin prefix, name substring, pinyin substring
+```
+
+No request is made while typing. A failed load falls back to `offline_cache_{wid}`.
+
+## Data flow: kiosk idle reset
+
+```
+loadKioskConfig -> kioskIdleResetSeconds (0 = off)
+activity (pointerdown/keydown) -> re-arm timer
+timer fires -> clear query and selected guest, re-arm
 ```
 
 ## Edge cases
 
-- clock skew: baseUpdatedAt detects stale read even if clock fast.
-- refresh fails offline: queue kept, banner "login again to sync".
-- queue full 500: drop oldest with toast.
-- create with temp id: id is final uuid, no rewrite.
-- SSE duplicate of own sync: upsert same guest, harmless.
+- Clock skew: `baseUpdatedAt` detects a stale read; future client clocks are
+  clamped.
+- Refresh fails offline: the queue is kept and the header shows the queued
+  count; access tokens are still required to sync.
+- Queue full (500): drop the oldest mutation with a toast.
+- Create with a client-generated id: the id is final; no rewrite is needed.
+- SSE duplicate of your own sync: upserting the same guest is harmless.
+- Cold offline start: unsupported until a service worker caches the app shell.
+  The app must be loaded once before the network drops.
+- Phone removal: the migration reports a warning instead of blocking boot if
+  the database user cannot drop the column.

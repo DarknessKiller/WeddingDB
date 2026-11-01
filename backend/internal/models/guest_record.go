@@ -66,11 +66,13 @@ func (g GuestRecord) MarshalJSON() ([]byte, error) {
 		ID        string  `json:"id"`
 		WeddingID string  `json:"weddingId"`
 		TableID   *string `json:"tableId"`
+		Pinyin    string  `json:"pinyin"`
 		Alias
 	}{
 		ID:        utils.EncodeUUID(g.ID),
 		WeddingID: utils.EncodeUUID(g.WeddingID),
 		TableID:   tid,
+		Pinyin:    g.NamePinyin,
 		Alias:     (Alias)(g),
 	})
 }

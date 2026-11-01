@@ -122,20 +122,21 @@ func (h *WeddingHandler) Update(c fuego.ContextWithBody[WeddingRequest]) (any, e
 
 // KioskSettingsRequest uses pointers so an omitted field stays unchanged.
 type KioskSettingsRequest struct {
-	Name                *string `json:"name"` // nil = unchanged (dirty-only from frontend)
-	VenueName           *string `json:"venueName"`
-	VenueAddress        *string `json:"venueAddress"`
-	KioskDescription    *string `json:"kioskDescription"`
-	KioskLogoUrl        *string `json:"kioskLogoUrl"`
-	KioskBackgroundUrl  *string `json:"kioskBackgroundUrl"`
-	KioskBackgroundBlur *int    `json:"kioskBackgroundBlur"`
-	KioskBackgroundSize *string `json:"kioskBackgroundSize"`
-	KioskBackgroundPosX *string `json:"kioskBackgroundPosX"`
-	KioskBackgroundPosY *string `json:"kioskBackgroundPosY"`
-	KioskLogoSize       *string `json:"kioskLogoSize"`
-	KioskLogoPosX       *string `json:"kioskLogoPosX"`
-	KioskLogoPosY       *string `json:"kioskLogoPosY"`
-	ShowSeatNumbers     *bool   `json:"showSeatNumbers"`
+	Name                  *string `json:"name"` // nil = unchanged (dirty-only from frontend)
+	VenueName             *string `json:"venueName"`
+	VenueAddress          *string `json:"venueAddress"`
+	KioskDescription      *string `json:"kioskDescription"`
+	KioskLogoUrl          *string `json:"kioskLogoUrl"`
+	KioskBackgroundUrl    *string `json:"kioskBackgroundUrl"`
+	KioskBackgroundBlur   *int    `json:"kioskBackgroundBlur"`
+	KioskBackgroundSize   *string `json:"kioskBackgroundSize"`
+	KioskBackgroundPosX   *string `json:"kioskBackgroundPosX"`
+	KioskBackgroundPosY   *string `json:"kioskBackgroundPosY"`
+	KioskLogoSize         *string `json:"kioskLogoSize"`
+	KioskLogoPosX         *string `json:"kioskLogoPosX"`
+	KioskLogoPosY         *string `json:"kioskLogoPosY"`
+	ShowSeatNumbers       *bool   `json:"showSeatNumbers"`
+	KioskIdleResetSeconds *int    `json:"kioskIdleResetSeconds"`
 }
 
 func (h *WeddingHandler) UpdateKioskSettings(c fuego.ContextWithBody[KioskSettingsRequest]) (any, error) {
@@ -208,6 +209,9 @@ func (h *WeddingHandler) UpdateKioskSettings(c fuego.ContextWithBody[KioskSettin
 	}
 	if body.ShowSeatNumbers != nil {
 		w.ShowSeatNumbers = *body.ShowSeatNumbers
+	}
+	if body.KioskIdleResetSeconds != nil {
+		w.KioskIdleResetSeconds = max(0, min(3600, *body.KioskIdleResetSeconds))
 	}
 	if err := h.weddingService.Update(ctx, w); err != nil {
 		return nil, fuego.InternalServerError{Title: "Failed to update kiosk settings"}

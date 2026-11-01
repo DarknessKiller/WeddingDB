@@ -11,12 +11,14 @@ interface PublicGuest {
 	pax: number;
 	isVip: boolean;
 	checkedInAt: string | null;
+	pinyin?: string;
 }
 
 export function mapGuest(raw: PublicGuest): Guest {
 	return {
 		id: raw.id,
 		name: raw.name ?? '',
+		pinyin: raw.pinyin,
 		rsvp: (raw.rsvp as Guest['rsvp']) ?? 'no_response',
 		pax: raw.pax ?? 1,
 		tableId: raw.tableId ?? null,

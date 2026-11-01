@@ -1,7 +1,9 @@
 <script lang="ts">
   import HallMap from '$lib/components/seating/HallMap.svelte';
-  import { publicListGuests, mapGuest } from '$lib/api/public';
+  import { publicListGuests } from '$lib/api/public';
   import { getPublicLayout } from '$lib/api/layout';
+  import { cacheGuests, loadCachedGuests } from '$lib/offline/queue';
+  import { rankGuests } from '$lib/utils/guestSearch';
   import { cn, getInitials } from '$lib/utils';
   import { formatSeatRange, formatPartySize } from '$lib/utils/seat';
   import Maximize from 'lucide-svelte/icons/maximize';
@@ -12,7 +14,8 @@ import ArrowLeft from 'lucide-svelte/icons/arrow-left';
 import MapPin from 'lucide-svelte/icons/map-pin';
 import Users from 'lucide-svelte/icons/users';
 import Star from 'lucide-svelte/icons/star';
-  import { onMount, onDestroy } from 'svelte';
+import X from 'lucide-svelte/icons/x';
+  import { onMount, onDestroy, tick } from 'svelte';
   import { fade, fly } from 'svelte/transition';
   import { page } from '$app/state';
   import { setWeddingId } from '$lib/stores/weddingId';
@@ -20,8 +23,11 @@ import Star from 'lucide-svelte/icons/star';
   import type { Guest, BanquetTable, HallElement } from '$lib/types';
 
   let query = $state('');
-  let results = $state<Guest[]>([]);
+  let searchInput = $state<HTMLInputElement>();
   let allGuests = $state<Guest[]>([]);
+  let results = $derived(rankGuests(allGuests, query));
+  let showingCachedGuests = $state(false);
+  let kioskIdleResetSeconds = $state(0);
   let tables = $state<BanquetTable[]>([]);
   let elements = $state<HallElement[]>([]);
   let hallWidth = $state(860);
@@ -30,8 +36,6 @@ import Star from 'lucide-svelte/icons/star';
   let isFullscreen = $state(false);
   let currentTime = $state(new Date());
   let timer: ReturnType<typeof setInterval>;
-  let searching = $state(false);
-  let abortController: AbortController | null = null;
   // AbortController tied to the page lifecycle: aborted on destroy so slow
   // responses (e.g. network handoff) cannot stack after navigation/refresh.
   let pageAbort = new AbortController();
@@ -42,10 +46,20 @@ import Star from 'lucide-svelte/icons/star';
   async function loadGuests(signal?: AbortSignal) {
     if (guestsInFlight) return; // skip while a fetch is still in flight
     guestsInFlight = true;
+    const wid = page.params.wid ?? '';
     try {
       allGuests = await publicListGuests({ signal });
-    } catch {}
-    finally { guestsInFlight = false; }
+      cacheGuests(wid, allGuests);
+      showingCachedGuests = false;
+    } catch {
+      if (!allGuests.length) {
+        const cached = loadCachedGuests<Guest>(wid);
+        if (cached?.length) {
+          allGuests = cached.map(g => ({ ...g, checkedInAt: g.checkedInAt ? new Date(g.checkedInAt) : undefined }));
+          showingCachedGuests = true;
+        }
+      }
+    } finally { guestsInFlight = false; }
   }
 
   // Refetched with the guest poll so a settings change reaches the kiosk
@@ -69,6 +83,11 @@ import Star from 'lucide-svelte/icons/star';
     if (data.kioskLogoPosX) kioskLogoPosX = data.kioskLogoPosX;
     if (data.kioskLogoPosY) kioskLogoPosY = data.kioskLogoPosY;
     if (data.showSeatNumbers !== undefined) setShowSeatNumbers(wid, data.showSeatNumbers);
+    const nextIdleReset = data.kioskIdleResetSeconds ?? 0;
+    if (nextIdleReset !== kioskIdleResetSeconds) {
+      kioskIdleResetSeconds = nextIdleReset;
+      armIdleReset();
+    }
     if (data.date) weddingDate = data.date;
     if (data.name) weddingName = data.name;
     venueName = data.venueName ?? '';
@@ -124,27 +143,14 @@ import Star from 'lucide-svelte/icons/star';
   let selectedTableName = $derived(selectedTable?.name ?? selectedGuest?.tableId ?? '—');
   let hasValidTable = $derived(selectedGuest?.tableId != null && selectedTable !== null);
 
-  $effect(() => {
-    const q = query.trim();
-    if (!q) { results = []; searching = false; return; }
-    searching = true;
-    let cancelled = false;
-    abortController?.abort();
-    const controller = new AbortController();
-    abortController = controller;
-    const timer = setTimeout(async () => {
-      try {
-        const wid = page.params.wid ?? '';
-        const res = await fetch(`/api/public/weddings/${wid}/guests/search?q=${encodeURIComponent(q)}`, { signal: controller.signal });
-        if (!res.ok) throw new Error('Search failed');
-        const data = await res.json();
-        if (!cancelled && !controller.signal.aborted) { results = data.map(mapGuest); searching = false; }
-      } catch (e) {
-        if (!cancelled && !controller.signal.aborted && !(e instanceof DOMException && e.name === 'AbortError')) { results = []; searching = false; }
-      }
-    }, 300);
-    return () => { cancelled = true; clearTimeout(timer); controller.abort(); };
-  });
+  let idleTimer: ReturnType<typeof setTimeout> | undefined;
+  function armIdleReset() {
+    if (idleTimer) clearTimeout(idleTimer);
+    if (kioskIdleResetSeconds <= 0) return;
+    idleTimer = setTimeout(() => { backToSearch(); armIdleReset(); }, kioskIdleResetSeconds * 1000);
+  }
+  function onKioskActivity() { armIdleReset(); }
+  function clearSearch() { query = ''; }
 
   onMount(() => {
     const mq = window.matchMedia('(prefers-reduced-motion: reduce)');
@@ -160,12 +166,17 @@ import Star from 'lucide-svelte/icons/star';
     pollTimer = setInterval(() => { loadGuests(pageAbort.signal); loadKioskConfig(); }, 60_000);
     getPublicLayout(wid, { signal: pageAbort.signal }).then(l => { tables = l.tables; elements = l.elements; hallWidth = l.hallWidth; hallHeight = l.hallHeight; }).catch(() => {});
     loadKioskConfig();
+    document.addEventListener('pointerdown', onKioskActivity, { passive: true });
+    document.addEventListener('keydown', onKioskActivity);
     document.addEventListener('visibilitychange', onKioskVisible);
   });
 
   onDestroy(() => {
     clearInterval(timer);
     if (pollTimer) clearInterval(pollTimer);
+    document.removeEventListener('pointerdown', onKioskActivity);
+    document.removeEventListener('keydown', onKioskActivity);
+    if (idleTimer) clearTimeout(idleTimer);
     if (sheetAnimFrame) cancelAnimationFrame(sheetAnimFrame);
     pageAbort.abort(); // cancel any in-flight initial fetches
     pageAbort = new AbortController(); // fresh controller if component remounts
@@ -194,13 +205,14 @@ import Star from 'lucide-svelte/icons/star';
     sheetVelocity = 0;
   }
 
-  function backToSearch() {
+  async function backToSearch() {
     selectedGuest = null;
     query = '';
     sheetCollapsed = false;
     sheetY = 0;
+    await tick();
+    searchInput?.focus();
   }
-
   function formatTime(d: Date) {
     return d.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
   }
@@ -366,6 +378,9 @@ import Star from 'lucide-svelte/icons/star';
       </div>
 
       <div class="top-bar-right">
+        {#if showingCachedGuests}
+          <span class="offline-chip" title="Showing the last saved guest list">Offline copy</span>
+        {/if}
         <button class="icon-btn" onclick={toggleFullscreen} aria-label="Toggle fullscreen">
           {#if isFullscreen}
             <Minimize class="icon-sm" />
@@ -527,12 +542,18 @@ import Star from 'lucide-svelte/icons/star';
             placeholder="Type your name..."
             bind:value={query}
             class="search-input"
+            bind:this={searchInput}
             autofocus
           />
+          {#if query}
+            <button class="search-clear" onclick={clearSearch} aria-label="Clear search">
+              <X class="icon-sm" />
+            </button>
+          {/if}
         </div>
 
         <!-- Results -->
-        <p class="sr-only" role="status">{query.trim() ? (searching ? 'Searching' : `${results.length} results`) : ''}</p>
+        <p class="sr-only" role="status">{query.trim() ? `${results.length} results` : ''}</p>
         {#if results.length > 0}
           <div class="results-list">
             {#each results.slice(0, 8) as guest, i (guest.id)}
@@ -573,16 +594,11 @@ import Star from 'lucide-svelte/icons/star';
               <p class="results-more">Showing 8 of {results.length}. Type more of your name.</p>
             {/if}
           </div>
-        {:else if query.trim().length > 0 && !searching}
+        {:else if query.trim().length > 0}
           <div class="empty-state">
             <Search class="icon-xl opacity-30" />
             <p class="font-medium">No guests found</p>
             <p class="text-sm mt-1 text-gray-400">Try fewer letters, or the pinyin of the name.</p>
-          </div>
-        {:else if searching}
-          <div class="empty-state">
-            <div class="spinner"></div>
-            <p class="font-medium text-gray-500">Searching...</p>
           </div>
         {:else}
           <div class="empty-state">
@@ -678,6 +694,17 @@ import Star from 'lucide-svelte/icons/star';
     flex: 1;
     display: flex;
     justify-content: flex-end;
+  }
+  .offline-chip {
+    align-self: center;
+    margin-right: 0.5rem;
+    padding: 0.25rem 0.6rem;
+    border-radius: 999px;
+    background: rgba(161, 18, 23, 0.08);
+    color: #A11217;
+    font-size: 0.75rem;
+    font-weight: 600;
+    white-space: nowrap;
   }
 
   .top-bar-brand {
@@ -1160,6 +1187,24 @@ import Star from 'lucide-svelte/icons/star';
     color: #9ca3af;
     flex-shrink: 0;
   }
+  .search-clear {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 44px;
+    height: 44px;
+    margin-right: -0.5rem;
+    border: 0;
+    border-radius: 999px;
+    background: transparent;
+    color: #6b7280;
+    flex-shrink: 0;
+  }
+  .search-clear:hover,
+  .search-clear:focus-visible {
+    background: rgba(0, 0, 0, 0.05);
+    color: #111827;
+  }
 
   .search-input {
     flex: 1;
@@ -1304,20 +1349,6 @@ import Star from 'lucide-svelte/icons/star';
     color: #9ca3af;
   }
 
-  /* ---------- Spinner ---------- */
-  .spinner {
-    width: 2rem;
-    height: 2rem;
-    border: 2.5px solid rgba(161, 18, 23, 0.2);
-    border-top-color: #A11217;
-    border-radius: 50%;
-    margin: 0 auto 0.75rem;
-    animation: spin 600ms linear infinite;
-  }
-
-  @keyframes spin {
-    to { transform: rotate(360deg); }
-  }
 
   /* ---------- Icon Sizes ---------- */
   :global(.icon-xs) {
@@ -1378,8 +1409,5 @@ import Star from 'lucide-svelte/icons/star';
       transition: none;
     }
 
-    .spinner {
-      animation: spin 1200ms linear infinite;
-    }
   }
 </style>

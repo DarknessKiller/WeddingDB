@@ -77,6 +77,14 @@ func Init(env config.Env, version string) *App {
 		&models.HallElement{},
 	); err != nil {
 		log.Fatal("Failed to migrate database:", err)
+
+		// Phone numbers are no longer collected. Drop the legacy column so old
+		// databases match the model; fresh databases skip this.
+		if db.Migrator().HasColumn(&models.GuestRecord{}, "phone") {
+			if err := db.Migrator().DropColumn(&models.GuestRecord{}, "phone"); err != nil {
+				log.Printf("warning: could not drop legacy guest_records.phone: %v", err)
+			}
+		}
 	}
 
 	// Backfill name_pinyin only for rows missing it. A full scan here reads every
