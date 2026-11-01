@@ -271,7 +271,7 @@ Guest limit: 1,000 guests per wedding, counted per person. A guest entry for a c
 
 | Method | Path | Description |
 |--------|------|-------------|
-| GET | `/api/public/weddings/{wid}/guests` | List guests (public view; includes `pinyin` and `checkedInAt`, no contact fields) |
+| GET | `/api/public/weddings/{wid}/guests` | List guests (public view; includes `pinyin`, no contact fields or attendance status) |
 | GET | `/api/public/weddings/{wid}/guests/search?q=` | Search guests (public) |
 | GET | `/api/public/weddings/{wid}/tables` | List tables (public) |
 | GET | `/api/public/weddings/{wid}/kiosk` | Get kiosk settings (includes `kioskIdleResetSeconds`, 0 = off) |

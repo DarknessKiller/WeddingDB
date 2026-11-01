@@ -55,7 +55,7 @@ import X from 'lucide-svelte/icons/x';
       if (!allGuests.length) {
         const cached = loadCachedGuests<Guest>(wid);
         if (cached?.length) {
-          allGuests = cached.map(g => ({ ...g, checkedInAt: g.checkedInAt ? new Date(g.checkedInAt) : undefined }));
+          allGuests = cached;
           showingCachedGuests = true;
         }
       }

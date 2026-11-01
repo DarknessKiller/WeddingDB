@@ -59,8 +59,8 @@ appended with `appendNote`.
 results.
 
 **`backend/internal/handlers/public_guest.go`** — public list/search responses
-include `pinyin` and `checkedInAt`. The kiosk settings response includes
-`kioskIdleResetSeconds`.
+include `pinyin` for local search. Attendance status stays staff-only. The
+kiosk settings response includes `kioskIdleResetSeconds`.
 
 **`backend/internal/models/wedding_event.go`** — `KioskIdleResetSeconds int`,
 default 0 (off), capped at 1 hour by the update handler.

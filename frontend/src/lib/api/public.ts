@@ -10,7 +10,6 @@ interface PublicGuest {
 	seatNum: number | null;
 	pax: number;
 	isVip: boolean;
-	checkedInAt: string | null;
 	pinyin?: string;
 }
 
@@ -23,8 +22,7 @@ export function mapGuest(raw: PublicGuest): Guest {
 		pax: raw.pax ?? 1,
 		tableId: raw.tableId ?? null,
 		seatNumber: raw.seatNum ?? null,
-		checkedIn: !!raw.checkedInAt,
-		checkedInAt: raw.checkedInAt ? new Date(raw.checkedInAt) : undefined,
+		checkedIn: false, // attendance is staff-only; never expose it to the kiosk
 		notes: '',
 		dietaryRequirements: [],
 		isVip: raw.isVip ?? false,

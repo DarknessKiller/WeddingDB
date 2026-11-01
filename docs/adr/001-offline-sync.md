@@ -43,8 +43,8 @@ using it.
 
 ## Consequences
 
-- Public guest JSON now exposes `pinyin` and `checkedInAt`. Both are derived
-  from data the kiosk already shows; no contact field is exposed.
+- Public guest JSON exposes `pinyin` only. Attendance status (`checkedInAt`)
+  stays staff-only; a public kiosk must not reveal who has already arrived.
 - A cold start with no network still needs the SPA shell. There is no service
   worker yet, so the app must have been loaded once before the network drops.
   This is the documented limit of the current offline story.

@@ -5,7 +5,7 @@ import (
 	"testing"
 )
 
-func TestPublicGuestJSONOmitsContactFields(t *testing.T) {
+func TestPublicGuestJSONOmitsPrivateFields(t *testing.T) {
 	data, err := json.Marshal(publicGuest{
 		ID:   "guest-id",
 		Name: "Alice",
@@ -18,7 +18,7 @@ func TestPublicGuestJSONOmitsContactFields(t *testing.T) {
 	if err := json.Unmarshal(data, &fields); err != nil {
 		t.Fatalf("unmarshal: %v", err)
 	}
-	for _, field := range []string{"phone", "email"} {
+	for _, field := range []string{"phone", "email", "checkedInAt"} {
 		if _, present := fields[field]; present {
 			t.Errorf("public guest JSON contains %q: %s", field, data)
 		}

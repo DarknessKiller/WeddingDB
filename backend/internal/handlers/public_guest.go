@@ -2,7 +2,6 @@ package handlers
 
 import (
 	"strconv"
-	"time"
 	"weddingdb/internal/services"
 	"weddingdb/internal/utils"
 
@@ -10,15 +9,14 @@ import (
 )
 
 type publicGuest struct {
-	ID          string     `json:"id"`
-	Name        string     `json:"name"`
-	Rsvp        string     `json:"rsvp"`
-	TableID     *string    `json:"tableId"`
-	SeatNum     *int       `json:"seatNum"`
-	Pax         int        `json:"pax"`
-	IsVip       bool       `json:"isVip"`
-	Pinyin      string     `json:"pinyin"`
-	CheckedInAt *time.Time `json:"checkedInAt"`
+	ID      string  `json:"id"`
+	Name    string  `json:"name"`
+	Rsvp    string  `json:"rsvp"`
+	TableID *string `json:"tableId"`
+	SeatNum *int    `json:"seatNum"`
+	Pax     int     `json:"pax"`
+	IsVip   bool    `json:"isVip"`
+	Pinyin  string  `json:"pinyin"`
 }
 
 type PublicGuestHandler struct {
@@ -62,15 +60,14 @@ func (h *PublicGuestHandler) List(c fuego.ContextNoBody) (any, error) {
 			tid = &s
 		}
 		out = append(out, publicGuest{
-			ID:          utils.EncodeUUID(g.ID),
-			Name:        g.Name,
-			Rsvp:        g.RSVP,
-			TableID:     tid,
-			SeatNum:     g.SeatNum,
-			Pax:         g.Pax,
-			IsVip:       g.IsVip,
-			Pinyin:      g.NamePinyin,
-			CheckedInAt: g.CheckedInAt,
+			ID:      utils.EncodeUUID(g.ID),
+			Name:    g.Name,
+			Rsvp:    g.RSVP,
+			TableID: tid,
+			SeatNum: g.SeatNum,
+			Pax:     g.Pax,
+			IsVip:   g.IsVip,
+			Pinyin:  g.NamePinyin,
 		})
 	}
 	return map[string]any{"guests": out, "nextCursor": nextCursor}, nil
@@ -139,15 +136,14 @@ func (h *PublicGuestHandler) Search(c fuego.ContextNoBody) (any, error) {
 			tid = &s
 		}
 		out = append(out, publicGuest{
-			ID:          utils.EncodeUUID(g.ID),
-			Name:        g.Name,
-			Rsvp:        g.RSVP,
-			TableID:     tid,
-			SeatNum:     g.SeatNum,
-			Pax:         g.Pax,
-			IsVip:       g.IsVip,
-			Pinyin:      g.NamePinyin,
-			CheckedInAt: g.CheckedInAt,
+			ID:      utils.EncodeUUID(g.ID),
+			Name:    g.Name,
+			Rsvp:    g.RSVP,
+			TableID: tid,
+			SeatNum: g.SeatNum,
+			Pax:     g.Pax,
+			IsVip:   g.IsVip,
+			Pinyin:  g.NamePinyin,
 		})
 	}
 	return out, nil
