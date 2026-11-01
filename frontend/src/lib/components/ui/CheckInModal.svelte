@@ -88,14 +88,14 @@ import Loader2 from 'lucide-svelte/icons/loader-2';
     <div class="flex items-center justify-between p-5 border-b border-gray-100">
       <h3 id="check-in-title" class="font-bold text-gray-900">Check In {guestName}</h3>
       <button onclick={onClose} aria-label="Close" class="min-w-[44px] min-h-[44px] rounded-lg flex items-center justify-center hover:bg-gray-100 transition-colors">
-        <X class="w-4 h-4 text-gray-400" />
+        <X class="w-4 h-4 text-gray-500" />
       </button>
     </div>
     <div class="p-5 space-y-4">
       <p class="text-sm text-gray-600">Mark {guestName} as arrived. Angpao and gifts are recorded separately from the guest list.</p>
       <div>
         <label for="checkin-notes" class="block text-sm font-medium text-gray-700 mb-1.5">
-          Notes <span class="text-gray-400 font-normal">(optional)</span>
+          Notes <span class="text-gray-500 font-normal">(optional)</span>
         </label>
         <input
           id="checkin-notes"
@@ -103,7 +103,7 @@ import Loader2 from 'lucide-svelte/icons/loader-2';
           bind:value={notes}
           onkeydown={onNotesKeydown}
           placeholder="e.g. arrived with 2 kids"
-          class="w-full px-4 py-3 rounded-xl border border-black/[0.08] bg-white text-sm text-gray-900 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-red/20 focus:border-red transition-shadow"
+          class="w-full px-4 py-3 rounded-xl border border-black/[0.08] bg-white text-sm text-gray-900 placeholder:text-gray-500 focus:outline-none focus:ring-2 focus:ring-red/20 focus:border-red transition-shadow"
         />
       </div>
     </div>

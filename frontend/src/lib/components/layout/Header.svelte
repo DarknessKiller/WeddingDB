@@ -173,7 +173,7 @@ import LogOut from 'lucide-svelte/icons/log-out';
     gap: 0.375rem;
     padding: 0.5rem;
     border-radius: 0.5rem;
-    color: #9ca3af;
+    color: #6b7280;
     min-width: 44px;
     min-height: 44px;
     justify-content: center;

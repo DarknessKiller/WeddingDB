@@ -34,10 +34,11 @@ import ArrowUpDown from 'lucide-svelte/icons/arrow-up-down';
 
   let tableName = $derived(guest ? (tables.find(t => t.id === guest.tableId)?.name ?? guest.tableId ?? '—') : '—');
 
-  let editing = $state(startEditing || createMode);
+  let editing = $state(false);
+  $effect(() => { editing = startEditing || createMode; });
   let saving = $state(false);
 
-  let localGuest = $state(guest);
+  let localGuest = $state<Guest>();
   $effect(() => { localGuest = guest; });
 
   let showUnassignConfirm = $state(false);
@@ -172,15 +173,15 @@ import ArrowUpDown from 'lucide-svelte/icons/arrow-up-down';
   }
 
   let form = $state({
-    name: guest?.name ?? '',
-    email: guest?.email ?? '',
-    pax: guest?.pax ?? 1,
-    rsvp: (guest?.rsvp ?? 'pending') as RSVPStatus,
-    isVip: guest?.isVip ?? false,
-    notes: guest?.notes ?? '',
-    dietary: guest?.dietaryRequirements ?? [],
-    angbaoAmt: guest?.angbaoAmount != null ? String(guest.angbaoAmount) : '',
-    giftItem: guest?.giftItem ?? '',
+    name: '',
+    email: '',
+    pax: 1,
+    rsvp: 'pending' as RSVPStatus,
+    isVip: false,
+    notes: '',
+    dietary: [] as string[],
+    angbaoAmt: '',
+    giftItem: '',
   });
 
   $effect(() => {
@@ -312,6 +313,7 @@ import ArrowUpDown from 'lucide-svelte/icons/arrow-up-down';
 <div class="drawer-overlay" onclick={onClose} role="presentation">
   <div class="drawer-backdrop" style="opacity: {dragging ? Math.max(0, 1 - dragY / 400) : 1}" aria-hidden="true" transition:fade={{ duration: 250 }}></div>
   <!-- svelte-ignore a11y_no_static_element_interactions -->
+  <!-- svelte-ignore a11y_click_events_have_key_events -->
   <div class="drawer-panel" role="dialog" aria-modal="true" aria-labelledby="drawer-title" onclick={(e) => e.stopPropagation()}
     use:trapFocus
     tabindex="-1"
@@ -411,7 +413,7 @@ import ArrowUpDown from 'lucide-svelte/icons/arrow-up-down';
             <div class="flex items-center gap-2 mt-0.5">
               <Badge status={localGuest.rsvp} />
               {#if localGuest.pax > 1}
-                <span class="text-xs text-gray-400">{localGuest.pax} pax</span>
+                <span class="text-xs text-gray-500">{localGuest.pax} pax</span>
               {/if}
             </div>
           </div>
@@ -443,7 +445,7 @@ import ArrowUpDown from 'lucide-svelte/icons/arrow-up-down';
           </div>
           <div class="detail-card">
             <div class="detail-label">Checked In</div>
-            <div class="detail-value {localGuest.checkedIn ? 'text-emerald-600' : 'text-gray-400'}">
+            <div class="detail-value {localGuest.checkedIn ? 'text-emerald-600' : 'text-gray-500'}">
               {localGuest.checkedIn ? '✓' : '—'}
             </div>
           </div>
@@ -616,7 +618,7 @@ import ArrowUpDown from 'lucide-svelte/icons/arrow-up-down';
   .info-icon {
     width: 0.875rem;
     height: 0.875rem;
-    color: #9ca3af;
+    color: #6b7280;
     flex-shrink: 0;
   }
 
@@ -692,7 +694,7 @@ import ArrowUpDown from 'lucide-svelte/icons/arrow-up-down';
   .section-icon {
     width: 0.875rem;
     height: 0.875rem;
-    color: #9ca3af;
+    color: #6b7280;
   }
 
   .chip-group {

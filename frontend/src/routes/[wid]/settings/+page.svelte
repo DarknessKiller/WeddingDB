@@ -173,40 +173,40 @@ import MapPin from 'lucide-svelte/icons/map-pin';
           <!-- Wedding Name -->
           <div>
             <label for="wedding-name" class="flex items-center gap-1.5 text-sm font-semibold text-gray-700 mb-1.5">
-              <Type class="w-4 h-4 text-gray-400" /> Wedding Name
+              <Type class="w-4 h-4 text-gray-500" /> Wedding Name
             </label>
             <input id="wedding-name" type="text" bind:value={weddingNameEdit}
               placeholder="e.g. Sarah & John's Wedding" required maxlength="255"
               class="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm bg-white focus:border-red focus:ring-2 focus:ring-red/15 outline-none transition-all" />
-            <p class="text-xs text-gray-400 mt-1">Name displayed in the kiosk header</p>
+            <p class="text-xs text-gray-500 mt-1">Name displayed in the kiosk header</p>
           </div>
 
           <!-- Venue Name -->
           <div>
             <label for="venue-name" class="flex items-center gap-1.5 text-sm font-semibold text-gray-700 mb-1.5">
-              <MapPin class="w-4 h-4 text-gray-400" /> Venue Name
+              <MapPin class="w-4 h-4 text-gray-500" /> Venue Name
             </label>
             <input id="venue-name" type="text" bind:value={venueName}
               placeholder="e.g. Grand Ballroom" maxlength="255"
               class="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm bg-white focus:border-red focus:ring-2 focus:ring-red/15 outline-none transition-all" />
-            <p class="text-xs text-gray-400 mt-1">Name of the venue or hall</p>
+            <p class="text-xs text-gray-500 mt-1">Name of the venue or hall</p>
           </div>
 
           <!-- Venue Address -->
           <div>
             <label for="venue-address" class="flex items-center gap-1.5 text-sm font-semibold text-gray-700 mb-1.5">
-              <MapPin class="w-4 h-4 text-gray-400" /> Venue Address
+              <MapPin class="w-4 h-4 text-gray-500" /> Venue Address
             </label>
             <input id="venue-address" type="text" bind:value={venueAddress}
               placeholder="e.g. 123 Main Street, City" maxlength="500"
               class="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm bg-white focus:border-red focus:ring-2 focus:ring-red/15 outline-none transition-all" />
-            <p class="text-xs text-gray-400 mt-1">Address shown on the kiosk screen</p>
+            <p class="text-xs text-gray-500 mt-1">Address shown on the kiosk screen</p>
           </div>
 
           <!-- Description -->
           <div>
             <label for="kiosk-desc" class="flex items-center gap-1.5 text-sm font-semibold text-gray-700 mb-1.5">
-              <FileText class="w-4 h-4 text-gray-400" /> Description
+              <FileText class="w-4 h-4 text-gray-500" /> Description
             </label>
             <textarea id="kiosk-desc" bind:value={kioskDescription} rows="2"
               placeholder="e.g. Enter your name to find your table and seat"
@@ -251,7 +251,7 @@ import MapPin from 'lucide-svelte/icons/map-pin';
               <option value={300}>5 minutes</option>
               <option value={600}>10 minutes</option>
             </select>
-            <p class="text-xs text-gray-400 mt-1">Clears the search and any guest name from the kiosk. Off by default.</p>
+            <p class="text-xs text-gray-500 mt-1">Clears the search and any guest name from the kiosk. Off by default.</p>
           </div>
         </div>
 

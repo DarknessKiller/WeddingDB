@@ -133,7 +133,7 @@ import ChevronRight from 'lucide-svelte/icons/chevron-right';
 
 <svelte:head><title>Sign In – WeddingDB</title></svelte:head>
 
-<div class="auth-page">
+<main class="auth-page">
   <div class="auth-card">
     <!-- Logo -->
     <div class="auth-hero">
@@ -169,6 +169,7 @@ import ChevronRight from 'lucide-svelte/icons/chevron-right';
             />
             <button
               type="button"
+              aria-label={showPassword ? 'Hide password' : 'Show password'}
               onclick={() => showPassword = !showPassword}
               class="password-toggle"
             >
@@ -252,7 +253,7 @@ import ChevronRight from 'lucide-svelte/icons/chevron-right';
       </div>
     {/if}
   </div>
-</div>
+</main>
 
 <style>
   .section-title {

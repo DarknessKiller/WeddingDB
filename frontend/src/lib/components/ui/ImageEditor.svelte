@@ -100,7 +100,7 @@ import Maximize2 from 'lucide-svelte/icons/maximize-2';
           <div>
             <label class="flex items-center justify-between text-xs font-medium text-gray-600 mb-1">
               <span class="flex items-center gap-1"><Move class="w-3 h-3" /> Position X</span>
-              <span class="text-gray-400">{posX}</span>
+              <span class="text-gray-500">{posX}</span>
             </label>
             <input type="range" min="0" max="100" step="1" value={parseInt(posX) || 50}
               oninput={(e) => posX = `${(e.target as HTMLInputElement).value}%`}
@@ -109,7 +109,7 @@ import Maximize2 from 'lucide-svelte/icons/maximize-2';
           <div>
             <label class="flex items-center justify-between text-xs font-medium text-gray-600 mb-1">
               <span class="flex items-center gap-1"><Move class="w-3 h-3" /> Position Y</span>
-              <span class="text-gray-400">{posY}</span>
+              <span class="text-gray-500">{posY}</span>
             </label>
             <input type="range" min="0" max="100" step="1" value={parseInt(posY) || 50}
               oninput={(e) => posY = `${(e.target as HTMLInputElement).value}%`}
@@ -122,7 +122,7 @@ import Maximize2 from 'lucide-svelte/icons/maximize-2';
           <div>
             <label for="blur-range" class="flex items-center justify-between text-xs font-medium text-gray-600 mb-1">
               <span>Blur</span>
-              <span class="text-gray-400">{blur}px</span>
+              <span class="text-gray-500">{blur}px</span>
             </label>
             <input id="blur-range" type="range" min="0" max="20" step="1" bind:value={blur}
               class="w-full h-1.5 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-red" />
@@ -137,9 +137,9 @@ import Maximize2 from 'lucide-svelte/icons/maximize-2';
         <div class="w-6 h-6 border-2 border-red/30 border-t-red rounded-full animate-spin mb-2"></div>
         <span class="text-xs text-gray-500">Uploading...</span>
       {:else}
-        <Upload class="w-6 h-6 text-gray-400 mb-2" />
+        <Upload class="w-6 h-6 text-gray-500 mb-2" />
         <span class="text-xs text-gray-500">Click or drag to upload {label}</span>
-        <span class="text-[10px] text-gray-400 mt-0.5">or paste a URL below</span>
+        <span class="text-xs text-gray-500 mt-0.5">or paste a URL below</span>
       {/if}
       <input id="image-upload" type="file" {accept} class="hidden" onchange={handleFile} />
     </label>

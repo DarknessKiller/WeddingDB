@@ -4,6 +4,7 @@ import ArrowUpDown from 'lucide-svelte/icons/arrow-up-down';
   import { getInitials } from '$lib/utils';
   import type { Guest, BanquetTable } from '$lib/types';
   import { trapFocus } from '$lib/utils/focus';
+  import { untrack } from 'svelte';
 
   let {
     guest,
@@ -21,8 +22,9 @@ import ArrowUpDown from 'lucide-svelte/icons/arrow-up-down';
     onClose: () => void;
   } = $props();
 
-  let tableId = $state(guest.tableId != null ? String(guest.tableId) : (tables.length ? String(tables[0].id) : ''));
-  let seatNum = $state(guest.seatNumber ?? 1);
+  // Initial values only; user picks override them afterwards
+  let tableId = $state(untrack(() => guest.tableId != null ? String(guest.tableId) : (tables.length ? String(tables[0].id) : '')));
+  let seatNum = $state(untrack(() => guest.seatNumber ?? 1));
 
   const capacity = $derived(tables.find(t => String(t.id) === tableId)?.capacity ?? 10);
 
@@ -80,6 +82,7 @@ import ArrowUpDown from 'lucide-svelte/icons/arrow-up-down';
 <div class="drawer-overlay" onclick={onClose} role="presentation">
   <div class="drawer-backdrop" aria-hidden="true"></div>
   <!-- svelte-ignore a11y_no_static_element_interactions -->
+  <!-- svelte-ignore a11y_click_events_have_key_events -->
   <div class="drawer-panel" role="dialog" aria-modal="true" aria-labelledby="drawer-title" onclick={(e) => e.stopPropagation()} use:trapFocus tabindex="-1">
     <div class="drawer-pill flex sm:hidden" onclick={onClose} role="presentation">
       <div class="drawer-pill-bar"></div>
@@ -130,7 +133,7 @@ import ArrowUpDown from 'lucide-svelte/icons/arrow-up-down';
           {#if !rangeOk}
             <p class="text-xs text-red mt-1">No room for {guest.pax} pax starting at seat {seatNum}. Free seats: {freeCount}</p>
           {:else}
-            <p class="text-xs text-gray-400 mt-1">{guest.pax > 1 ? `Party of ${guest.pax}: seats ${seatNum}–${seatNum + guest.pax - 1}` : `Seat ${seatNum}`} · {freeCount} free</p>
+            <p class="text-xs text-gray-500 mt-1">{guest.pax > 1 ? `Party of ${guest.pax}: seats ${seatNum}–${seatNum + guest.pax - 1}` : `Seat ${seatNum}`} · {freeCount} free</p>
           {/if}
         </div>
       </div>

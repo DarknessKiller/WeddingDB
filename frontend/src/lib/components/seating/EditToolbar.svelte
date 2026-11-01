@@ -203,7 +203,7 @@ import AlignVerticalDistributeCenter from 'lucide-svelte/icons/align-vertical-di
 
   <button
     onclick={() => onSnapToggle?.()}
-    class="px-2 py-1 border rounded-lg font-medium transition-colors flex items-center gap-1 {snap ? 'border-gold bg-gold/10 text-gray-800' : 'border-gray-200 text-gray-400 hover:bg-gray-50'}"
+    class="px-2 py-1 border rounded-lg font-medium transition-colors flex items-center gap-1 {snap ? 'border-gold bg-gold/10 text-gray-800' : 'border-gray-200 text-gray-500 hover:bg-gray-50'}"
     title="Snap to grid"
     aria-pressed={snap}
   >
@@ -264,7 +264,7 @@ import AlignVerticalDistributeCenter from 'lucide-svelte/icons/align-vertical-di
 
     <!-- Degree (both tables and elements) -->
     <div class="flex items-center gap-1">
-      <RotateCw class="w-3 h-3 text-gray-400" />
+      <RotateCw class="w-3 h-3 text-gray-500" />
       <label for="sel-degree" class="text-gray-500">°</label>
       <input
         id="sel-degree"
@@ -281,7 +281,7 @@ import AlignVerticalDistributeCenter from 'lucide-svelte/icons/align-vertical-di
     <!-- Width + Height (elements only) -->
     {#if selectedItem.kind === 'element'}
       <div class="flex items-center gap-1">
-        <Maximize2 class="w-3 h-3 text-gray-400" />
+        <Maximize2 class="w-3 h-3 text-gray-500" />
         <label for="sel-w" class="text-gray-500">W</label>
         <input
           id="sel-w"
@@ -360,7 +360,7 @@ import AlignVerticalDistributeCenter from 'lucide-svelte/icons/align-vertical-di
           oninput={(e) => onUpdateSelected({ opacity: Number(e.currentTarget.value) })}
           class="w-16"
         />
-        <span class="text-gray-400 w-8 text-right">{Math.round((selectedItem.opacity ?? 1) * 100)}%</span>
+        <span class="text-gray-500 w-8 text-right">{Math.round((selectedItem.opacity ?? 1) * 100)}%</span>
       </div>
     {/if}
 

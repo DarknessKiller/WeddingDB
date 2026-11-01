@@ -51,7 +51,7 @@ import KeyRound from 'lucide-svelte/icons/key-round';
 
 <svelte:head><title>Change Password – WeddingDB</title></svelte:head>
 
-<div class="auth-page">
+<main class="auth-page">
   <div class="auth-card">
     <div class="auth-hero">
       <div class="auth-logo">囍</div>
@@ -72,7 +72,7 @@ import KeyRound from 'lucide-svelte/icons/key-round';
             class="form-input password-input"
             placeholder="Min 8 chars, letter + number + symbol"
           />
-          <button type="button" onclick={() => showPassword = !showPassword} class="password-toggle">
+          <button type="button" aria-label={showPassword ? 'Hide password' : 'Show password'} onclick={() => showPassword = !showPassword} class="password-toggle">
             {#if showPassword}<EyeOff size={18} />{:else}<Eye size={18} />{/if}
           </button>
         </div>
@@ -102,7 +102,7 @@ import KeyRound from 'lucide-svelte/icons/key-round';
       </button>
     </form>
   </div>
-</div>
+</main>
 
 <style>
   .input-error {

@@ -351,7 +351,7 @@ import AlertCircle from 'lucide-svelte/icons/alert-circle';
           <div class="bg-gold-50 border border-gold/30 rounded-xl p-3 text-sm">
             <span class="font-semibold text-gray-700">Selected seats:</span>
             <span class="text-gold font-medium">{form.seatNumbers.join(', ')}</span>
-            <span class="text-gray-400 ml-1">({form.seatNumbers.length} of {form.pax})</span>
+            <span class="text-gray-500 ml-1">({form.seatNumbers.length} of {form.pax})</span>
           </div>
         {/if}
 

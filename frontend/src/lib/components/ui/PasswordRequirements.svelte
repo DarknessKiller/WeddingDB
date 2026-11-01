@@ -36,7 +36,7 @@
     align-items: center;
     gap: 0.25rem;
     font-size: 0.6875rem;
-    color: #9ca3af;
+    color: #6b7280;
     transition: color 150ms ease;
   }
   .req-item.valid {

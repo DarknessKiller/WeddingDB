@@ -52,7 +52,7 @@ import Mail from 'lucide-svelte/icons/mail';
 
 <svelte:head><title>Register – WeddingDB</title></svelte:head>
 
-<div class="auth-page">
+<main class="auth-page">
   <div class="auth-card">
     <div class="auth-hero">
       <div class="auth-logo">囍</div>
@@ -83,7 +83,7 @@ import Mail from 'lucide-svelte/icons/mail';
             class="form-input password-input"
             placeholder="Min 8 characters"
           />
-          <button type="button" onclick={() => showPassword = !showPassword} class="password-toggle">
+          <button type="button" aria-label={showPassword ? 'Hide password' : 'Show password'} onclick={() => showPassword = !showPassword} class="password-toggle">
             {#if showPassword}<EyeOff size={18} />{:else}<Eye size={18} />{/if}
           </button>
         </div>
@@ -122,7 +122,7 @@ import Mail from 'lucide-svelte/icons/mail';
       <span>After registering, email <strong>mrdarknesskiller@protonmail.com</strong> to get your wedding set up.</span>
     </div>
   </div>
-</div>
+</main>
 
 <style>
   .input-error {
@@ -151,7 +151,7 @@ import Mail from 'lucide-svelte/icons/mail';
   .contact-note :global(svg) {
     flex-shrink: 0;
     margin-top: 1px;
-    color: #9ca3af;
+    color: #6b7280;
   }
   .contact-note strong {
     color: #374151;

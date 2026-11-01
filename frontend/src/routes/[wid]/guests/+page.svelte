@@ -547,12 +547,14 @@ import Users from 'lucide-svelte/icons/users';
 </script>
 
 <svelte:head> <title>{$weddingTitle ? `${$weddingTitle} – Guests` : 'Guests – WeddingDB'}</title></svelte:head>
-<!-- svelte-ignore a11y_no_static_element_interactions a11y_click_events_have_key_events -->
+<!-- svelte-ignore a11y_no_static_element_interactions -->
+<!-- svelte-ignore a11y_click_events_have_key_events -->
 <div class="p-4 sm:p-7 max-w-[1400px]" onclick={() => contextMenu = null}>
+  <h1 class="sr-only">Guests</h1>
   <!-- Toolbar -->
   <div class="flex items-center justify-between gap-2 sm:gap-4 mb-5 flex-wrap">
     <div class="relative flex-1 min-w-[160px] sm:min-w-[200px] max-w-md">
-      <Search class="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 sm:w-[18px] sm:h-[18px] text-gray-400 pointer-events-none {searching ? 'animate-pulse' : ''}" />
+      <Search class="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 sm:w-[18px] sm:h-[18px] text-gray-500 pointer-events-none {searching ? 'animate-pulse' : ''}" />
       <input
         type="text" placeholder="Search guests..." bind:value={searchQuery}
         aria-label="Search guests by name"
@@ -560,7 +562,7 @@ import Users from 'lucide-svelte/icons/users';
       />
     </div>
     <div class="flex items-center gap-1 sm:gap-2 flex-wrap">
-      <select bind:value={rsvpFilter} class="px-2 sm:px-3 py-1.5 sm:py-2 border border-gray-200 rounded-xl text-xs sm:text-sm bg-white focus:border-gold outline-none">
+      <select bind:value={rsvpFilter} class="px-2 sm:px-3 py-2 border border-gray-200 rounded-xl text-sm bg-white focus:border-gold outline-none">
         aria-label="Filter by RSVP status"
         <option value="all">All Status</option>
         <option value="confirmed">Confirmed</option>
@@ -590,7 +592,7 @@ import Users from 'lucide-svelte/icons/users';
   {/if}
 
   {#if loading}
-    <div class="flex items-center justify-center py-20 text-gray-400">Loading guests...</div>
+    <div class="flex items-center justify-center py-20 text-gray-500">Loading guests...</div>
   {:else if errored}
     <div class="flex flex-col items-center justify-center py-20 text-center">
       <div class="w-16 h-16 bg-red-50 rounded-full flex items-center justify-center mb-4">
@@ -611,10 +613,10 @@ import Users from 'lucide-svelte/icons/users';
   {:else if allGuests.length === 0}
     <div class="flex flex-col items-center justify-center py-20 text-center">
       <div class="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mb-4">
-        <Users class="w-8 h-8 text-gray-400" />
+        <Users class="w-8 h-8 text-gray-500" />
       </div>
       <p class="text-gray-500 font-medium">No guests yet</p>
-      <p class="text-sm text-gray-400 mt-1 mb-4">Add your first guest to get started.</p>
+      <p class="text-sm text-gray-500 mt-1 mb-4">Add your first guest to get started.</p>
       <button onclick={() => { $drawerCreateMode = true; $isDrawerOpen = true; }} class="px-4 py-2.5 bg-red text-white rounded-xl text-sm font-semibold hover:bg-red-light transition-colors flex items-center gap-2">
         <Plus class="w-4 h-4" /> Add Guest
       </button>
@@ -622,10 +624,10 @@ import Users from 'lucide-svelte/icons/users';
   {:else if filtered.length === 0}
     <div class="flex flex-col items-center justify-center py-20 text-center">
       <div class="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mb-4">
-        <Search class="w-8 h-8 text-gray-400" />
+        <Search class="w-8 h-8 text-gray-500" />
       </div>
       <p class="text-gray-500 font-medium">No guests match</p>
-      <p class="text-sm text-gray-400 mt-1 mb-4">Try another name, or clear the status filter.</p>
+      <p class="text-sm text-gray-500 mt-1 mb-4">Try another name, or clear the status filter.</p>
       <button onclick={clearFilters} class="px-4 py-2.5 bg-white border border-gray-200 text-gray-700 rounded-xl text-sm font-semibold hover:bg-gray-50 transition-colors">
         Clear search and filters
       </button>
@@ -638,7 +640,7 @@ import Users from 'lucide-svelte/icons/users';
           <thead>
             <tr class="bg-gray-50 border-b border-gray-200">
               <th class="pl-5 pr-3 py-3 text-left">
-                <input type="checkbox" checked={selectedIds.size === filtered.length && filtered.length > 0} onchange={toggleSelectAll} class="rounded" />
+                <input type="checkbox" aria-label="Select all guests" checked={selectedIds.size === filtered.length && filtered.length > 0} onchange={toggleSelectAll} class="rounded w-6 h-6" />
               </th>
               {#each columns as col}
                 <th
@@ -661,7 +663,7 @@ import Users from 'lucide-svelte/icons/users';
                 oncontextmenu={(e) => handleCtx(e, guest)}
               >
                 <td class="pl-5 pr-3 py-3.5" onclick={(e) => e.stopPropagation()}>
-                  <input type="checkbox" checked={selectedIds.has(guest.id)} onchange={() => toggleSelect(guest.id)} class="rounded" />
+                  <input type="checkbox" aria-label="Select {guest.name}" checked={selectedIds.has(guest.id)} onchange={() => toggleSelect(guest.id)} class="rounded w-6 h-6" />
                 </td>
                 <td class="px-4 py-3.5">
                   <div class="flex items-center gap-3">
@@ -681,14 +683,14 @@ import Users from 'lucide-svelte/icons/users';
                       <span class="w-1.5 h-1.5 rounded-full bg-emerald-500"></span> Yes
                     </span>
                   {:else}
-                    <span class="text-gray-400">No</span>
+                    <span class="text-gray-500">No</span>
                   {/if}
                 </td>
                 <td class="px-4 py-3.5 text-gray-500 max-w-[140px] truncate">{guest.notes || '—'}</td>
                 <td class="px-4 py-3.5" onclick={(e) => e.stopPropagation()}>
                   <button class="p-1.5 rounded-lg hover:bg-gray-100" aria-label="Actions"
                     onclick={(e) => { e.stopPropagation(); handleCtx(e, guest); }}>
-                    <MoreHorizontal class="w-4 h-4 text-gray-400" />
+                    <MoreHorizontal class="w-4 h-4 text-gray-500" />
                   </button>
                 </td>
               </tr>
@@ -717,10 +719,12 @@ import Users from 'lucide-svelte/icons/users';
 {/if}
 
 <!-- Bulk Move Table Modal -->
-<!-- svelte-ignore a11y_no_static_element_interactions a11y_click_events_have_key_events -->
 {#if showBulkMoveModal}
+  <!-- svelte-ignore a11y_no_static_element_interactions -->
+  <!-- svelte-ignore a11y_click_events_have_key_events -->
   <div class="fixed inset-0 z-[700] flex items-center justify-center bg-black/30 backdrop-blur-md" onclick={() => showBulkMoveModal = false}>
-    <!-- svelte-ignore a11y_no_static_element_interactions a11y_click_events_have_key_events -->
+    <!-- svelte-ignore a11y_no_static_element_interactions -->
+    <!-- svelte-ignore a11y_click_events_have_key_events -->
     <div class="bg-white/95 backdrop-blur-xl rounded-2xl shadow-2xl w-full max-w-md p-6" onclick={(e) => e.stopPropagation()}>
       <h3 class="text-lg font-semibold text-gray-900 mb-4">Move {selectedIds.size} Guests</h3>
       <div class="space-y-3 mb-6">
@@ -738,7 +742,7 @@ import Users from 'lucide-svelte/icons/users';
             <input id="bulk-move-seat" type="number" min="1" max={getBulkTableCapacity()} bind:value={bulkMoveSeatStart}
               class="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm bg-white focus:border-gold focus:ring-2 focus:ring-gold/15 outline-none transition-all" />
           </div>
-          <div class="text-xs text-gray-400">
+          <div class="text-xs text-gray-500">
             Occupied: {bulkOccupiedSeats.size}/{getBulkTableCapacity()} seats
           </div>
         {/if}
@@ -757,9 +761,11 @@ import Users from 'lucide-svelte/icons/users';
 
 <!-- Context Menu -->
 {#if contextMenu}
-<!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
+<!-- svelte-ignore a11y_click_events_have_key_events -->
+<!-- svelte-ignore a11y_no_static_element_interactions -->
   <div class="fixed inset-0 z-[599]" onclick={() => contextMenu = null} role="presentation"></div>
-  <!-- svelte-ignore a11y_no_static_element_interactions a11y_click_events_have_key_events -->
+  <!-- svelte-ignore a11y_no_static_element_interactions -->
+  <!-- svelte-ignore a11y_click_events_have_key_events -->
   <div class="fixed z-[600] bg-white/95 backdrop-blur-xl border border-black/[0.06] rounded-xl shadow-xl py-1.5 min-w-[180px]"
     style={getMenuStyle(contextMenu.x, contextMenu.y)} onclick={(e) => e.stopPropagation()}>
     <button class="w-full flex items-center gap-2.5 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50" onclick={() => { $drawerStartEditing = true; openGuest(contextMenu!.guest); contextMenu = null; }}>
@@ -795,13 +801,14 @@ import Users from 'lucide-svelte/icons/users';
 
 {#if showImportModal}
   <div class="fixed inset-0 z-50 flex items-center justify-center p-4">
-<!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
+<!-- svelte-ignore a11y_click_events_have_key_events -->
+<!-- svelte-ignore a11y_no_static_element_interactions -->
     <div class="absolute inset-0 bg-black/30 backdrop-blur-md" onclick={() => showImportModal = false} role="presentation"></div>
     <div class="relative bg-white/95 backdrop-blur-xl rounded-2xl shadow-2xl w-full max-w-lg overflow-hidden">
       <div class="flex items-center justify-between p-5 border-b border-gray-100">
         <h3 class="font-bold text-gray-900">Import Guests from CSV</h3>
         <button onclick={() => showImportModal = false} class="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-gray-100 transition-colors">
-          <X class="w-4 h-4 text-gray-400" />
+          <X class="w-4 h-4 text-gray-500" />
         </button>
       </div>
       <div class="p-5 space-y-4">
@@ -810,7 +817,7 @@ import Users from 'lucide-svelte/icons/users';
         <div class="border-2 border-dashed border-gray-200 rounded-xl p-6 text-center hover:border-red/50 transition-colors">
           <input type="file" accept=".csv" onchange={handleImportFile} class="hidden" id="csv-input" />
           <label for="csv-input" class="cursor-pointer">
-            <FileText class="w-8 h-8 text-gray-400 mx-auto mb-2" />
+            <FileText class="w-8 h-8 text-gray-500 mx-auto mb-2" />
             {#if importFile}
               <p class="text-sm font-semibold text-gray-900">{importFile.name}</p>
               <p class="text-xs text-gray-500">{importPreview.length} guests found</p>
@@ -857,7 +864,7 @@ import Users from 'lucide-svelte/icons/users';
               </tbody>
             </table>
             {#if importPreview.length > 20}
-              <p class="text-xs text-gray-400 text-center py-2">...and {importPreview.length - 20} more</p>
+              <p class="text-xs text-gray-500 text-center py-2">...and {importPreview.length - 20} more</p>
             {/if}
           </div>
         {/if}
