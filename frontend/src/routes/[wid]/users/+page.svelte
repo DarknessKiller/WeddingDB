@@ -218,9 +218,9 @@ import LogOut from 'lucide-svelte/icons/log-out';
   </div>
 
   {#if loading}
-    <div class="text-center py-20 text-gray-400">Loading users...</div>
+    <div class="text-center py-20 text-gray-500">Loading users...</div>
   {:else if admins.length === 0}
-    <div class="text-center py-20 text-gray-400">No users found</div>
+    <div class="text-center py-20 text-gray-500">No users found</div>
   {:else}
     <!-- Desktop table -->
     <div class="hidden sm:block bg-white/90 backdrop-blur-xl border border-black/[0.06] rounded-2xl overflow-hidden">
@@ -265,17 +265,17 @@ import LogOut from 'lucide-svelte/icons/log-out';
               <td class="px-5 py-3.5">
                 <div class="flex items-center gap-1">
                   {#if user.role !== 'admin' || editingRoleUserId === user.id}
-                    <button onclick={() => openAssign(user)} class="p-1.5 rounded-lg hover:bg-blue-50 text-gray-400 hover:text-blue-600 transition-colors" aria-label="Assign weddings" title="Assign weddings">
+                    <button onclick={() => openAssign(user)} class="p-1.5 rounded-lg hover:bg-blue-50 text-gray-500 hover:text-blue-600 transition-colors" aria-label="Assign weddings" title="Assign weddings">
                       <Building2 class="w-4 h-4" />
                     </button>
-                    <button onclick={() => openReset(user)} class="p-1.5 rounded-lg hover:bg-amber-50 text-gray-400 hover:text-amber-600 transition-colors" aria-label="Reset password" title="Reset password">
+                    <button onclick={() => openReset(user)} class="p-1.5 rounded-lg hover:bg-amber-50 text-gray-500 hover:text-amber-600 transition-colors" aria-label="Reset password" title="Reset password">
                       <Key class="w-4 h-4" />
                     </button>
                   {/if}
-                    <button onclick={() => handleRevoke(user)} class="p-1.5 rounded-lg hover:bg-orange-50 text-gray-400 hover:text-orange-600 transition-colors" aria-label="Revoke sessions" title="Revoke sessions">
+                    <button onclick={() => handleRevoke(user)} class="p-1.5 rounded-lg hover:bg-orange-50 text-gray-500 hover:text-orange-600 transition-colors" aria-label="Revoke sessions" title="Revoke sessions">
                       <LogOut class="w-4 h-4" />
                     </button>
-                    <button onclick={() => handleDelete(user)} class="p-1.5 rounded-lg hover:bg-red-50 text-gray-400 hover:text-red transition-colors" aria-label="Delete">
+                    <button onclick={() => handleDelete(user)} class="p-1.5 rounded-lg hover:bg-red-50 text-gray-500 hover:text-red transition-colors" aria-label="Delete">
                       <Trash2 class="w-4 h-4" />
                     </button>
                 </div>
@@ -350,7 +350,7 @@ import LogOut from 'lucide-svelte/icons/log-out';
       <div class="flex items-center justify-between p-5 border-b border-gray-100">
         <h3 class="font-bold text-gray-900">Add User</h3>
         <button onclick={() => showCreate = false} class="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-gray-100 transition-colors">
-          <X class="w-4 h-4 text-gray-400" />
+          <X class="w-4 h-4 text-gray-500" />
         </button>
       </div>
       <div class="p-5 space-y-4">
@@ -405,13 +405,13 @@ import LogOut from 'lucide-svelte/icons/log-out';
       <div class="flex items-center justify-between p-5 border-b border-gray-100">
         <h3 class="font-bold text-gray-900">Assign Weddings</h3>
         <button onclick={() => assignTarget = null} class="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-gray-100 transition-colors">
-          <X class="w-4 h-4 text-gray-400" />
+          <X class="w-4 h-4 text-gray-500" />
         </button>
       </div>
       <div class="p-5 space-y-4">
         <p class="text-sm text-gray-600">Assign weddings to <strong>{assignTarget.name}</strong></p>
         {#if weddings.length === 0}
-          <p class="text-sm text-gray-400 italic">No weddings available</p>
+          <p class="text-sm text-gray-500 italic">No weddings available</p>
         {:else}
           <div class="space-y-2 max-h-60 overflow-y-auto">
             {#each weddings as w}
@@ -444,7 +444,7 @@ import LogOut from 'lucide-svelte/icons/log-out';
       <div class="flex items-center justify-between p-5 border-b border-gray-100">
         <h3 class="font-bold text-gray-900">Reset Password</h3>
         <button onclick={() => resetTarget = null} class="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-gray-100 transition-colors">
-          <X class="w-4 h-4 text-gray-400" />
+          <X class="w-4 h-4 text-gray-500" />
         </button>
       </div>
       <div class="p-5 space-y-4">

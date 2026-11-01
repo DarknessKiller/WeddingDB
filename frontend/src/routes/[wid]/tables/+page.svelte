@@ -313,10 +313,10 @@ import Map from 'lucide-svelte/icons/map';
   {:else if (tables ?? []).length === 0}
     <div class="flex flex-col items-center justify-center py-20 text-center">
       <div class="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mb-4">
-        <Users class="w-8 h-8 text-gray-400" />
+        <Users class="w-8 h-8 text-gray-500" />
       </div>
       <p class="text-gray-500 font-medium">No tables yet</p>
-      <p class="text-sm text-gray-400 mt-1 mb-4">Add your first banquet table to get started.</p>
+      <p class="text-sm text-gray-500 mt-1 mb-4">Add your first banquet table to get started.</p>
       <button onclick={openCreate} class="px-4 py-2.5 bg-red text-white rounded-xl text-sm font-semibold hover:bg-red-light transition-colors flex items-center gap-2">
         <Plus class="w-4 h-4" /> Add Table
       </button>
@@ -343,7 +343,7 @@ import Map from 'lucide-svelte/icons/map';
             class="absolute top-2 right-2 p-1.5 rounded-lg opacity-0 group-hover:opacity-100 hover:bg-gray-100 transition-all"
             aria-label="Table options"
           >
-            <MoreVertical class="w-4 h-4 text-gray-400" />
+            <MoreVertical class="w-4 h-4 text-gray-500" />
           </button>
 
           <!-- Occupancy Ring -->
@@ -370,11 +370,11 @@ import Map from 'lucide-svelte/icons/map';
 
           <div class="text-center">
             <div class="font-semibold text-xs sm:text-sm text-gray-800">{table.name || `Table ${table.id}`}</div>
-            <div class="text-[10px] sm:text-xs text-gray-500">{occ.occupied}/{table.capacity} seats</div>
+            <div class="text-xs sm:text-xs text-gray-500">{occ.occupied}/{table.capacity} seats</div>
           </div>
 
           {#if table.isVip}
-            <span class="inline-flex items-center gap-1 px-2 py-0.5 bg-gold-50 text-gold border border-gold-200 rounded-full text-[11px] font-bold">
+            <span class="inline-flex items-center gap-1 px-2 py-0.5 bg-gold-50 text-gold-ink border border-gold-200 rounded-full text-[11px] font-bold">
               <Star class="w-3 h-3 fill-gold" /> VIP
             </span>
           {/if}

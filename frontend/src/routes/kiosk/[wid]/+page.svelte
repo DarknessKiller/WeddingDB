@@ -487,7 +487,7 @@ import X from 'lucide-svelte/icons/x';
             <div class="handle-bar"></div>
           </div>
           <div class="sheet-content sheet-empty">
-            <MapPin class="icon-lg text-gray-400" />
+            <MapPin class="icon-lg text-gray-500" />
             <h3 class="font-bold text-gray-900 mb-1">No Seat Assigned</h3>
             <p class="text-sm text-gray-500">Please see the reception desk for seating.</p>
           </div>
@@ -581,7 +581,7 @@ import X from 'lucide-svelte/icons/x';
                       {#if $showSeatNumbers}<span class="meta-item">{formatSeatRange(guest.seatNumber, guest.pax)}</span>{/if}
                       <span class="meta-item">{formatPartySize(guest.pax)}</span>
                     {:else}
-                      <span class="meta-item text-gray-400">Ask at the reception desk</span>
+                      <span class="meta-item text-gray-500">Ask at the reception desk</span>
                     {/if}
                   </div>
                 </div>
@@ -598,12 +598,12 @@ import X from 'lucide-svelte/icons/x';
           <div class="empty-state">
             <Search class="icon-xl opacity-30" />
             <p class="font-medium">No guests found</p>
-            <p class="text-sm mt-1 text-gray-400">Try fewer letters, or the pinyin of the name.</p>
+            <p class="text-sm mt-1 text-gray-500">Try fewer letters, or the pinyin of the name.</p>
           </div>
         {:else}
           <div class="empty-state">
             <Users class="icon-lg opacity-30" />
-            <p class="text-sm text-gray-400">Type your name to find your table</p>
+            <p class="text-sm text-gray-500">Type your name to find your table</p>
           </div>
         {/if}
       </div>
@@ -928,7 +928,7 @@ import X from 'lucide-svelte/icons/x';
     font-size: 0.625rem;
     text-transform: uppercase;
     letter-spacing: 0.08em;
-    color: #9ca3af;
+    color: #6b7280;
     font-weight: 600;
     margin-bottom: 0.25rem;
   }
@@ -969,7 +969,7 @@ import X from 'lucide-svelte/icons/x';
     justify-content: center;
     gap: 0.25rem;
     font-size: 0.6875rem;
-    color: #9ca3af;
+    color: #6b7280;
     padding-top: 0.25rem;
   }
 
@@ -1097,7 +1097,7 @@ import X from 'lucide-svelte/icons/x';
   .hero-date {
     font-size: 0.875rem;
     font-weight: 500;
-    color: #9ca3af;
+    color: #6b7280;
     letter-spacing: 0.04em;
     margin-bottom: 0.5rem;
     text-transform: uppercase;
@@ -1128,7 +1128,7 @@ import X from 'lucide-svelte/icons/x';
   }
 
   .hero-venue-icon {
-    color: #9ca3af;
+    color: #6b7280;
     flex-shrink: 0;
   }
 
@@ -1150,7 +1150,7 @@ import X from 'lucide-svelte/icons/x';
 
   .hero-venue-address {
     font-size: 0.75rem;
-    color: #9ca3af;
+    color: #6b7280;
     line-height: 1.4;
     text-align: center;
     overflow-wrap: break-word;
@@ -1184,7 +1184,7 @@ import X from 'lucide-svelte/icons/x';
   .search-icon {
     width: 1.25rem;
     height: 1.25rem;
-    color: #9ca3af;
+    color: #6b7280;
     flex-shrink: 0;
   }
   .search-clear {
@@ -1225,7 +1225,7 @@ import X from 'lucide-svelte/icons/x';
   }
 
   .search-input::placeholder {
-    color: #9ca3af;
+    color: #6b7280;
   }
 
   /* ---------- Results ---------- */
@@ -1346,7 +1346,7 @@ import X from 'lucide-svelte/icons/x';
   .empty-state {
     text-align: center;
     padding: 2rem 0;
-    color: #9ca3af;
+    color: #6b7280;
   }
 
 
@@ -1383,7 +1383,7 @@ import X from 'lucide-svelte/icons/x';
   .text-red { color: #A11217; }
   .text-gold { color: #D4AF37; }
   .fill-gold { fill: #D4AF37; }
-  .text-gray-400 { color: #9ca3af; }
+  .text-gray-500 { color: #6b7280; }
   .font-bold { font-weight: 700; }
   .font-medium { font-weight: 500; }
   .mx-auto { margin-left: auto; margin-right: auto; }

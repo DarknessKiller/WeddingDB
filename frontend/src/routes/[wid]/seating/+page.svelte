@@ -265,7 +265,7 @@ import Pencil from 'lucide-svelte/icons/pencil';
 
 {#if loading}
   <div class="flex h-full items-center justify-center">
-    <div class="flex flex-col items-center gap-3 text-gray-400">
+    <div class="flex flex-col items-center gap-3 text-gray-500">
       <div class="w-8 h-8 border-2 border-red/30 border-t-red rounded-full animate-spin"></div>
       <span class="text-sm">Loading seating map...</span>
     </div>
@@ -287,10 +287,10 @@ import Pencil from 'lucide-svelte/icons/pencil';
   <div class="flex h-full items-center justify-center">
     <div class="flex flex-col items-center gap-3 text-center">
       <div class="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center">
-        <Users class="w-8 h-8 text-gray-400" />
+        <Users class="w-8 h-8 text-gray-500" />
       </div>
       <p class="text-gray-500 font-medium">No tables yet</p>
-      <p class="text-sm text-gray-400">Add tables first to manage seating.</p>
+      <p class="text-sm text-gray-500">Add tables first to manage seating.</p>
       <button onclick={() => goto(`/${$weddingId}/tables`)} class="px-4 py-2.5 bg-red text-white rounded-xl text-sm font-semibold hover:bg-red-light transition-colors flex items-center gap-2">
         <Plus class="w-4 h-4" /> Add Tables
       </button>
@@ -299,6 +299,7 @@ import Pencil from 'lucide-svelte/icons/pencil';
 {:else}
 
 <div class="relative flex h-full">
+  <h1 class="sr-only">Seating Map</h1>
   <!-- HallMap renders the edit toolbar and the stage as siblings, so it needs a column wrapper -->
   <div class="flex-1 flex flex-col min-h-0">
   <HallMap
@@ -345,7 +346,7 @@ import Pencil from 'lucide-svelte/icons/pencil';
             </div>
           </div>
         </div>
-        <button onclick={closePanel} class="p-2 rounded-lg hover:bg-gray-100 text-gray-400 hover:text-gray-600 transition-colors" aria-label="Close panel">
+        <button onclick={closePanel} class="p-2 rounded-lg hover:bg-gray-100 text-gray-500 hover:text-gray-600 transition-colors" aria-label="Close panel">
           <X class="w-5 h-5" />
         </button>
       </div>
@@ -366,7 +367,7 @@ import Pencil from 'lucide-svelte/icons/pencil';
 
       <!-- Seat List -->
       <div class="flex-1 overflow-y-auto px-5 py-3 space-y-1.5">
-        <div class="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">Seat Assignments</div>
+        <div class="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">Seat Assignments</div>
         {#each Array(selectedTable.capacity) as _, seatIdx}
           {@const seatNum = seatIdx + 1}
           {@const guest = selectedTableGuests.find(g => g.seatNumber !== null && seatNum >= g.seatNumber && seatNum < g.seatNumber + g.pax)}
@@ -386,7 +387,7 @@ import Pencil from 'lucide-svelte/icons/pencil';
               guest?.checkedIn ? "bg-emerald-50 border-emerald-400 text-emerald-700" :
               guest ? "bg-red-50 border-red text-red" :
               assigningSeat === seatNum ? "border-dashed border-gold text-gold" :
-              "bg-gray-50 border-gray-200 text-gray-400"
+              "bg-gray-50 border-gray-200 text-gray-500"
             )}>
               {seatNum}
             </div>
@@ -405,13 +406,13 @@ import Pencil from 'lucide-svelte/icons/pencil';
               <div class="flex items-center gap-1.5">
                 <Badge status={guest.rsvp} />
                 {#if guest.checkedIn}
-                  <span class="inline-flex items-center gap-0.5 px-1.5 py-0.5 bg-emerald-50 text-emerald-700 rounded-full text-[10px] font-semibold border border-emerald-200">
+                  <span class="inline-flex items-center gap-0.5 px-1.5 py-0.5 bg-emerald-50 text-emerald-700 rounded-full text-xs font-semibold border border-emerald-200">
                     <CheckCircle2 class="w-2.5 h-2.5" /> In
                   </span>
                 {/if}
               </div>
             {:else}
-              <span class="text-xs text-gray-400 italic">{assigningSeat === seatNum ? 'Select a guest below...' : 'Click to assign'}</span>
+              <span class="text-xs text-gray-500 italic">{assigningSeat === seatNum ? 'Select a guest below...' : 'Click to assign'}</span>
             {/if}
           </button>
         {/each}
@@ -422,10 +423,10 @@ import Pencil from 'lucide-svelte/icons/pencil';
         <div class="px-5 py-3 border-t border-gray-100 space-y-2">
           <div class="flex items-center justify-between">
             <span class="text-xs font-semibold text-gray-500">Assign Seat {assigningSeat}</span>
-            <button onclick={() => assigningSeat = null} class="text-xs text-gray-400 hover:text-gray-600">Cancel</button>
+            <button onclick={() => assigningSeat = null} class="text-xs text-gray-500 hover:text-gray-600">Cancel</button>
           </div>
           <div class="relative">
-            <Search class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+            <Search class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" />
             <input
               type="text"
               placeholder="Search unassigned guests..."
@@ -448,7 +449,7 @@ import Pencil from 'lucide-svelte/icons/pencil';
                 </div>
               </button>
             {:else}
-              <p class="text-xs text-gray-400 text-center py-2">No unassigned guests</p>
+              <p class="text-xs text-gray-500 text-center py-2">No unassigned guests</p>
             {/each}
           </div>
         </div>
@@ -522,19 +523,19 @@ import Pencil from 'lucide-svelte/icons/pencil';
               onclick={() => { if (guest) { $selectedGuest = guest; $isDrawerOpen = true; } }}
             >
               <div class={cn(
-                "w-7 h-7 rounded-full flex items-center justify-center text-[10px] font-bold flex-shrink-0 border-2",
+                "w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0 border-2",
                 guest?.checkedIn ? "bg-emerald-50 border-emerald-400 text-emerald-700" :
                 guest ? "bg-red-50 border-red text-red" :
-                "bg-gray-50 border-gray-200 text-gray-400"
+                "bg-gray-50 border-gray-200 text-gray-500"
               )}>
                 {seatNum}
               </div>
               <div class="flex-1 min-w-0">
                 {#if guest}
                   <div class="text-xs font-semibold text-gray-900 truncate">{guest.name}</div>
-                  <div class="text-[10px] text-gray-500">{guest.pax} pax</div>
+                  <div class="text-xs text-gray-500">{guest.pax} pax</div>
                 {:else}
-                  <div class="text-[10px] text-gray-400 italic">Empty</div>
+                  <div class="text-xs text-gray-500 italic">Empty</div>
                 {/if}
               </div>
             </button>

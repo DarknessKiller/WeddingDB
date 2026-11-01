@@ -130,7 +130,7 @@ import ArrowUpDown from 'lucide-svelte/icons/arrow-up-down';
           {#if !rangeOk}
             <p class="text-xs text-red mt-1">No room for {guest.pax} pax starting at seat {seatNum}. Free seats: {freeCount}</p>
           {:else}
-            <p class="text-xs text-gray-400 mt-1">{guest.pax > 1 ? `Party of ${guest.pax}: seats ${seatNum}–${seatNum + guest.pax - 1}` : `Seat ${seatNum}`} · {freeCount} free</p>
+            <p class="text-xs text-gray-500 mt-1">{guest.pax > 1 ? `Party of ${guest.pax}: seats ${seatNum}–${seatNum + guest.pax - 1}` : `Seat ${seatNum}`} · {freeCount} free</p>
           {/if}
         </div>
       </div>

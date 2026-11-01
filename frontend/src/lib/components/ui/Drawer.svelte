@@ -411,7 +411,7 @@ import ArrowUpDown from 'lucide-svelte/icons/arrow-up-down';
             <div class="flex items-center gap-2 mt-0.5">
               <Badge status={localGuest.rsvp} />
               {#if localGuest.pax > 1}
-                <span class="text-xs text-gray-400">{localGuest.pax} pax</span>
+                <span class="text-xs text-gray-500">{localGuest.pax} pax</span>
               {/if}
             </div>
           </div>
@@ -443,7 +443,7 @@ import ArrowUpDown from 'lucide-svelte/icons/arrow-up-down';
           </div>
           <div class="detail-card">
             <div class="detail-label">Checked In</div>
-            <div class="detail-value {localGuest.checkedIn ? 'text-emerald-600' : 'text-gray-400'}">
+            <div class="detail-value {localGuest.checkedIn ? 'text-emerald-600' : 'text-gray-500'}">
               {localGuest.checkedIn ? '✓' : '—'}
             </div>
           </div>
@@ -616,7 +616,7 @@ import ArrowUpDown from 'lucide-svelte/icons/arrow-up-down';
   .info-icon {
     width: 0.875rem;
     height: 0.875rem;
-    color: #9ca3af;
+    color: #6b7280;
     flex-shrink: 0;
   }
 
@@ -692,7 +692,7 @@ import ArrowUpDown from 'lucide-svelte/icons/arrow-up-down';
   .section-icon {
     width: 0.875rem;
     height: 0.875rem;
-    color: #9ca3af;
+    color: #6b7280;
   }
 
   .chip-group {

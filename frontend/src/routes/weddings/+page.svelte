@@ -172,14 +172,14 @@ import ChevronRight from 'lucide-svelte/icons/chevron-right';
                 {:else if isSelected}
                   <span class="text-xs font-medium text-gold bg-gold-50 px-2 py-0.5 rounded-full border border-gold-200">Active</span>
                 {:else}
-                  <ChevronRight class="w-4 h-4 text-gray-400 group-hover:text-deep-red transition-colors" />
+                  <ChevronRight class="w-4 h-4 text-gray-500 group-hover:text-deep-red transition-colors" />
                 {/if}
                 {#if auth?.role === 'admin'}
                   <div class="flex items-center gap-1 ml-2 {isSelected ? 'opacity-0 group-hover:opacity-100' : 'opacity-0 group-hover:opacity-100'} transition-opacity">
-                    <button onclick={(e) => openEdit(w, e)} class="p-1.5 rounded-lg hover:bg-white/80 text-gray-400 hover:text-gray-600 transition-colors" aria-label="Edit">
+                    <button onclick={(e) => openEdit(w, e)} class="p-1.5 rounded-lg hover:bg-white/80 text-gray-500 hover:text-gray-600 transition-colors" aria-label="Edit">
                       <Pencil class="w-3.5 h-3.5" />
                     </button>
-                    <button onclick={(e) => handleDelete(w, e)} class="p-1.5 rounded-lg hover:bg-red-50 text-gray-400 hover:text-red transition-colors" aria-label="Delete">
+                    <button onclick={(e) => handleDelete(w, e)} class="p-1.5 rounded-lg hover:bg-red-50 text-gray-500 hover:text-red transition-colors" aria-label="Delete">
                       <Trash2 class="w-3.5 h-3.5" />
                     </button>
                   </div>
@@ -208,7 +208,7 @@ import ChevronRight from 'lucide-svelte/icons/chevron-right';
       <div class="flex items-center justify-between p-5 border-b border-gray-100">
         <h3 class="font-bold text-gray-900">{editingWedding ? 'Edit Wedding' : 'New Wedding'}</h3>
         <button onclick={closeModal} class="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-gray-100 transition-colors">
-          <X class="w-4 h-4 text-gray-400" />
+          <X class="w-4 h-4 text-gray-500" />
         </button>
       </div>
       <div class="p-5 space-y-4">

@@ -100,8 +100,10 @@ import ExternalLink from 'lucide-svelte/icons/external-link';
 <svelte:head> <title>{$weddingTitle ? `${$weddingTitle} – Dashboard` : 'Dashboard – WeddingDB'}</title></svelte:head>
 
 <div class="p-4 sm:p-7 space-y-4 sm:space-y-6 max-w-[1400px]">
+
+  <h1 class="sr-only">Dashboard</h1>
   {#if loading}
-    <div class="text-center text-gray-400 py-16 text-sm">Loading dashboard…</div>
+    <div class="text-center text-gray-500 py-16 text-sm">Loading dashboard…</div>
   {:else if loaded}
     <!-- Kiosk Quick Access -->
     <div class="bg-white/90 backdrop-blur-xl border border-black/[0.06] rounded-2xl p-4 sm:p-5 flex items-center justify-between gap-4 shadow-sm">
@@ -110,7 +112,7 @@ import ExternalLink from 'lucide-svelte/icons/external-link';
           <Monitor class="w-5 h-5 sm:w-6 sm:h-6 text-white" />
         </div>
         <div>
-          <h3 class="text-sm font-bold text-gray-900">Guest Kiosk</h3>
+          <h2 class="text-sm font-bold text-gray-900">Guest Kiosk</h2>
           <p class="text-xs text-gray-500">Share this with guests to find their seats</p>
         </div>
       </div>
@@ -174,7 +176,7 @@ import ExternalLink from 'lucide-svelte/icons/external-link';
     <div class="grid grid-cols-1 lg:grid-cols-3 gap-5">
       <!-- RSVP Donut -->
       <div class="bg-white/90 backdrop-blur-xl border border-black/[0.06] rounded-2xl p-6 shadow-sm">
-        <h3 class="text-base font-bold text-gray-800 mb-5" style="letter-spacing: -0.01em;">RSVP Status</h3>
+        <h2 class="text-base font-bold text-gray-800 mb-5" style="letter-spacing: -0.01em;">RSVP Status</h2>
       <div class="relative w-40 h-40 mx-auto mb-5">
         <svg viewBox="0 0 100 100" class="w-full h-full -rotate-90">
           <circle cx="50" cy="50" r={DONUT_R} fill="none" stroke="#E5E7EB" stroke-width="10" />
@@ -206,7 +208,7 @@ import ExternalLink from 'lucide-svelte/icons/external-link';
 
       <!-- Table Occupancy -->
       <div class="bg-white/90 backdrop-blur-xl border border-black/[0.06] rounded-2xl p-6 shadow-sm">
-        <h3 class="text-base font-bold text-gray-800 mb-5" style="letter-spacing: -0.01em;">Table Occupancy</h3>
+        <h2 class="text-base font-bold text-gray-800 mb-5" style="letter-spacing: -0.01em;">Table Occupancy</h2>
         <div class="space-y-3">
           {#each occupancy as t}
             <div class="flex items-center gap-3">
@@ -220,14 +222,14 @@ import ExternalLink from 'lucide-svelte/icons/external-link';
               <span class="w-10 text-xs font-semibold text-gray-600">{t.percentage}%</span>
             </div>
           {:else}
-            <p class="text-sm text-gray-400">No tables yet. <a href="/{get(weddingId)}/seating" class="text-red font-medium hover:underline">Set up seating</a>.</p>
+            <p class="text-sm text-gray-500">No tables yet. <a href="/{get(weddingId)}/seating" class="text-red font-medium hover:underline">Set up seating</a>.</p>
           {/each}
         </div>
       </div>
 
       <!-- Recent Activity (derived from SSE-backed guestList; updates live) -->
       <div class="bg-white/90 backdrop-blur-xl border border-black/[0.06] rounded-2xl p-6 shadow-sm">
-        <h3 class="text-base font-bold text-gray-800 mb-5" style="letter-spacing: -0.01em;">Recent Activity</h3>
+        <h2 class="text-base font-bold text-gray-800 mb-5" style="letter-spacing: -0.01em;">Recent Activity</h2>
         <div class="space-y-4">
           {#each activity as item (item.id)}
             {@const Icon = activityIcons[item.icon] || CheckCircle}
@@ -240,16 +242,16 @@ import ExternalLink from 'lucide-svelte/icons/external-link';
                   <span class="font-semibold">{item.guestName}</span>
                   {item.message}
                 </p>
-                <time class="text-xs text-gray-400">{dayjs(item.timestamp).fromNow()}</time>
+                <time class="text-xs text-gray-500">{dayjs(item.timestamp).fromNow()}</time>
               </div>
             </div>
           {:else}
-            <p class="text-sm text-gray-400">No activity yet.</p>
+            <p class="text-sm text-gray-500">No activity yet.</p>
           {/each}
         </div>
       </div>
     </div>
   {:else}
-    <div class="text-center text-gray-400 py-16 text-sm">No data available</div>
+    <div class="text-center text-gray-500 py-16 text-sm">No data available</div>
   {/if}
 </div>

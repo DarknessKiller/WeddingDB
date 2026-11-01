@@ -26,6 +26,7 @@
   --color-deep-red: #8B1A1A;
 
   --color-gold: #D4AF37;
+  --color-gold-ink: #6B5200;
   --color-gold-light: #E8CC6E;
   --color-gold-dark: #B8941F;
   --color-gold-50: #FDF8E8;
@@ -62,6 +63,7 @@
     background: linear-gradient(180deg, #FAF7F2 0%, #F5F0E8 50%, white 100%);
     line-height: 1.5;
   }
+
 
   /* Apple-style focus rings */
   :focus-visible {
@@ -148,18 +150,18 @@
   .auth-form .form-label { font-size: 0.8125rem; font-weight: 600; color: #374151; }
   .auth-form .form-input {
     width: 100%; padding: 0.75rem 1rem; border: 1.5px solid rgba(0, 0, 0, 0.08);
-    border-radius: 0.75rem; font-size: 0.9375rem; color: #111827; background: white;
+    border-radius: 0.75rem; font-size: 1rem; color: #111827; background: white;
     outline: none; transition: border-color 200ms ease, box-shadow 200ms ease, transform 100ms ease;
     min-height: 48px;
   }
   .auth-form .form-input:focus { border-color: #A11217; box-shadow: 0 0 0 3px rgba(161, 18, 23, 0.1); }
   .auth-form .form-input:active { transform: scale(0.99); }
-  .auth-form .form-input::placeholder { color: #9ca3af; }
+  .auth-form .form-input::placeholder { color: #6b7280; }
   .auth-form .password-wrap { position: relative; }
   .auth-form .password-input { padding-right: 3rem; }
   .auth-form .password-toggle {
     position: absolute; right: 0.5rem; top: 50%; transform: translateY(-50%);
-    padding: 0.5rem; color: #9ca3af; min-width: 44px; min-height: 44px;
+    padding: 0.5rem; color: #6b7280; min-width: 44px; min-height: 44px;
     display: flex; align-items: center; justify-content: center; border-radius: 0.5rem;
     transition: color 100ms ease;
   }
@@ -187,4 +189,11 @@
   }
   .auth-cancel:active { transform: scale(0.98); }
   @keyframes spin { to { transform: rotate(360deg); } }
+}
+
+/* iOS zooms the page when a field under 16px gets focus. Unlayered so it beats utility classes. */
+@media (max-width: 767px) {
+  input:not([type='checkbox']):not([type='radio']), select, textarea {
+    font-size: 16px;
+  }
 }

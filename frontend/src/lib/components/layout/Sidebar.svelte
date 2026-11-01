@@ -146,7 +146,7 @@ import FileDown from 'lucide-svelte/icons/file-down';
     font-weight: 600;
     text-transform: uppercase;
     letter-spacing: 0.05em;
-    color: #9ca3af;
+    color: #6b7280;
   }
 
   .nav-item {
@@ -283,6 +283,6 @@ import FileDown from 'lucide-svelte/icons/file-down';
 
   .user-role {
     font-size: 0.6875rem;
-    color: #9ca3af;
+    color: #6b7280;
   }
 </style>

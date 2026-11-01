@@ -145,7 +145,7 @@ import CheckCircle2 from 'lucide-svelte/icons/check-circle-2';
 
 {#if dataLoading}
   <div class="flex items-center justify-center h-full">
-    <div class="text-center text-gray-400">
+    <div class="text-center text-gray-500">
       <div class="w-8 h-8 border-2 border-red/30 border-t-red rounded-full animate-spin mx-auto mb-3"></div>
       <p class="text-sm">Loading check-in data...</p>
     </div>
@@ -161,11 +161,13 @@ import CheckCircle2 from 'lucide-svelte/icons/check-circle-2';
     }
   }}
 >
+
+  <h1 class="sr-only">Search</h1>
   <!-- Search Toolbar -->
   <!-- svelte-ignore a11y_no_static_element_interactions a11y_click_events_have_key_events -->
   <div data-search-area class="relative bg-white/90 backdrop-blur-xl border-b border-black/[0.06] px-4 py-3 z-30 flex-shrink-0" onclick={(e) => e.stopPropagation()}>
     <div class="relative max-w-xl mx-auto">
-      <Search class="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400 pointer-events-none" />
+      <Search class="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-500 pointer-events-none" />
       <!-- svelte-ignore a11y_autofocus -->
       <input
         type="text"
@@ -190,7 +192,7 @@ import CheckCircle2 from 'lucide-svelte/icons/check-circle-2';
               <div class={cn(
                 "w-10 h-10 rounded-full flex items-center justify-center text-sm font-bold flex-shrink-0",
                 guest.checkedIn ? "bg-emerald-50 text-emerald-700 border-2 border-emerald-300" :
-                guest.isVip ? "bg-gold-50 text-gold border-2 border-gold-300" :
+                guest.isVip ? "bg-gold-50 text-gold-ink border-2 border-gold-300" :
                 "bg-red-50 text-red border-2 border-red-200"
               )}>
                 {getInitials(guest.name)}
@@ -215,7 +217,7 @@ import CheckCircle2 from 'lucide-svelte/icons/check-circle-2';
             </button>
           {/each}
         {:else}
-          <div class="px-4 py-6 text-center text-gray-400">
+          <div class="px-4 py-6 text-center text-gray-500">
             <Search class="w-8 h-8 mx-auto mb-2 opacity-40" />
             <p class="text-sm font-medium">No guests found</p>
             <p class="text-xs mt-1">Try fewer letters, or the pinyin of the name.</p>
@@ -231,14 +233,14 @@ import CheckCircle2 from 'lucide-svelte/icons/check-circle-2';
     {#if !$isDrawerOpen && (!showResults || !query.trim())}
       <div class="md:w-80 lg:w-96 md:border-r border-gray-200 bg-white overflow-y-auto flex-shrink-0 max-h-[35vh] md:max-h-none">
         {#if allGuests.length === 0}
-          <div class="p-8 text-center text-gray-400">
+          <div class="p-8 text-center text-gray-500">
             <p class="text-sm">Loading guests...</p>
           </div>
         {:else}
           <div class="flex items-center gap-2 px-3 py-1.5 border-b border-gray-100 bg-gray-50 text-xs">
-            <button onclick={() => toggleSort('name')} class="{sortCol === 'name' ? 'text-red font-bold' : 'text-gray-500'}">Name</button>
-            <button onclick={() => toggleSort('rsvp')} class="{sortCol === 'rsvp' ? 'text-red font-bold' : 'text-gray-500'}">RSVP</button>
-            <button onclick={() => toggleSort('checkedIn')} class="{sortCol === 'checkedIn' ? 'text-red font-bold' : 'text-gray-500'}">Status</button>
+            <button onclick={() => toggleSort('name')} class="py-1 {sortCol === 'name' ? 'text-red font-bold' : 'text-gray-500'}">Name</button>
+            <button onclick={() => toggleSort('rsvp')} class="py-1 {sortCol === 'rsvp' ? 'text-red font-bold' : 'text-gray-500'}">RSVP</button>
+            <button onclick={() => toggleSort('checkedIn')} class="py-1 {sortCol === 'checkedIn' ? 'text-red font-bold' : 'text-gray-500'}">Status</button>
           </div>
           <div class="divide-y divide-gray-100">
             {#each sortedGuests as guest (guest.id)}
@@ -249,7 +251,7 @@ import CheckCircle2 from 'lucide-svelte/icons/check-circle-2';
                 <div class={cn(
                   "w-10 h-10 rounded-full flex items-center justify-center text-sm font-bold flex-shrink-0",
                   guest.checkedIn ? "bg-emerald-50 text-emerald-700 border-2 border-emerald-300" :
-                  guest.isVip ? "bg-gold-50 text-gold border-2 border-gold-300" :
+                  guest.isVip ? "bg-gold-50 text-gold-ink border-2 border-gold-300" :
                   "bg-red-50 text-red border-2 border-red-200"
                 )}>
                   {getInitials(guest.name)}
