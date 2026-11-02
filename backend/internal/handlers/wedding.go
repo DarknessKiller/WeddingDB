@@ -79,7 +79,9 @@ func (h *WeddingHandler) Create(c fuego.ContextWithBody[WeddingRequest]) (any, e
 	// Link the creating admin to this wedding
 	adminID := AdminIDFromContext(c.Context())
 	if adminID != uuid.Nil {
-		h.adminRepo.AddUserWedding(ctx, adminID, w.ID)
+		if err := h.adminRepo.AddUserWedding(ctx, adminID, w.ID); err != nil {
+			return nil, err
+		}
 	}
 	c.SetStatus(201)
 	return w, nil

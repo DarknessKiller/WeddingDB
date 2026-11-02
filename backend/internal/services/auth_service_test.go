@@ -10,6 +10,8 @@ import (
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/google/uuid"
 	"github.com/redis/go-redis/v9"
+
+	"weddingdb/internal/testutil"
 )
 
 // newTestAuthService creates an AuthService with a miniredis instance for testing.
@@ -20,9 +22,10 @@ func newTestAuthService(t *testing.T, secret string) (*AuthService, *miniredis.M
 	return &AuthService{secret: []byte(secret), redisClient: rdb}, mr
 }
 
-func signTestToken(secret string, claims AccessClaims) string {
+func signTestToken(t *testing.T, secret string, claims AccessClaims) string {
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
-	s, _ := token.SignedString([]byte(secret))
+	s, err := token.SignedString([]byte(secret))
+	testutil.NoErr(t, err)
 	return s
 }
 
@@ -32,7 +35,7 @@ func TestValidateToken_Valid(t *testing.T) {
 	wid := uuid.New()
 	now := time.Now()
 
-	tok := signTestToken("test-secret-123", AccessClaims{
+	tok := signTestToken(t, "test-secret-123", AccessClaims{
 		AdminID:   adminID,
 		WeddingID: &wid,
 		Role:      "admin",
@@ -62,7 +65,7 @@ func TestValidateToken_Expired(t *testing.T) {
 	svc, _ := newTestAuthService(t, "test-secret-123")
 	now := time.Now()
 
-	tok := signTestToken("test-secret-123", AccessClaims{
+	tok := signTestToken(t, "test-secret-123", AccessClaims{
 		AdminID: uuid.New(),
 		Role:    "admin",
 		RegisteredClaims: jwt.RegisteredClaims{
@@ -82,7 +85,7 @@ func TestValidateToken_WrongSecret(t *testing.T) {
 	svc, _ := newTestAuthService(t, "correct-secret")
 	now := time.Now()
 
-	tok := signTestToken("wrong-secret", AccessClaims{
+	tok := signTestToken(t, "wrong-secret", AccessClaims{
 		AdminID: uuid.New(),
 		Role:    "admin",
 		RegisteredClaims: jwt.RegisteredClaims{
@@ -112,7 +115,7 @@ func TestValidateToken_NilWeddingID(t *testing.T) {
 	adminID := uuid.New()
 	now := time.Now()
 
-	tok := signTestToken("test-secret-123", AccessClaims{
+	tok := signTestToken(t, "test-secret-123", AccessClaims{
 		AdminID: adminID,
 		Role:    "admin",
 		RegisteredClaims: jwt.RegisteredClaims{
@@ -137,7 +140,7 @@ func TestValidateToken_Blacklisted(t *testing.T) {
 	jti := uuid.New().String()
 
 	// Sign a valid token
-	tok := signTestToken("test-secret-123", AccessClaims{
+	tok := signTestToken(t, "test-secret-123", AccessClaims{
 		AdminID: uuid.New(),
 		Role:    "admin",
 		RegisteredClaims: jwt.RegisteredClaims{
@@ -148,7 +151,7 @@ func TestValidateToken_Blacklisted(t *testing.T) {
 	})
 
 	// Blacklist the JTI in miniredis
-	mr.Set("blacklist:jti:"+jti, "1")
+	testutil.NoErr(t, mr.Set("blacklist:jti:"+jti, "1"))
 
 	_, err := svc.ValidateToken(context.Background(), tok)
 	if err == nil {
@@ -162,7 +165,7 @@ func TestValidateToken_StaleTokenVersion(t *testing.T) {
 	now := time.Now()
 
 	// Sign token with tv=0
-	tok := signTestToken("test-secret-123", AccessClaims{
+	tok := signTestToken(t, "test-secret-123", AccessClaims{
 		AdminID:      adminID,
 		Role:         "admin",
 		TokenVersion: 0,
@@ -174,7 +177,7 @@ func TestValidateToken_StaleTokenVersion(t *testing.T) {
 	})
 
 	// Set stored version to 1 (simulates admin revoke)
-	mr.Set("user:"+adminID.String()+":tv", "1")
+	testutil.NoErr(t, mr.Set("user:"+adminID.String()+":tv", "1"))
 
 	_, err := svc.ValidateToken(context.Background(), tok)
 	if err == nil {
@@ -257,7 +260,7 @@ func TestGetTokenVersion_ReturnsStoredValue(t *testing.T) {
 	svc, mr := newTestAuthService(t, "test-secret-123")
 	adminID := uuid.New()
 
-	mr.Set("user:"+adminID.String()+":tv", "5")
+	testutil.NoErr(t, mr.Set("user:"+adminID.String()+":tv", "5"))
 
 	tv, err := svc.GetTokenVersion(context.Background(), adminID)
 	if err != nil {
@@ -271,13 +274,17 @@ func TestGetTokenVersion_ReturnsStoredValue(t *testing.T) {
 func TestValidateToken_FailClosedOnRedisError(t *testing.T) {
 	// Use a Redis client pointing at a non-existent address to simulate Redis failure
 	badRdb := redis.NewClient(&redis.Options{Addr: "localhost:1"})
-	defer badRdb.Close()
+	defer func() {
+		if err := badRdb.Close(); err != nil {
+			t.Errorf("close: %v", err)
+		}
+	}()
 
 	svc := &AuthService{secret: []byte("test-secret"), redisClient: badRdb}
 
 	adminID := uuid.New()
 	now := time.Now()
-	tok := signTestToken("test-secret", AccessClaims{
+	tok := signTestToken(t, "test-secret", AccessClaims{
 		AdminID: adminID,
 		Role:    "admin",
 		RegisteredClaims: jwt.RegisteredClaims{
@@ -304,13 +311,17 @@ func TestValidateToken_FailClosedOnRedisError_TokenVersionCheck(t *testing.T) {
 	// we use a bad client that fails on the second call.
 	// Simpler approach: use a broken client for the whole thing.
 	badRdb := redis.NewClient(&redis.Options{Addr: "localhost:1"})
-	defer badRdb.Close()
+	defer func() {
+		if err := badRdb.Close(); err != nil {
+			t.Errorf("close: %v", err)
+		}
+	}()
 
 	svc := &AuthService{secret: []byte("test-secret"), redisClient: badRdb}
 
 	adminID := uuid.New()
 	now := time.Now()
-	tok := signTestToken("test-secret", AccessClaims{
+	tok := signTestToken(t, "test-secret", AccessClaims{
 		AdminID:      adminID,
 		Role:         "admin",
 		TokenVersion: 0,
@@ -333,7 +344,7 @@ func TestParseTokenUnsafe_ExtractsClaims(t *testing.T) {
 	jti := uuid.New().String()
 	now := time.Now()
 
-	tok := signTestToken("test-secret-123", AccessClaims{
+	tok := signTestToken(t, "test-secret-123", AccessClaims{
 		AdminID: adminID,
 		Role:    "viewer",
 		RegisteredClaims: jwt.RegisteredClaims{

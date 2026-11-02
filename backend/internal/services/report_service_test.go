@@ -7,9 +7,11 @@ import (
 	"testing"
 	"time"
 
+	"weddingdb/internal/models"
+	"weddingdb/internal/testutil"
+
 	"github.com/google/uuid"
 	"github.com/xuri/excelize/v2"
-	"weddingdb/internal/models"
 )
 
 func intPtr(i int) *int       { return &i }
@@ -203,25 +205,29 @@ func TestXLSXOutputStructure(t *testing.T) {
 	defer f.Close()
 
 	customRM := `"RM "#,##0`
-	headerStyle, _ := f.NewStyle(&excelize.Style{
+	headerStyle, err := f.NewStyle(&excelize.Style{
 		Font:      &excelize.Font{Bold: true},
 		Fill:      excelize.Fill{Type: "pattern", Color: []string{"#FEE2E2"}, Pattern: 1},
 		Alignment: &excelize.Alignment{Horizontal: "center"},
 	})
-	currencyStyle, _ := f.NewStyle(&excelize.Style{
+	testutil.NoErr(t, err)
+	currencyStyle, err := f.NewStyle(&excelize.Style{
 		CustomNumFmt: &customRM,
 	})
+	testutil.NoErr(t, err)
 
 	detailSheet := "Guest Details"
 	f.SetSheetName("Sheet1", detailSheet)
 
 	detailHeaders := []string{"Guest Name", "Table", "Seat", "Angbao (RM)", "Gift Item", "Checked In"}
 	for i, h := range detailHeaders {
-		cell, _ := excelize.CoordinatesToCellName(i+1, 1)
+		cell, err := excelize.CoordinatesToCellName(i+1, 1)
+		testutil.NoErr(t, err)
 		f.SetCellValue(detailSheet, cell, h)
 	}
 	for i := range detailHeaders {
-		cell, _ := excelize.CoordinatesToCellName(i+1, 1)
+		cell, err := excelize.CoordinatesToCellName(i+1, 1)
+		testutil.NoErr(t, err)
 		f.SetCellStyle(detailSheet, cell, cell, headerStyle)
 	}
 
@@ -284,47 +290,57 @@ func TestXLSXOutputStructure(t *testing.T) {
 	}
 
 	// Verify Guest Details sheet content
-	cell, _ := xlsx.GetCellValue("Guest Details", "A1")
+	cell, err := xlsx.GetCellValue("Guest Details", "A1")
+	testutil.NoErr(t, err)
 	if cell != "Guest Name" {
 		t.Errorf("Guest Details A1: %q", cell)
 	}
-	cell, _ = xlsx.GetCellValue("Guest Details", "A2")
+	cell, err = xlsx.GetCellValue("Guest Details", "A2")
+	testutil.NoErr(t, err)
 	if cell != "Alice" {
 		t.Errorf("Guest Details A2: %q", cell)
 	}
-	cell, _ = xlsx.GetCellValue("Guest Details", "D2")
+	cell, err = xlsx.GetCellValue("Guest Details", "D2")
+	testutil.NoErr(t, err)
 	// Currency formatted cell - excelize reads the raw value
 	if cell != "300" && cell != "RM 300" {
 		t.Logf("Guest Details D2 (currency cell): %q (raw numeric value expected)", cell)
 	}
-	cell, _ = xlsx.GetCellValue("Guest Details", "A3")
+	cell, err = xlsx.GetCellValue("Guest Details", "A3")
+	testutil.NoErr(t, err)
 	if cell != "Bob" {
 		t.Errorf("Guest Details A3: %q", cell)
 	}
 
 	// Verify Summary sheet content
-	cell, _ = xlsx.GetCellValue("Summary", "A1")
+	cell, err = xlsx.GetCellValue("Summary", "A1")
+	testutil.NoErr(t, err)
 	if cell != "Angpao Report Summary" {
 		t.Errorf("Summary A1: %q", cell)
 	}
-	cell, _ = xlsx.GetCellValue("Summary", "B3")
+	cell, err = xlsx.GetCellValue("Summary", "B3")
+	testutil.NoErr(t, err)
 	if cell != "450" {
 		t.Errorf("Summary B3 (total angpao): %q, want 450", cell)
 	}
-	cell, _ = xlsx.GetCellValue("Summary", "B4")
+	cell, err = xlsx.GetCellValue("Summary", "B4")
+	testutil.NoErr(t, err)
 	if cell != "2" {
 		t.Errorf("Summary B4 (total guests): %q, want 2", cell)
 	}
-	cell, _ = xlsx.GetCellValue("Summary", "B5")
+	cell, err = xlsx.GetCellValue("Summary", "B5")
+	testutil.NoErr(t, err)
 	if cell != "1" {
 		t.Errorf("Summary B5 (checked in): %q, want 1", cell)
 	}
 	// Per-table breakdown
-	cell, _ = xlsx.GetCellValue("Summary", "A8")
+	cell, err = xlsx.GetCellValue("Summary", "A8")
+	testutil.NoErr(t, err)
 	if cell != "Table 1" {
 		t.Errorf("Summary A8 (table name): %q", cell)
 	}
-	cell, _ = xlsx.GetCellValue("Summary", "B8")
+	cell, err = xlsx.GetCellValue("Summary", "B8")
+	testutil.NoErr(t, err)
 	if cell != "450" {
 		t.Errorf("Summary B8 (table total): %q, want 450", cell)
 	}

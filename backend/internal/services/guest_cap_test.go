@@ -8,9 +8,10 @@ import (
 	"testing"
 	"time"
 
+	"weddingdb/internal/models"
+
 	"github.com/google/uuid"
 	"gorm.io/gorm"
-	"weddingdb/internal/models"
 )
 
 func seedGuestRows(t *testing.T, db *gorm.DB, wid uuid.UUID, n, pax int) {

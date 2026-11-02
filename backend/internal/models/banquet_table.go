@@ -4,8 +4,9 @@ import (
 	"encoding/json"
 	"time"
 
-	"github.com/google/uuid"
 	"weddingdb/internal/utils"
+
+	"github.com/google/uuid"
 )
 
 type BanquetTable struct {

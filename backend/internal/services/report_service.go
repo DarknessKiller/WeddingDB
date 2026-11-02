@@ -153,23 +153,35 @@ func (s *ReportService) GenerateXLSX(ctx context.Context, weddingID uuid.UUID) (
 	defer f.Close()
 
 	// Styles
-	headerStyle, _ := f.NewStyle(&excelize.Style{
+	headerStyle, err := f.NewStyle(&excelize.Style{
 		Font:      &excelize.Font{Bold: true},
 		Fill:      excelize.Fill{Type: "pattern", Color: []string{"#FEE2E2"}, Pattern: 1},
 		Alignment: &excelize.Alignment{Horizontal: "center"},
 	})
-	summaryBold, _ := f.NewStyle(&excelize.Style{
+	if err != nil {
+		return nil, "", fmt.Errorf("header style: %w", err)
+	}
+	summaryBold, err := f.NewStyle(&excelize.Style{
 		Font: &excelize.Font{Bold: true},
 	})
+	if err != nil {
+		return nil, "", fmt.Errorf("summary style: %w", err)
+	}
 	customRM := `"RM "#,##0`
-	currencyStyle, _ := f.NewStyle(&excelize.Style{
+	currencyStyle, err := f.NewStyle(&excelize.Style{
 		CustomNumFmt: &customRM,
 	})
-	summaryHeader, _ := f.NewStyle(&excelize.Style{
+	if err != nil {
+		return nil, "", fmt.Errorf("currency style: %w", err)
+	}
+	summaryHeader, err := f.NewStyle(&excelize.Style{
 		Font:      &excelize.Font{Bold: true},
 		Fill:      excelize.Fill{Type: "pattern", Color: []string{"#FEE2E2"}, Pattern: 1},
 		Alignment: &excelize.Alignment{Horizontal: "center"},
 	})
+	if err != nil {
+		return nil, "", fmt.Errorf("summary header style: %w", err)
+	}
 
 	// ── Sheet 1: Guest Details ──
 	detailSheet := "Guest Details"
@@ -177,11 +189,10 @@ func (s *ReportService) GenerateXLSX(ctx context.Context, weddingID uuid.UUID) (
 
 	detailHeaders := []string{"Guest Name", "Table", "Seat", "Angbao (RM)", "Gift Item", "Checked In"}
 	for i, h := range detailHeaders {
-		cell, _ := excelize.CoordinatesToCellName(i+1, 1)
-		f.SetCellValue(detailSheet, cell, h)
+		f.SetCellValue(detailSheet, cellName(i+1, 1), h)
 	}
 	for i := range detailHeaders {
-		cell, _ := excelize.CoordinatesToCellName(i+1, 1)
+		cell := cellName(i+1, 1)
 		f.SetCellStyle(detailSheet, cell, cell, headerStyle)
 	}
 
@@ -350,6 +361,10 @@ func (s *ReportService) sanitizeFilename(name string) string {
 }
 
 func cellName(col, row int) string {
-	name, _ := excelize.CoordinatesToCellName(col, row)
+	name, err := excelize.CoordinatesToCellName(col, row)
+	if err != nil {
+		// Callers pass 1-based slice indexes, which always resolve.
+		panic(fmt.Sprintf("cellName(%d, %d): %v", col, row, err))
+	}
 	return name
 }

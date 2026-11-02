@@ -6,14 +6,16 @@ import (
 	"testing"
 	"time"
 
+	"weddingdb/internal/services"
+	"weddingdb/internal/testutil"
+
 	"github.com/alicebob/miniredis/v2"
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/google/uuid"
 	"github.com/redis/go-redis/v9"
-	"weddingdb/internal/services"
 )
 
-func signToken(secret string, adminID uuid.UUID, role string, wid *uuid.UUID, exp time.Time) string {
+func signToken(t *testing.T, secret string, adminID uuid.UUID, role string, wid *uuid.UUID, exp time.Time) string {
 	now := time.Now()
 	claims := services.AccessClaims{
 		AdminID:   adminID,
@@ -26,7 +28,8 @@ func signToken(secret string, adminID uuid.UUID, role string, wid *uuid.UUID, ex
 		},
 	}
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
-	s, _ := token.SignedString([]byte(secret))
+	s, err := token.SignedString([]byte(secret))
+	testutil.NoErr(t, err)
 	return s
 }
 
@@ -75,7 +78,7 @@ func TestAuthMiddleware_ExpiredToken(t *testing.T) {
 		w.WriteHeader(http.StatusOK)
 	}))
 
-	tok := signToken(secret, uuid.New(), "admin", nil, time.Now().Add(-1*time.Hour))
+	tok := signToken(t, secret, uuid.New(), "admin", nil, time.Now().Add(-1*time.Hour))
 	req := httptest.NewRequest("GET", "/api/weddings", nil)
 	req.Header.Set("Authorization", "Bearer "+tok)
 	rec := httptest.NewRecorder()
@@ -100,7 +103,7 @@ func TestAuthMiddleware_ValidToken(t *testing.T) {
 		w.WriteHeader(http.StatusOK)
 	}))
 
-	tok := signToken(secret, adminID, "admin", &wid, time.Now().Add(15*time.Minute))
+	tok := signToken(t, secret, adminID, "admin", &wid, time.Now().Add(15*time.Minute))
 	req := httptest.NewRequest("GET", "/api/weddings", nil)
 	req.Header.Set("Authorization", "Bearer "+tok)
 	rec := httptest.NewRecorder()

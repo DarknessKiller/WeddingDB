@@ -16,7 +16,9 @@ type Env struct {
 }
 
 func LoadEnv() Env {
-	godotenv.Load()
+	if err := godotenv.Load(); err != nil && !os.IsNotExist(err) {
+		log.Printf("warning: could not load .env: %v", err)
+	}
 	secret := os.Getenv("JWT_SECRET")
 	if secret == "" {
 		log.Fatal("JWT_SECRET environment variable is required and must not be empty")

@@ -14,7 +14,7 @@ func TestNewFuegoServer_SetsOpenAPIInfo(t *testing.T) {
 	version := "1.2.3"
 	s := NewFuegoServer(env, version)
 
-	spec := s.Engine.OutputOpenAPISpec()
+	spec := s.OutputOpenAPISpec()
 
 	// Version must be injected from build arg
 	if spec.Info.Version != version {
@@ -40,7 +40,7 @@ func TestNewFuegoServer_DefaultVersion(t *testing.T) {
 	env := Env{Port: "0"}
 	s := NewFuegoServer(env, "dev")
 
-	spec := s.Engine.OutputOpenAPISpec()
+	spec := s.OutputOpenAPISpec()
 	if spec.Info.Version != "dev" {
 		t.Errorf("OpenAPI Info.Version = %q, want %q", spec.Info.Version, "dev")
 	}
@@ -50,7 +50,7 @@ func TestNewFuegoServer_EmptyPublicURL_NoServers(t *testing.T) {
 	env := Env{Port: "0", PublicURL: ""}
 	s := NewFuegoServer(env, "1.0.0")
 
-	spec := s.Engine.OutputOpenAPISpec()
+	spec := s.OutputOpenAPISpec()
 	// When PUBLIC_URL is empty, we don't set servers (fuego may set a default)
 	// The key assertion: no crash and version still set
 	if spec.Info.Version != "1.0.0" {
@@ -86,7 +86,7 @@ func TestOpenAPI_SpecJSON(t *testing.T) {
 	}
 	s := NewFuegoServer(env, "2.0.0")
 
-	spec := s.Engine.OutputOpenAPISpec()
+	spec := s.OutputOpenAPISpec()
 
 	// Verify key fields
 	if spec.Info.Title != "WeddingDB API" {
@@ -101,7 +101,9 @@ func TestOpenAPI_SpecJSON(t *testing.T) {
 
 	// Write spec to evidence directory
 	evidenceDir := "/tmp/no-mistakes-evidence/01KYWB93P3SW3JGSQQA2NPGTFZ"
-	os.MkdirAll(evidenceDir, 0o755)
+	if err := os.MkdirAll(evidenceDir, 0o755); err != nil {
+		t.Fatalf("Failed to create evidence dir: %v", err)
+	}
 
 	data, err := json.MarshalIndent(spec, "", "  ")
 	if err != nil {
@@ -118,13 +120,13 @@ func TestNewFuegoServer_TimeoutsForLongTransfers(t *testing.T) {
 	// and SSE streams mid-transfer. Zeroing them is the app-level contract
 	// behind "the reverse proxy owns request limits".
 	s := NewFuegoServer(Env{Port: "0"}, "test")
-	if s.Server.ReadTimeout != 0 {
-		t.Errorf("ReadTimeout = %v, want 0 (proxy owns transfer duration)", s.Server.ReadTimeout)
+	if s.ReadTimeout != 0 {
+		t.Errorf("ReadTimeout = %v, want 0 (proxy owns transfer duration)", s.ReadTimeout)
 	}
-	if s.Server.WriteTimeout != 0 {
-		t.Errorf("WriteTimeout = %v, want 0 (SSE must not be cut)", s.Server.WriteTimeout)
+	if s.WriteTimeout != 0 {
+		t.Errorf("WriteTimeout = %v, want 0 (SSE must not be cut)", s.WriteTimeout)
 	}
-	if s.Server.ReadHeaderTimeout == 0 {
+	if s.ReadHeaderTimeout == 0 {
 		t.Error("ReadHeaderTimeout = 0, want non-zero (slowloris guard)")
 	}
 }

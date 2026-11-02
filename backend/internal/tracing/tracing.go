@@ -7,6 +7,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"log"
 	"net"
@@ -22,7 +23,7 @@ import (
 	"go.opentelemetry.io/otel/propagation"
 	"go.opentelemetry.io/otel/sdk/resource"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
-	"go.opentelemetry.io/otel/semconv/v1.37.0"
+	semconv "go.opentelemetry.io/otel/semconv/v1.37.0"
 	"go.opentelemetry.io/otel/trace"
 	"gorm.io/gorm"
 )
@@ -115,7 +116,10 @@ func Middleware(next http.Handler) http.Handler {
 			reqAttrs = append(reqAttrs, semconv.ClientAddress(r.RemoteAddr))
 		}
 		if logBody && !strings.Contains(r.URL.Path, "/events") && isJSONContentType(r.Header.Get("Content-Type")) {
-			body, _ := io.ReadAll(io.LimitReader(r.Body, maxBodyLog+1))
+			body, err := io.ReadAll(io.LimitReader(r.Body, maxBodyLog+1))
+			if err != nil {
+				log.Printf("warning: read request body for tracing: %v", err)
+			}
 			r.Body = io.NopCloser(bytes.NewReader(body))
 			addBodyEvent(span, "http.request.body", body)
 		}
@@ -214,14 +218,24 @@ func (p *GormPlugin) Name() string { return "tracing" }
 
 // Initialize implements gorm.Plugin; hooks into query execution.
 func (p *GormPlugin) Initialize(db *gorm.DB) error {
-	_ = db.Callback().Query().Before("gorm:query").Register("tracing:before_query", p.before)
-	_ = db.Callback().Create().Before("gorm:create").Register("tracing:before_create", p.before)
-	_ = db.Callback().Update().Before("gorm:update").Register("tracing:before_update", p.before)
-	_ = db.Callback().Delete().Before("gorm:delete").Register("tracing:before_delete", p.before)
-	_ = db.Callback().Query().After("gorm:query").Register("tracing:after_query", p.after)
-	_ = db.Callback().Create().After("gorm:create").Register("tracing:after_create", p.after)
-	_ = db.Callback().Update().After("gorm:update").Register("tracing:after_update", p.after)
-	_ = db.Callback().Delete().After("gorm:delete").Register("tracing:after_delete", p.after)
+	// Registering the same callback twice is a programming error; return the first failure.
+	var regErr error
+	register := func(err error) {
+		if regErr == nil {
+			regErr = err
+		}
+	}
+	register(db.Callback().Query().Before("gorm:query").Register("tracing:before_query", p.before))
+	register(db.Callback().Create().Before("gorm:create").Register("tracing:before_create", p.before))
+	register(db.Callback().Update().Before("gorm:update").Register("tracing:before_update", p.before))
+	register(db.Callback().Delete().Before("gorm:delete").Register("tracing:before_delete", p.before))
+	register(db.Callback().Query().After("gorm:query").Register("tracing:after_query", p.after))
+	register(db.Callback().Create().After("gorm:create").Register("tracing:after_create", p.after))
+	register(db.Callback().Update().After("gorm:update").Register("tracing:after_update", p.after))
+	register(db.Callback().Delete().After("gorm:delete").Register("tracing:after_delete", p.after))
+	if regErr != nil {
+		return fmt.Errorf("register GORM tracing callbacks: %w", regErr)
+	}
 	return nil
 }
 

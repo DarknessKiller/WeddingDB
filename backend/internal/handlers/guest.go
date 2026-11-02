@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"errors"
+	"log/slog"
 	"strconv"
 	"weddingdb/internal/models"
 	"weddingdb/internal/repository"
@@ -118,7 +119,9 @@ func (h *GuestHandler) Create(c fuego.ContextWithBody[GuestCreateRequest]) (any,
 	if body.TableID != nil && *body.TableID != "" {
 		tid, err := DecodeID(*body.TableID)
 		if err != nil {
-			_ = h.guestService.Delete(ctx, guest.ID, wid)
+			if err := h.guestService.Delete(ctx, guest.ID, wid); err != nil {
+				slog.Warn("rollback guest after invalid table failed", "guest", guest.ID, "err", err)
+			}
 			return nil, fuego.BadRequestError{Title: "Invalid table ID"}
 		}
 		seatNum := 1
@@ -126,7 +129,9 @@ func (h *GuestHandler) Create(c fuego.ContextWithBody[GuestCreateRequest]) (any,
 			seatNum = *body.SeatNum
 		}
 		if err := h.guestService.AssignSeat(ctx, guest.ID, wid, tid, seatNum); err != nil {
-			_ = h.guestService.Delete(ctx, guest.ID, wid)
+			if err := h.guestService.Delete(ctx, guest.ID, wid); err != nil {
+				slog.Warn("rollback guest after seat assignment failed", "guest", guest.ID, "err", err)
+			}
 			return nil, fuego.BadRequestError{Title: err.Error()}
 		}
 		guest.TableID = &tid
@@ -240,7 +245,10 @@ func (h *GuestHandler) CheckIn(c fuego.ContextWithBody[CheckInRequest]) (any, er
 		return nil, fuego.BadRequestError{Title: "Invalid ID"}
 	}
 	// Body is optional (older clients send none): ignore decode errors.
-	body, _ := c.Body()
+	body, err := c.Body()
+	if err != nil {
+		slog.Warn("check-in body decode failed, continuing without notes", "guest", id, "err", err)
+	}
 	if err := h.guestService.CheckIn(ctx, id, wid, body.Notes); err != nil {
 		if errors.Is(err, services.ErrAlreadyCheckedIn) {
 			return nil, fuego.ConflictError{Title: "Guest already checked in by another receptionist"}

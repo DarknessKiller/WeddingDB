@@ -7,9 +7,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/google/uuid"
 	"weddingdb/internal/models"
 	"weddingdb/internal/utils"
+
+	"github.com/google/uuid"
 )
 
 func TestErrAlreadyCheckedIn_IsSentinel(t *testing.T) {

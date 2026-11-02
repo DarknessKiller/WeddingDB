@@ -5,14 +5,16 @@ import (
 	"testing"
 	"time"
 
+	"weddingdb/internal/models"
+	"weddingdb/internal/repository"
+	"weddingdb/internal/testutil"
+
 	"github.com/alicebob/miniredis/v2"
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/google/uuid"
 	"github.com/redis/go-redis/v9"
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
-	"weddingdb/internal/models"
-	"weddingdb/internal/repository"
 )
 
 // newIntegrationAuthService creates an AuthService backed by in-memory SQLite + miniredis
@@ -155,7 +157,7 @@ func TestLogout_BlacklistsAccessToken(t *testing.T) {
 	jti := uuid.New().String()
 	adminID := uuid.New()
 
-	tok := signTestToken("test-secret", AccessClaims{
+	tok := signTestToken(t, "test-secret", AccessClaims{
 		AdminID: adminID,
 		Role:    "admin",
 		RegisteredClaims: jwt.RegisteredClaims{
@@ -189,7 +191,7 @@ func TestLogout_BlacklistedTokenRejected(t *testing.T) {
 	jti := uuid.New().String()
 	adminID := uuid.New()
 
-	tok := signTestToken("test-secret", AccessClaims{
+	tok := signTestToken(t, "test-secret", AccessClaims{
 		AdminID: adminID,
 		Role:    "admin",
 		RegisteredClaims: jwt.RegisteredClaims{
@@ -221,7 +223,7 @@ func TestRefresh_BlacklistsOldAccessToken(t *testing.T) {
 	seedAdmin(t, db, adminID, "admin")
 	seedRefreshToken(t, db, adminID, &wid, refreshStr)
 
-	oldTok := signTestToken("test-secret", AccessClaims{
+	oldTok := signTestToken(t, "test-secret", AccessClaims{
 		AdminID:   adminID,
 		WeddingID: &wid,
 		Role:      "admin",
@@ -427,7 +429,7 @@ func TestRevokeUserTokens_InvalidatesExistingTokens(t *testing.T) {
 	adminID := uuid.New()
 	wid := uuid.New()
 
-	tok := signTestToken("test-secret", AccessClaims{
+	tok := signTestToken(t, "test-secret", AccessClaims{
 		AdminID:      adminID,
 		WeddingID:    &wid,
 		Role:         "admin",
@@ -461,7 +463,8 @@ func TestRevokeUserTokens_DeleteBeforeIncrOrdering(t *testing.T) {
 
 	seedRefreshToken(t, db, adminID, nil, "orphan-token")
 
-	tv, _ := svc.GetTokenVersion(context.Background(), adminID)
+	tv, err := svc.GetTokenVersion(context.Background(), adminID)
+	testutil.NoErr(t, err)
 	if tv != 0 {
 		t.Fatalf("expected initial tv=0, got %d", tv)
 	}
@@ -476,7 +479,8 @@ func TestRevokeUserTokens_DeleteBeforeIncrOrdering(t *testing.T) {
 		t.Errorf("refresh tokens should be deleted (checked first in RevokeUserTokens)")
 	}
 
-	tv, _ = svc.GetTokenVersion(context.Background(), adminID)
+	tv, err = svc.GetTokenVersion(context.Background(), adminID)
+	testutil.NoErr(t, err)
 	if tv != 1 {
 		t.Errorf("token version should be 1 after revoke, got %d", tv)
 	}

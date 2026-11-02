@@ -14,6 +14,7 @@ import (
 	"github.com/redis/go-redis/v9"
 
 	"weddingdb/internal/services"
+	"weddingdb/internal/testutil"
 	"weddingdb/internal/utils"
 )
 
@@ -62,14 +63,19 @@ func TestSSEKeepalive(t *testing.T) {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	req, _ := http.NewRequest("GET", ts.URL+"/api/weddings/"+wid.String()+"/events?token="+token, nil)
+	req, err := http.NewRequest("GET", ts.URL+"/api/weddings/"+wid.String()+"/events?token="+token, nil)
+	testutil.NoErr(t, err)
 	req = req.WithContext(ctx)
 
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		t.Fatalf("connect: %v", err)
 	}
-	defer resp.Body.Close()
+	defer func() {
+		if err := resp.Body.Close(); err != nil {
+			t.Errorf("close: %v", err)
+		}
+	}()
 	if ct := resp.Header.Get("Content-Type"); ct != "text/event-stream" {
 		t.Fatalf("content-type = %q", ct)
 	}

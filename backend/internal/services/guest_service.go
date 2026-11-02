@@ -9,12 +9,13 @@ import (
 	"strings"
 	"time"
 
-	"github.com/google/uuid"
-	"gorm.io/gorm"
-	"gorm.io/gorm/clause"
 	"weddingdb/internal/models"
 	"weddingdb/internal/repository"
 	"weddingdb/internal/utils"
+
+	"github.com/google/uuid"
+	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 type GuestService struct {
@@ -43,7 +44,7 @@ func guestCapError(current, delta int) error {
 // guestCountLocked serializes guest additions for one wedding and returns the
 // current count. The row lock is Postgres-only; sqlite (tests) has one writer.
 func (s *GuestService) guestCountLocked(tx *gorm.DB, weddingID uuid.UUID) (int, error) {
-	if tx.Dialector.Name() == "postgres" {
+	if tx.Name() == "postgres" {
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
 			Select("id").Where("id = ?", weddingID).First(&models.WeddingEvent{}).Error; err != nil {
 			return 0, err
@@ -132,7 +133,10 @@ func (s *GuestService) Update(ctx context.Context, g *models.GuestRecord) error 
 
 func (s *GuestService) Delete(ctx context.Context, id, weddingID uuid.UUID) error {
 	// Fetch guest before deletion so we can broadcast the event.
-	guest, _ := s.guestRepo.FindByID(ctx, id, weddingID)
+	guest, err := s.guestRepo.FindByID(ctx, id, weddingID)
+	if err != nil {
+		log.Printf("guest lookup before delete failed: %v", err)
+	}
 	if err := s.guestRepo.Delete(ctx, id, weddingID); err != nil {
 		return err
 	}
@@ -209,7 +213,10 @@ func (s *GuestService) CheckIn(ctx context.Context, id, weddingID uuid.UUID, not
 		}
 		return err
 	}
-	guest, _ := s.guestRepo.FindByID(ctx, id, weddingID)
+	guest, err := s.guestRepo.FindByID(ctx, id, weddingID)
+	if err != nil {
+		log.Printf("guest lookup after check-in failed: %v", err)
+	}
 	if guest != nil {
 		s.publishEvent("checkin", guest, weddingID)
 	}
