@@ -25,6 +25,20 @@ jobs:
       - name: Test
         run: CGO_ENABLED=1 go test ./...
 
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v6
+        with:
+          go-version: '1.27'
+          cache: true
+          cache-dependency-path: backend/go.sum
+      - uses: golangci/golangci-lint-action@v8
+        with:
+          version: v2.15.0
+          working-directory: backend
+
   frontend:
     runs-on: ubuntu-latest
     defaults:

@@ -1,0 +1,13 @@
+#!/bin/sh
+# Lint the Go backend before every commit. Install once per clone:
+#   git config core.hooksPath .githooks
+set -e
+if ! git diff --cached --name-only --diff-filter=ACMR -- '*.go' | grep -q .; then
+	exit 0
+fi
+if ! command -v golangci-lint >/dev/null 2>&1; then
+	echo "pre-commit: golangci-lint not found (https://golangci-lint.run/docs/welcome/install/)" >&2
+	exit 1
+fi
+cd "$(git rev-parse --show-toplevel)/backend"
+exec golangci-lint run ./...
