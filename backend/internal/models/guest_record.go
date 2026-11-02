@@ -6,8 +6,9 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/google/uuid"
 	"weddingdb/internal/utils"
+
+	"github.com/google/uuid"
 )
 
 // StringSlice stores a []string as JSON text in a text column.

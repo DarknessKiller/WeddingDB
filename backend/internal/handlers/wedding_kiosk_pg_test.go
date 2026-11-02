@@ -9,15 +9,16 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/go-fuego/fuego"
-	"github.com/google/uuid"
-	"gorm.io/driver/postgres"
-	"gorm.io/gorm"
 	"weddingdb/internal/middleware"
 	"weddingdb/internal/models"
 	"weddingdb/internal/repository"
 	"weddingdb/internal/services"
 	"weddingdb/internal/utils"
+
+	"github.com/go-fuego/fuego"
+	"github.com/google/uuid"
+	"gorm.io/driver/postgres"
+	"gorm.io/gorm"
 )
 
 // TestUpdateKioskSettings_PostgresRoundTrip proves a percentage position is

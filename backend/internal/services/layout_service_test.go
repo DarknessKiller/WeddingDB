@@ -3,8 +3,9 @@ package services
 import (
 	"testing"
 
-	"github.com/google/uuid"
 	"weddingdb/internal/models"
+
+	"github.com/google/uuid"
 )
 
 func TestReconcileElements(t *testing.T) {

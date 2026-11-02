@@ -119,7 +119,9 @@ func Init(env config.Env, version string) *App {
 	db.Where("expires_at < ?", time.Now().AddDate(0, 0, -7)).Delete(&models.RefreshToken{})
 
 	if db.Migrator().HasColumn(&models.HallElement{}, "label") {
-		db.Migrator().DropColumn(&models.HallElement{}, "label")
+		if err := db.Migrator().DropColumn(&models.HallElement{}, "label"); err != nil {
+			log.Printf("warning: could not drop legacy hall_elements.label: %v", err)
+		}
 	}
 	// Seed default elements for weddings that have none — one query, not one
 	// COUNT per wedding on every boot.

@@ -158,7 +158,9 @@ func (h *SSEHub) Publish(ctx context.Context, weddingID uuid.UUID, event GuestEv
 func (h *SSEHub) Shutdown() {
 	h.cancel()
 	if h.pubsub != nil {
-		h.pubsub.Close()
+		if err := h.pubsub.Close(); err != nil {
+			log.Printf("SSE: subscriber close failed: %v", err)
+		}
 	}
 }
 

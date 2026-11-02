@@ -7,10 +7,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/alicebob/miniredis/v2"
-	"github.com/google/uuid"
 	"weddingdb/internal/models"
 	"weddingdb/internal/repository"
+
+	"github.com/alicebob/miniredis/v2"
+	"github.com/google/uuid"
 )
 
 // A failure while minting used to consume the refresh token with nothing issued

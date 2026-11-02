@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"io"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
@@ -29,12 +30,19 @@ func NewUploadHandler() *UploadHandler {
 	return &UploadHandler{}
 }
 
+// closeLogged closes c and logs a failure the caller cannot act on.
+func closeLogged(c io.Closer) {
+	if err := c.Close(); err != nil {
+		slog.Warn("close failed", "err", err)
+	}
+}
+
 func (h *UploadHandler) Upload(c fuego.ContextWithBody[any]) (any, error) {
 	file, header, err := c.Request().FormFile("file")
 	if err != nil {
 		return nil, fuego.BadRequestError{Title: "No file provided"}
 	}
-	defer file.Close()
+	defer closeLogged(file)
 
 	// Validate file type
 	ext := strings.ToLower(filepath.Ext(header.Filename))
@@ -100,7 +108,7 @@ func (h *UploadHandler) Upload(c fuego.ContextWithBody[any]) (any, error) {
 	if err != nil {
 		return nil, fuego.InternalServerError{Title: "Failed to save file"}
 	}
-	defer dst.Close()
+	defer closeLogged(dst)
 
 	// Reset file pointer to beginning for writing
 	if _, err := file.Seek(0, 0); err != nil {
@@ -114,16 +122,24 @@ func (h *UploadHandler) Upload(c fuego.ContextWithBody[any]) (any, error) {
 	lockPath := indexPath + ".lock"
 	lockFile, err := os.OpenFile(lockPath, os.O_CREATE|os.O_RDWR, 0644)
 	if err == nil {
-		defer lockFile.Close()
-		syscall.Flock(int(lockFile.Fd()), syscall.LOCK_EX)
-		defer syscall.Flock(int(lockFile.Fd()), syscall.LOCK_UN)
+		defer closeLogged(lockFile)
+		if err := syscall.Flock(int(lockFile.Fd()), syscall.LOCK_EX); err != nil {
+			slog.Warn("lock upload index failed", "err", err)
+		}
+		defer func() {
+			if err := syscall.Flock(int(lockFile.Fd()), syscall.LOCK_UN); err != nil {
+				slog.Warn("unlock upload index failed", "err", err)
+			}
+		}()
 	}
 	f, err := os.OpenFile(indexPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 	if err != nil {
 		// ponytail: index write failure is non-critical — file is already saved
 	} else {
-		fmt.Fprintf(f, "%s %s\n", hash, filename)
-		f.Close()
+		if _, err := fmt.Fprintf(f, "%s %s\n", hash, filename); err != nil {
+			slog.Warn("write upload index failed", "err", err)
+		}
+		closeLogged(f)
 	}
 
 	c.SetStatus(201)

@@ -74,7 +74,9 @@ func (h *AdminHandler) Create(c fuego.ContextWithBody[AdminRequest]) (any, error
 			}
 		}
 		if len(ids) > 0 {
-			h.adminRepo.SetUserWeddings(ctx, admin.ID, ids)
+			if err := h.adminRepo.SetUserWeddings(ctx, admin.ID, ids); err != nil {
+				return nil, err
+			}
 		}
 	}
 	c.SetStatus(201)
@@ -142,7 +144,10 @@ func (h *AdminHandler) AssignWeddings(c fuego.ContextWithBody[AssignWeddingsRequ
 		}
 	}
 	// Fetch the old grants so removing access can revoke live sessions.
-	oldWeddings, _ := h.adminRepo.GetUserWeddings(ctx, admin.ID)
+	oldWeddings, err := h.adminRepo.GetUserWeddings(ctx, admin.ID)
+	if err != nil {
+		slog.Warn("fetch current wedding grants failed", "user", admin.ID, "err", err)
+	}
 	if err := h.adminRepo.SetUserWeddings(ctx, admin.ID, ids); err != nil {
 		return nil, fuego.InternalServerError{Title: "Failed to assign weddings"}
 	}

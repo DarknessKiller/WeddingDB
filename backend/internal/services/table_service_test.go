@@ -6,13 +6,14 @@ import (
 	"testing"
 	"time"
 
+	"weddingdb/internal/models"
+	"weddingdb/internal/repository"
+
 	"github.com/alicebob/miniredis/v2"
 	"github.com/google/uuid"
 	"github.com/redis/go-redis/v9"
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
-	"weddingdb/internal/models"
-	"weddingdb/internal/repository"
 )
 
 // TestTableDelete_PublishesUnassignedGuests covers fix 7: deleting a table

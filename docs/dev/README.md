@@ -38,7 +38,7 @@ Chinese wedding seating & reservation management system.
 ### Deployment
 - Docker Compose (`docker-compose.yml`; the `redis` service runs DragonflyDB), distroless image, timezone set.
 - The Release workflow publishes images to GitHub Container Registry (`ghcr.io/darknesskiller/weddingdb`) on `v*` tags (multi-arch: amd64 + arm64). The compose file pulls `ghcr.io/darknesskiller/weddingdb:latest`, so nothing builds locally.
-- CI (`ci.yml`) runs on push and PR to `main`: backend `go test ./...`, frontend `npm run check`, `vitest run`, and `npm run build`.
+- CI (`ci.yml`) runs on push and PR to `master`: backend `golangci-lint run` and `go test ./...`, frontend `npm run check`, `vitest run`, and `npm run build`.
 
 ## Deployment (Docker Compose)
 
@@ -133,6 +133,16 @@ npm run dev
 ```
 
 Server runs at `http://localhost:5173`.
+
+### Lint hook
+
+`.githooks/pre-commit` lints `backend/` before every commit; enable it once per clone:
+
+```sh
+git config core.hooksPath .githooks
+```
+
+Needs `golangci-lint` v2 on `PATH` and a C compiler (the backend builds cgo SQLite).
 
 ### Backend
 

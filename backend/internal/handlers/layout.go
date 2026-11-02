@@ -52,8 +52,8 @@ type LayoutRequest struct {
 }
 
 type LayoutResponse struct {
-	HallWidth  int                  `json:"hallWidth"`
-	HallHeight int                  `json:"hallHeight"`
+	HallWidth  int                   `json:"hallWidth"`
+	HallHeight int                   `json:"hallHeight"`
 	Tables     []models.BanquetTable `json:"tables"`
 	Elements   []models.HallElement  `json:"elements"`
 }

@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"log/slog"
 	"strings"
 	"time"
 	"weddingdb/internal/models"
@@ -80,11 +81,17 @@ func (s *AuthService) Login(ctx context.Context, email, password string) (*Login
 
 // sessionResult assembles the token payload shared by Login and Refresh.
 func (s *AuthService) sessionResult(ctx context.Context, admin *models.AdminUser, accessToken, refreshToken string) (*LoginResult, error) {
-	var weddings []models.WeddingEvent
+	var (
+		weddings []models.WeddingEvent
+		err      error
+	)
 	if admin.Role == "admin" {
-		weddings, _ = s.weddingRepo.List(ctx)
+		weddings, err = s.weddingRepo.List(ctx)
 	} else {
-		weddings, _ = s.adminRepo.GetUserWeddings(ctx, admin.ID)
+		weddings, err = s.adminRepo.GetUserWeddings(ctx, admin.ID)
+	}
+	if err != nil {
+		return nil, fmt.Errorf("load weddings for admin %s: %w", admin.ID, err)
 	}
 	if weddings == nil {
 		weddings = []models.WeddingEvent{}
@@ -250,8 +257,9 @@ func (s *AuthService) rateLimit(ctx context.Context, key string, limit int64, wi
 		return nil
 	}
 	if n == 1 {
+		// key may live without TTL; the next hit retries the Expire
 		if err := s.redisClient.Expire(ctx, "ratelimit:"+key, window).Err(); err != nil {
-			// key may live without TTL; the next hit retries the Expire
+			slog.Warn("rate limit TTL not set", "key", key, "err", err)
 		}
 	}
 	if n > limit {
@@ -277,8 +285,9 @@ func (s *AuthService) recordFailure(ctx context.Context, key string, window time
 		return
 	}
 	if n == 1 {
+		// key may live without TTL; the next failure retries the Expire
 		if err := s.redisClient.Expire(ctx, "ratelimit:"+key, window).Err(); err != nil {
-			// key may live without TTL; the next failure retries the Expire
+			slog.Warn("rate limit TTL not set", "key", key, "err", err)
 		}
 	}
 }
@@ -289,7 +298,9 @@ func (s *AuthService) Logout(ctx context.Context, refreshToken string, accessTok
 	// Blacklist the access token JTI (best-effort — don't block logout on Redis failure)
 	if accessToken != "" {
 		if claims, err := s.parseTokenClaims(accessToken); err == nil && claims != nil {
-			s.BlacklistAccessToken(ctx, claims)
+			if err := s.BlacklistAccessToken(ctx, claims); err != nil {
+				slog.Warn("blacklist access token at logout failed", "user", claims.Subject, "err", err)
+			}
 		}
 	}
 	// Best-effort delete: logging out with an already-consumed token is not an error.

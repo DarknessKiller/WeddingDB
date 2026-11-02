@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"fmt"
+	"log/slog"
 	"net/http"
 	"time"
 
@@ -68,7 +69,9 @@ func (h *SSEHandler) StreamHandler() http.HandlerFunc {
 		defer h.sseHub.Unsubscribe(client)
 
 		// Send initial keepalive comment.
-		fmt.Fprintf(w, ": keepalive\n\n")
+		if _, err := fmt.Fprintf(w, ": keepalive\n\n"); err != nil {
+			slog.Warn("SSE: initial keepalive write failed", "wedding", wid, "err", err)
+		}
 		flusher.Flush()
 
 		// Periodic keepalive: silent streams get killed by proxies/NAT at ~60s idle.

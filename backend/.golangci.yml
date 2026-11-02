@@ -1,0 +1,33 @@
+version: "2"
+
+run:
+  timeout: 5m
+
+linters:
+  default: standard
+  settings:
+    errcheck:
+      # Blank discards (`_ =`) count as unchecked errors, defer wrappers too.
+      check-blank: true
+      # Spreadsheet cell/style calls take plain strings and only fail on bad
+      # coordinates; the workbook write reports the real error (f.Write).
+      exclude-functions:
+        - (*github.com/xuri/excelize/v2.File).SetCellValue
+        - (*github.com/xuri/excelize/v2.File).SetCellStyle
+        - (*github.com/xuri/excelize/v2.File).SetColWidth
+        - (*github.com/xuri/excelize/v2.File).SetSheetName
+        - (*github.com/xuri/excelize/v2.File).NewSheet
+        - (*github.com/xuri/excelize/v2.File).Close
+        # csv.Writer buffers; the error surfaces at Flush + w.Error().
+        - (*encoding/csv.Writer).Write
+  exclusions:
+    generated: lax
+
+formatters:
+  enable:
+    - gofmt
+    - goimports
+
+issues:
+  max-issues-per-linter: 0
+  max-same-issues: 0

@@ -8,6 +8,8 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+
+	"weddingdb/internal/testutil"
 )
 
 func TestSSEHub_SubscribeUnsubscribe(t *testing.T) {
@@ -66,7 +68,8 @@ func TestSSEHub_FanOut(t *testing.T) {
 		WeddingID: wid.String(),
 		Timestamp: time.Now().UnixMilli(),
 	}
-	data, _ := json.Marshal(event)
+	data, err := json.Marshal(event)
+	testutil.NoErr(t, err)
 
 	hub.mu.RLock()
 	weddingClients := hub.clients[wid]
@@ -165,7 +168,8 @@ func TestSSEHub_MultipleWeddings(t *testing.T) {
 		WeddingID: wid1.String(),
 		Timestamp: time.Now().UnixMilli(),
 	}
-	data, _ := json.Marshal(event)
+	data, err := json.Marshal(event)
+	testutil.NoErr(t, err)
 
 	hub.mu.RLock()
 	weddingClients := hub.clients[wid1]

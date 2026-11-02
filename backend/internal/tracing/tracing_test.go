@@ -16,6 +16,8 @@ import (
 	"go.opentelemetry.io/otel/sdk/trace/tracetest"
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
+
+	"weddingdb/internal/testutil"
 )
 
 func TestSetupDisabledByDefault(t *testing.T) {
@@ -194,12 +196,15 @@ func TestMiddlewareSpanNameAndBodies(t *testing.T) {
 	t.Setenv("OTEL_LOG_BODY", "all")
 	handler := Middleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// Body must be readable after middleware capture.
-		b, _ := io.ReadAll(r.Body)
+		b, err := io.ReadAll(r.Body)
+		testutil.NoErr(t, err)
 		if string(b) != `{"user":"x"}` {
 			t.Errorf("downstream handler got mangled body: %q", string(b))
 		}
 		w.Header().Set("Content-Type", "application/json")
-		w.Write([]byte(`{"ok":true}`))
+		if _, err := w.Write([]byte(`{"ok":true}`)); err != nil {
+			t.Errorf("write body: %v", err)
+		}
 	}))
 
 	req := httptest.NewRequest(http.MethodPost, "/api/auth/login", strings.NewReader(`{"user":"x"}`))

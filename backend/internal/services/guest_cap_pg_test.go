@@ -10,11 +10,12 @@ import (
 	"sync/atomic"
 	"testing"
 
+	"weddingdb/internal/models"
+	"weddingdb/internal/repository"
+
 	"github.com/google/uuid"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
-	"weddingdb/internal/models"
-	"weddingdb/internal/repository"
 )
 
 // TestGuestCap_PostgresConcurrent proves the wedding row lock stops parallel

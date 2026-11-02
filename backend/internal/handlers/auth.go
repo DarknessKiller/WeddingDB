@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"log/slog"
 	"net"
 	"net/http"
 	"net/mail"
@@ -204,9 +205,10 @@ func (h *AuthHandler) ChangePassword(c fuego.ContextWithBody[ChangePasswordReque
 		return nil, fuego.InternalServerError{Title: "Failed to update password"}
 	}
 	// Revoke all existing sessions so compromised tokens are invalidated
+	// Password was already changed; log but don't fail the request.
+	// ponytail: best-effort revocation — password hash is already updated
 	if err := h.authService.RevokeUserTokens(ctx, adminID); err != nil {
-		// Password was already changed; log but don't fail the request
-		// ponytail: best-effort revocation — password hash is already updated
+		slog.Warn("revoke tokens after password change failed", "user", adminID, "err", err)
 	}
 	return map[string]any{"message": "Password updated"}, nil
 }
@@ -230,7 +232,10 @@ func (h *AuthHandler) Register(c fuego.ContextWithBody[RegisterRequest]) (any, e
 	if err := h.authService.CheckAuthRate(ctx, clientIP(c.Request())); err != nil {
 		return nil, fuego.HTTPError{Status: http.StatusTooManyRequests, Title: err.Error()}
 	}
-	existing, _ := h.adminRepo.FindByEmail(ctx, body.Email)
+	existing, err := h.adminRepo.FindByEmail(ctx, body.Email)
+	if err != nil {
+		slog.Warn("email lookup during registration failed", "err", err)
+	}
 	if existing != nil && existing.ID != uuid.Nil {
 		return nil, fuego.ConflictError{Title: "Email already registered"}
 	}

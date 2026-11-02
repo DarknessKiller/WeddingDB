@@ -3,9 +3,10 @@ package repository
 import (
 	"context"
 
+	"weddingdb/internal/models"
+
 	"github.com/google/uuid"
 	"gorm.io/gorm"
-	"weddingdb/internal/models"
 )
 
 type TableRepo struct{ db *gorm.DB }
@@ -35,12 +36,12 @@ func (r *TableRepo) Create(ctx context.Context, t *models.BanquetTable) error {
 
 func (r *TableRepo) Update(ctx context.Context, t *models.BanquetTable) error {
 	return r.db.WithContext(ctx).Model(t).Where("id = ? AND wedding_id = ?", t.ID, t.WeddingID).Updates(map[string]interface{}{
-		"name":      t.Name,
-		"capacity":  t.Capacity,
-		"x":         t.X,
-		"y":         t.Y,
-		"degree":    t.Degree,
-		"is_vip":    t.IsVip,
+		"name":     t.Name,
+		"capacity": t.Capacity,
+		"x":        t.X,
+		"y":        t.Y,
+		"degree":   t.Degree,
+		"is_vip":   t.IsVip,
 	}).Error
 }
 
