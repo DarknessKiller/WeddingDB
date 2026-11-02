@@ -12,6 +12,7 @@ Files: `backend/**/*.go`.
 - Write explicit comparisons, named standard-library constants, or existing helpers in place of bitwise operations. Changed Go code carries no `&`, `|`, `^`, `&^`, `<<`, or `>>`. During review, treat each new bitwise op as a standards violation and replace it before handoff.
 - For optional sort orders, compare only present values.
 - Language and stdlib idioms come from the `use-modern-go` skill, at the version in `backend/go.mod` (Go 1.27).
+- Handle every error: return it wrapped with context (`fmt.Errorf("assign seat: %w", err)`), or log it when the work is best-effort and the request must still succeed. An error nothing can act on carries a one-line reason beside `//nolint:errcheck`; tests fail on it (`testutil.NoErr(t, err)`) rather than discarding it.
 
 ### Replacements
 
@@ -34,7 +35,7 @@ Each hit is either a violation to rewrite or a string/comment false positive to 
 ### Verify
 
 ```sh
-cd backend && go vet ./... && CGO_ENABLED=1 go test ./...
+cd backend && golangci-lint run ./... && go vet ./... && CGO_ENABLED=1 go test ./...
 ```
 
 ## Go structure
