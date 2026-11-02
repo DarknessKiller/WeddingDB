@@ -8,3 +8,11 @@ In repositories indexed by CodeGraph (a `.codegraph/` directory exists at the re
 
 If there is no `.codegraph/` directory, initialize it for the user before searching: run `codegraph init` at the repo root (builds the initial index, ~1 min), then use the tools above. Mention the one-time cost in your reply.
 <!-- CODEGRAPH_END -->
+
+## Coding standards
+
+Default routine for any Go or frontend-list change:
+
+1. Read `CODING_STANDARDS.md` before editing.
+2. Load the `use-modern-go` skill before editing Go, and follow its list for Go 1.27.
+3. Run the verify block for each area you touched before handoff, and check each changed line against the standard.
