@@ -131,6 +131,7 @@
     draggable={mode === 'edit'}
     bind:this={groupEl}
     onclick={(e: any) => onTableClick?.(e)}
+    ontap={(e: any) => onTableClick?.(e)}
     ondragstart={ondragstart}
     ondragmove={ondragmove}
     ondragend={ondragend}
@@ -219,6 +220,7 @@
         y={pos.y}
         bind:this={seatRefs[i]}
         onclick={(e: any) => { e.cancelBubble = true; onSeatClick?.(i + 1, guest ?? null); }}
+        ontap={(e: any) => { e.cancelBubble = true; onSeatClick?.(i + 1, guest ?? null); }}
       >
         <!-- Hit area -->
         <Circle radius={SEAT_RADIUS + 4} fill="transparent" />

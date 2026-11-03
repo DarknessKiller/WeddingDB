@@ -46,6 +46,8 @@ import RotateCcw from 'lucide-svelte/icons/rotate-ccw';
   let zoom = $state(1);
   let panX = $state(0);
   let panY = $state(0);
+  // Finger-sized transformer handles on touch screens.
+  let coarsePointer = $state(false);
 
   type LayoutSnapshot = {
     tables: BanquetTableType[];
@@ -239,6 +241,7 @@ import RotateCcw from 'lucide-svelte/icons/rotate-ccw';
   onMount(() => {
     const warn = (e: BeforeUnloadEvent) => { if (dirty) e.preventDefault(); };
     window.addEventListener('beforeunload', warn);
+    coarsePointer = window.matchMedia('(pointer: coarse)').matches;
     return () => window.removeEventListener('beforeunload', warn);
   });
 
@@ -258,6 +261,8 @@ import RotateCcw from 'lucide-svelte/icons/rotate-ccw';
 
     (async () => {
       const mod = await import('svelte-konva');
+      // A finger wobbles a few pixels during a tap: land it as a tap, not a 3px drag.
+      if ('ontouchstart' in window) (await import('konva')).default.dragDistance = 12;
       KonvaStage = mod.Stage;
       KLayer = mod.Layer;
       KTransformer = mod.Transformer;
@@ -281,88 +286,40 @@ import RotateCcw from 'lucide-svelte/icons/rotate-ccw';
         canvas.addEventListener('wheel', onWheel, { passive: false });
         canvasListeners.push(['wheel', onWheel as EventListener, { passive: false }]);
 
-        // Mobile: touch-based pan + tap detection + pinch zoom
-        // These handlers fire BEFORE Konva's internal handlers and take over
-        // touch processing entirely on mobile, so we must handle everything.
-        const isMobile = 'ontouchstart' in window;
-        if (isMobile) {
-          let touchStartX = 0;
-          let touchStartY = 0;
-          let touchStartTime = 0;
-          let isTouchPanning = false;
+        // Konva's own drag already covers single-finger pan and moving a
+        // table/element, so touch only adds pinch zoom here.
+        if ('ontouchstart' in window) {
           let pinchStartDist = 0;
           let pinchStartZoom = 1;
 
           canvas.addEventListener('touchstart', (e: TouchEvent) => {
-            if (e.touches.length === 1) {
-              touchStartX = e.touches[0].clientX;
-              touchStartY = e.touches[0].clientY;
-              touchStartTime = performance.now();
-              isTouchPanning = false;
-            } else if (e.touches.length === 2) {
-              isTouchPanning = false;
-              const dx = e.touches[0].clientX - e.touches[1].clientX;
-              const dy = e.touches[0].clientY - e.touches[1].clientY;
-              pinchStartDist = Math.sqrt(dx * dx + dy * dy);
-              pinchStartZoom = zoom;
-            }
+            if (e.touches.length !== 2) return;
+            // Second finger: a pinch, not a move of whatever the first one grabbed.
+            cancelDrag();
+            const stage = stageRef?.node ?? stageRef;
+            stage?.stopDrag?.();
+            stage?.position({ x: panX, y: panY });
+            const dx = e.touches[0].clientX - e.touches[1].clientX;
+            const dy = e.touches[0].clientY - e.touches[1].clientY;
+            pinchStartDist = Math.hypot(dx, dy);
+            pinchStartZoom = zoom;
           }, { passive: true });
 
           canvas.addEventListener('touchmove', (e: TouchEvent) => {
-            if (e.touches.length === 2) {
-              e.preventDefault();
-              const dx = e.touches[0].clientX - e.touches[1].clientX;
-              const dy = e.touches[0].clientY - e.touches[1].clientY;
-              const dist = Math.sqrt(dx * dx + dy * dy);
-              if (pinchStartDist > 0) {
-                zoom = Math.max(0.3, Math.min(3, pinchStartZoom * (dist / pinchStartDist)));
-              }
-            } else if (e.touches.length === 1) {
-              const dx = e.touches[0].clientX - touchStartX;
-              const dy = e.touches[0].clientY - touchStartY;
-              if (!isTouchPanning && (Math.abs(dx) > 8 || Math.abs(dy) > 8)) {
-                isTouchPanning = true;
-              }
-              if (isTouchPanning) {
-                e.preventDefault();
-                panX += dx;
-                panY += dy;
-                touchStartX = e.touches[0].clientX;
-                touchStartY = e.touches[0].clientY;
-              }
-            }
+            if (e.touches.length !== 2 || pinchStartDist === 0) return;
+            e.preventDefault();
+            const [a, b] = [e.touches[0], e.touches[1]];
+            const rect = canvas.getBoundingClientRect();
+            const dist = Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY);
+            zoomAt(
+              pinchStartZoom * (dist / pinchStartDist),
+              (a.clientX + b.clientX) / 2 - rect.left,
+              (a.clientY + b.clientY) / 2 - rect.top
+            );
           }, { passive: false });
 
           canvas.addEventListener('touchend', (e: TouchEvent) => {
-            const dx = (e.changedTouches[0]?.clientX ?? touchStartX) - touchStartX;
-            const dy = (e.changedTouches[0]?.clientY ?? touchStartY) - touchStartY;
-            const dist = Math.sqrt(dx * dx + dy * dy);
-            const elapsed = performance.now() - touchStartTime;
-            // Tap: didn't move much and was quick
-            if (!isTouchPanning && dist < 12 && elapsed < 300) {
-              const touch = e.changedTouches[0];
-              if (touch) {
-                const rect = canvas.getBoundingClientRect();
-                const tapX = touch.clientX - rect.left;
-                const tapY = touch.clientY - rect.top;
-                // Hit-test against computed table screen positions
-                let hitTableId = '';
-                for (const t of displayTables) {
-                  const screenX = panX + offsetX + (t.x / 100) * displayHallWidth * viewScale * zoom;
-                  const screenY = panY + offsetY + (t.y / 100) * displayHallHeight * viewScale * zoom;
-                  const ddx = tapX - screenX;
-                  const ddy = tapY - screenY;
-                  // Hit radius: table visual radius (~34px) + seat orbit (~20px) + padding
-                  const hitRadius = 60 * viewScale * zoom;
-                  if (ddx * ddx + ddy * ddy < hitRadius * hitRadius) {
-                    hitTableId = String(t.id);
-                    break;
-                  }
-                }
-                onTableClick?.(hitTableId);
-              }
-            }
-            pinchStartDist = 0;
+            if (e.touches.length < 2) pinchStartDist = 0;
           }, { passive: true });
         }
       };
@@ -415,6 +372,8 @@ import RotateCcw from 'lucide-svelte/icons/rotate-ccw';
   function handleDragStart(id: string, e: any) {
     dragStart = { id, x: e.target.x(), y: e.target.y() };
     dragCancelled = false;
+    // Whichever node you drag becomes the selection, so the transformer tracks it.
+    if (!selectedIds.includes(id)) selectedIds = [id];
     // Dragging any member of a multi-selection moves the whole group.
     groupStart = selectedIds.length > 1 && selectedIds.includes(id)
       ? Object.fromEntries(selectedIds.map(sid => [sid, { x: nodeRefs[sid]?.x() ?? 0, y: nodeRefs[sid]?.y() ?? 0 }]))
@@ -422,6 +381,9 @@ import RotateCcw from 'lucide-svelte/icons/rotate-ccw';
   }
 
   function handleDragMove(e: any) {
+    // Re-position the transformer for the node under the finger, including the
+    // first move after a drag started on a node that was not selected yet.
+    refreshTransformer();
     if (!dragStart || !groupStart) return;
     const dx = e.target.x() - dragStart.x;
     const dy = e.target.y() - dragStart.y;
@@ -528,6 +490,7 @@ import RotateCcw from 'lucide-svelte/icons/rotate-ccw';
       dragCancelled = false;
       dragStart = null;
       groupStart = null;
+      void refreshTransformerAfterUpdate();
       return;
     }
     dragStart = null;
@@ -565,6 +528,8 @@ import RotateCcw from 'lucide-svelte/icons/rotate-ccw';
       if (eidx >= 0) { editElements[eidx] = { ...editElements[eidx], x: mx, y: my }; changed = true; }
     }
     if (changed) commit();
+    // Snapping moves the node after release; the transformer has to land with it.
+    void refreshTransformerAfterUpdate();
   }
 
   function handleTransformEnd(id: string, e: any) {
@@ -795,9 +760,15 @@ import RotateCcw from 'lucide-svelte/icons/rotate-ccw';
       x={panX}
       y={panY}
       draggable
-      onMouseDown={() => { panStart = { x: panX, y: panY }; }}
-      onDragEnd={(e: any) => { panX = e.target.x(); panY = e.target.y(); }}
+      onmousedown={() => { panStart = { x: panX, y: panY }; }}
+      ontouchstart={() => { panStart = { x: panX, y: panY }; }}
+      ondragend={(e: any) => {
+        if (e.target !== e.target.getStage()) return;
+        panX = e.target.x();
+        panY = e.target.y();
+      }}
       onclick={handleStageClick}
+      ontap={handleStageClick}
     >
       <KLayer>
         <KGroup x={offsetX} y={offsetY} scaleX={viewScale * zoom} scaleY={viewScale * zoom}>
@@ -874,14 +845,15 @@ import RotateCcw from 'lucide-svelte/icons/rotate-ccw';
             bind:this={transformerEl}
             rotateEnabled={true}
             enabledAnchors={isTableSelected ? [] : undefined}
-            anchorSize={8}
+            anchorSize={coarsePointer ? 18 : 8}
+            rotateAnchorOffset={coarsePointer ? 48 : 30}
             anchorCornerRadius={2}
             borderStroke="#D4AF37"
             anchorStroke="#D4AF37"
             anchorFill="#FFFFFF"
             anchorStrokeWidth={2}
             borderStrokeWidth={1.5}
-            padding={4}
+            padding={coarsePointer ? 12 : 4}
           />
         {/if}
         </KGroup>
