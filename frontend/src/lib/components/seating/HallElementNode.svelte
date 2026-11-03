@@ -84,6 +84,7 @@
     draggable={mode === 'edit'}
     bind:this={groupEl}
     onclick={(e: any) => onselect?.(e)}
+    ontap={(e: any) => onselect?.(e)}
     ondragstart={ondragstart}
     ondragmove={ondragmove}
     ondragend={ondragend}
