@@ -372,6 +372,8 @@ import RotateCcw from 'lucide-svelte/icons/rotate-ccw';
   function handleDragStart(id: string, e: any) {
     dragStart = { id, x: e.target.x(), y: e.target.y() };
     dragCancelled = false;
+    // Whichever node you drag becomes the selection, so the transformer tracks it.
+    if (!selectedIds.includes(id)) selectedIds = [id];
     // Dragging any member of a multi-selection moves the whole group.
     groupStart = selectedIds.length > 1 && selectedIds.includes(id)
       ? Object.fromEntries(selectedIds.map(sid => [sid, { x: nodeRefs[sid]?.x() ?? 0, y: nodeRefs[sid]?.y() ?? 0 }]))
@@ -379,6 +381,9 @@ import RotateCcw from 'lucide-svelte/icons/rotate-ccw';
   }
 
   function handleDragMove(e: any) {
+    // Re-position the transformer for the node under the finger, including the
+    // first move after a drag started on a node that was not selected yet.
+    refreshTransformer();
     if (!dragStart || !groupStart) return;
     const dx = e.target.x() - dragStart.x;
     const dy = e.target.y() - dragStart.y;
@@ -485,6 +490,7 @@ import RotateCcw from 'lucide-svelte/icons/rotate-ccw';
       dragCancelled = false;
       dragStart = null;
       groupStart = null;
+      void refreshTransformerAfterUpdate();
       return;
     }
     dragStart = null;
@@ -522,6 +528,8 @@ import RotateCcw from 'lucide-svelte/icons/rotate-ccw';
       if (eidx >= 0) { editElements[eidx] = { ...editElements[eidx], x: mx, y: my }; changed = true; }
     }
     if (changed) commit();
+    // Snapping moves the node after release; the transformer has to land with it.
+    void refreshTransformerAfterUpdate();
   }
 
   function handleTransformEnd(id: string, e: any) {
