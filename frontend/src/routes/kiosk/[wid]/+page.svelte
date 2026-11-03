@@ -906,7 +906,7 @@ import X from 'lucide-svelte/icons/x';
   /* ---------- Seat Display ---------- */
   .seat-display {
     display: flex;
-    align-items: center;
+    align-items: stretch;
     justify-content: center;
     gap: 1.5rem;
     flex-wrap: wrap;
@@ -921,6 +921,8 @@ import X from 'lucide-svelte/icons/x';
   }
 
   .seat-block {
+    flex: 1 1 0;
+    min-width: 0;
     text-align: center;
   }
 
@@ -934,6 +936,10 @@ import X from 'lucide-svelte/icons/x';
   }
 
   .seat-value {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 2.75rem;
     font-size: 1.25rem;
     font-weight: 800;
     color: #111827;
@@ -946,6 +952,10 @@ import X from 'lucide-svelte/icons/x';
   }
 
   @media (min-width: 640px) {
+    .seat-value {
+      min-height: 3.25rem;
+    }
+
     .seat-value-large {
       font-size: 2.5rem;
     }
@@ -958,8 +968,10 @@ import X from 'lucide-svelte/icons/x';
   }
 
   .seat-divider {
+    align-self: center;
+    flex: 0 0 1px;
     width: 1px;
-    height: 2.5rem;
+    height: 2.75rem;
     background: rgba(0, 0, 0, 0.08);
   }
 
