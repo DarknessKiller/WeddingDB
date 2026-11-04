@@ -455,7 +455,7 @@ import X from 'lucide-svelte/icons/x';
               <div class="seat-display" in:fly={{ y: 12, duration: 200 }}>
                 <div class="seat-block">
                   <div class="seat-label">Table</div>
-                  <div class="seat-value seat-value-large">{selectedTableName}</div>
+                  <div class="seat-value seat-value-large seat-value-accent">{selectedTableName}</div>
                   {#if selectedTable?.isVip}
                     <span class="vip-tag">★ VIP</span>
                   {/if}
@@ -464,13 +464,13 @@ import X from 'lucide-svelte/icons/x';
                   <div class="seat-divider"></div>
                   <div class="seat-block">
                     <div class="seat-label">Seats</div>
-                    <div class="seat-value">{formatSeatRange(selectedGuest.seatNumber, selectedGuest.pax)}</div>
+                    <div class="seat-value seat-value-large">{formatSeatRange(selectedGuest.seatNumber, selectedGuest.pax, false)}</div>
                   </div>
                 {/if}
                 <div class="seat-divider"></div>
                 <div class="seat-block">
                   <div class="seat-label">Guests</div>
-                  <div class="seat-value">{selectedGuest.pax}</div>
+                  <div class="seat-value seat-value-large">{selectedGuest.pax}</div>
                 </div>
               </div>
 
@@ -948,6 +948,9 @@ import X from 'lucide-svelte/icons/x';
 
   .seat-value-large {
     font-size: 2rem;
+  }
+
+  .seat-value-accent {
     color: #A11217;
   }
 
