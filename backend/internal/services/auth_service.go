@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"log/slog"
 	"strings"
+	"sync"
 	"time"
 	"weddingdb/internal/models"
 	"weddingdb/internal/repository"
@@ -60,12 +61,25 @@ type LoginResult struct {
 	ForcePasswordChange bool
 }
 
+// compareHash is bcrypt.CompareHashAndPassword; tests swap it to count calls.
+var compareHash = bcrypt.CompareHashAndPassword
+
+// dummyHash lets unknown-email logins spend the same bcrypt time as real ones.
+var dummyHash = sync.OnceValue(func() []byte {
+	h, err := bcrypt.GenerateFromPassword([]byte("dummy-password"), bcrypt.DefaultCost)
+	if err != nil {
+		panic(fmt.Sprintf("dummy bcrypt hash: %v", err))
+	}
+	return h
+})
+
 func (s *AuthService) Login(ctx context.Context, email, password string) (*LoginResult, error) {
 	admin, err := s.adminRepo.FindByEmail(ctx, email)
 	if err != nil {
+		compareHash(dummyHash(), []byte(password)) //nolint:errcheck // timing equalizer only; result is always a mismatch
 		return nil, errors.New("invalid credentials")
 	}
-	if err := bcrypt.CompareHashAndPassword([]byte(admin.Password), []byte(password)); err != nil {
+	if err := compareHash([]byte(admin.Password), []byte(password)); err != nil {
 		return nil, errors.New("invalid credentials")
 	}
 	accessToken, err := s.generateAccessToken(ctx, admin, nil)
