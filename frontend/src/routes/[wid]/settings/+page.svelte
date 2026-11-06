@@ -145,7 +145,7 @@ import MapPin from 'lucide-svelte/icons/map-pin';
     <div class="space-y-6">
       <!-- Kiosk Quick Access -->
       <div class="bg-white/90 backdrop-blur-xl border border-black/[0.06] rounded-2xl p-5 shadow-sm">
-        <div class="flex items-center justify-between">
+        <div class="flex flex-wrap items-center justify-between gap-3">
           <div class="flex items-center gap-3">
             <div class="w-10 h-10 rounded-xl bg-red flex items-center justify-center text-white"><Monitor class="w-5 h-5" /></div>
             <div>
@@ -154,11 +154,11 @@ import MapPin from 'lucide-svelte/icons/map-pin';
             </div>
           </div>
           <div class="flex gap-2">
-            <button onclick={copyKioskLink} class="px-3 py-2 text-xs font-semibold bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-xl transition-colors flex items-center gap-1.5">
+            <button onclick={copyKioskLink} class="min-h-11 px-3 py-2 text-xs font-semibold bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-xl transition-colors flex items-center gap-1.5">
               <Copy class="w-3.5 h-3.5" /> Copy Link
             </button>
             <a href="/kiosk/{wedding ? wedding.id : ''}" target="_blank"
-              class="px-3 py-2 text-xs font-semibold bg-red text-white rounded-xl hover:bg-red-light transition-colors flex items-center gap-1.5">
+              class="min-h-11 px-3 py-2 text-xs font-semibold bg-red text-white rounded-xl hover:bg-red-light transition-colors flex items-center gap-1.5">
               <ExternalLink class="w-3.5 h-3.5" /> Preview
             </a>
           </div>

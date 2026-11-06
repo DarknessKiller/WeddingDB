@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
+  import { onMount, onDestroy } from 'svelte';
   import { goto } from '$app/navigation';
   import { addToast, getAuth, setAuth } from '$lib/stores';
   import { weddingId, setWeddingId } from '$lib/stores/weddingId';
@@ -21,9 +21,16 @@ import ChevronRight from 'lucide-svelte/icons/chevron-right';
   let auth = $state<ReturnType<typeof getAuth> | null>(null);
   let currentWeddingId = $state('');
 
-  weddingId.subscribe(v => { currentWeddingId = v; });
+  const unsubscribe = weddingId.subscribe(v => { currentWeddingId = v; });
+  onDestroy(unsubscribe);
 
   let showModal = $state(false);
+  function modal(node: HTMLDialogElement) {
+    const opener = document.activeElement as HTMLElement | null;
+    node.showModal();
+    node.querySelector<HTMLInputElement>('input')?.focus();
+    return { destroy() { node.close(); opener?.focus(); } };
+  }
   let editingWedding = $state<Wedding | null>(null);
   let formName = $state('');
   let formDate = $state('');
@@ -147,13 +154,10 @@ import ChevronRight from 'lucide-svelte/icons/chevron-right';
         <div class="space-y-2">
           {#each weddings as w (w.id)}
             {@const isSelected = w.id === currentWeddingId}
-            <div class="group">
-              <div
-                role="button"
-                tabindex="0"
-                aria-disabled={selecting !== null}
+            <div class="group flex items-center gap-1">
+              <button
+                disabled={selecting !== null}
                 onclick={() => selectWedding(w)}
-                onkeydown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); selectWedding(w); } }}
                 class="w-full flex items-center gap-3 p-3 rounded-xl border transition-all text-left {selecting !== null ? 'cursor-not-allowed opacity-50' : 'cursor-pointer'} {isSelected ? 'border-gold bg-gold-50/50' : 'border-gray-200 hover:border-deep-red hover:bg-red-50'}"
               >
                 <div class="w-10 h-10 rounded-lg {isSelected ? 'bg-gold-50 border border-gold-200 text-gold' : 'bg-red-50 border border-red-100 text-red'} flex items-center justify-center flex-shrink-0">
@@ -170,21 +174,21 @@ import ChevronRight from 'lucide-svelte/icons/chevron-right';
                 {#if selecting === w.id}
                   <div class="w-4 h-4 border-2 border-deep-red/30 border-t-deep-red rounded-full animate-spin"></div>
                 {:else if isSelected}
-                  <span class="text-xs font-medium text-gold bg-gold-50 px-2 py-0.5 rounded-full border border-gold-200">Active</span>
+                  <span class="text-xs font-medium text-[var(--color-gold-ink)] bg-gold-50 px-2 py-0.5 rounded-full border border-gold-200">Active</span>
                 {:else}
                   <ChevronRight class="w-4 h-4 text-gray-500 group-hover:text-deep-red transition-colors" />
                 {/if}
+              </button>
                 {#if auth?.role === 'admin'}
-                  <div class="flex items-center gap-1 ml-2 {isSelected ? 'opacity-0 group-hover:opacity-100' : 'opacity-0 group-hover:opacity-100'} transition-opacity">
-                    <button onclick={(e) => openEdit(w, e)} class="p-1.5 rounded-lg hover:bg-white/80 text-gray-500 hover:text-gray-600 transition-colors" aria-label="Edit">
+                  <div class="flex items-center gap-1 ml-2  transition-opacity">
+                    <button onclick={(e) => openEdit(w, e)} class="min-w-11 min-h-11 p-1.5 rounded-lg hover:bg-white/80 text-gray-500 hover:text-gray-600 transition-colors" aria-label="Edit">
                       <Pencil class="w-3.5 h-3.5" />
                     </button>
-                    <button onclick={(e) => handleDelete(w, e)} class="p-1.5 rounded-lg hover:bg-red-50 text-gray-500 hover:text-red transition-colors" aria-label="Delete">
+                    <button onclick={(e) => handleDelete(w, e)} class="min-w-11 min-h-11 p-1.5 rounded-lg hover:bg-red-50 text-gray-500 hover:text-red transition-colors" aria-label="Delete">
                       <Trash2 class="w-3.5 h-3.5" />
                     </button>
                   </div>
                 {/if}
-              </div>
             </div>
           {/each}
         </div>
@@ -202,12 +206,11 @@ import ChevronRight from 'lucide-svelte/icons/chevron-right';
 
 <!-- Create/Edit Modal -->
 {#if showModal}
-  <div class="fixed inset-0 z-50 flex items-center justify-center p-4">
-    <div class="absolute inset-0 bg-black/30 backdrop-blur-md" onclick={closeModal} role="presentation"></div>
+  <dialog use:modal aria-labelledby="wedding-dialog-title" oncancel={closeModal} class="m-auto w-full max-w-md bg-transparent p-4 backdrop:bg-black/40">
     <div class="relative bg-white/95 backdrop-blur-xl rounded-2xl shadow-2xl w-full max-w-md overflow-hidden">
       <div class="flex items-center justify-between p-5 border-b border-gray-100">
-        <h3 class="font-bold text-gray-900">{editingWedding ? 'Edit Wedding' : 'New Wedding'}</h3>
-        <button onclick={closeModal} class="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-gray-100 transition-colors">
+        <h3 id="wedding-dialog-title" class="font-bold text-gray-900">{editingWedding ? 'Edit Wedding' : 'New Wedding'}</h3>
+        <button aria-label="Close wedding dialog" onclick={closeModal} class="w-11 h-11 rounded-lg flex items-center justify-center hover:bg-gray-100 transition-colors">
           <X class="w-4 h-4 text-gray-500" />
         </button>
       </div>
@@ -215,12 +218,12 @@ import ChevronRight from 'lucide-svelte/icons/chevron-right';
         <div>
           <label for="wedding-name" class="text-sm font-semibold text-gray-700 mb-1.5 block">Wedding Name</label>
           <input id="wedding-name" type="text" bind:value={formName} placeholder="e.g. John & Jane's Wedding"
-            class="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm bg-white focus:border-gold focus:ring-2 focus:ring-gold/15 outline-none transition-all" />
+            class="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm bg-white focus:border-gold focus:ring-2 focus:ring-gold/15 transition-all" />
         </div>
         <div>
           <label for="wedding-date" class="text-sm font-semibold text-gray-700 mb-1.5 block">Date</label>
           <input id="wedding-date" type="date" bind:value={formDate}
-            class="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm bg-white focus:border-gold focus:ring-2 focus:ring-gold/15 outline-none transition-all" />
+            class="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm bg-white focus:border-gold focus:ring-2 focus:ring-gold/15 transition-all" />
         </div>
       </div>
       <div class="flex gap-3 p-5 pt-0">
@@ -233,5 +236,5 @@ import ChevronRight from 'lucide-svelte/icons/chevron-right';
         </button>
       </div>
     </div>
-  </div>
+  </dialog>
 {/if}
