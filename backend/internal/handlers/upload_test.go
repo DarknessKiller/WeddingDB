@@ -2,7 +2,6 @@ package handlers
 
 import (
 	"bytes"
-	"encoding/json"
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
@@ -50,20 +49,12 @@ func TestUpload_TinyFileNotRejectedByEOFRead(t *testing.T) {
 	}
 }
 
-func TestUpload_LargeFileAcceptsBeyondOld5MBLimit(t *testing.T) {
-	// 6MB jpg — above the deleted hardcoded cap; proves the proxy-owned policy.
+func TestUpload_OverLimitRejected413(t *testing.T) {
 	content := make([]byte, 6*1024*1024)
 	content[0], content[1], content[2] = 0xff, 0xd8, 0xff // jpeg magic prefix
 	rec := runUpload(t, "big.jpg", content)
-	if rec.Code < 200 || rec.Code >= 300 { // success statuses (fuego POST → 201)
-		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
-	}
-	var out map[string]any
-	if err := json.Unmarshal(rec.Body.Bytes(), &out); err != nil {
-		t.Fatal(err)
-	}
-	if _, ok := out["url"]; !ok {
-		t.Fatalf("missing url in response: %s", rec.Body.String())
+	if rec.Code != http.StatusRequestEntityTooLarge {
+		t.Fatalf("status = %d, want 413", rec.Code)
 	}
 }
 

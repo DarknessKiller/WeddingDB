@@ -3,9 +3,11 @@ package handlers
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
@@ -24,6 +26,9 @@ var magicBytes = map[string][]byte{
 	".svg":  {0x3c, 0x3f, 0x78, 0x6d, 0x6c}, // <?xml
 }
 
+// maxUploadBytes caps the whole multipart request body.
+const maxUploadBytes = 5 * 1024 * 1024
+
 type UploadHandler struct{}
 
 func NewUploadHandler() *UploadHandler {
@@ -38,8 +43,13 @@ func closeLogged(c io.Closer) {
 }
 
 func (h *UploadHandler) Upload(c fuego.ContextWithBody[any]) (any, error) {
-	file, header, err := c.Request().FormFile("file")
+	r := c.Request()
+	r.Body = http.MaxBytesReader(c.Response(), r.Body, maxUploadBytes)
+	file, header, err := r.FormFile("file")
 	if err != nil {
+		if _, ok := errors.AsType[*http.MaxBytesError](err); ok {
+			return nil, fuego.HTTPError{Status: http.StatusRequestEntityTooLarge, Title: "File too large (max 5 MiB)"}
+		}
 		return nil, fuego.BadRequestError{Title: "No file provided"}
 	}
 	defer closeLogged(file)
