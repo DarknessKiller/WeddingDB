@@ -103,12 +103,15 @@ func (h *AuthHandler) Login(c fuego.ContextWithBody[LoginRequest]) (TokenRespons
 	if err := h.authService.CheckAuthRate(c.Context(), ip); err != nil {
 		return TokenResponse{}, fuego.HTTPError{Status: http.StatusTooManyRequests, Title: err.Error()}
 	}
-	if err := h.authService.CheckLoginAccountRate(c.Context(), body.Email); err != nil {
+	if err := h.authService.CheckCredentialIPRate(c.Context(), ip); err != nil {
+		return TokenResponse{}, fuego.HTTPError{Status: http.StatusTooManyRequests, Title: err.Error()}
+	}
+	if err := h.authService.CheckLoginAccountRate(c.Context(), body.Email, ip); err != nil {
 		return TokenResponse{}, fuego.HTTPError{Status: http.StatusTooManyRequests, Title: err.Error()}
 	}
 	result, err := h.authService.Login(c.Context(), body.Email, body.Password)
 	if err != nil {
-		h.authService.RecordLoginFailure(c.Context(), body.Email)
+		h.authService.RecordLoginFailure(c.Context(), body.Email, ip)
 		return TokenResponse{}, fuego.UnauthorizedError{Title: err.Error()}
 	}
 	return TokenResponse{
@@ -238,6 +241,9 @@ func (h *AuthHandler) Register(c fuego.ContextWithBody[RegisterRequest]) (any, e
 	}
 	ctx := c.Context()
 	if err := h.authService.CheckAuthRate(ctx, clientIP(c.Request())); err != nil {
+		return nil, fuego.HTTPError{Status: http.StatusTooManyRequests, Title: err.Error()}
+	}
+	if err := h.authService.CheckCredentialIPRate(ctx, clientIP(c.Request())); err != nil {
 		return nil, fuego.HTTPError{Status: http.StatusTooManyRequests, Title: err.Error()}
 	}
 	existing, err := h.adminRepo.FindByEmail(ctx, body.Email)
