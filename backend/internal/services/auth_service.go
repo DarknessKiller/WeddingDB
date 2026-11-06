@@ -17,6 +17,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/redis/go-redis/v9"
 	"golang.org/x/crypto/bcrypt"
+	"gorm.io/gorm"
 )
 
 type AccessClaims struct {
@@ -124,13 +125,19 @@ func (s *AuthService) sessionResult(ctx context.Context, admin *models.AdminUser
 func (s *AuthService) SelectWedding(ctx context.Context, adminID uuid.UUID, weddingID uuid.UUID) (string, error) {
 	admin, err := s.adminRepo.FindByID(ctx, adminID)
 	if err != nil {
-		return "", errors.New("admin not found")
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return "", ErrAdminNotFound
+		}
+		return "", fmt.Errorf("select wedding: find admin: %w", err)
 	}
 	// Verify access
 	if admin.Role != "admin" {
 		hasAccess, err := s.adminRepo.HasWeddingAccess(ctx, adminID, weddingID)
-		if err != nil || !hasAccess {
-			return "", errors.New("no access to this wedding")
+		if err != nil {
+			return "", fmt.Errorf("select wedding: check access: %w", err)
+		}
+		if !hasAccess {
+			return "", ErrNoWeddingAccess
 		}
 		// Persist the wedding scope onto the caller's refresh token(s) so that
 		// Refresh re-mints a scoped access token. Without this, the first

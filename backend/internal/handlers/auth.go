@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"errors"
 	"log/slog"
 	"net"
 	"net/http"
@@ -132,7 +133,14 @@ func (h *AuthHandler) SelectWedding(c fuego.ContextWithBody[SelectWeddingRequest
 	adminID := AdminIDFromContext(c.Context())
 	accessToken, err := h.authService.SelectWedding(c.Context(), adminID, weddingID)
 	if err != nil {
-		return SelectWeddingResponse{}, fuego.UnauthorizedError{Title: err.Error()}
+		switch {
+		case errors.Is(err, services.ErrNoWeddingAccess):
+			return SelectWeddingResponse{}, fuego.ForbiddenError{Title: "No access to this wedding"}
+		case errors.Is(err, services.ErrAdminNotFound):
+			return SelectWeddingResponse{}, fuego.UnauthorizedError{Title: "Unauthorized"}
+		}
+		slog.Error("select wedding failed", "user", adminID, "err", err)
+		return SelectWeddingResponse{}, fuego.InternalServerError{Title: "Internal error"}
 	}
 	return SelectWeddingResponse{AccessToken: accessToken}, nil
 }
