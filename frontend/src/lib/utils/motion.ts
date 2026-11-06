@@ -14,6 +14,7 @@ function currentTranslate(node: HTMLElement): { x: number; y: number } {
 // wherever the element currently is (respects an in-progress drag offset).
 export function slideOut(node: HTMLElement, opts: { dir?: 'x' | 'y'; duration?: number } = {}) {
   const { dir = 'y', duration = 300 } = opts;
+  if (matchMedia('(prefers-reduced-motion: reduce)').matches) return { duration: 0 };
   const { x, y } = currentTranslate(node);
   const from = dir === 'x' ? `translateX(${x}px)` : `translateY(${y}px)`;
   const to = dir === 'x' ? 'translateX(100%)' : 'translateY(100%)';
@@ -26,6 +27,7 @@ export function slideOut(node: HTMLElement, opts: { dir?: 'x' | 'y'; duration?: 
 // Toast exit: same edge it entered (right side), with fade.
 export function toastOut(node: HTMLElement, opts: { duration?: number } = {}) {
   const { duration = 200 } = opts;
+  if (matchMedia('(prefers-reduced-motion: reduce)').matches) return { duration: 0 };
   node.animate(
     [
       { opacity: 1, transform: 'translateX(0) scale(1)' },
