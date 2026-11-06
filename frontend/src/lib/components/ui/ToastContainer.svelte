@@ -22,6 +22,8 @@ import Info from 'lucide-svelte/icons/info';
 </div>
 
 <style>
+  .toast-item { max-width: calc(100vw - 2rem); overflow-wrap: anywhere; }
+  .toast-message { min-width: 0; }
   .toast-container {
     position: fixed;
     top: 1.25rem;
