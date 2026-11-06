@@ -44,7 +44,9 @@ func parseCursorID(s string) (uuid.UUID, error) {
 func (r *GuestRepo) ListByWedding(ctx context.Context, weddingID uuid.UUID, cursor string, limit int) ([]models.GuestRecord, int64, error) {
 	guests := make([]models.GuestRecord, 0)
 	var total int64
-	r.db.WithContext(ctx).Model(&models.GuestRecord{}).Where("wedding_id = ?", weddingID).Count(&total)
+	if err := r.db.WithContext(ctx).Model(&models.GuestRecord{}).Where("wedding_id = ?", weddingID).Count(&total).Error; err != nil {
+		return nil, 0, fmt.Errorf("count guests: %w", err)
+	}
 	q := r.db.WithContext(ctx).Where("wedding_id = ?", weddingID).Order("id ASC").Limit(limit + 1)
 	if cursor != "" {
 		cid, err := parseCursorID(cursor)
