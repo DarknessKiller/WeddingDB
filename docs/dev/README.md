@@ -90,7 +90,8 @@ The bootstrap only runs when the admin table is empty. After the first admin exi
 | `DATABASE_URL` | compose-provided | Points at the `postgres` service; override to use an external DB |
 | `REDIS_URL` | `redis://redis:6379` | Compose-provided; override for external Redis |
 | `JWT_SECRET` | none | **Required**. Compose fails fast if unset; values shipped in `.env.example` are rejected at boot |
-| `REDIS_PASSWORD` | unset (no auth) | Optional. When set, Dragonfly runs with `--requirepass` and the app authenticates via `REDIS_URL` |
+| `POSTGRES_PASSWORD` | none | **Required**. Used by Postgres and the app connection URL |
+| `REDIS_PASSWORD` | none | **Required**. Dragonfly uses `--requirepass`; the app authenticates via `REDIS_URL`. No Redis host port is published |
 | `ADMIN_BOOTSTRAP_PASSWORD` | none | First-boot admin password (required when the database is empty) |
 | `TZ` | `Asia/Kuala_Lumpur` | Report timestamps follow this |
 
@@ -329,3 +330,11 @@ nohup sh -c 'cd frontend && npm run dev -- --host 0.0.0.0 --port 5173' > /tmp/we
 - [`docs/adr/001-offline-sync.md`](../adr/001-offline-sync.md): local-first door operations and offline sync
 - [`docs/specs/offline-sync-spec.md`](../specs/offline-sync-spec.md): offline queue, cache, local search, and kiosk idle reset
 - [`docs/adr/002-otel-tracing.md`](../adr/002-otel-tracing.md): OpenTelemetry tracing design
+
+### Compose credentials and network exposure
+
+Set `POSTGRES_PASSWORD`, `REDIS_PASSWORD`, and `JWT_SECRET` in the root `.env` before starting Compose. Generate URL-safe passwords with `openssl rand -hex 32`; other passwords must be URL-encoded in connection URLs. For local backend runs, keep `DATABASE_URL` and `REDIS_URL` credentials in sync with these passwords.
+
+The app binds to `127.0.0.1:8080`. Put a reverse proxy with TLS in front before exposing it publicly. Redis is available only on the Compose network.
+
+Existing Postgres volumes keep their old password: changing `.env` does not update the database role. Open `docker compose exec postgres psql -U weddingdb -d postgres` and run `ALTER ROLE weddingdb WITH PASSWORD 'your-new-password';`, matching `POSTGRES_PASSWORD`. Then recreate the app with `docker compose up -d app`. Do not delete the volume to rotate credentials.

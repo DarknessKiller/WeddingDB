@@ -2,11 +2,12 @@ services:
   app:
     image: ghcr.io/darknesskiller/weddingdb:latest
     ports:
-      - "8080:8080"
+      # Terminate TLS at a reverse proxy on this host.
+      - "127.0.0.1:8080:8080"
     environment:
       PORT: "8080"
-      DATABASE_URL: "postgresql://weddingdb:weddingdb@postgres:5432/weddingdb?sslmode=disable"
-      REDIS_URL: "redis://:${REDIS_PASSWORD:-}@redis:6379"
+      DATABASE_URL: "postgresql://weddingdb:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set}@postgres:5432/weddingdb?sslmode=disable"
+      REDIS_URL: "redis://:${REDIS_PASSWORD:?REDIS_PASSWORD must be set}@redis:6379"
       JWT_SECRET: "${JWT_SECRET:?JWT_SECRET must be set, e.g. openssl rand -hex 32}"
       ADMIN_BOOTSTRAP_PASSWORD: "${ADMIN_BOOTSTRAP_PASSWORD:-}"
       STATIC_DIR: "./static"
@@ -30,7 +31,7 @@ services:
     image: postgres:16-alpine
     environment:
       POSTGRES_USER: weddingdb
-      POSTGRES_PASSWORD: weddingdb
+      POSTGRES_PASSWORD: "${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set}"
       POSTGRES_DB: weddingdb
     ports:
       - "127.0.0.1:5432:5432"
@@ -44,12 +45,10 @@ services:
 
   redis:
     image: docker.dragonflydb.io/dragonflydb/dragonfly:latest
-    # Optional auth: set REDIS_PASSWORD (openssl rand -hex 32) to enable; empty = no password.
-    command: ["--requirepass=${REDIS_PASSWORD:-}"]
+    # Required auth; generate with openssl rand -hex 32.
+    command: ["--requirepass=${REDIS_PASSWORD:?REDIS_PASSWORD must be set}"]
     ulimits:
       memlock: -1
-    ports:
-      - "127.0.0.1:6379:6379"
     volumes:
       - redisdata:/data
 
