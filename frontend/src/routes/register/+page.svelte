@@ -131,12 +131,12 @@ import Mail from 'lucide-svelte/icons/mail';
 
 <style>
   .input-error {
-    border-color: #ef4444 !important;
+    border-color: #b91c1c !important;
     box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.1) !important;
   }
   .field-error {
     font-size: 0.75rem;
-    color: #ef4444;
+    color: #b91c1c;
     margin-top: 0.25rem;
   }
   .contact-note {

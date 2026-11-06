@@ -40,7 +40,7 @@
     transition: color 150ms ease;
   }
   .req-item.valid {
-    color: #059669;
+    color: #047857;
   }
   .req-dot {
     font-size: 0.625rem;
