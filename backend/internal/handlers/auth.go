@@ -189,7 +189,8 @@ func (h *AuthHandler) Logout(c fuego.ContextWithBody[RefreshRequest]) (any, erro
 }
 
 type ChangePasswordRequest struct {
-	Password string `json:"password"`
+	CurrentPassword string `json:"currentPassword"`
+	Password        string `json:"password"`
 }
 
 func (h *AuthHandler) ChangePassword(c fuego.ContextWithBody[ChangePasswordRequest]) (any, error) {
@@ -205,6 +206,12 @@ func (h *AuthHandler) ChangePassword(c fuego.ContextWithBody[ChangePasswordReque
 	admin, err := h.adminRepo.FindByID(ctx, adminID)
 	if err != nil {
 		return nil, fuego.NotFoundError{Title: "User not found"}
+	}
+	// A forced change follows an admin reset, so the old password is not known.
+	if !admin.ForcePasswordChange {
+		if err := bcrypt.CompareHashAndPassword([]byte(admin.Password), []byte(body.CurrentPassword)); err != nil {
+			return nil, fuego.UnauthorizedError{Title: "Current password is incorrect"}
+		}
 	}
 	hash, err := bcrypt.GenerateFromPassword([]byte(body.Password), bcrypt.DefaultCost)
 	if err != nil {
