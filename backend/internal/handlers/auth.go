@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"errors"
 	"log/slog"
 	"net"
 	"net/http"
@@ -102,12 +103,15 @@ func (h *AuthHandler) Login(c fuego.ContextWithBody[LoginRequest]) (TokenRespons
 	if err := h.authService.CheckAuthRate(c.Context(), ip); err != nil {
 		return TokenResponse{}, fuego.HTTPError{Status: http.StatusTooManyRequests, Title: err.Error()}
 	}
-	if err := h.authService.CheckLoginAccountRate(c.Context(), body.Email); err != nil {
+	if err := h.authService.CheckCredentialIPRate(c.Context(), ip); err != nil {
+		return TokenResponse{}, fuego.HTTPError{Status: http.StatusTooManyRequests, Title: err.Error()}
+	}
+	if err := h.authService.CheckLoginAccountRate(c.Context(), body.Email, ip); err != nil {
 		return TokenResponse{}, fuego.HTTPError{Status: http.StatusTooManyRequests, Title: err.Error()}
 	}
 	result, err := h.authService.Login(c.Context(), body.Email, body.Password)
 	if err != nil {
-		h.authService.RecordLoginFailure(c.Context(), body.Email)
+		h.authService.RecordLoginFailure(c.Context(), body.Email, ip)
 		return TokenResponse{}, fuego.UnauthorizedError{Title: err.Error()}
 	}
 	return TokenResponse{
@@ -132,7 +136,14 @@ func (h *AuthHandler) SelectWedding(c fuego.ContextWithBody[SelectWeddingRequest
 	adminID := AdminIDFromContext(c.Context())
 	accessToken, err := h.authService.SelectWedding(c.Context(), adminID, weddingID)
 	if err != nil {
-		return SelectWeddingResponse{}, fuego.UnauthorizedError{Title: err.Error()}
+		switch {
+		case errors.Is(err, services.ErrNoWeddingAccess):
+			return SelectWeddingResponse{}, fuego.ForbiddenError{Title: "No access to this wedding"}
+		case errors.Is(err, services.ErrAdminNotFound):
+			return SelectWeddingResponse{}, fuego.UnauthorizedError{Title: "Unauthorized"}
+		}
+		slog.Error("select wedding failed", "user", adminID, "err", err)
+		return SelectWeddingResponse{}, fuego.InternalServerError{Title: "Internal error"}
 	}
 	return SelectWeddingResponse{AccessToken: accessToken}, nil
 }
@@ -178,7 +189,8 @@ func (h *AuthHandler) Logout(c fuego.ContextWithBody[RefreshRequest]) (any, erro
 }
 
 type ChangePasswordRequest struct {
-	Password string `json:"password"`
+	CurrentPassword string `json:"currentPassword"`
+	Password        string `json:"password"`
 }
 
 func (h *AuthHandler) ChangePassword(c fuego.ContextWithBody[ChangePasswordRequest]) (any, error) {
@@ -194,6 +206,12 @@ func (h *AuthHandler) ChangePassword(c fuego.ContextWithBody[ChangePasswordReque
 	admin, err := h.adminRepo.FindByID(ctx, adminID)
 	if err != nil {
 		return nil, fuego.NotFoundError{Title: "User not found"}
+	}
+	// A forced change follows an admin reset, so the old password is not known.
+	if !admin.ForcePasswordChange {
+		if err := bcrypt.CompareHashAndPassword([]byte(admin.Password), []byte(body.CurrentPassword)); err != nil {
+			return nil, fuego.UnauthorizedError{Title: "Current password is incorrect"}
+		}
 	}
 	hash, err := bcrypt.GenerateFromPassword([]byte(body.Password), bcrypt.DefaultCost)
 	if err != nil {
@@ -230,6 +248,9 @@ func (h *AuthHandler) Register(c fuego.ContextWithBody[RegisterRequest]) (any, e
 	}
 	ctx := c.Context()
 	if err := h.authService.CheckAuthRate(ctx, clientIP(c.Request())); err != nil {
+		return nil, fuego.HTTPError{Status: http.StatusTooManyRequests, Title: err.Error()}
+	}
+	if err := h.authService.CheckCredentialIPRate(ctx, clientIP(c.Request())); err != nil {
 		return nil, fuego.HTTPError{Status: http.StatusTooManyRequests, Title: err.Error()}
 	}
 	existing, err := h.adminRepo.FindByEmail(ctx, body.Email)

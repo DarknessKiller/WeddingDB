@@ -29,7 +29,7 @@ async function doRefresh(): Promise<boolean> {
 		const data = await refreshRes.json();
 		if (data.forcePasswordChange) {
 			setAuth(data.accessToken, data.refreshToken, data.role ?? getAuth().role ?? '', data.name ?? getAuth().name ?? '');
-			if (typeof window !== 'undefined') window.location.href = '/change-password';
+			if (typeof window !== 'undefined') window.location.href = '/change-password?forced=1';
 			return false;
 		}
 		setAuth(data.accessToken, data.refreshToken, data.role ?? getAuth().role ?? '', data.name ?? getAuth().name ?? '');

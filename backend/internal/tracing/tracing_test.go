@@ -259,3 +259,34 @@ func TestMiddlewareCapturesPattern(t *testing.T) {
 	req := httptest.NewRequest(http.MethodPost, "/api/weddings/abc/guests", nil)
 	mux.ServeHTTP(httptest.NewRecorder(), req)
 }
+
+func TestMiddlewareSkipsAuthBodies(t *testing.T) {
+	exp := tracetest.NewSpanRecorder()
+	otel.SetTracerProvider(sdktrace.NewTracerProvider(sdktrace.WithSpanProcessor(exp)))
+	otel.SetTextMapPropagator(propagation.TraceContext{})
+	defer func() { otel.SetTracerProvider(nil); otel.SetTextMapPropagator(nil) }()
+	t.Setenv("OTEL_LOG_BODY", "all")
+
+	handler := Middleware(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if _, err := w.Write([]byte(`{"accessToken":"secret-token"}`)); err != nil {
+			t.Errorf("write body: %v", err)
+		}
+	}))
+	for _, path := range []string{"/api/auth/login", "/api/weddings/abc/guests"} {
+		req := httptest.NewRequest(http.MethodPost, path, strings.NewReader(`{"name":"x"}`))
+		req.Header.Set("Content-Type", "application/json")
+		handler.ServeHTTP(httptest.NewRecorder(), req)
+	}
+
+	spans := exp.Ended()
+	if len(spans) != 2 {
+		t.Fatalf("spans = %d, want 2", len(spans))
+	}
+	if n := len(spans[0].Events()); n != 0 {
+		t.Errorf("auth span recorded %d body events, want 0", n)
+	}
+	if n := len(spans[1].Events()); n != 2 {
+		t.Errorf("non-auth span recorded %d body events, want 2", n)
+	}
+}

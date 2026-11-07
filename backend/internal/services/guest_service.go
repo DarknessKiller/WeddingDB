@@ -151,40 +151,51 @@ func (s *GuestService) Search(ctx context.Context, weddingID uuid.UUID, query st
 }
 
 func (s *GuestService) AssignSeat(ctx context.Context, guestID, weddingID, tableID uuid.UUID, seatNum int) error {
-	guest, err := s.guestRepo.FindByID(ctx, guestID, weddingID)
-	if err != nil {
-		return err
-	}
-	table, err := s.tableRepo.FindByID(ctx, tableID, weddingID)
-	if err != nil {
-		return errors.New("table not found")
-	}
-	if guest.Pax < 1 {
-		return errors.New("guest pax must be at least 1")
-	}
-	if seatNum < 1 || seatNum+guest.Pax-1 > table.Capacity {
-		return errors.New("seat range exceeds table capacity")
-	}
-	existing, err := s.guestRepo.FindByTable(ctx, weddingID, tableID)
-	if err != nil {
-		return err
-	}
-	guestEnd := seatNum + guest.Pax - 1
-	for _, e := range existing {
-		if e.ID == guestID {
-			continue
+	var guest *models.GuestRecord
+	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		txGuestRepo := repository.NewGuestRepo(tx)
+		// Lock the table row so concurrent assignments to it serialize.
+		// The row lock is Postgres-only; sqlite (tests) has one writer.
+		if tx.Name() == "postgres" {
+			if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Select("id").
+				Where("id = ? AND wedding_id = ?", tableID, weddingID).First(&models.BanquetTable{}).Error; err != nil {
+				return errors.New("table not found")
+			}
 		}
-		if e.SeatNum == nil {
-			continue
+		var err error
+		guest, err = txGuestRepo.FindByID(ctx, guestID, weddingID)
+		if err != nil {
+			return err
 		}
-		eEnd := *e.SeatNum + e.Pax - 1
-		if seatNum <= eEnd && *e.SeatNum <= guestEnd {
-			return errors.New("seat overlaps with another guest")
+		table, err := repository.NewTableRepo(tx).FindByID(ctx, tableID, weddingID)
+		if err != nil {
+			return errors.New("table not found")
 		}
-	}
-	guest.TableID = &tableID
-	guest.SeatNum = &seatNum
-	if err := s.guestRepo.Update(ctx, guest); err != nil {
+		if guest.Pax < 1 {
+			return errors.New("guest pax must be at least 1")
+		}
+		if seatNum < 1 || seatNum+guest.Pax-1 > table.Capacity {
+			return errors.New("seat range exceeds table capacity")
+		}
+		existing, err := txGuestRepo.FindByTable(ctx, weddingID, tableID)
+		if err != nil {
+			return err
+		}
+		guestEnd := seatNum + guest.Pax - 1
+		for _, e := range existing {
+			if e.ID == guestID || e.SeatNum == nil {
+				continue
+			}
+			eEnd := *e.SeatNum + e.Pax - 1
+			if seatNum <= eEnd && *e.SeatNum <= guestEnd {
+				return errors.New("seat overlaps with another guest")
+			}
+		}
+		guest.TableID = &tableID
+		guest.SeatNum = &seatNum
+		return txGuestRepo.Update(ctx, guest)
+	})
+	if err != nil {
 		return err
 	}
 	s.publishEvent("seat_assign", guest, weddingID)

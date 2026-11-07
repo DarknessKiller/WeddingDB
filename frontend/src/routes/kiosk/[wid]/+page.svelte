@@ -22,6 +22,25 @@ import X from 'lucide-svelte/icons/x';
   import { showSeatNumbers, setShowSeatNumbers } from '$lib/stores';
   import type { Guest, BanquetTable, HallElement } from '$lib/types';
 
+  let guestsLoading = $state(true);
+  let guestsError = $state(false);
+  let guestsLoaded = $state(false);
+  let layoutLoading = $state(true);
+  let layoutError = $state(false);
+  let layoutLoaded = $state(false);
+  async function loadLayout() {
+    layoutLoading = true;
+    try {
+      const l = await getPublicLayout(page.params.wid ?? '', { signal: pageAbort.signal });
+      tables = l.tables; elements = l.elements; hallWidth = l.hallWidth; hallHeight = l.hallHeight;
+      layoutLoaded = true; layoutError = false;
+    } catch { layoutError = true; }
+    finally { layoutLoading = false; }
+  }
+  function retry() {
+    guestsError = false; layoutError = false; // show the loading state instead of a dead-looking error
+    loadGuests(pageAbort.signal); loadLayout(); loadKioskConfig();
+  }
   let query = $state('');
   let searchInput = $state<HTMLInputElement>();
   let allGuests = $state<Guest[]>([]);
@@ -46,12 +65,17 @@ import X from 'lucide-svelte/icons/x';
   async function loadGuests(signal?: AbortSignal) {
     if (guestsInFlight) return; // skip while a fetch is still in flight
     guestsInFlight = true;
+    guestsLoading = true;
     const wid = page.params.wid ?? '';
     try {
       allGuests = await publicListGuests({ signal });
       cacheGuests(wid, allGuests);
       showingCachedGuests = false;
+      guestsLoaded = true;
+      guestsError = false;
     } catch {
+      guestsError = true;
+      showingCachedGuests = guestsLoaded;
       if (!allGuests.length) {
         const cached = loadCachedGuests<Guest>(wid);
         if (cached?.length) {
@@ -59,7 +83,7 @@ import X from 'lucide-svelte/icons/x';
           showingCachedGuests = true;
         }
       }
-    } finally { guestsInFlight = false; }
+    } finally { guestsInFlight = false; guestsLoading = false; }
   }
 
   // Refetched with the guest poll so a settings change reaches the kiosk
@@ -127,6 +151,7 @@ import X from 'lucide-svelte/icons/x';
 
   // Sheet collapsed state (peek mode)
   let sheetCollapsed = $state(false);
+  let handleMoved = false;
 
   let tableGuests = $derived.by(() => {
     const obj: Record<string, Guest[]> = {};
@@ -163,8 +188,8 @@ import X from 'lucide-svelte/icons/x';
     // formatTime renders minute granularity, so ticking once per minute is enough.
     timer = setInterval(() => currentTime = new Date(), 60_000);
     loadGuests(pageAbort.signal);
-    pollTimer = setInterval(() => { loadGuests(pageAbort.signal); loadKioskConfig(); }, 60_000);
-    getPublicLayout(wid, { signal: pageAbort.signal }).then(l => { tables = l.tables; elements = l.elements; hallWidth = l.hallWidth; hallHeight = l.hallHeight; }).catch(() => {});
+    pollTimer = setInterval(() => { loadGuests(pageAbort.signal); loadKioskConfig(); loadLayout(); }, 60_000);
+    loadLayout();
     loadKioskConfig();
     document.addEventListener('pointerdown', onKioskActivity, { passive: true });
     document.addEventListener('keydown', onKioskActivity);
@@ -231,17 +256,20 @@ import X from 'lucide-svelte/icons/x';
 
   function onSheetPointerDown(e: PointerEvent) {
     e.stopPropagation();
+    handleMoved = false;
     sheetDragging = true;
     sheetStartY = e.clientY - sheetY;
     sheetLastY = e.clientY;
     sheetLastTime = performance.now();
     sheetVelocity = 0;
     if (sheetAnimFrame) cancelAnimationFrame(sheetAnimFrame);
-    (e.target as HTMLElement).setPointerCapture(e.pointerId);
+    sheetAnimFrame = 0;
+    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
   }
 
   function onSheetPointerMove(e: PointerEvent) {
     if (!sheetDragging) return;
+    if (Math.abs(e.clientY - (sheetStartY + sheetY)) > 3) handleMoved = true;
     const now = performance.now();
     const dt = now - sheetLastTime;
     const dy = e.clientY - sheetLastY;
@@ -285,15 +313,14 @@ import X from 'lucide-svelte/icons/x';
   }
 
   // Critically damped spring solver (Apple's damping=1.0, response=0.3s)
-  const SPRING_DAMPING = 1.0;
   const SPRING_RESPONSE = 0.3;
 
-  function animateSheetTo(target: number, initialVelocity = 0) {
+  function animateSheetTo(target: number, initialVelocity = sheetVelocity) {
     if (sheetAnimFrame) cancelAnimationFrame(sheetAnimFrame);
-    if (prefersReducedMotion) { sheetY = target; sheetVelocity = 0; return; }
+    if (prefersReducedMotion) { sheetAnimFrame = 0; sheetY = target; sheetVelocity = 0; return; }
 
     const start = sheetY;
-    const v0 = initialVelocity || sheetVelocity;
+    const v0 = initialVelocity;
     // Spring coefficient from response time: ω₀ = 2π / (response * √(1 - ζ²))
     // For ζ=1 (critically damped): ω₀ = 2π / response, but simpler closed form:
     // x(t) = (A + Bt) * e^(-ω₀t) where ω₀ = 4π / response
@@ -305,11 +332,12 @@ import X from 'lucide-svelte/icons/x';
       const decay = Math.exp(-omega * elapsed);
       // Critically damped: x(t) = (x0 + (v0/ω + x0)*ω*t) * e^(-ωt)
       const displacement = start - target;
-      const tOverResp = omega * elapsed;
-      const ease = 1 - decay * (1 + tOverResp);
-      sheetY = start - displacement * ease;
+      const coefficient = v0 * 1000 / 16 + omega * displacement;
+      sheetY = target + (displacement + coefficient * elapsed) * decay;
+      const velocity = (coefficient - omega * (displacement + coefficient * elapsed)) * decay;
       // Check convergence (velocity near zero and close to target)
-      if (Math.abs(sheetY - target) < 0.5 && Math.abs(v0 * decay) < 0.1) {
+      if (Math.abs(sheetY - target) < 0.5 && Math.abs(velocity) < 1) {
+        sheetAnimFrame = 0;
         sheetY = target;
         sheetVelocity = 0;
         return;
@@ -317,6 +345,7 @@ import X from 'lucide-svelte/icons/x';
       if (elapsed < 2) { // safety: max 2s
         sheetAnimFrame = requestAnimationFrame(tick);
       } else {
+        sheetAnimFrame = 0;
         sheetY = target;
         sheetVelocity = 0;
       }
@@ -378,8 +407,9 @@ import X from 'lucide-svelte/icons/x';
       </div>
 
       <div class="top-bar-right">
-        {#if showingCachedGuests}
-          <span class="offline-chip" title="Showing the last saved guest list">Offline copy</span>
+        {#if showingCachedGuests || (guestsError && guestsLoaded) || (layoutError && layoutLoaded)}
+          <span class="offline-chip" title="Showing the last saved guest list">Stale data</span>
+          <button class="retry-btn" onclick={retry}>Retry</button>
         {/if}
         <button class="icon-btn" onclick={toggleFullscreen} aria-label="Toggle fullscreen">
           {#if isFullscreen}
@@ -414,21 +444,25 @@ import X from 'lucide-svelte/icons/x';
       />
 
       <!-- Bottom Sheet — translucent material with drag -->
-      {#if hasValidTable}
+      {#if layoutLoading && !layoutLoaded}
+        <div class="bottom-sheet sheet-content" role="status">Loading seating…</div>
+      {:else if layoutError && !layoutLoaded}
+        <div class="bottom-sheet sheet-content" role="alert">Seating could not load. <button class="retry-btn" onclick={retry}>Retry</button></div>
+      {:else if (layoutLoading || layoutError) && !hasValidTable}
+        <div class="bottom-sheet sheet-content" role="status">Seating is not current. <button class="retry-btn" onclick={retry}>Retry</button></div>
+      {:else if hasValidTable}
         <div
           class="bottom-sheet"
           class:sheet-dragging={sheetDragging}
           class:sheet-collapsed={sheetCollapsed}
-          style="transform: translateY({sheetY}px); transition: {sheetDragging || prefersReducedMotion ? 'none' : `transform 350ms ${SPRING_EASE}`};"
+          style="transform: translateY({sheetY}px); transition: {sheetDragging || sheetAnimFrame || prefersReducedMotion ? 'none' : `transform 350ms ${SPRING_EASE}`};"
         >
-          <div
-            class="sheet-handle"
-            onpointerdown={(e) => { onSheetPointerDown(e); }}
-            onpointermove={onSheetPointerMove}
-            onpointerup={(e) => { const wasDragging = sheetDragging; onSheetPointerUp(); if (!wasDragging && Math.abs(sheetY) < 5) backToSearch(); }}
-          >
-            <div class="handle-bar"></div>
-          </div>
+          <button type="button" class="sheet-handle" aria-label="Toggle seating details" aria-expanded={!sheetCollapsed}
+            onpointerdown={onSheetPointerDown} onpointermove={onSheetPointerMove} onpointerup={onSheetPointerUp}
+            onpointercancel={() => { sheetDragging = false; animateSheetTo(0, 0); }}
+            onclick={() => { if (!handleMoved) sheetCollapsed = !sheetCollapsed; }}>
+            <span class="handle-bar"></span>
+          </button>
 
           <div class="sheet-content">
             <div class="guest-header">
@@ -483,10 +517,13 @@ import X from 'lucide-svelte/icons/x';
         </div>
       {:else}
         <div class="bottom-sheet" style="transform: translateY({sheetY}px);">
-          <div class="sheet-handle" onpointerdown={onSheetPointerDown} onpointermove={onSheetPointerMove} onpointerup={onSheetPointerUp}>
-            <div class="handle-bar"></div>
-          </div>
-          <div class="sheet-content sheet-empty">
+          <button type="button" class="sheet-handle" aria-label="Toggle seating details" aria-expanded={!sheetCollapsed}
+            onpointerdown={onSheetPointerDown} onpointermove={onSheetPointerMove} onpointerup={onSheetPointerUp}
+            onpointercancel={() => { sheetDragging = false; animateSheetTo(0, 0); }}
+            onclick={() => { if (!handleMoved) sheetCollapsed = !sheetCollapsed; }}>
+            <span class="handle-bar"></span>
+          </button>
+          <div class="sheet-content sheet-empty" hidden={sheetCollapsed}>
             <MapPin class="icon-lg text-gray-500" />
             <h3 class="font-bold text-gray-900 mb-1">No Seat Assigned</h3>
             <p class="text-sm text-gray-500">Please see the reception desk for seating.</p>
@@ -554,7 +591,15 @@ import X from 'lucide-svelte/icons/x';
 
         <!-- Results -->
         <p class="sr-only" role="status">{query.trim() ? `${results.length} results` : ''}</p>
-        {#if results.length > 0}
+        {#if guestsLoading && !guestsLoaded && !allGuests.length}
+          <p role="status">Loading guests…</p>
+        {:else if guestsError && !allGuests.length}
+          <div class="empty-state" role="alert">
+            <p class="font-medium">Guest list could not load</p>
+            <p class="text-sm mt-1 text-gray-500">Check the connection, then try again.</p>
+            <button class="retry-btn" onclick={retry}>Retry</button>
+          </div>
+        {:else if results.length > 0}
           <div class="results-list">
             {#each results.slice(0, 8) as guest, i (guest.id)}
               <button
@@ -593,6 +638,11 @@ import X from 'lucide-svelte/icons/x';
             {#if results.length > 8}
               <p class="results-more">Showing 8 of {results.length}. Type more of your name.</p>
             {/if}
+          </div>
+        {:else if guestsLoading || guestsError || showingCachedGuests}
+          <div class="empty-state" role="status">
+            {guestsLoading ? 'Refreshing guests…' : 'No match in saved guests. Refresh to check current guests.'}
+            <button class="retry-btn" onclick={retry}>Retry</button>
           </div>
         {:else if query.trim().length > 0}
           <div class="empty-state">
@@ -679,8 +729,8 @@ import X from 'lucide-svelte/icons/x';
     letter-spacing: -0.01em;
     text-align: center;
     overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
+    overflow-wrap: anywhere;
+    white-space: normal;
     max-width: 100%;
   }
 
@@ -691,6 +741,8 @@ import X from 'lucide-svelte/icons/x';
   }
 
   .top-bar-right {
+    flex-wrap: wrap;
+    min-width: 0;
     flex: 1;
     display: flex;
     justify-content: flex-end;
@@ -767,7 +819,8 @@ import X from 'lucide-svelte/icons/x';
       inset 0 1px 0 rgba(255, 255, 255, 0.9);
     overflow: hidden;
     max-height: 45vh;
-    touch-action: none;
+    display: flex;
+    flex-direction: column;
   }
 
   @media (min-width: 640px) {
@@ -777,6 +830,7 @@ import X from 'lucide-svelte/icons/x';
       bottom: 1rem;
       width: 22rem;
       max-height: none;
+      max-width: calc(100% - 2rem);
       border-radius: 1.25rem;
     }
   }
@@ -801,6 +855,10 @@ import X from 'lucide-svelte/icons/x';
   }
 
   .sheet-handle {
+    width: 100%;
+    min-height: 44px;
+    flex-shrink: 0;
+    align-items: center;
     display: flex;
     justify-content: center;
     padding: 0.5rem 0 0.25rem;
@@ -820,6 +878,9 @@ import X from 'lucide-svelte/icons/x';
   }
 
   .sheet-content {
+    overflow-y: auto;
+    min-height: 0;
+    overflow-wrap: anywhere;
     padding: 0.25rem 1.25rem calc(1.25rem + env(safe-area-inset-bottom));
   }
 
@@ -857,7 +918,7 @@ import X from 'lucide-svelte/icons/x';
 
   .avatar-vip {
     background: #FDF8E8;
-    color: #B8941F;
+    color: var(--color-gold-ink);
     border: 2px solid #E8CC6E;
   }
 
@@ -876,8 +937,8 @@ import X from 'lucide-svelte/icons/x';
     font-weight: 600;
     color: #111827;
     overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
+    overflow-wrap: anywhere;
+    white-space: normal;
   }
 
   .guest-meta-row {
@@ -921,7 +982,7 @@ import X from 'lucide-svelte/icons/x';
   }
 
   .seat-block {
-    flex: 1 1 0;
+    flex: 1 1 5rem;
     min-width: 0;
     text-align: center;
   }
@@ -936,9 +997,8 @@ import X from 'lucide-svelte/icons/x';
   }
 
   .seat-value {
-    display: flex;
-    align-items: center;
-    justify-content: center;
+    overflow-wrap: anywhere;
+    display: block;
     min-height: 2.75rem;
     font-size: 1.25rem;
     font-weight: 800;
@@ -956,6 +1016,8 @@ import X from 'lucide-svelte/icons/x';
 
   @media (min-width: 640px) {
     .seat-value {
+    overflow-wrap: anywhere;
+    display: block;
       min-height: 3.25rem;
     }
 
@@ -966,7 +1028,7 @@ import X from 'lucide-svelte/icons/x';
 
   .vip-tag {
     font-size: 0.625rem;
-    color: #B8941F;
+    color: var(--color-gold-ink);
     font-weight: 600;
   }
 
@@ -1033,6 +1095,7 @@ import X from 'lucide-svelte/icons/x';
   }
 
   .search-content {
+    overflow-wrap: anywhere;
     width: 100%;
     max-width: 32rem;
     text-align: center;
@@ -1043,6 +1106,8 @@ import X from 'lucide-svelte/icons/x';
   }
 
   /* ---------- Hero ---------- */
+  /* Opaque surface keeps the small supporting text readable over any image. */
+  .empty-state, .results-more { background: white; border-radius: 1rem; padding: 1rem; }
   .search-hero {
     margin-bottom: 2rem;
   }
@@ -1321,8 +1386,8 @@ import X from 'lucide-svelte/icons/x';
     font-weight: 600;
     color: #111827;
     overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
+    overflow-wrap: anywhere;
+    white-space: normal;
     transition: color 150ms ease;
   }
 
@@ -1360,8 +1425,28 @@ import X from 'lucide-svelte/icons/x';
   /* ---------- Empty State ---------- */
   .empty-state {
     text-align: center;
-    padding: 2rem 0;
+    padding: 2rem 1rem;
     color: #6b7280;
+  }
+
+  .retry-btn {
+    display: block;
+    min-height: 2.75rem;
+    margin: 0.75rem auto 0;
+    padding: 0.5rem 1.5rem;
+    border: 0;
+    border-radius: 0.75rem;
+    background: #A11217;
+    color: white;
+    font-size: 0.9375rem;
+    font-weight: 700;
+    cursor: pointer;
+  }
+  .top-bar-right .retry-btn {
+    min-height: 2.25rem;
+    margin: 0;
+    padding: 0.25rem 0.875rem;
+    font-size: 0.8125rem;
   }
 
 
@@ -1396,7 +1481,7 @@ import X from 'lucide-svelte/icons/x';
 
   /* ---------- Utility ---------- */
   .text-red { color: #A11217; }
-  .text-gold { color: #D4AF37; }
+  .text-gold { color: var(--color-gold-ink); }
   .fill-gold { fill: #D4AF37; }
   .text-gray-500 { color: #6b7280; }
   .font-bold { font-weight: 700; }
@@ -1418,7 +1503,10 @@ import X from 'lucide-svelte/icons/x';
     .back-btn,
     .icon-btn {
       transition: none;
+      transform: none;
     }
+
+    .result-card:active, .back-btn:active, .icon-btn:active, .search-input-wrap:active { transform: none; }
 
     .sheet-collapsed {
       transition: none;

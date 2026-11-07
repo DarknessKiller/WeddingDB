@@ -44,7 +44,9 @@ func parseCursorID(s string) (uuid.UUID, error) {
 func (r *GuestRepo) ListByWedding(ctx context.Context, weddingID uuid.UUID, cursor string, limit int) ([]models.GuestRecord, int64, error) {
 	guests := make([]models.GuestRecord, 0)
 	var total int64
-	r.db.WithContext(ctx).Model(&models.GuestRecord{}).Where("wedding_id = ?", weddingID).Count(&total)
+	if err := r.db.WithContext(ctx).Model(&models.GuestRecord{}).Where("wedding_id = ?", weddingID).Count(&total).Error; err != nil {
+		return nil, 0, fmt.Errorf("count guests: %w", err)
+	}
 	q := r.db.WithContext(ctx).Where("wedding_id = ?", weddingID).Order("id ASC").Limit(limit + 1)
 	if cursor != "" {
 		cid, err := parseCursorID(cursor)
@@ -159,7 +161,7 @@ func (r *GuestRepo) UnassignByTable(ctx context.Context, weddingID, tableID uuid
 // ConditionalCheckIn atomically checks in a guest only if not already checked in,
 // and promotes their RSVP to confirmed. A non-empty notes value replaces the stored
 // notes (callers pass the already-joined text).
-// Returns ErrAlreadyCheckedIn if the guest was already checked in.
+// Returns ErrAlreadyCheckedIn if the guest was already checked in, gorm.ErrRecordNotFound if missing.
 func (r *GuestRepo) ConditionalCheckIn(ctx context.Context, id, weddingID uuid.UUID, now time.Time, notes string) error {
 	updates := map[string]any{"checked_in_at": now, "rsvp": "confirmed"}
 	if notes != "" {
@@ -172,6 +174,14 @@ func (r *GuestRepo) ConditionalCheckIn(ctx context.Context, id, weddingID uuid.U
 		return result.Error
 	}
 	if result.RowsAffected == 0 {
+		var n int64
+		if err := r.db.WithContext(ctx).Model(&models.GuestRecord{}).
+			Where("id = ? AND wedding_id = ?", id, weddingID).Count(&n).Error; err != nil {
+			return fmt.Errorf("check-in existence check: %w", err)
+		}
+		if n == 0 {
+			return gorm.ErrRecordNotFound
+		}
 		return ErrAlreadyCheckedIn
 	}
 	return nil

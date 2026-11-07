@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { goto } from '$app/navigation';
+
   import { addToast } from '$lib/stores';
   import Eye from 'lucide-svelte/icons/eye';
 import EyeOff from 'lucide-svelte/icons/eye-off';
@@ -9,6 +9,7 @@ import Mail from 'lucide-svelte/icons/mail';
 
   let name = $state('');
   let email = $state('');
+  let registered = $state(false);
   let password = $state('');
   let confirmPassword = $state('');
   let showPassword = $state(false);
@@ -41,7 +42,7 @@ import Mail from 'lucide-svelte/icons/mail';
         return;
       }
       addToast('Account created! Email mrdarknesskiller@protonmail.com to get your wedding set up.', 'success');
-      goto('/login', { replaceState: true });
+      registered = true;
     } catch {
       addToast('Network error', 'error');
     } finally {
@@ -60,7 +61,10 @@ import Mail from 'lucide-svelte/icons/mail';
       <p class="auth-subtitle">Create your account</p>
     </div>
 
-    <form onsubmit={handleRegister} class="auth-form">
+    {#if registered}
+      <div role="status"><h2>Account created</h2><p>Email <strong>mrdarknesskiller@protonmail.com</strong> to get your wedding set up.</p><a href="/login" class="auth-submit">Sign in</a></div>
+      {:else}
+      <form onsubmit={handleRegister} class="auth-form">
       <div class="form-field">
         <label for="name" class="form-label">Full Name</label>
         <input id="name" type="text" bind:value={name} required class="form-input" placeholder="Your name" />
@@ -116,6 +120,7 @@ import Mail from 'lucide-svelte/icons/mail';
         Already have an account? <a href="/login" class="auth-link">Sign in</a>
       </p>
     </form>
+      {/if}
 
     <div class="contact-note">
       <Mail size={14} />
@@ -126,12 +131,12 @@ import Mail from 'lucide-svelte/icons/mail';
 
 <style>
   .input-error {
-    border-color: #ef4444 !important;
+    border-color: #b91c1c !important;
     box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.1) !important;
   }
   .field-error {
     font-size: 0.75rem;
-    color: #ef4444;
+    color: #b91c1c;
     margin-top: 0.25rem;
   }
   .contact-note {

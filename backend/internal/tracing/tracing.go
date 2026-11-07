@@ -115,7 +115,9 @@ func Middleware(next http.Handler) http.Handler {
 			// Bare address (no port): record as-is.
 			reqAttrs = append(reqAttrs, semconv.ClientAddress(r.RemoteAddr))
 		}
-		if logBody && !strings.Contains(r.URL.Path, "/events") && isJSONContentType(r.Header.Get("Content-Type")) {
+		// Auth bodies carry passwords and tokens; never capture them.
+		captureBody := logBody && !strings.Contains(r.URL.Path, "/events") && !strings.HasPrefix(r.URL.Path, "/api/auth/")
+		if captureBody && isJSONContentType(r.Header.Get("Content-Type")) {
 			body, err := io.ReadAll(io.LimitReader(r.Body, maxBodyLog+1))
 			if err != nil {
 				log.Printf("warning: read request body for tracing: %v", err)
@@ -133,7 +135,7 @@ func Middleware(next http.Handler) http.Handler {
 		}
 		span.SetAttributes(reqAttrs...)
 		span.SetAttributes(attribute.Int("http.response.status_code", rec.status))
-		if logBody && rec.buf.Len() > 0 && isJSONContentType(rec.Header().Get("Content-Type")) {
+		if captureBody && rec.buf.Len() > 0 && isJSONContentType(rec.Header().Get("Content-Type")) {
 			addBodyEvent(span, "http.response.body", rec.buf.Bytes())
 		}
 		if rec.status >= 400 {
