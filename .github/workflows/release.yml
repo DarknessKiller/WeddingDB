@@ -9,8 +9,10 @@ permissions:
   packages: write
 
 jobs:
+  # Gate on master's CI definition, not the tagged commit's: a tag on a commit
+  # that weakened ci.yml must not publish an image.
   ci:
-    uses: ./.github/workflows/ci.yml
+    uses: DarknessKiller/WeddingDB/.github/workflows/ci.yml@master
     permissions:
       contents: read
 
@@ -21,6 +23,11 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
+
+      - name: Require the tag to be on master
+        run: |
+          git fetch --no-tags origin master
+          git merge-base --is-ancestor "$GITHUB_SHA" origin/master
 
       - name: Set up QEMU
         uses: docker/setup-qemu-action@99012661954931238ded8c8b007157a8430204e1 # v4.4.0

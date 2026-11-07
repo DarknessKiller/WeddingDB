@@ -2,7 +2,6 @@ package services
 
 import (
 	"context"
-	"os"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -19,10 +18,7 @@ import (
 // TestAssignSeat_PostgresConcurrent races 20 guests for one seat; exactly one
 // may win. Requires TEST_DATABASE_URL pointing at a *_test database.
 func TestAssignSeat_PostgresConcurrent(t *testing.T) {
-	dsn := os.Getenv("TEST_DATABASE_URL")
-	if dsn == "" {
-		t.Skip("set TEST_DATABASE_URL to run against Postgres")
-	}
+	dsn := pgDSN(t)
 	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{})
 	if err != nil {
 		t.Fatalf("postgres open: %v", err)

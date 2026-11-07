@@ -77,7 +77,7 @@ reverse_proxy localhost:8080 {
 On first start with an empty database, the app seeds a default admin:
 
 - **Email:** `admin@weddingdb.local`
-- **Password:** whatever you set in `ADMIN_BOOTSTRAP_PASSWORD` (required on first boot; `log.Fatal` if missing)
+- **Password:** whatever you set in `ADMIN_BOOTSTRAP_PASSWORD` (required on first boot; `log.Fatal` if missing or equal to the `.env.example` placeholder)
 - The seeded account is flagged `ForcePasswordChange`, so the first login asks for a new password.
 
 The bootstrap only runs when the admin table is empty. After the first admin exists, `ADMIN_BOOTSTRAP_PASSWORD` is ignored.
@@ -121,7 +121,7 @@ Run from the repository root. Both scripts discover Postgres with `docker compos
 
 Backups use private permissions and publish only after a nonempty, valid gzip dump completes. Override `BACKUP_DIR` or `DB_NAME` for backups if needed.
 
-Restore creates a new UTF8 database from `template0`, loads SQL in one transaction with errors fatal, then prints counts for `wedding_events`, `guest_records`, `banquet_tables`, and `admin_users`. Existing databases are refused. **`--force` drops and recreates the named database, permanently deleting its contents.** Use only after confirming the target and keeping a separate backup. Failed imports leave the new database for inspection; do not point the app at it until restore succeeds. Restore only trusted SQL dumps.
+Restore loads the dump into a scratch database (`<name>_restore`) first, in one transaction with errors fatal, then prints counts for `wedding_events`, `guest_records`, `banquet_tables`, and `admin_users`. Only a dump that loads completely is renamed into place; a failed import drops the scratch copy and leaves the target untouched. Existing databases are refused. **`--force` drops and recreates the named database, permanently deleting its contents.** Use only after confirming the target and keeping a separate backup. Restore only trusted SQL dumps.
 
 Uploads need a separate backup. Pause writes during database and uploads backups for a consistent pair:
 
@@ -131,7 +131,7 @@ mkdir -p backups
 ```
 
 Store backups off-host and rehearse restores before relying on them.
-- Restore: `gunzip -c backups/<file>.sql.gz | docker exec -i weddingdb-postgres-1 psql -U weddingdb weddingdb`
+- Restore: `./restore-db.sh backups/<file>.sql.gz weddingdb --force`
 
 ### Updating
 

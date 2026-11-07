@@ -9,7 +9,7 @@ import (
 	"weddingdb/internal/services"
 
 	"github.com/go-fuego/fuego"
-	"gorm.io/gorm"
+	"github.com/google/uuid"
 )
 
 type GuestHandler struct{ guestService *services.GuestService }
@@ -178,29 +178,27 @@ func (h *GuestHandler) Update(c fuego.ContextWithBody[GuestCreateRequest]) (any,
 	guest.Dietary = body.Dietary
 	guest.AngbaoAmt = body.AngbaoAmt
 	guest.GiftItem = body.GiftItem
+	// tableId not provided — preserve the existing seat assignment.
+	var tid *uuid.UUID
+	seatNum := 0
 	if body.TableID != nil {
 		if *body.TableID == "" {
 			// Explicitly clearing seat
 			guest.TableID = nil
 			guest.SeatNum = nil
 		} else {
-			tid, err := DecodeID(*body.TableID)
+			id, err := DecodeID(*body.TableID)
 			if err != nil {
 				return nil, fuego.BadRequestError{Title: "Invalid table ID"}
 			}
-			seatNum := 1
+			tid = &id
+			seatNum = 1
 			if body.SeatNum != nil {
 				seatNum = *body.SeatNum
 			}
-			if err := h.guestService.AssignSeat(ctx, guest.ID, wid, tid, seatNum); err != nil {
-				return nil, fuego.BadRequestError{Title: err.Error()}
-			}
-			guest.TableID = &tid
-			guest.SeatNum = &seatNum
 		}
 	}
-	// else: tableId not provided — preserve existing seat assignment
-	if err := h.guestService.Update(ctx, guest); err != nil {
+	if err := h.guestService.UpdateWithSeat(ctx, guest, tid, seatNum); err != nil {
 		if errors.Is(err, services.ErrGuestCapExceeded) {
 			return nil, fuego.BadRequestError{Title: err.Error()}
 		}
@@ -254,7 +252,7 @@ func (h *GuestHandler) CheckIn(c fuego.ContextWithBody[CheckInRequest]) (any, er
 		if errors.Is(err, services.ErrAlreadyCheckedIn) {
 			return nil, fuego.ConflictError{Title: "Guest already checked in by another receptionist"}
 		}
-		if errors.Is(err, gorm.ErrRecordNotFound) {
+		if errors.Is(err, services.ErrGuestNotFound) {
 			return nil, fuego.NotFoundError{Title: "Guest not found"}
 		}
 		return nil, err

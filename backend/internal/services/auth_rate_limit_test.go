@@ -81,6 +81,14 @@ func TestAuthRate_FailsOpenWithoutRedis(t *testing.T) {
 func TestRateLimit_KeyAlwaysHasTTL(t *testing.T) {
 	svc, mr := newTestAuthService(t, "test-secret")
 	ctx := context.Background()
+	// Seed both keys with no TTL. Incr-then-Expire-only-if-n==1 (the pre-fix
+	// implementation) would leave them permanent; only ExpireNX repairs them.
+	if err := mr.Set("ratelimit:login:acct:v@x.y:9.9.9.9", "0"); err != nil {
+		t.Fatalf("seed login key: %v", err)
+	}
+	if err := mr.Set("ratelimit:cred:ip:9.9.9.9", "0"); err != nil {
+		t.Fatalf("seed ip key: %v", err)
+	}
 	svc.RecordLoginFailure(ctx, "V@x.y ", "9.9.9.9")
 	if ttl := mr.TTL("ratelimit:login:acct:v@x.y:9.9.9.9"); ttl <= 0 {
 		t.Fatalf("failure counter TTL = %v, want > 0", ttl)

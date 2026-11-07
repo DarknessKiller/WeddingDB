@@ -135,12 +135,15 @@ func Init(env config.Env, version string) *App {
 		}
 	}
 
-	redisAddr := env.RedisURL
-	if redisAddr == "" {
-		redisAddr = "redis://localhost:6379"
+	redisURL := env.RedisURL
+	if redisURL == "" {
+		redisURL = "redis://localhost:6379"
 	}
-	redisAddr = strings.TrimPrefix(redisAddr, "redis://")
-	rdb := redis.NewClient(&redis.Options{Addr: redisAddr})
+	redisOpts, err := redis.ParseURL(redisURL)
+	if err != nil {
+		log.Fatal("Invalid REDIS_URL:", err)
+	}
+	rdb := redis.NewClient(redisOpts)
 	if err := rdb.Ping(context.Background()).Err(); err != nil {
 		log.Fatal("Failed to connect to Redis:", err)
 	}
@@ -176,7 +179,9 @@ func Init(env config.Env, version string) *App {
 	// Serve uploaded files (block directory listing)
 	server.Mux.HandleFunc("GET /uploads/{file}", func(w http.ResponseWriter, r *http.Request) {
 		file := r.PathValue("file")
-		if file == "" || strings.Contains(file, "/") || strings.Contains(file, "..") {
+		// Reject dotfiles too: the upload index (.hash-index) lives beside the
+		// images and is not a public asset.
+		if file == "" || strings.Contains(file, "/") || strings.Contains(file, "..") || strings.HasPrefix(file, ".") {
 			http.NotFound(w, r)
 			return
 		}
@@ -233,6 +238,9 @@ func Init(env config.Env, version string) *App {
 		password := os.Getenv("ADMIN_BOOTSTRAP_PASSWORD")
 		if password == "" {
 			log.Fatal("ADMIN_BOOTSTRAP_PASSWORD is required when creating the first admin")
+		}
+		if password == "replace-with-a-strong-one-time-password" {
+			log.Fatal("ADMIN_BOOTSTRAP_PASSWORD must not be the value shipped in .env.example; generate one with: openssl rand -hex 32")
 		}
 		hash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
 		if err != nil {

@@ -39,6 +39,12 @@ import X from 'lucide-svelte/icons/x';
   }
   function retry() {
     guestsError = false; layoutError = false; // show the loading state instead of a dead-looking error
+    // Kill the hung fetch first: loadGuests is a no-op while one is in flight.
+    // Clear the guard here too — the aborted fetch's finally has not run yet.
+    pageAbort.abort();
+    pageAbort = new AbortController();
+    guestsRequest++; // retire the in-flight load's finally block
+    guestsInFlight = false;
     loadGuests(pageAbort.signal); loadLayout(); loadKioskConfig();
   }
   let query = $state('');
@@ -62,18 +68,24 @@ import X from 'lucide-svelte/icons/x';
   // Guest list polling: kiosks run for hours, so re-fetch every 60s.
   let pollTimer: ReturnType<typeof setInterval> | undefined;
   let guestsInFlight = false;
+  // Token identifying the newest loadGuests call. A superseded call (retry
+  // aborted it) must not clear the flags of the one that replaced it.
+  let guestsRequest = 0;
   async function loadGuests(signal?: AbortSignal) {
     if (guestsInFlight) return; // skip while a fetch is still in flight
     guestsInFlight = true;
     guestsLoading = true;
+    const req = ++guestsRequest;
     const wid = page.params.wid ?? '';
     try {
       allGuests = await publicListGuests({ signal });
+      if (req !== guestsRequest) return;
       cacheGuests(wid, allGuests);
       showingCachedGuests = false;
       guestsLoaded = true;
       guestsError = false;
-    } catch {
+    } catch (e) {
+      if (signal?.aborted || req !== guestsRequest) return; // cancelled; not a load failure
       guestsError = true;
       showingCachedGuests = guestsLoaded;
       if (!allGuests.length) {
@@ -83,7 +95,9 @@ import X from 'lucide-svelte/icons/x';
           showingCachedGuests = true;
         }
       }
-    } finally { guestsInFlight = false; guestsLoading = false; }
+    } finally {
+      if (req === guestsRequest) { guestsInFlight = false; guestsLoading = false; }
+    }
   }
 
   // Refetched with the guest poll so a settings change reaches the kiosk

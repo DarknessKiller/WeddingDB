@@ -19,6 +19,19 @@ COMPOSE_CONTAINER=$(docker compose ps -q postgres) || COMPOSE_CONTAINER=
 CONTAINER=${COMPOSE_CONTAINER:-${CONTAINER:-}}
 : "${CONTAINER:?No postgres container found; set CONTAINER if Compose is unavailable}"
 DB_USER=${DB_USER:-weddingdb}
+SCRATCH="${DB_NAME}_restore"
+# Never leave a half-restored scratch database behind.
+trap 'docker exec "$CONTAINER" dropdb -U "$DB_USER" --if-exists -- "$SCRATCH" >/dev/null 2>&1 || true' EXIT
+docker exec "$CONTAINER" dropdb -U "$DB_USER" --if-exists -- "$SCRATCH"
+docker exec "$CONTAINER" createdb -U "$DB_USER" -E UTF8 -T template0 -- "$SCRATCH"
+# Load into the scratch database first: gzip -t cannot prove the SQL applies,
+# and dropping the live database for an unloadable dump loses it.
+gzip -dc -- "$BACKUP_FILE" | docker exec -i "$CONTAINER" psql -X -U "$DB_USER" -d "$SCRATCH" -v ON_ERROR_STOP=1 --single-transaction
+docker exec "$CONTAINER" psql -X -U "$DB_USER" -d "$SCRATCH" -v ON_ERROR_STOP=1 -c "
+SELECT 'wedding_events' AS table_name, count(*) AS rows FROM wedding_events
+UNION ALL SELECT 'guest_records', count(*) FROM guest_records
+UNION ALL SELECT 'banquet_tables', count(*) FROM banquet_tables
+UNION ALL SELECT 'admin_users', count(*) FROM admin_users;"
 EXISTS=$(docker exec "$CONTAINER" psql -X -U "$DB_USER" -d postgres -v ON_ERROR_STOP=1 -Atc "SELECT 1 FROM pg_database WHERE datname = '$DB_NAME'")
 if [[ $EXISTS == 1 ]]; then
     if [[ ${3:-} != --force ]]; then
@@ -27,10 +40,5 @@ if [[ $EXISTS == 1 ]]; then
     fi
     docker exec "$CONTAINER" dropdb -U "$DB_USER" -- "$DB_NAME"
 fi
-docker exec "$CONTAINER" createdb -U "$DB_USER" -E UTF8 -T template0 -- "$DB_NAME"
-gzip -dc -- "$BACKUP_FILE" | docker exec -i "$CONTAINER" psql -X -U "$DB_USER" -d "$DB_NAME" -v ON_ERROR_STOP=1 --single-transaction
-docker exec "$CONTAINER" psql -X -U "$DB_USER" -d "$DB_NAME" -v ON_ERROR_STOP=1 -c "
-SELECT 'wedding_events' AS table_name, count(*) AS rows FROM wedding_events
-UNION ALL SELECT 'guest_records', count(*) FROM guest_records
-UNION ALL SELECT 'banquet_tables', count(*) FROM banquet_tables
-UNION ALL SELECT 'admin_users', count(*) FROM admin_users;"
+# Swap the verified scratch database into place.
+docker exec "$CONTAINER" psql -X -U "$DB_USER" -d postgres -v ON_ERROR_STOP=1 -c "ALTER DATABASE \"$SCRATCH\" RENAME TO \"$DB_NAME\""

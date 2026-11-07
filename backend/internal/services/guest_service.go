@@ -63,8 +63,13 @@ func (s *GuestService) createGuestTx(ctx context.Context, tx *gorm.DB, g *models
 	if g.Pax < 1 {
 		g.Pax = 1
 	}
+	// Wedding row first, table row second: every write path locks in this
+	// order, so the two lock sets cannot deadlock.
 	total, err := s.guestCountLocked(tx, g.WeddingID)
 	if err != nil {
+		return err
+	}
+	if err := checkSeatNotTaken(ctx, tx, g); err != nil {
 		return err
 	}
 	if total+g.Pax > MaxGuestsPerWedding {
@@ -83,6 +88,9 @@ func (s *GuestService) updateGuestTx(ctx context.Context, tx *gorm.DB, g *models
 	}
 	total, err := s.guestCountLocked(tx, g.WeddingID)
 	if err != nil {
+		return err
+	}
+	if err := checkSeatNotTaken(ctx, tx, g); err != nil {
 		return err
 	}
 	var current models.GuestRecord
@@ -150,46 +158,78 @@ func (s *GuestService) Search(ctx context.Context, weddingID uuid.UUID, query st
 	return s.guestRepo.SearchByWedding(ctx, weddingID, query)
 }
 
+// checkSeatTx validates a seat assignment inside tx and returns the table row
+// lock. Every write path that sets a seat calls this, so all of them serialize
+// on the same table row and share the capacity/overlap rules.
+// The row lock is Postgres-only; sqlite (tests) has one writer.
+func checkSeatTx(ctx context.Context, tx *gorm.DB, weddingID, tableID uuid.UUID, guestID uuid.UUID, pax, seatNum int) error {
+	if tx.Name() == "postgres" {
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Select("id").
+			Where("id = ? AND wedding_id = ?", tableID, weddingID).First(&models.BanquetTable{}).Error; err != nil {
+			return errors.New("table not found")
+		}
+	}
+	table, err := repository.NewTableRepo(tx).FindByID(ctx, tableID, weddingID)
+	if err != nil {
+		return errors.New("table not found")
+	}
+	if pax < 1 {
+		return errors.New("guest pax must be at least 1")
+	}
+	if seatNum < 1 || seatNum+pax-1 > table.Capacity {
+		return errors.New("seat range exceeds table capacity")
+	}
+	existing, err := repository.NewGuestRepo(tx).FindByTable(ctx, weddingID, tableID)
+	if err != nil {
+		return err
+	}
+	guestEnd := seatNum + pax - 1
+	for _, e := range existing {
+		if e.ID == guestID || e.SeatNum == nil {
+			continue
+		}
+		eEnd := *e.SeatNum + e.Pax - 1
+		if seatNum <= eEnd && *e.SeatNum <= guestEnd {
+			return fmt.Errorf("%w: \"%s\" (seats %d-%d)", ErrSeatOverlap, e.Name, *e.SeatNum, eEnd)
+		}
+	}
+	return nil
+}
+
+// checkSeatNotTaken enforces the seat rules for a whole guest row: a table
+// without a seat is a plain table assignment and needs no lock, while a
+// table+seat pair goes through the same locked check as AssignSeat.
+func checkSeatNotTaken(ctx context.Context, tx *gorm.DB, g *models.GuestRecord) error {
+	if g.TableID == nil {
+		return nil
+	}
+	if g.SeatNum == nil {
+		// Table without a seat: only the wedding-scoped ownership check applies,
+		// but a cross-wedding table id must still be rejected.
+		if _, err := repository.NewTableRepo(tx).FindByID(ctx, *g.TableID, g.WeddingID); err != nil {
+			return errors.New("table not found")
+		}
+		return nil
+	}
+	return checkSeatTx(ctx, tx, g.WeddingID, *g.TableID, g.ID, g.Pax, *g.SeatNum)
+}
+
 func (s *GuestService) AssignSeat(ctx context.Context, guestID, weddingID, tableID uuid.UUID, seatNum int) error {
 	var guest *models.GuestRecord
 	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		txGuestRepo := repository.NewGuestRepo(tx)
-		// Lock the table row so concurrent assignments to it serialize.
-		// The row lock is Postgres-only; sqlite (tests) has one writer.
-		if tx.Name() == "postgres" {
-			if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Select("id").
-				Where("id = ? AND wedding_id = ?", tableID, weddingID).First(&models.BanquetTable{}).Error; err != nil {
-				return errors.New("table not found")
-			}
-		}
 		var err error
 		guest, err = txGuestRepo.FindByID(ctx, guestID, weddingID)
 		if err != nil {
 			return err
 		}
-		table, err := repository.NewTableRepo(tx).FindByID(ctx, tableID, weddingID)
-		if err != nil {
-			return errors.New("table not found")
-		}
-		if guest.Pax < 1 {
-			return errors.New("guest pax must be at least 1")
-		}
-		if seatNum < 1 || seatNum+guest.Pax-1 > table.Capacity {
-			return errors.New("seat range exceeds table capacity")
-		}
-		existing, err := txGuestRepo.FindByTable(ctx, weddingID, tableID)
-		if err != nil {
+		// Wedding row lock keeps the lock order identical to create/update, so
+		// a concurrent seat move and import cannot deadlock each other.
+		if _, err := s.guestCountLocked(tx, weddingID); err != nil {
 			return err
 		}
-		guestEnd := seatNum + guest.Pax - 1
-		for _, e := range existing {
-			if e.ID == guestID || e.SeatNum == nil {
-				continue
-			}
-			eEnd := *e.SeatNum + e.Pax - 1
-			if seatNum <= eEnd && *e.SeatNum <= guestEnd {
-				return errors.New("seat overlaps with another guest")
-			}
+		if err := checkSeatTx(ctx, tx, weddingID, tableID, guestID, guest.Pax, seatNum); err != nil {
+			return err
 		}
 		guest.TableID = &tableID
 		guest.SeatNum = &seatNum
@@ -199,6 +239,25 @@ func (s *GuestService) AssignSeat(ctx context.Context, guestID, weddingID, table
 		return err
 	}
 	s.publishEvent("seat_assign", guest, weddingID)
+	return nil
+}
+
+// UpdateWithSeat saves edited fields and, when tableID is set, moves the guest
+// to that table in the same transaction — a failed seat check leaves the
+// fields untouched and a failed field write leaves the seat where it was.
+// A nil tableID preserves the current seat assignment.
+func (s *GuestService) UpdateWithSeat(ctx context.Context, g *models.GuestRecord, tableID *uuid.UUID, seatNum int) error {
+	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if tableID != nil {
+			g.TableID = tableID
+			g.SeatNum = &seatNum
+		}
+		return s.updateGuestTx(ctx, tx, g, false)
+	})
+	if err != nil {
+		return err
+	}
+	s.publishEvent("update", g, g.WeddingID)
 	return nil
 }
 
@@ -221,6 +280,9 @@ func (s *GuestService) CheckIn(ctx context.Context, id, weddingID uuid.UUID, not
 	if err := s.guestRepo.ConditionalCheckIn(ctx, id, weddingID, now, updatedNotes); err != nil {
 		if errors.Is(err, repository.ErrAlreadyCheckedIn) {
 			return ErrAlreadyCheckedIn
+		}
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return ErrGuestNotFound
 		}
 		return err
 	}
@@ -280,15 +342,15 @@ func (s *GuestService) BulkCreate(ctx context.Context, guests []models.GuestReco
 		if total+incoming > MaxGuestsPerWedding {
 			return guestCapError(total, incoming)
 		}
-		existing := make(map[uuid.UUID][]models.GuestRecord)
-		// Cache table lookups for this batch
-		tableCache := make(map[uuid.UUID]*models.BanquetTable)
+		// Cache table ownership checks for this batch. Seat rows are row-locked
+		// by checkSeatTx, so an import serializes on the same rows as AssignSeat.
+		checked := make(map[uuid.UUID]bool)
 		for i := range guests {
 			g := &guests[i]
 			if g.Pax < 1 {
 				g.Pax = 1
 			}
-			if g.TableID == nil || g.SeatNum == nil {
+			if g.TableID == nil {
 				if err := txGuestRepo.Create(ctx, g); err != nil {
 					return err
 				}
@@ -297,36 +359,26 @@ func (s *GuestService) BulkCreate(ctx context.Context, guests []models.GuestReco
 				continue
 			}
 			tid := *g.TableID
-			// Validate table exists and belongs to this wedding
-			if _, ok := tableCache[tid]; !ok {
-				t, err := txTableRepo.FindByID(ctx, tid, g.WeddingID)
-				if err != nil {
-					return fmt.Errorf("table %s not found", tid.String())
+			// A table without a seat is a plain table assignment; still verify
+			// ownership so an import cannot attach another wedding's table.
+			if g.SeatNum == nil {
+				if !checked[tid] {
+					if _, err := txTableRepo.FindByID(ctx, tid, g.WeddingID); err != nil {
+						return fmt.Errorf("table %s not found", tid.String())
+					}
+					checked[tid] = true
 				}
-				tableCache[tid] = t
-			}
-			table := tableCache[tid]
-			guestEnd := *g.SeatNum + g.Pax - 1
-			if *g.SeatNum < 1 || guestEnd > table.Capacity {
-				return fmt.Errorf("seat %d-%d on table %s exceeds capacity %d", *g.SeatNum, guestEnd, table.Name, table.Capacity)
-			}
-			if _, ok := existing[tid]; !ok {
-				rows, err := txGuestRepo.FindByTable(ctx, g.WeddingID, tid)
-				if err != nil {
+				if err := txGuestRepo.Create(ctx, g); err != nil {
 					return err
 				}
-				existing[tid] = rows
+				events = append(events, pendingEvent{"create", g})
+				created++
+				continue
 			}
-			for _, e := range existing[tid] {
-				if e.SeatNum == nil {
-					continue
-				}
-				eEnd := *e.SeatNum + e.Pax - 1
-				if *g.SeatNum <= eEnd && *e.SeatNum <= guestEnd {
-					return fmt.Errorf("seat %d-%d on table overlaps with \"%s\" (seats %d-%d)", *g.SeatNum, guestEnd, e.Name, *e.SeatNum, eEnd)
-				}
+			if err := checkSeatTx(ctx, tx, g.WeddingID, tid, uuid.Nil, g.Pax, *g.SeatNum); err != nil {
+				return err
 			}
-			existing[tid] = append(existing[tid], *g)
+			checked[tid] = true
 			if err := txGuestRepo.Create(ctx, g); err != nil {
 				return err
 			}
@@ -494,6 +546,9 @@ func (s *GuestService) applySyncMutation(ctx context.Context, weddingID uuid.UUI
 			}
 		}
 		g.SeatNum = m.Payload.SeatNum
+		if g.TableID == nil {
+			g.SeatNum = nil // a seat without a table is not a valid assignment
+		}
 		if err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 			return s.createGuestTx(ctx, tx, g, true)
 		}); err != nil {
