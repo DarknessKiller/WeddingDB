@@ -978,12 +978,6 @@ import X from 'lucide-svelte/icons/x';
     line-height: 1.4;
   }
 
-  @media (min-width: 640px) {
-    .guest-table-badge {
-      display: none;
-    }
-  }
-
   /* ---------- Seat Display ---------- */
   .seat-display {
     display: flex;
