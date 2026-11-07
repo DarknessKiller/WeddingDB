@@ -181,6 +181,12 @@ import X from 'lucide-svelte/icons/x';
   let selectedTable = $derived(selectedGuest?.tableId ? tables.find(t => t.id === selectedGuest!.tableId) ?? null : null);
   let selectedTableName = $derived(selectedTable?.name ?? selectedGuest?.tableId ?? '—');
   let hasValidTable = $derived(selectedGuest?.tableId != null && selectedTable !== null);
+  // "Table " prefix for the badge, skipped when the name already carries it.
+  let selectedTableLabel = $derived(
+    /^table\b/i.test(selectedTableName.trim()) ? selectedTableName : `Table ${selectedTableName}`
+  );
+  // Long names drop to a smaller size so they wrap to at most two lines.
+  let selectedTableLong = $derived(selectedTableName.length > 12);
 
   let idleTimer: ReturnType<typeof setTimeout> | undefined;
   function armIdleReset() {
@@ -494,7 +500,7 @@ import X from 'lucide-svelte/icons/x';
                   {/if}
                 </div>
                 <div class="guest-meta-row">
-                  <span class="guest-table-badge">Table {selectedTableName}</span>
+                  <span class="guest-table-badge">{selectedTableLabel}</span>
                 </div>
               </div>
             </div>
@@ -503,7 +509,7 @@ import X from 'lucide-svelte/icons/x';
               <div class="seat-display" in:fly={{ y: 12, duration: 200 }}>
                 <div class="seat-block">
                   <div class="seat-label">Table</div>
-                  <div class="seat-value seat-value-large seat-value-accent">{selectedTableName}</div>
+                  <div class="seat-value seat-value-accent" class:seat-value-large={!selectedTableLong} class:seat-value-long={selectedTableLong}>{selectedTableName}</div>
                   {#if selectedTable?.isVip}
                     <span class="vip-tag">★ VIP</span>
                   {/if}
@@ -1024,21 +1030,18 @@ import X from 'lucide-svelte/icons/x';
     font-size: 2rem;
   }
 
+  /* Long table names keep the same shape but fit two lines instead of four. */
+  .seat-value-long {
+    font-size: 1.125rem;
+    line-height: 1.3;
+  }
+
   .seat-value-accent {
     color: #A11217;
   }
 
-  @media (min-width: 640px) {
-    .seat-value {
-    overflow-wrap: anywhere;
-    display: block;
-      min-height: 3.25rem;
-    }
-
-    .seat-value-large {
-      font-size: 2.5rem;
-    }
-  }
+  /* Desktop keeps the phone typography: the 22rem card is about the same
+     width as a phone sheet, and a larger value wraps "Table 1" onto two lines. */
 
   .vip-tag {
     font-size: 0.625rem;
@@ -1062,12 +1065,6 @@ import X from 'lucide-svelte/icons/x';
     font-size: 0.6875rem;
     color: #6b7280;
     padding-top: 0.25rem;
-  }
-
-  @media (min-width: 640px) {
-    .sheet-hint {
-      display: none;
-    }
   }
 
   /* ---------- Search View ---------- */
