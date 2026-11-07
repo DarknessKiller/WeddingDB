@@ -37,7 +37,10 @@ import X from 'lucide-svelte/icons/x';
     } catch { layoutError = true; }
     finally { layoutLoading = false; }
   }
-  function retry() { loadGuests(pageAbort.signal); loadLayout(); loadKioskConfig(); }
+  function retry() {
+    guestsError = false; layoutError = false; // show the loading state instead of a dead-looking error
+    loadGuests(pageAbort.signal); loadLayout(); loadKioskConfig();
+  }
   let query = $state('');
   let searchInput = $state<HTMLInputElement>();
   let allGuests = $state<Guest[]>([]);
@@ -406,7 +409,7 @@ import X from 'lucide-svelte/icons/x';
       <div class="top-bar-right">
         {#if showingCachedGuests || (guestsError && guestsLoaded) || (layoutError && layoutLoaded)}
           <span class="offline-chip" title="Showing the last saved guest list">Stale data</span>
-          <button onclick={retry}>Retry</button>
+          <button class="retry-btn" onclick={retry}>Retry</button>
         {/if}
         <button class="icon-btn" onclick={toggleFullscreen} aria-label="Toggle fullscreen">
           {#if isFullscreen}
@@ -444,9 +447,9 @@ import X from 'lucide-svelte/icons/x';
       {#if layoutLoading && !layoutLoaded}
         <div class="bottom-sheet sheet-content" role="status">Loading seating…</div>
       {:else if layoutError && !layoutLoaded}
-        <div class="bottom-sheet sheet-content" role="alert">Seating could not load. <button onclick={retry}>Retry</button></div>
+        <div class="bottom-sheet sheet-content" role="alert">Seating could not load. <button class="retry-btn" onclick={retry}>Retry</button></div>
       {:else if (layoutLoading || layoutError) && !hasValidTable}
-        <div class="bottom-sheet sheet-content" role="status">Seating is not current. <button onclick={retry}>Retry</button></div>
+        <div class="bottom-sheet sheet-content" role="status">Seating is not current. <button class="retry-btn" onclick={retry}>Retry</button></div>
       {:else if hasValidTable}
         <div
           class="bottom-sheet"
@@ -591,7 +594,11 @@ import X from 'lucide-svelte/icons/x';
         {#if guestsLoading && !guestsLoaded && !allGuests.length}
           <p role="status">Loading guests…</p>
         {:else if guestsError && !allGuests.length}
-          <p role="alert">Guest list could not load. <button onclick={retry}>Retry</button></p>
+          <div class="empty-state" role="alert">
+            <p class="font-medium">Guest list could not load</p>
+            <p class="text-sm mt-1 text-gray-500">Check the connection, then try again.</p>
+            <button class="retry-btn" onclick={retry}>Retry</button>
+          </div>
         {:else if results.length > 0}
           <div class="results-list">
             {#each results.slice(0, 8) as guest, i (guest.id)}
@@ -633,7 +640,10 @@ import X from 'lucide-svelte/icons/x';
             {/if}
           </div>
         {:else if guestsLoading || guestsError || showingCachedGuests}
-          <div class="empty-state" role="status">{guestsLoading ? 'Refreshing guests…' : 'No match in saved guests. Refresh to check current guests.'} <button onclick={retry}>Retry</button></div>
+          <div class="empty-state" role="status">
+            {guestsLoading ? 'Refreshing guests…' : 'No match in saved guests. Refresh to check current guests.'}
+            <button class="retry-btn" onclick={retry}>Retry</button>
+          </div>
         {:else if query.trim().length > 0}
           <div class="empty-state">
             <Search class="icon-xl opacity-30" />
@@ -808,7 +818,7 @@ import X from 'lucide-svelte/icons/x';
       0 -1px 4px rgba(0, 0, 0, 0.04),
       inset 0 1px 0 rgba(255, 255, 255, 0.9);
     overflow: hidden;
-    max-height: 65dvh;
+    max-height: 45vh;
     display: flex;
     flex-direction: column;
   }
@@ -819,7 +829,7 @@ import X from 'lucide-svelte/icons/x';
       right: 1rem;
       bottom: 1rem;
       width: 22rem;
-      max-height: 80dvh;
+      max-height: none;
       max-width: calc(100% - 2rem);
       border-radius: 1.25rem;
     }
@@ -1096,16 +1106,14 @@ import X from 'lucide-svelte/icons/x';
   }
 
   /* ---------- Hero ---------- */
-  /* Opaque surface keeps small text readable over any uploaded image. */
-  .search-hero, .empty-state, .results-more { background: white; border-radius: 1rem; padding: 1rem; }
+  /* Opaque surface keeps the small supporting text readable over any image. */
+  .empty-state, .results-more { background: white; border-radius: 1rem; padding: 1rem; }
   .search-hero {
     margin-bottom: 2rem;
   }
 
   @media (min-width: 640px) {
-    /* Opaque surface keeps small text readable over any uploaded image. */
-  .search-hero, .empty-state, .results-more { background: white; border-radius: 1rem; padding: 1rem; }
-  .search-hero {
+    .search-hero {
       margin-bottom: 2.5rem;
     }
   }
@@ -1417,8 +1425,28 @@ import X from 'lucide-svelte/icons/x';
   /* ---------- Empty State ---------- */
   .empty-state {
     text-align: center;
-    padding: 2rem 0;
+    padding: 2rem 1rem;
     color: #6b7280;
+  }
+
+  .retry-btn {
+    display: block;
+    min-height: 2.75rem;
+    margin: 0.75rem auto 0;
+    padding: 0.5rem 1.5rem;
+    border: 0;
+    border-radius: 0.75rem;
+    background: #A11217;
+    color: white;
+    font-size: 0.9375rem;
+    font-weight: 700;
+    cursor: pointer;
+  }
+  .top-bar-right .retry-btn {
+    min-height: 2.25rem;
+    margin: 0;
+    padding: 0.25rem 0.875rem;
+    font-size: 0.8125rem;
   }
 
 
