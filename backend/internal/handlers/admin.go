@@ -204,6 +204,11 @@ func (h *AdminHandler) ResetPassword(c fuego.ContextWithBody[ResetPasswordReques
 	if err != nil {
 		return nil, fuego.BadRequestError{Title: "Invalid ID"}
 	}
+	// Resetting your own password here would skip the current-password proof;
+	// account owners use /api/auth/change-password instead.
+	if id == AdminIDFromContext(ctx) {
+		return nil, fuego.BadRequestError{Title: "Use change-password to change your own password"}
+	}
 	admin, err := h.adminRepo.FindByID(ctx, id)
 	if err != nil {
 		return nil, fuego.NotFoundError{Title: "User not found"}

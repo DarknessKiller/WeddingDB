@@ -13,9 +13,9 @@ Debugging request issues needs visibility across frontend → backend → DB. Tr
 - Drop-on-failure: exporter retries disabled; batch processor queue is bounded (2048 spans) and drops when full. Down Jaeger costs nothing but lost spans, no memory balloon.
 - Parent-based AlwaysSample: root spans sample, upstream `traceparent` decides continuation. W3C tracecontext only.
 - Hand-rolled net/http middleware (not otelhttp, one dep less) registered before CORS/proxy middleware so preflights trace too. Span named by route pattern (`GET /api/weddings/{wid}/guests`) set post-dispatch, fallback `METHOD path`.
-- Optional body capture with `OTEL_LOG_BODY=all`: JSON request/response bodies recorded on the span, capped at 8KB, SSE endpoints excluded. Bodies can contain passwords; off by default.
+- Optional body capture with `OTEL_LOG_BODY=all`: JSON request/response bodies recorded on the span, capped at 8KB, SSE endpoints and `/api/auth` routes excluded. Password fields are masked; bodies can still contain PII, so capture is off by default.
 - GORM callback plugin: `gorm.query` span per query with `db.system.name=postgresql`, rows affected, status. Statement text only with `OTEL_LOG_SQL=all` (SQL can contain PII).
-- Retention intent is 1 month; compose Jaeger uses memory storage and does not retain. Production storage choice deferred — Jaeger with badger storage or ELGC is the upgrade path.
+- Compose Jaeger uses Badger storage in the `weddingdb_jgdata` volume, so traces persist across restarts. Retention intent is 1 month; no explicit retention policy is configured.
 
 ## Alternatives considered
 
@@ -28,7 +28,7 @@ Debugging request issues needs visibility across frontend → backend → DB. Tr
 
 - New env vars: `OTEL_ENABLED`, `OTEL_EXPORTER_OTLP_ENDPOINT` (optional), `OTEL_LOG_SQL` (optional), `OTEL_LOG_BODY` (optional).
 - Tracing shutdown flushes on SIGINT/SIGTERM before exit.
-- Memory storage loses all spans on Jaeger restart; fine for local debugging, revisit for production.
+- Badger persists spans across Jaeger restarts; deleting the `weddingdb_jgdata` volume deletes traces.
 
 ## Status
 

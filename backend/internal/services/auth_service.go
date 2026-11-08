@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"log/slog"
 	"strings"
+	"sync"
 	"time"
 	"weddingdb/internal/models"
 	"weddingdb/internal/repository"
@@ -16,6 +17,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/redis/go-redis/v9"
 	"golang.org/x/crypto/bcrypt"
+	"gorm.io/gorm"
 )
 
 type AccessClaims struct {
@@ -60,12 +62,25 @@ type LoginResult struct {
 	ForcePasswordChange bool
 }
 
+// compareHash is bcrypt.CompareHashAndPassword; tests swap it to count calls.
+var compareHash = bcrypt.CompareHashAndPassword
+
+// dummyHash lets unknown-email logins spend the same bcrypt time as real ones.
+var dummyHash = sync.OnceValue(func() []byte {
+	h, err := bcrypt.GenerateFromPassword([]byte("dummy-password"), bcrypt.DefaultCost)
+	if err != nil {
+		panic(fmt.Sprintf("dummy bcrypt hash: %v", err))
+	}
+	return h
+})
+
 func (s *AuthService) Login(ctx context.Context, email, password string) (*LoginResult, error) {
 	admin, err := s.adminRepo.FindByEmail(ctx, email)
 	if err != nil {
+		compareHash(dummyHash(), []byte(password)) //nolint:errcheck // timing equalizer only; result is always a mismatch
 		return nil, errors.New("invalid credentials")
 	}
-	if err := bcrypt.CompareHashAndPassword([]byte(admin.Password), []byte(password)); err != nil {
+	if err := compareHash([]byte(admin.Password), []byte(password)); err != nil {
 		return nil, errors.New("invalid credentials")
 	}
 	accessToken, err := s.generateAccessToken(ctx, admin, nil)
@@ -110,13 +125,19 @@ func (s *AuthService) sessionResult(ctx context.Context, admin *models.AdminUser
 func (s *AuthService) SelectWedding(ctx context.Context, adminID uuid.UUID, weddingID uuid.UUID) (string, error) {
 	admin, err := s.adminRepo.FindByID(ctx, adminID)
 	if err != nil {
-		return "", errors.New("admin not found")
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return "", ErrAdminNotFound
+		}
+		return "", fmt.Errorf("select wedding: find admin: %w", err)
 	}
 	// Verify access
 	if admin.Role != "admin" {
 		hasAccess, err := s.adminRepo.HasWeddingAccess(ctx, adminID, weddingID)
-		if err != nil || !hasAccess {
-			return "", errors.New("no access to this wedding")
+		if err != nil {
+			return "", fmt.Errorf("select wedding: check access: %w", err)
+		}
+		if !hasAccess {
+			return "", ErrNoWeddingAccess
 		}
 		// Persist the wedding scope onto the caller's refresh token(s) so that
 		// Refresh re-mints a scoped access token. Without this, the first
@@ -243,24 +264,50 @@ func (s *AuthService) CheckAuthRate(ctx context.Context, ip string) error {
 
 // CheckLoginAccountRate locks one account after 25 failed logins per 15 min,
 // scaled to the 25/s per-IP allowance.
-func (s *AuthService) CheckLoginAccountRate(ctx context.Context, email string) error {
-	return s.checkRateLimit(ctx, "login:acct:"+strings.ToLower(email), 25, 15*time.Minute)
+func (s *AuthService) CheckLoginAccountRate(ctx context.Context, email, ip string) error {
+	return s.checkRateLimit(ctx, loginFailKey(email, ip), 25, 15*time.Minute)
 }
 
-func (s *AuthService) RecordLoginFailure(ctx context.Context, email string) {
-	s.recordFailure(ctx, "login:acct:"+strings.ToLower(email), 15*time.Minute)
+// loginFailKey scopes lockout to email+IP so an attacker cannot lock a victim out from elsewhere.
+func loginFailKey(email, ip string) string {
+	return "login:acct:" + strings.ToLower(strings.TrimSpace(email)) + ":" + ip
+}
+
+// CheckCredentialIPRate caps login/register attempts at 10 per minute per IP.
+func (s *AuthService) CheckCredentialIPRate(ctx context.Context, ip string) error {
+	return s.rateLimit(ctx, "cred:ip:"+ip, 10, time.Minute)
+}
+
+func (s *AuthService) RecordLoginFailure(ctx context.Context, email, ip string) {
+	s.recordFailure(ctx, loginFailKey(email, ip), 15*time.Minute)
+}
+
+// CheckPublicRate caps public kiosk endpoints at 25 req/s per client IP.
+func (s *AuthService) CheckPublicRate(ctx context.Context, ip string) error {
+	key := fmt.Sprintf("public:ip:%s:%d", ip, time.Now().Unix())
+	return s.rateLimit(ctx, key, 25, time.Second)
+}
+
+// incrWindow atomically bumps key and sets its TTL on first hit (MULTI/EXEC),
+// so a key can never be left without expiry.
+func (s *AuthService) incrWindow(ctx context.Context, key string, window time.Duration) (int64, error) {
+	var incr *redis.IntCmd
+	_, err := s.redisClient.TxPipelined(ctx, func(p redis.Pipeliner) error {
+		incr = p.Incr(ctx, "ratelimit:"+key)
+		p.ExpireNX(ctx, "ratelimit:"+key, window)
+		return nil
+	})
+	if err != nil {
+		return 0, err
+	}
+	return incr.Val(), nil
 }
 
 func (s *AuthService) rateLimit(ctx context.Context, key string, limit int64, window time.Duration) error {
-	n, err := s.redisClient.Incr(ctx, "ratelimit:"+key).Result()
-	if err != nil { // Redis down: fail open
+	n, err := s.incrWindow(ctx, key, window)
+	if err != nil {
+		slog.Warn("rate limit unavailable, failing open", "key", key, "err", err)
 		return nil
-	}
-	if n == 1 {
-		// key may live without TTL; the next hit retries the Expire
-		if err := s.redisClient.Expire(ctx, "ratelimit:"+key, window).Err(); err != nil {
-			slog.Warn("rate limit TTL not set", "key", key, "err", err)
-		}
 	}
 	if n > limit {
 		return errors.New("too many requests, slow down")
@@ -271,6 +318,9 @@ func (s *AuthService) rateLimit(ctx context.Context, key string, limit int64, wi
 func (s *AuthService) checkRateLimit(ctx context.Context, key string, limit int64, window time.Duration) error {
 	n, err := s.redisClient.Get(ctx, "ratelimit:"+key).Int64()
 	if err != nil { // redis.Nil = under limit; any other error = fail open
+		if !errors.Is(err, redis.Nil) {
+			slog.Warn("rate limit unavailable, failing open", "key", key, "err", err)
+		}
 		return nil
 	}
 	if n >= limit {
@@ -280,15 +330,8 @@ func (s *AuthService) checkRateLimit(ctx context.Context, key string, limit int6
 }
 
 func (s *AuthService) recordFailure(ctx context.Context, key string, window time.Duration) {
-	n, err := s.redisClient.Incr(ctx, "ratelimit:"+key).Result()
-	if err != nil {
-		return
-	}
-	if n == 1 {
-		// key may live without TTL; the next failure retries the Expire
-		if err := s.redisClient.Expire(ctx, "ratelimit:"+key, window).Err(); err != nil {
-			slog.Warn("rate limit TTL not set", "key", key, "err", err)
-		}
+	if _, err := s.incrWindow(ctx, key, window); err != nil {
+		slog.Warn("record login failure failed", "key", key, "err", err)
 	}
 }
 

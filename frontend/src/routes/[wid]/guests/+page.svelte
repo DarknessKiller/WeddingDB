@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { onDestroy } from 'svelte';
   import type { Guest, RSVPStatus } from '$lib/types';
   import { weddingTitle } from '$lib/stores/weddingTitle';
   import { selectedGuest, isDrawerOpen, drawerStartEditing, drawerCreateMode, addToast, showSeatNumbers } from '$lib/stores';
@@ -105,7 +106,8 @@ import Users from 'lucide-svelte/icons/users';
 
   let wid = $state('');
 
-  weddingId.subscribe(v => { wid = v; });
+  const unsubscribeWedding = weddingId.subscribe(v => { wid = v; });
+  onDestroy(unsubscribeWedding);
 
   let prevDrawerOpen = $state(false);
   $effect(() => {

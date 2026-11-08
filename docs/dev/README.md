@@ -77,7 +77,7 @@ reverse_proxy localhost:8080 {
 On first start with an empty database, the app seeds a default admin:
 
 - **Email:** `admin@weddingdb.local`
-- **Password:** whatever you set in `ADMIN_BOOTSTRAP_PASSWORD` (required on first boot; `log.Fatal` if missing)
+- **Password:** whatever you set in `ADMIN_BOOTSTRAP_PASSWORD` (required on first boot; `log.Fatal` if missing or equal to the `.env.example` placeholder)
 - The seeded account is flagged `ForcePasswordChange`, so the first login asks for a new password.
 
 The bootstrap only runs when the admin table is empty. After the first admin exists, `ADMIN_BOOTSTRAP_PASSWORD` is ignored.
@@ -90,7 +90,8 @@ The bootstrap only runs when the admin table is empty. After the first admin exi
 | `DATABASE_URL` | compose-provided | Points at the `postgres` service; override to use an external DB |
 | `REDIS_URL` | `redis://redis:6379` | Compose-provided; override for external Redis |
 | `JWT_SECRET` | none | **Required**. Compose fails fast if unset; values shipped in `.env.example` are rejected at boot |
-| `REDIS_PASSWORD` | unset (no auth) | Optional. When set, Dragonfly runs with `--requirepass` and the app authenticates via `REDIS_URL` |
+| `POSTGRES_PASSWORD` | none | **Required**. Used by Postgres and the app connection URL |
+| `REDIS_PASSWORD` | none | **Required**. Dragonfly uses `--requirepass`; the app authenticates via `REDIS_URL`. No Redis host port is published |
 | `ADMIN_BOOTSTRAP_PASSWORD` | none | First-boot admin password (required when the database is empty) |
 | `TZ` | `Asia/Kuala_Lumpur` | Report timestamps follow this |
 
@@ -109,8 +110,28 @@ docker compose up -d
 
 - `weddingdb_pgdata` volume: PostgreSQL data. Survives `down`, removed by `down -v`.
 - `weddingdb_uploads` volume: uploaded kiosk logos and backgrounds, mounted at `/app/uploads`.
-- Backups: `./backup-db.sh` dumps the `postgres` container to `./backups/weddingdb_<timestamp>.sql.gz`. It expects the container to be named `weddingdb-postgres-1` (the default compose naming).
-- Restore: `gunzip -c backups/<file>.sql.gz | docker exec -i weddingdb-postgres-1 psql -U weddingdb weddingdb`
+### Backup and restore
+
+Run from the repository root. Both scripts discover Postgres with `docker compose ps -q postgres`; `CONTAINER` is the fallback when Compose is unavailable. `DB_USER` defaults to `weddingdb`.
+
+```sh
+./backup-db.sh
+./restore-db.sh ./backups/weddingdb_<timestamp>.sql.gz weddingdb_restore
+```
+
+Backups use private permissions and publish only after a nonempty, valid gzip dump completes. Override `BACKUP_DIR` or `DB_NAME` for backups if needed.
+
+Restore loads the dump into a scratch database (`<name>_restore`) first, in one transaction with errors fatal, then prints counts for `wedding_events`, `guest_records`, `banquet_tables`, and `admin_users`. Only a dump that loads completely is renamed into place; a failed import drops the scratch copy and leaves the target untouched. Existing databases are refused. **`--force` drops and recreates the named database, permanently deleting its contents.** Use only after confirming the target and keeping a separate backup. Restore only trusted SQL dumps.
+
+Uploads need a separate backup. Pause writes during database and uploads backups for a consistent pair:
+
+```sh
+mkdir -p backups
+(umask 077; docker run --rm -v weddingdb_uploads:/uploads:ro alpine:3.21 tar -C /uploads -czf - . > "backups/uploads_$(date +%Y%m%d_%H%M%S).tar.gz")
+```
+
+Store backups off-host and rehearse restores before relying on them.
+- Restore: `./restore-db.sh backups/<file>.sql.gz weddingdb --force`
 
 ### Updating
 
@@ -185,7 +206,7 @@ docker compose --profile tracing up -d jaeger
 docker compose up -d app
 ```
 
-Jaeger UI at `http://localhost:16686`. Request spans record the route pattern, the status code, and optionally bodies as span events. Every DB query gets a `gorm.query` span with the rows returned, and with `OTEL_LOG_SQL=all` the SQL text as an event. Bodies mask passwords as `***`. The Badger storage backend keeps traces across Jaeger restarts in the `weddingdb_jqdata` volume.
+Jaeger UI at `http://localhost:16686`. Request spans record the route pattern, the status code, and optionally bodies as span events. Every DB query gets a `gorm.query` span with the rows returned, and with `OTEL_LOG_SQL=all` the SQL text as an event. Bodies mask passwords as `***`. The Badger storage backend keeps traces across Jaeger restarts in the `weddingdb_jgdata` volume.
 
 ---
 
@@ -309,3 +330,11 @@ nohup sh -c 'cd frontend && npm run dev -- --host 0.0.0.0 --port 5173' > /tmp/we
 - [`docs/adr/001-offline-sync.md`](../adr/001-offline-sync.md): local-first door operations and offline sync
 - [`docs/specs/offline-sync-spec.md`](../specs/offline-sync-spec.md): offline queue, cache, local search, and kiosk idle reset
 - [`docs/adr/002-otel-tracing.md`](../adr/002-otel-tracing.md): OpenTelemetry tracing design
+
+### Compose credentials and network exposure
+
+Set `POSTGRES_PASSWORD`, `REDIS_PASSWORD`, and `JWT_SECRET` in the root `.env` before starting Compose. Generate URL-safe passwords with `openssl rand -hex 32`; other passwords must be URL-encoded in connection URLs. For local backend runs, keep `DATABASE_URL` and `REDIS_URL` credentials in sync with these passwords.
+
+The app binds to `127.0.0.1:8080`. Put a reverse proxy with TLS in front before exposing it publicly. Redis is available only on the Compose network.
+
+Existing Postgres volumes keep their old password: changing `.env` does not update the database role. Open `docker compose exec postgres psql -U weddingdb -d postgres` and run `ALTER ROLE weddingdb WITH PASSWORD 'your-new-password';`, matching `POSTGRES_PASSWORD`. Then recreate the app with `docker compose up -d app`. Do not delete the volume to rotate credentials.

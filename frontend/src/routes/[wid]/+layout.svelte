@@ -31,8 +31,10 @@
     try { queued = JSON.parse(localStorage.getItem(`offline_queue_${wid}`) || '[]').length; } catch { queued = 0; }
   }
 
+  let destroyed = false;
+  let cleanupListeners: (() => void) | undefined;
   onMount(async () => {
-    if (!await validateToken()) return;
+    if (!await validateToken() || destroyed) return;
     if (wid) {
       setWeddingId(wid);
     }
@@ -84,11 +86,19 @@
     window.addEventListener('storage', refreshQueued);
     // same-tab queue updates: storage events only fire in other tabs
     window.addEventListener('offline-queue-changed', refreshQueued);
+    cleanupListeners = () => {
+      window.removeEventListener('online', onOnline);
+      window.removeEventListener('offline', onOffline);
+      document.removeEventListener('visibilitychange', onVis);
+      window.removeEventListener('storage', refreshQueued);
+      window.removeEventListener('offline-queue-changed', refreshQueued);
+    };
     refreshQueued();
 
     // initial sync before seed
     if (navigator.onLine) { try { await syncQueue(wid); } catch {} }
 
+    if (destroyed) return;
     // Subscribe before the snapshot; guestEvents queues mutations until seeding completes.
     cleanupSSE = initializeSSE(loadGuests);
     try {
@@ -108,6 +118,8 @@
   });
 
   onDestroy(() => {
+    destroyed = true;
+    cleanupListeners?.();
     cleanupSSE?.();
   });
 

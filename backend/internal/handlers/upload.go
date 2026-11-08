@@ -3,9 +3,11 @@ package handlers
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
@@ -24,6 +26,13 @@ var magicBytes = map[string][]byte{
 	".svg":  {0x3c, 0x3f, 0x78, 0x6d, 0x6c}, // <?xml
 }
 
+// maxUploadFileBytes is the advertised per-file limit.
+const maxUploadFileBytes = 5 * 1024 * 1024
+
+// maxUploadBytes caps the whole multipart envelope: the file limit plus 1 MiB
+// of multipart framing and headers.
+const maxUploadBytes = maxUploadFileBytes + 1024*1024
+
 type UploadHandler struct{}
 
 func NewUploadHandler() *UploadHandler {
@@ -38,11 +47,19 @@ func closeLogged(c io.Closer) {
 }
 
 func (h *UploadHandler) Upload(c fuego.ContextWithBody[any]) (any, error) {
-	file, header, err := c.Request().FormFile("file")
+	r := c.Request()
+	r.Body = http.MaxBytesReader(c.Response(), r.Body, maxUploadBytes)
+	file, header, err := r.FormFile("file")
 	if err != nil {
+		if _, ok := errors.AsType[*http.MaxBytesError](err); ok {
+			return nil, fuego.HTTPError{Status: http.StatusRequestEntityTooLarge, Title: "File too large (max 5 MiB)"}
+		}
 		return nil, fuego.BadRequestError{Title: "No file provided"}
 	}
 	defer closeLogged(file)
+	if header.Size > maxUploadFileBytes {
+		return nil, fuego.HTTPError{Status: http.StatusRequestEntityTooLarge, Title: "File too large (max 5 MiB)"}
+	}
 
 	// Validate file type
 	ext := strings.ToLower(filepath.Ext(header.Filename))
@@ -71,7 +88,6 @@ func (h *UploadHandler) Upload(c fuego.ContextWithBody[any]) (any, error) {
 		}
 	}
 
-	// NOTE: request body size is intentionally uncapped here — the reverse proxy in front owns that limit (nginx client_max_body_size, Caddy request_body). Keep magic-byte checks as the app guard.
 	// Create uploads directory
 	uploadDir := "./uploads"
 	if err := os.MkdirAll(uploadDir, 0755); err != nil {

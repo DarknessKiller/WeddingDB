@@ -13,6 +13,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"regexp"
 	"strconv"
 	"strings"
 
@@ -76,11 +77,19 @@ const maxBodyLog = 8 * 1024
 // addBodyEvent records a request/response body as a span event (shows in
 // Jaeger's span detail logs, not as a tag).
 func addBodyEvent(span trace.Span, name string, body []byte) {
-	if len(body) > maxBodyLog {
-		body = append(body[:maxBodyLog:maxBodyLog], []byte("...[truncated]")...)
+	// Mask the whole body first: truncation can cut the JSON mid-document,
+	// after which structural masking fails and the raw tail leaks.
+	masked := maskPassword(body)
+	// Masking can change byte length, so cap the masked string.
+	if len(masked) > maxBodyLog {
+		masked = masked[:maxBodyLog] + "...[truncated]"
 	}
-	span.AddEvent(name, trace.WithAttributes(attribute.String("body", maskPassword(body))))
+	span.AddEvent(name, trace.WithAttributes(attribute.String("body", masked)))
 }
+
+// passwordField matches a JSON "password" string value, including a value cut
+// off by truncation. Used when the body does not parse as JSON.
+var passwordField = regexp.MustCompile(`(?i)"password"\s*:\s*"(?:[^"\\]|\\.)*"?`)
 
 // maskPassword replaces the top-level JSON "password" field with "***"
 // before a body is recorded on a span. Non-JSON or password-free bodies
@@ -115,13 +124,17 @@ func Middleware(next http.Handler) http.Handler {
 			// Bare address (no port): record as-is.
 			reqAttrs = append(reqAttrs, semconv.ClientAddress(r.RemoteAddr))
 		}
-		if logBody && !strings.Contains(r.URL.Path, "/events") && isJSONContentType(r.Header.Get("Content-Type")) {
-			body, err := io.ReadAll(io.LimitReader(r.Body, maxBodyLog+1))
+		// Auth bodies carry passwords and tokens; never capture them.
+		captureBody := logBody && !strings.Contains(r.URL.Path, "/events") && !strings.HasPrefix(r.URL.Path, "/api/auth/")
+		if captureBody && isJSONContentType(r.Header.Get("Content-Type")) {
+			// Read only what the span needs, then stitch the read bytes back in
+			// front of the unread remainder so the handler sees the full body.
+			head, err := io.ReadAll(io.LimitReader(r.Body, maxBodyLog+1))
 			if err != nil {
 				log.Printf("warning: read request body for tracing: %v", err)
 			}
-			r.Body = io.NopCloser(bytes.NewReader(body))
-			addBodyEvent(span, "http.request.body", body)
+			r.Body = io.NopCloser(io.MultiReader(bytes.NewReader(head), r.Body))
+			addBodyEvent(span, "http.request.body", head)
 		}
 
 		rec := &recorder{ResponseWriter: w}
@@ -133,7 +146,7 @@ func Middleware(next http.Handler) http.Handler {
 		}
 		span.SetAttributes(reqAttrs...)
 		span.SetAttributes(attribute.Int("http.response.status_code", rec.status))
-		if logBody && rec.buf.Len() > 0 && isJSONContentType(rec.Header().Get("Content-Type")) {
+		if captureBody && rec.buf.Len() > 0 && isJSONContentType(rec.Header().Get("Content-Type")) {
 			addBodyEvent(span, "http.response.body", rec.buf.Bytes())
 		}
 		if rec.status >= 400 {
@@ -152,7 +165,7 @@ func maskPassword(body []byte) string {
 	}
 	var m map[string]any
 	if err := json.Unmarshal(body, &m); err != nil {
-		return string(body)
+		return passwordField.ReplaceAllString(string(body), `"password":"***"`)
 	}
 	masked := false
 	for k := range m {

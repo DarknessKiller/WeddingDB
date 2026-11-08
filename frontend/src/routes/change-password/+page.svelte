@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { page } from '$app/state';
   import { goto } from '$app/navigation';
   import { addToast, getAuth } from '$lib/stores';
   import Eye from 'lucide-svelte/icons/eye';
@@ -6,6 +7,8 @@ import EyeOff from 'lucide-svelte/icons/eye-off';
 import KeyRound from 'lucide-svelte/icons/key-round';
   import PasswordRequirements from '$lib/components/ui/PasswordRequirements.svelte';
 
+  let forced = $derived(page.url.searchParams.get('forced') === '1');
+  let currentPassword = $state('');
   let password = $state('');
   let confirmPassword = $state('');
   let showPassword = $state(false);
@@ -13,6 +16,7 @@ import KeyRound from 'lucide-svelte/icons/key-round';
 
   let passwordMismatch = $derived(confirmPassword.length > 0 && password !== confirmPassword);
   let canSubmit = $derived(
+    (forced || currentPassword.length > 0) &&
     password.length >= 8 &&
     password === confirmPassword &&
     /[a-zA-Z]/.test(password) &&
@@ -32,7 +36,7 @@ import KeyRound from 'lucide-svelte/icons/key-round';
           'Content-Type': 'application/json',
           Authorization: `Bearer ${accessToken}`
         },
-        body: JSON.stringify({ password })
+        body: JSON.stringify({ password, ...(forced ? {} : { currentPassword }) })
       });
       if (!res.ok) {
         const err = await res.json().catch(() => ({ title: 'Failed to change password' }));
@@ -61,6 +65,10 @@ import KeyRound from 'lucide-svelte/icons/key-round';
 
     <form onsubmit={handleChangePassword} class="auth-form">
       <div class="form-field">
+        {#if !forced}
+          <label for="current-password" class="form-label">Current Password</label>
+          <input id="current-password" type="password" bind:value={currentPassword} autocomplete="current-password" required class="form-input" />
+        {/if}
         <label for="password" class="form-label">New Password</label>
         <div class="password-wrap">
           <input
@@ -106,12 +114,12 @@ import KeyRound from 'lucide-svelte/icons/key-round';
 
 <style>
   .input-error {
-    border-color: #ef4444 !important;
+    border-color: #b91c1c !important;
     box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.1) !important;
   }
   .field-error {
     font-size: 0.75rem;
-    color: #ef4444;
+    color: #b91c1c;
     margin-top: 0.25rem;
   }
 </style>
