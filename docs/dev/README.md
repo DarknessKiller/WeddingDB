@@ -1,12 +1,21 @@
 # WeddingDB developer documentation
 
-Chinese wedding seating & reservation management system.
+Chinese wedding seating and reservation management system. This document covers deployment, local development, configuration, and the HTTP API.
 
-- **Frontend:** SvelteKit SPA (Svelte 5 runes + Tailwind CSS v4 + TypeScript)
-- **Backend:** Go REST API (Fuego + GORM + PostgreSQL)
-- **Realtime:** Redis (DragonflyDB-compatible) pub/sub + SSE
+- **Frontend:** SvelteKit SPA (Svelte 5 runes, Tailwind CSS v4, TypeScript)
+- **Backend:** Go REST API (Fuego, GORM, PostgreSQL)
+- **Realtime:** Redis (DragonflyDB) pub/sub and SSE
 
----
+New here? The [root README](../../README.md) explains what the product does.
+
+## Where to go
+
+| You want to | Start at |
+|---|---|
+| Run it on a server | [Deployment](#deployment-docker-compose) |
+| Change code on your machine | [Local development](#local-development) |
+| Look up an env var | [Configuration](#configuration) |
+| Call the API | [API endpoints](#api-endpoints) |
 
 ## Project structure
 
@@ -38,7 +47,7 @@ Chinese wedding seating & reservation management system.
 ### Deployment
 - Docker Compose (`docker-compose.yml`; the `redis` service runs DragonflyDB), distroless image, timezone set.
 - The Release workflow publishes images to GitHub Container Registry (`ghcr.io/darknesskiller/weddingdb`) on `v*` tags (multi-arch: amd64 + arm64). The compose file pulls `ghcr.io/darknesskiller/weddingdb:latest`, so nothing builds locally.
-- CI (`ci.yml`) runs on push and PR to `master`: backend `golangci-lint run` and `go test ./...`, frontend `npm run check`, `vitest run`, and `npm run build`.
+- CI (`ci.yml`) runs on push and PR to `master`: backend `golangci-lint`, `go test -race`, `govulncheck`; frontend `npm audit`, `npm run check`, tests, and build.
 
 ## Deployment (Docker Compose)
 
@@ -47,8 +56,10 @@ The compose stack runs three services: `app` (the WeddingDB image), `postgres`, 
 ### Quick start
 
 ```sh
-# Set a real secret (required)
 export JWT_SECRET=$(openssl rand -hex 32)
+export POSTGRES_PASSWORD=$(openssl rand -hex 32)
+export REDIS_PASSWORD=$(openssl rand -hex 32)
+export ADMIN_BOOTSTRAP_PASSWORD='a-strong-one-time-password'
 
 docker compose up -d
 ```
@@ -57,18 +68,20 @@ docker compose up -d
 - Postgres: `localhost:5432` (user/pass/db all `weddingdb`, bound to loopback only)
 - Redis: internal to the compose network (no host port published)
 
-### File-size limits
+All four variables are required; Compose refuses to start without them. See [Configuration](#configuration).
 
-Uploads (`POST /api/upload`) have no app-level size cap and no request deadline. Put the size limit in the reverse proxy, and raise the upstream read timeout so large or slow uploads survive:
+### Upload limits
+
+`POST /api/upload` accepts images up to 5 MiB, and rejects anything larger. Uploads have no request deadline, so set a reverse-proxy limit at or above the app cap and raise the read timeout for slow connections:
 
 ```nginx
-client_max_body_size 50m;            # nginx
+client_max_body_size 6m;             # nginx
 proxy_read_timeout 300s;
 ```
 
 ```caddy
 reverse_proxy localhost:8080 {
-    request_body max_size 50MB        # Caddy
+    request_body max_size 6MB        # Caddy
 }
 ```
 
@@ -110,6 +123,7 @@ docker compose up -d
 
 - `weddingdb_pgdata` volume: PostgreSQL data. Survives `down`, removed by `down -v`.
 - `weddingdb_uploads` volume: uploaded kiosk logos and backgrounds, mounted at `/app/uploads`.
+
 ### Backup and restore
 
 Run from the repository root. Both scripts discover Postgres with `docker compose ps -q postgres`; `CONTAINER` is the fallback when Compose is unavailable. `DB_USER` defaults to `weddingdb`.
@@ -121,9 +135,9 @@ Run from the repository root. Both scripts discover Postgres with `docker compos
 
 Backups use private permissions and publish only after a nonempty, valid gzip dump completes. Override `BACKUP_DIR` or `DB_NAME` for backups if needed.
 
-Restore loads the dump into a scratch database (`<name>_restore`) first, in one transaction with errors fatal, then prints counts for `wedding_events`, `guest_records`, `banquet_tables`, and `admin_users`. Only a dump that loads completely is renamed into place; a failed import drops the scratch copy and leaves the target untouched. Existing databases are refused. **`--force` drops and recreates the named database, permanently deleting its contents.** Use only after confirming the target and keeping a separate backup. Restore only trusted SQL dumps.
+Restore loads the dump into a scratch database (`<name>_restore`) first, in one transaction with errors fatal, then prints counts for `wedding_events`, `guest_records`, `banquet_tables`, and `admin_users`. Only a dump that loads completely is renamed into place; a failed import drops the scratch copy and leaves the target untouched.
 
-Uploads need a separate backup. Pause writes during database and uploads backups for a consistent pair:
+Uploads live in a volume, not the database. Back them up separately:
 
 ```sh
 mkdir -p backups
@@ -131,7 +145,10 @@ mkdir -p backups
 ```
 
 Store backups off-host and rehearse restores before relying on them.
+
 - Restore: `./restore-db.sh backups/<file>.sql.gz weddingdb --force`
+
+`--force` drops and recreates an existing target database. Leave it off and restore into a fresh name to keep the old data intact.
 
 ### Updating
 
@@ -141,9 +158,7 @@ docker compose pull app && docker compose up -d
 
 New releases are tagged `v*`, and `latest` tracks the newest tag. To pin a version for reproducibility, use `ghcr.io/darknesskiller/weddingdb:v0.1.0`.
 
----
-
-## Getting started locally
+## Local development
 
 ### Frontend
 
@@ -153,17 +168,7 @@ npm install
 npm run dev
 ```
 
-Server runs at `http://localhost:5173`.
-
-### Lint hook
-
-`.githooks/pre-commit` lints `backend/` before every commit; enable it once per clone:
-
-```sh
-git config core.hooksPath .githooks
-```
-
-Needs `golangci-lint` v2 on `PATH` and a C compiler (the backend builds cgo SQLite).
+Server runs at `http://localhost:5173`. Vite proxies `/api` and `/uploads` to `http://localhost:8080`, so a backend must be running.
 
 ### Backend
 
@@ -194,6 +199,24 @@ Server runs at `http://localhost:8080`.
 | `OTEL_LOG_SQL` | `all` records SQL text on `gorm.query` spans (may contain PII) | off |
 | `OTEL_LOG_BODY` | `all` records JSON request/response bodies on request spans (passwords masked) | off |
 
+### Lint hook
+
+`.githooks/pre-commit` lints `backend/` before every commit; enable it once per clone:
+
+```sh
+git config core.hooksPath .githooks
+```
+
+Needs `golangci-lint` v2 on `PATH` and a C compiler (the backend builds cgo SQLite).
+
+### Background dev server
+
+```sh
+nohup sh -c 'cd frontend && npm run dev -- --host 0.0.0.0 --port 5173' > /tmp/weddingdb-dev.log 2>&1 & disown
+```
+
+## Observability
+
 ### Tracing (Jaeger)
 
 Opt-in tracing with a local Jaeger. The compose file ships a `jaeger` service behind the `tracing` profile:
@@ -206,9 +229,7 @@ docker compose --profile tracing up -d jaeger
 docker compose up -d app
 ```
 
-Jaeger UI at `http://localhost:16686`. Request spans record the route pattern, the status code, and optionally bodies as span events. Every DB query gets a `gorm.query` span with the rows returned, and with `OTEL_LOG_SQL=all` the SQL text as an event. Bodies mask passwords as `***`. The Badger storage backend keeps traces across Jaeger restarts in the `weddingdb_jgdata` volume.
-
----
+Jaeger UI at `http://localhost:16686`. Request spans record the route pattern, the status code, and optionally bodies as span events. Every DB query gets a `gorm.query` span with the rows returned, and with `OTEL_LOG_SQL=all` the SQL text as an event. Bodies mask passwords as `***`. The Badger storage backend keeps traces in the `weddingdb_jgdata` volume.
 
 ## Pages
 
@@ -225,8 +246,6 @@ Jaeger UI at `http://localhost:16686`. Request spans record the route pattern, t
 | `/change-password` | Change password (post-login for forced changes) |
 | `/kiosk` | Standalone guest self-service kiosk |
 | `/reports` | Report exports (CSV/XLSX) for angpao data |
-
----
 
 ## API endpoints
 
@@ -264,7 +283,7 @@ Jaeger UI at `http://localhost:16686`. Request spans record the route pattern, t
 | PUT | `/api/weddings/{id}` | Update wedding |
 | PUT | `/api/weddings/{id}/kiosk` | Update kiosk settings |
 | DELETE | `/api/weddings/{id}` | Delete wedding |
-| POST | `/api/upload` | Upload file (multipart, images only; no app-level size cap, enforced by reverse proxy) |
+| POST | `/api/upload` | Upload image (multipart; 5 MiB cap) |
 
 ### Tables, guests and seating
 
@@ -279,7 +298,7 @@ Jaeger UI at `http://localhost:16686`. Request spans record the route pattern, t
 | GET | `/api/weddings/{wid}/guests/{id}` | Get guest |
 | PUT | `/api/weddings/{wid}/guests/{id}` | Update guest |
 | DELETE | `/api/weddings/{wid}/guests/{id}` | Delete guest |
-| POST | `/api/weddings/{wid}/guests/{id}/checkin` | Check in guest (optional body `{"notes": "..."}`; promotes RSVP to confirmed) |
+| POST | `/api/weddings/{wid}/guests/{id}/checkin` | Check in guest |
 | POST | `/api/weddings/{wid}/guests/{id}/checkout` | Check out guest |
 | POST | `/api/weddings/{wid}/guests/{id}/seat` | Assign seat |
 | POST | `/api/weddings/{wid}/guests/sync` | Replay queued offline mutations (batch, per-item result) |
@@ -316,20 +335,7 @@ Guest limit: 1,000 guests per wedding, counted per person. A guest entry for a c
 - `kioskIdleResetSeconds` is opt-in per wedding and defaults to 0 (off). Set it through `PUT /api/weddings/{id}/kiosk`; the kiosk clears the query and selected guest after that much inactivity.
 - Cold offline start is not supported yet: there is no service worker, so the SPA shell must be loaded once before the network drops.
 
----
-
-## Background dev server
-
-```sh
-nohup sh -c 'cd frontend && npm run dev -- --host 0.0.0.0 --port 5173' > /tmp/weddingdb-dev.log 2>&1 & disown
-```
-
-## Reference docs
-
-- [`docs/specs/jwt-revocation-spec.md`](../specs/jwt-revocation-spec.md): JWT refresh rotation and revocation design
-- [`docs/adr/001-offline-sync.md`](../adr/001-offline-sync.md): local-first door operations and offline sync
-- [`docs/specs/offline-sync-spec.md`](../specs/offline-sync-spec.md): offline queue, cache, local search, and kiosk idle reset
-- [`docs/adr/002-otel-tracing.md`](../adr/002-otel-tracing.md): OpenTelemetry tracing design
+## Operations notes
 
 ### Compose credentials and network exposure
 
@@ -338,3 +344,10 @@ Set `POSTGRES_PASSWORD`, `REDIS_PASSWORD`, and `JWT_SECRET` in the root `.env` b
 The app binds to `127.0.0.1:8080`. Put a reverse proxy with TLS in front before exposing it publicly. Redis is available only on the Compose network.
 
 Existing Postgres volumes keep their old password: changing `.env` does not update the database role. Open `docker compose exec postgres psql -U weddingdb -d postgres` and run `ALTER ROLE weddingdb WITH PASSWORD 'your-new-password';`, matching `POSTGRES_PASSWORD`. Then recreate the app with `docker compose up -d app`. Do not delete the volume to rotate credentials.
+
+## Reference docs
+
+- [`docs/specs/jwt-revocation-spec.md`](../specs/jwt-revocation-spec.md): JWT refresh rotation and revocation design
+- [`docs/adr/001-offline-sync.md`](../adr/001-offline-sync.md): local-first door operations and offline sync
+- [`docs/specs/offline-sync-spec.md`](../specs/offline-sync-spec.md): offline queue, cache, local search, and kiosk idle reset
+- [`docs/adr/002-otel-tracing.md`](../adr/002-otel-tracing.md): OpenTelemetry tracing design
