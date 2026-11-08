@@ -185,8 +185,8 @@ import X from 'lucide-svelte/icons/x';
   let selectedTableLabel = $derived(
     /^table\b/i.test(selectedTableName.trim()) ? selectedTableName : `Table ${selectedTableName}`
   );
-  // Long names drop to a smaller size so they wrap to at most two lines.
-  let selectedTableLong = $derived(selectedTableName.length > 12);
+  // The card header already prints "TABLE", so the value drops the word.
+  let selectedTableValue = $derived(selectedTableName.replace(/^table\s+/i, ''));
 
   let idleTimer: ReturnType<typeof setTimeout> | undefined;
   function armIdleReset() {
@@ -509,7 +509,7 @@ import X from 'lucide-svelte/icons/x';
               <div class="seat-display" in:fly={{ y: 12, duration: 200 }}>
                 <div class="seat-block">
                   <div class="seat-label">Table</div>
-                  <div class="seat-value seat-value-accent" class:seat-value-large={!selectedTableLong} class:seat-value-long={selectedTableLong}>{selectedTableName}</div>
+                  <div class="seat-value seat-value-large seat-value-accent">{selectedTableValue}</div>
                   {#if selectedTable?.isVip}
                     <span class="vip-tag">★ VIP</span>
                   {/if}
@@ -1024,18 +1024,9 @@ import X from 'lucide-svelte/icons/x';
     font-size: 2rem;
   }
 
-  /* Long table names keep the same shape but fit two lines instead of four. */
-  .seat-value-long {
-    font-size: 1.125rem;
-    line-height: 1.3;
-  }
-
   .seat-value-accent {
     color: #A11217;
   }
-
-  /* Desktop keeps the phone typography: the 22rem card is about the same
-     width as a phone sheet, and a larger value wraps "Table 1" onto two lines. */
 
   .vip-tag {
     font-size: 0.625rem;
