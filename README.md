@@ -6,7 +6,7 @@ A free, self-hosted guest list for Chinese wedding receptions. It replaces the p
 
 > This project is written with AI agents. If that bothers you, look elsewhere. No hard feelings.
 
-![Guest kiosk showing a guest's name, table number, seat range and number of guests](docs/media/kiosk-value-size/after.png)
+![Guest kiosk: a guest searched their name and sees Table 7 highlighted on the hall map, with seats 1 to 2 and 2 guests](docs/media/kiosk-guest-seat.png)
 
 ## The door
 
@@ -24,6 +24,14 @@ WeddingDB puts that list on every screen at the door and keeps one shared copy. 
 - Runs several weddings on one deployment, for planners and venues.
 
 A kiosk mode runs on a tablet. A guest types a name, sees the table and seat range, and walks in. Kiosk settings are per wedding: logo, background, welcome text, whether to show seat numbers, and an idle reset timer.
+
+### Inside the app
+
+| Seating map | Guest list |
+|---|---|
+| ![Seating map with 11 numbered tables around a stage, DJ counter, two screens, a front VIP table, side walkways and two entrances, seats coloured by check-in state](docs/media/seating-map.png) | ![Guest list table showing name, RSVP, party size, table, seat, check-in state and notes](docs/media/guest-list.png) |
+
+![Dashboard with check-in counters, a check-in rate, RSVP breakdown, per-table occupancy bars and a live activity feed](docs/media/dashboard.png)
 
 | Who | What they do |
 |---|---|
