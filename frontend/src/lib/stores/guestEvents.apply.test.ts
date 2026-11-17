@@ -1,16 +1,16 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { get } from 'svelte/store';
 import { seedGuests, applyGuestResponse, guestList } from './guestEvents';
-import type { GuestResponse } from '$lib/api/guests';
+import type { GuestResponse } from '#lib/api/guests.ts';
 
-vi.mock('$lib/stores', () => ({
+vi.mock('#lib/stores/index.ts', () => ({
 	selectedGuest: { get: () => null, set: vi.fn(), update: vi.fn(), subscribe: vi.fn(() => vi.fn()) }
 }));
-vi.mock('$lib/api/sse', () => ({
+vi.mock('#lib/api/sse.ts', () => ({
 	connectSSE: () => ({ onEvent: () => () => {}, onStatus: () => () => {} }),
 	disconnectSSE: () => {}
 }));
-vi.mock('$lib/stores/weddingId', () => ({
+vi.mock('#lib/stores/weddingId.ts', () => ({
 	weddingId: { get: () => 'w1', subscribe: vi.fn(() => vi.fn()), set: vi.fn(), update: vi.fn() }
 }));
 

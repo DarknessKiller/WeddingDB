@@ -1,8 +1,8 @@
 import { describe, it, expect, vi } from 'vitest';
 
-vi.mock('$lib/api/client', () => ({ apiFetch: vi.fn() }));
+vi.mock('#lib/api/client.ts', () => ({ apiFetch: vi.fn() }));
 
-import { apiFetch } from '$lib/api/client';
+import { apiFetch } from '#lib/api/client.ts';
 import { updateKioskSettings } from './weddings';
 
 describe('updateKioskSettings payload contract', () => {

@@ -4,9 +4,9 @@
   import BanquetTableComponent from './BanquetTable.svelte';
   import HallElementNode from './HallElementNode.svelte';
   import EditToolbar from './EditToolbar.svelte';
-  import ConfirmDialog from '$lib/components/ui/ConfirmDialog.svelte';
-  import type { BanquetTable as BanquetTableType, HallElement, Guest } from '$lib/types';
-  import { reorderElements } from '$lib/utils/layout';
+  import ConfirmDialog from '#lib/components/ui/ConfirmDialog.svelte';
+  import type { BanquetTable as BanquetTableType, HallElement, Guest } from '#lib/types/index.ts';
+  import { reorderElements } from '#lib/utils/layout.ts';
   import ZoomIn from 'lucide-svelte/icons/zoom-in';
 import ZoomOut from 'lucide-svelte/icons/zoom-out';
 import RotateCcw from 'lucide-svelte/icons/rotate-ccw';
@@ -106,7 +106,7 @@ import RotateCcw from 'lucide-svelte/icons/rotate-ccw';
     refreshTransformer();
   }
 
-  const clone = <T,>(value: T): T => JSON.parse(JSON.stringify(value));
+  const clone = <T>(value: T): T => JSON.parse(JSON.stringify(value));
 
   function currentSnapshot(): LayoutSnapshot {
     return {
@@ -136,7 +136,7 @@ import RotateCcw from 'lucide-svelte/icons/rotate-ccw';
     editElements = clone(snapshot.elements);
     editHallWidth = snapshot.hallWidth;
     editHallHeight = snapshot.hallHeight;
-    const keep = selectedIds.filter(id => editTables.some(t => t.id === id) || editElements.some(el => el.id === id));
+    const keep = selectedIds.filter((id) => editTables.some((t) => t.id === id) || editElements.some((el) => el.id === id));
     if (keep.length !== selectedIds.length) selectedIds = keep;
     void refreshTransformerAfterUpdate();
   }
@@ -170,12 +170,20 @@ import RotateCcw from 'lucide-svelte/icons/rotate-ccw';
     discardOpen = true;
   }
 
-  beforeNavigate(nav => {
+  beforeNavigate((nav) => {
+    if (nav.shallow && nav.type === 'goto') return;
     if (!dirty || skipGuard) return;
     const href = nav.to?.url.href;
     if (!href) return;
     nav.cancel();
-    pendingAction = () => { skipGuard = true; void goto(href); };
+    pendingAction = () => {
+      skipGuard = true;
+      if (new URL(href).origin !== window.location.origin) {
+        window.location.href = href;
+      } else {
+        void goto(href);
+      }
+    };
     discardOpen = true;
   });
 
@@ -223,16 +231,13 @@ import RotateCcw from 'lucide-svelte/icons/rotate-ccw';
   const displayHallHeight = $derived(mode === 'edit' ? editHallHeight : hallHeight);
 
   let viewScale = $derived(Math.min(containerW / displayHallWidth, containerH / displayHallHeight));
-
-  const isTableSelected = $derived(
-    mode === 'edit' && selectedId !== null && editTables.some(t => t.id === selectedId)
-  );
+  const isTableSelected = $derived(mode === 'edit' && selectedId !== null && editTables.some((t) => t.id === selectedId));
 
   const selectedItem = $derived.by(() => {
     if (!selectedId) return null;
-    const t = editTables.find(t => t.id === selectedId);
+    const t = editTables.find((t) => t.id === selectedId);
     if (t) return { kind: 'table' as const, ...t };
-    const el = editElements.find(e => e.id === selectedId);
+    const el = editElements.find((e) => e.id === selectedId);
     if (el) return { kind: 'element' as const, ...el };
     return null;
   });
@@ -250,7 +255,7 @@ import RotateCcw from 'lucide-svelte/icons/rotate-ccw';
     const canvasListeners: Array<[string, EventListener, any]> = [];
 
     if (containerEl) {
-      ro = new ResizeObserver(entries => {
+      ro = new ResizeObserver((entries) => {
         for (const entry of entries) {
           containerW = entry.contentRect.width;
           containerH = entry.contentRect.height;
@@ -293,33 +298,32 @@ import RotateCcw from 'lucide-svelte/icons/rotate-ccw';
           let pinchStartZoom = 1;
 
           canvas.addEventListener('touchstart', (e: TouchEvent) => {
-            if (e.touches.length !== 2) return;
-            // Second finger: a pinch, not a move of whatever the first one grabbed.
-            cancelDrag();
-            const stage = stageRef?.node ?? stageRef;
-            stage?.stopDrag?.();
-            stage?.position({ x: panX, y: panY });
-            const dx = e.touches[0].clientX - e.touches[1].clientX;
-            const dy = e.touches[0].clientY - e.touches[1].clientY;
-            pinchStartDist = Math.hypot(dx, dy);
-            pinchStartZoom = zoom;
+              if (e.touches.length !== 2) return;
+              // Second finger: a pinch, not a move of whatever the first one grabbed.
+              cancelDrag();
+              const stage = stageRef?.node ?? stageRef;
+              stage?.stopDrag?.();
+              stage?.position({ x: panX, y: panY });
+              const dx = e.touches[0].clientX - e.touches[1].clientX;
+              const dy = e.touches[0].clientY - e.touches[1].clientY;
+              pinchStartDist = Math.hypot(dx, dy);
+              pinchStartZoom = zoom;
           }, { passive: true });
 
           canvas.addEventListener('touchmove', (e: TouchEvent) => {
-            if (e.touches.length !== 2 || pinchStartDist === 0) return;
-            e.preventDefault();
-            const [a, b] = [e.touches[0], e.touches[1]];
-            const rect = canvas.getBoundingClientRect();
-            const dist = Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY);
-            zoomAt(
-              pinchStartZoom * (dist / pinchStartDist),
-              (a.clientX + b.clientX) / 2 - rect.left,
-              (a.clientY + b.clientY) / 2 - rect.top
-            );
-          }, { passive: false });
+              if (e.touches.length !== 2 || pinchStartDist === 0) return;
+              e.preventDefault();
+              const [a, b] = [e.touches[0], e.touches[1]];
+              const rect = canvas.getBoundingClientRect();
+              const dist = Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY);
+
+              zoomAt(pinchStartZoom * (dist / pinchStartDist), (a.clientX + b.clientX) / 2 - rect.left, (a.clientY + b.clientY) / 2 - rect.top);
+            },
+            { passive: false }
+          );
 
           canvas.addEventListener('touchend', (e: TouchEvent) => {
-            if (e.touches.length < 2) pinchStartDist = 0;
+              if (e.touches.length < 2) pinchStartDist = 0;
           }, { passive: true });
         }
       };
@@ -376,7 +380,10 @@ import RotateCcw from 'lucide-svelte/icons/rotate-ccw';
     if (!selectedIds.includes(id)) selectedIds = [id];
     // Dragging any member of a multi-selection moves the whole group.
     groupStart = selectedIds.length > 1 && selectedIds.includes(id)
-      ? Object.fromEntries(selectedIds.map(sid => [sid, { x: nodeRefs[sid]?.x() ?? 0, y: nodeRefs[sid]?.y() ?? 0 }]))
+      ? Object.fromEntries(selectedIds.map((sid) => [
+        sid,
+        { x: nodeRefs[sid]?.x() ?? 0, y: nodeRefs[sid]?.y() ?? 0 }
+      ]))
       : null;
   }
 
@@ -401,11 +408,14 @@ import RotateCcw from 'lucide-svelte/icons/rotate-ccw';
   // multi-selection keeps it so the group can be dragged.
   function selectItem(id: string, e?: any) {
     if (e?.evt?.shiftKey) {
-      selectedIds = selectedIds.includes(id) ? selectedIds.filter(x => x !== id) : [...selectedIds, id];
+      selectedIds = selectedIds.includes(id)
+        ? selectedIds.filter((x) => x !== id)
+        : [...selectedIds, id];
+
       return;
     }
     if (selectedIds.includes(id) && selectedIds.length > 1) {
-      selectedIds = [...selectedIds.filter(x => x !== id), id];
+      selectedIds = [...selectedIds.filter((x) => x !== id), id];
       return;
     }
     selectedIds = [id];
@@ -417,25 +427,54 @@ import RotateCcw from 'lucide-svelte/icons/rotate-ccw';
 
   function alignSelection(op: AlignOp) {
     if (selectedIds.length < 2) return;
-    const items = selectedIds.flatMap(id => {
-      const t = editTables.find(x => x.id === id);
-      if (t) return [{ id, wPx: TABLE_FOOTPRINT_PX, hPx: TABLE_FOOTPRINT_PX, xPx: t.x / 100 * displayHallWidth, yPx: t.y / 100 * displayHallHeight }];
-      const el = editElements.find(x => x.id === id);
-      return el ? [{ id, wPx: el.width / 100 * displayHallWidth, hPx: el.height / 100 * displayHallHeight, xPx: el.x / 100 * displayHallWidth, yPx: el.y / 100 * displayHallHeight }] : [];
+
+    const items = selectedIds.flatMap((id) => {
+      const t = editTables.find((x) => x.id === id);
+
+      if (t) return [
+        {
+          id,
+          wPx: TABLE_FOOTPRINT_PX,
+          hPx: TABLE_FOOTPRINT_PX,
+          xPx: t.x / 100 * displayHallWidth,
+          yPx: t.y / 100 * displayHallHeight
+        }
+      ];
+
+      const el = editElements.find((x) => x.id === id);
+
+      return el
+        ? [
+          {
+            id,
+            wPx: el.width / 100 * displayHallWidth,
+            hPx: el.height / 100 * displayHallHeight,
+            xPx: el.x / 100 * displayHallWidth,
+            yPx: el.y / 100 * displayHallHeight
+          }
+        ]
+        : [];
     });
     if (items.length < 2) return;
     const setPos = (id: string, xPx: number, yPx: number) => {
       const x = Math.max(0, Math.min(100, xPx / displayHallWidth * 100));
       const y = Math.max(0, Math.min(100, yPx / displayHallHeight * 100));
-      const tidx = editTables.findIndex(t => t.id === id);
-      if (tidx >= 0) { editTables[tidx] = { ...editTables[tidx], x, y }; return; }
-      const eidx = editElements.findIndex(el => el.id === id);
+      const tidx = editTables.findIndex((t) => t.id === id);
+
+      if (tidx >= 0) {
+        editTables[tidx] = { ...editTables[tidx], x, y };
+
+        return;
+      }
+
+      const eidx = editElements.findIndex((el) => el.id === id);
+
       if (eidx >= 0) editElements[eidx] = { ...editElements[eidx], x, y };
     };
-    const left = Math.min(...items.map(i => i.xPx - i.wPx / 2));
-    const right = Math.max(...items.map(i => i.xPx + i.wPx / 2));
-    const top = Math.min(...items.map(i => i.yPx - i.hPx / 2));
-    const bottom = Math.max(...items.map(i => i.yPx + i.hPx / 2));
+    const left = Math.min(...items.map((i) => i.xPx - i.wPx / 2));
+    const right = Math.max(...items.map((i) => i.xPx + i.wPx / 2));
+    const top = Math.min(...items.map((i) => i.yPx - i.hPx / 2));
+    const bottom = Math.max(...items.map((i) => i.yPx + i.hPx / 2));
     const spread = (axis: 'x' | 'y') => {
       const key = axis === 'x' ? 'xPx' : 'yPx';
       const sorted = [...items].sort((a, b) => a[key] - b[key]);
@@ -447,14 +486,37 @@ import RotateCcw from 'lucide-svelte/icons/rotate-ccw';
       });
     };
     switch (op) {
-      case 'left': items.forEach(i => setPos(i.id, left + i.wPx / 2, i.yPx)); break;
-      case 'right': items.forEach(i => setPos(i.id, right - i.wPx / 2, i.yPx)); break;
-      case 'centerX': items.forEach(i => setPos(i.id, (left + right) / 2, i.yPx)); break;
-      case 'top': items.forEach(i => setPos(i.id, i.xPx, top + i.hPx / 2)); break;
-      case 'bottom': items.forEach(i => setPos(i.id, i.xPx, bottom - i.hPx / 2)); break;
-      case 'middle': items.forEach(i => setPos(i.id, i.xPx, (top + bottom) / 2)); break;
-      case 'distX': spread('x'); break;
-      case 'distY': spread('y'); break;
+      case 'left':
+        items.forEach((i) => setPos(i.id, left + i.wPx / 2, i.yPx));
+        break;
+
+      case 'right':
+        items.forEach((i) => setPos(i.id, right - i.wPx / 2, i.yPx));
+        break;
+
+      case 'centerX':
+        items.forEach((i) => setPos(i.id, (left + right) / 2, i.yPx));
+        break;
+
+      case 'top':
+        items.forEach((i) => setPos(i.id, i.xPx, top + i.hPx / 2));
+        break;
+
+      case 'bottom':
+        items.forEach((i) => setPos(i.id, i.xPx, bottom - i.hPx / 2));
+        break;
+
+      case 'middle':
+        items.forEach((i) => setPos(i.id, i.xPx, (top + bottom) / 2));
+        break;
+
+      case 'distX':
+        spread('x');
+        break;
+
+      case 'distY':
+        spread('y');
+        break;
     }
     commit();
     void refreshTransformerAfterUpdate();
@@ -522,11 +584,23 @@ import RotateCcw from 'lucide-svelte/icons/rotate-ccw';
     }
     let changed = false;
     for (const [sid, mx, my] of moves) {
-      const idx = editTables.findIndex(t => t.id === sid);
-      if (idx >= 0) { editTables[idx] = { ...editTables[idx], x: mx, y: my }; changed = true; continue; }
-      const eidx = editElements.findIndex(el => el.id === sid);
-      if (eidx >= 0) { editElements[eidx] = { ...editElements[eidx], x: mx, y: my }; changed = true; }
+      const idx = editTables.findIndex((t) => t.id === sid);
+
+      if (idx >= 0) {
+        editTables[idx] = { ...editTables[idx], x: mx, y: my };
+        changed = true;
+
+        continue;
+      }
+
+      const eidx = editElements.findIndex((el) => el.id === sid);
+
+      if (eidx >= 0) {
+        editElements[eidx] = { ...editElements[eidx], x: mx, y: my };
+        changed = true;
+      }
     }
+
     if (changed) commit();
     // Snapping moves the node after release; the transformer has to land with it.
     void refreshTransformerAfterUpdate();
@@ -535,19 +609,19 @@ import RotateCcw from 'lucide-svelte/icons/rotate-ccw';
   function handleTransformEnd(id: string, e: any) {
     const node = e.target;
     const rotation = node.rotation();
-    const idx = editTables.findIndex(t => t.id === id);
+    const idx = editTables.findIndex((t) => t.id === id);
     if (idx >= 0) {
       editTables[idx] = { ...editTables[idx], degree: rotation };
       commit();
       return;
     }
-    const eidx = editElements.findIndex(el => el.id === id);
+    const eidx = editElements.findIndex((el) => el.id === id);
     if (eidx >= 0) {
       const el = editElements[eidx];
       const baseW = el.width / 100 * displayHallWidth;
       const baseH = el.height / 100 * displayHallHeight;
-      const newW = (node.scaleX() * baseW) / displayHallWidth * 100;
-      const newH = (node.scaleY() * baseH) / displayHallHeight * 100;
+      const newW = node.scaleX() * baseW / displayHallWidth * 100;
+      const newH = node.scaleY() * baseH / displayHallHeight * 100;
       node.scaleX(1);
       node.scaleY(1);
       editElements[eidx] = { ...el, degree: rotation, width: newW, height: newH };
@@ -563,14 +637,14 @@ import RotateCcw from 'lucide-svelte/icons/rotate-ccw';
 
   function handleUpdateSelected(props: Record<string, any>) {
     if (!selectedId) return;
-    const tidx = editTables.findIndex(t => t.id === selectedId);
+    const tidx = editTables.findIndex((t) => t.id === selectedId);
     if (tidx >= 0) {
       editTables[tidx] = { ...editTables[tidx], ...props };
       commit();
       void refreshTransformerAfterUpdate();
       return;
     }
-    const eidx = editElements.findIndex(el => el.id === selectedId);
+    const eidx = editElements.findIndex((el) => el.id === selectedId);
     if (eidx >= 0) {
       editElements[eidx] = { ...editElements[eidx], ...props };
       commit();
@@ -580,8 +654,8 @@ import RotateCcw from 'lucide-svelte/icons/rotate-ccw';
 
   function handleDeleteSelected(id: string) {
     const ids = selectedIds.includes(id) ? selectedIds : [id];
-    editElements = editElements.filter(el => !ids.includes(el.id));
-    selectedIds = selectedIds.filter(sid => !ids.includes(sid));
+    editElements = editElements.filter((el) => !ids.includes(el.id));
+    selectedIds = selectedIds.filter((sid) => !ids.includes(sid));
     commit();
   }
 
@@ -609,14 +683,14 @@ import RotateCcw from 'lucide-svelte/icons/rotate-ccw';
     const clamp = (v: number) => Math.max(0, Math.min(100, snap(v)));
     let changed = false;
     for (const id of selectedIds) {
-      const tidx = editTables.findIndex(t => t.id === id);
+      const tidx = editTables.findIndex((t) => t.id === id);
       if (tidx >= 0) {
         const t = editTables[tidx];
         editTables[tidx] = { ...t, x: clamp(t.x + dx), y: clamp(t.y + dy) };
         changed = true;
         continue;
       }
-      const eidx = editElements.findIndex(el => el.id === id);
+      const eidx = editElements.findIndex((el) => el.id === id);
       if (eidx >= 0) {
         const el = editElements[eidx];
         editElements[eidx] = { ...el, x: clamp(el.x + dx), y: clamp(el.y + dy) };
@@ -657,7 +731,7 @@ import RotateCcw from 'lucide-svelte/icons/rotate-ccw';
     if (!selectedId) return;
     if (e.key === 'Delete' || e.key === 'Backspace') {
       // Tables are removed from the tables page, so only elements are deletable here.
-      if (selectedIds.some(sid => editElements.some(el => el.id === sid))) {
+      if (selectedIds.some((sid) => editElements.some((el) => el.id === sid))) {
         e.preventDefault();
         handleDeleteSelected(selectedId);
       }
@@ -669,7 +743,7 @@ import RotateCcw from 'lucide-svelte/icons/rotate-ccw';
     const delta = deltas[e.key];
     if (!delta) return;
     e.preventDefault();
-    const step = e.shiftKey ? 10 : (snapEnabled ? GRID_STEP : 1);
+    const step = e.shiftKey ? 10 : snapEnabled ? GRID_STEP : 1;
     nudgeSelected(delta[0] * step, delta[1] * step);
   }
 
@@ -695,20 +769,20 @@ import RotateCcw from 'lucide-svelte/icons/rotate-ccw';
   <EditToolbar
     hallWidth={editHallWidth}
     hallHeight={editHallHeight}
-    {selectedId}
-    {isTableSelected}
+    selectedId={selectedId}
+    isTableSelected={isTableSelected}
     selectedItem={selectedItem}
     snap={snapEnabled}
-    {canUndo}
-    {canRedo}
-    {dirty}
+    canUndo={canUndo}
+    canRedo={canRedo}
+    dirty={dirty}
     onUndo={undo}
     onRedo={redo}
     onSave={handleSave}
     onCancel={handleCancel}
     onDelete={handleDeleteSelected}
     selectedCount={selectedIds.length}
-    elementCount={selectedIds.filter(sid => editElements.some(el => el.id === sid)).length}
+    elementCount={selectedIds.filter((sid) => editElements.some((el) => el.id === sid)).length}
     onAlign={alignSelection}
     onAddElement={handleAddElement}
     onUpdateSelected={handleUpdateSelected}
@@ -719,7 +793,7 @@ import RotateCcw from 'lucide-svelte/icons/rotate-ccw';
   />
 {/if}
 
-<svelte:window onkeydown={handleKeydown} />
+<svelte:window onkeydown={handleKeydown}></svelte:window>
 
 <div
   bind:this={containerEl}
@@ -774,88 +848,94 @@ import RotateCcw from 'lucide-svelte/icons/rotate-ccw';
         <KGroup x={offsetX} y={offsetY} scaleX={viewScale * zoom} scaleY={viewScale * zoom}>
           <!-- Hall boundary border -->
           <KRect
-          x={0}
-          y={0}
-          width={displayHallWidth}
-          height={displayHallHeight}
-          fill={dark ? '#111827' : '#FFFFFF'}
-          stroke={dark ? '#4B5563' : '#D1D5DB'}
-          strokeWidth={2}
-          cornerRadius={12}
-          shadowColor={dark ? 'rgba(0,0,0,0.5)' : 'rgba(0,0,0,0.08)'}
-          shadowBlur={20}
-          shadowOffsetY={4}
-        />
-        <!-- Grid lines (edit mode only, on top of hall rect) -->
-        {#if mode === 'edit' && KLine}
-          {#each Array(Math.floor(100 / GRID_STEP) + 1) as _, i (i)}
-            <KLine
+            x={0}
+            y={0}
+            width={displayHallWidth}
+            height={displayHallHeight}
+            fill={dark ? '#111827' : '#FFFFFF'}
+            stroke={dark ? '#4B5563' : '#D1D5DB'}
+            strokeWidth={2}
+            cornerRadius={12}
+            shadowColor={dark ? 'rgba(0,0,0,0.5)' : 'rgba(0,0,0,0.08)'}
+            shadowBlur={20}
+            shadowOffsetY={4}
+          />
+          <!-- Grid lines (edit mode only, on top of hall rect) -->
+          {#if mode === 'edit' && KLine}
+            {#each Array(Math.floor(100 / GRID_STEP) + 1) as _, i (i)}
+              <KLine
               points={[i * GRID_STEP / 100 * displayHallWidth, 0, i * GRID_STEP / 100 * displayHallWidth, displayHallHeight]}
-              stroke={dark ? '#4B5563' : '#D1D5DB'}
-              strokeWidth={0.5}
-              dash={[4, 4]}
-              listening={false}
-            />
-            <KLine
+                stroke={dark ? '#4B5563' : '#D1D5DB'}
+                strokeWidth={0.5}
+                dash={[4, 4]}
+                listening={false}
+              />
+              <KLine
               points={[0, i * GRID_STEP / 100 * displayHallHeight, displayHallWidth, i * GRID_STEP / 100 * displayHallHeight]}
-              stroke={dark ? '#4B5563' : '#D1D5DB'}
-              strokeWidth={0.5}
-              dash={[4, 4]}
-              listening={false}
+                stroke={dark ? '#4B5563' : '#D1D5DB'}
+                strokeWidth={0.5}
+                dash={[4, 4]}
+                listening={false}
+              />
+            {/each}
+          {/if}
+          {#each displayElements as el (el.id)}
+            <HallElementNode
+              element={el}
+              hallWidth={displayHallWidth}
+              hallHeight={displayHallHeight}
+              dark={dark}
+              mode={mode}
+              isSelected={mode === 'edit' && selectedIds.includes(el.id)}
+            onrefready={(node: any) => { nodeRefs[el.id] = node; }}
+              ondragstart={(e: any) => handleDragStart(el.id, e)}
+              ondragmove={handleDragMove}
+              ondragend={(e: any) => handleDragEnd(el.id, e)}
+              ontransformend={(e: any) => handleTransformEnd(el.id, e)}
+            onselect={(e: any) => { if (mode === 'edit') selectItem(el.id, e); }}
             />
           {/each}
-        {/if}
-        {#each displayElements as el (el.id)}
-          <HallElementNode
-            element={el}
-            hallWidth={displayHallWidth}
-            hallHeight={displayHallHeight}
-            {dark}
-            mode={mode}
-            isSelected={mode === 'edit' && selectedIds.includes(el.id)}
-            onrefready={(node: any) => { nodeRefs[el.id] = node; }}
-            ondragstart={(e: any) => handleDragStart(el.id, e)}
-            ondragmove={handleDragMove}
-            ondragend={(e: any) => handleDragEnd(el.id, e)}
-            ontransformend={(e: any) => handleTransformEnd(el.id, e)}
-            onselect={(e: any) => { if (mode === 'edit') selectItem(el.id, e); }}
-          />
-        {/each}
-        {#each displayTables as t (t.id)}
-          <BanquetTableComponent
-            table={t}
-            guests={tableGuestsRaw[t.id] ?? []}
-            isSelected={mode === 'edit' ? selectedIds.includes(t.id) : selectedTableId === t.id}
-            isHighlighted={highlightedTableId === t.id}
-            {dark}
-            hallWidth={displayHallWidth}
-            hallHeight={displayHallHeight}
-            {mode}
-            onrefready={(node: any) => { nodeRefs[t.id] = node; }}
-            onTableClick={mode === 'edit' ? (e: any) => selectItem(t.id, e) : () => onTableClick?.(t.id)}
-            onSeatClick={mode === 'edit' ? undefined : (seatNum, guest) => onSeatClick?.(t.id, seatNum, guest)}
-            ondragstart={(e: any) => handleDragStart(t.id, e)}
-            ondragmove={handleDragMove}
-            ondragend={(e: any) => handleDragEnd(t.id, e)}
-            ontransformend={(e: any) => handleTransformEnd(t.id, e)}
-          />
-        {/each}
-        {#if KTransformer && mode === 'edit'}
-          <KTransformer
-            bind:this={transformerEl}
-            rotateEnabled={true}
-            enabledAnchors={isTableSelected ? [] : undefined}
-            anchorSize={coarsePointer ? 18 : 8}
-            rotateAnchorOffset={coarsePointer ? 48 : 30}
-            anchorCornerRadius={2}
-            borderStroke="#D4AF37"
-            anchorStroke="#D4AF37"
-            anchorFill="#FFFFFF"
-            anchorStrokeWidth={2}
-            borderStrokeWidth={1.5}
-            padding={coarsePointer ? 12 : 4}
-          />
-        {/if}
+          {#each displayTables as t (t.id)}
+            <BanquetTableComponent
+              table={t}
+              guests={tableGuestsRaw[t.id] ?? []}
+              isSelected={mode === 'edit' ? selectedIds.includes(t.id) : selectedTableId === t.id}
+              isHighlighted={highlightedTableId === t.id}
+              dark={dark}
+              hallWidth={displayHallWidth}
+              hallHeight={displayHallHeight}
+              mode={mode}
+              onrefready={(node: any) => {
+                nodeRefs[t.id] = node;
+              }}
+              onTableClick={mode === 'edit'
+                ? (e: any) => selectItem(t.id, e)
+                : () => onTableClick?.(t.id)}
+              onSeatClick={mode === 'edit'
+                ? undefined
+                : (seatNum, guest) => onSeatClick?.(t.id, seatNum, guest)}
+              ondragstart={(e: any) => handleDragStart(t.id, e)}
+              ondragmove={handleDragMove}
+              ondragend={(e: any) => handleDragEnd(t.id, e)}
+              ontransformend={(e: any) => handleTransformEnd(t.id, e)}
+            />
+          {/each}
+          {#if KTransformer && mode === 'edit'}
+            <KTransformer
+              bind:this={transformerEl}
+              rotateEnabled={true}
+              enabledAnchors={isTableSelected ? [] : undefined}
+              anchorSize={coarsePointer ? 18 : 8}
+              rotateAnchorOffset={coarsePointer ? 48 : 30}
+              anchorCornerRadius={2}
+              borderStroke="#D4AF37"
+              anchorStroke="#D4AF37"
+              anchorFill="#FFFFFF"
+              anchorStrokeWidth={2}
+              borderStrokeWidth={1.5}
+              padding={coarsePointer ? 12 : 4}
+            />
+          {/if}
         </KGroup>
       </KLayer>
     </KonvaStage>

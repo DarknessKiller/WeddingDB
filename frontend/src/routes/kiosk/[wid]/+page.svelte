@@ -1,11 +1,11 @@
 <script lang="ts">
-  import HallMap from '$lib/components/seating/HallMap.svelte';
-  import { publicListGuests } from '$lib/api/public';
-  import { getPublicLayout } from '$lib/api/layout';
-  import { cacheGuests, loadCachedGuests } from '$lib/offline/queue';
-  import { rankGuests } from '$lib/utils/guestSearch';
-  import { cn, getInitials } from '$lib/utils';
-  import { formatSeatRange, formatPartySize } from '$lib/utils/seat';
+  import HallMap from '#lib/components/seating/HallMap.svelte';
+  import { publicListGuests } from '#lib/api/public.ts';
+  import { getPublicLayout } from '#lib/api/layout.ts';
+  import { cacheGuests, loadCachedGuests } from '#lib/offline/queue.ts';
+  import { rankGuests } from '#lib/utils/guestSearch.ts';
+  import { cn, getInitials } from '#lib/utils/index.ts';
+  import { formatSeatRange, formatPartySize } from '#lib/utils/seat.ts';
   import Maximize from 'lucide-svelte/icons/maximize';
 import Minimize from 'lucide-svelte/icons/minimize';
 import Monitor from 'lucide-svelte/icons/monitor';
@@ -18,9 +18,9 @@ import X from 'lucide-svelte/icons/x';
   import { onMount, onDestroy, tick } from 'svelte';
   import { fade, fly } from 'svelte/transition';
   import { page } from '$app/state';
-  import { setWeddingId } from '$lib/stores/weddingId';
-  import { showSeatNumbers, setShowSeatNumbers } from '$lib/stores';
-  import type { Guest, BanquetTable, HallElement } from '$lib/types';
+  import { setWeddingId } from '#lib/stores/weddingId.ts';
+  import { showSeatNumbers, setShowSeatNumbers } from '#lib/stores/index.ts';
+  import type { Guest, BanquetTable, HallElement } from '#lib/types/index.ts';
 
   let guestsLoading = $state(true);
   let guestsError = $state(false);

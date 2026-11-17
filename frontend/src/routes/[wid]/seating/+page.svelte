@@ -1,15 +1,15 @@
 <script lang="ts">
-  import HallMap from '$lib/components/seating/HallMap.svelte';
-  import { weddingTitle } from '$lib/stores/weddingTitle';
-  import { selectedGuest, isDrawerOpen, addToast } from '$lib/stores';
-  import { weddingId } from '$lib/stores/weddingId';
-  import { guestList, tableOccupancy } from '$lib/stores/guestEvents';
+  import HallMap from '#lib/components/seating/HallMap.svelte';
+  import { weddingTitle } from '#lib/stores/weddingTitle.ts';
+  import { selectedGuest, isDrawerOpen, addToast } from '#lib/stores/index.ts';
+  import { weddingId } from '#lib/stores/weddingId.ts';
+  import { guestList, tableOccupancy } from '#lib/stores/guestEvents.ts';
   import { goto } from '$app/navigation';
-  import { assignSeat, checkInGuest, checkOutGuest, ConflictError } from '$lib/api/guests';
-  import { getOccupancy, listTables } from '$lib/api/tables';
-  import { getLayout, saveLayout } from '$lib/api/layout';
-  import Badge from '$lib/components/ui/Badge.svelte';
-  import { cn } from '$lib/utils';
+  import { assignSeat, checkInGuest, checkOutGuest, ConflictError } from '#lib/api/guests.ts';
+  import { getOccupancy, listTables } from '#lib/api/tables.ts';
+  import { getLayout, saveLayout } from '#lib/api/layout.ts';
+  import Badge from '#lib/components/ui/Badge.svelte';
+  import { cn } from '#lib/utils/index.ts';
   import { page } from '$app/state';
   import { onMount, onDestroy } from 'svelte';
   import Users from 'lucide-svelte/icons/users';
@@ -23,9 +23,9 @@ import CheckCircle2 from 'lucide-svelte/icons/check-circle-2';
 import Banknote from 'lucide-svelte/icons/banknote';
 import Gift from 'lucide-svelte/icons/gift';
 import Pencil from 'lucide-svelte/icons/pencil';
-  import CheckInModal from '$lib/components/ui/CheckInModal.svelte';
+  import CheckInModal from '#lib/components/ui/CheckInModal.svelte';
   import { get } from 'svelte/store';
-  import type { BanquetTable, Guest, RSVPStatus, TableOccupancy, HallElement } from '$lib/types';
+  import type { BanquetTable, Guest, RSVPStatus, TableOccupancy, HallElement } from '#lib/types/index.ts';
 
   let allTables = $state<BanquetTable[]>([]);
   let elements = $state<HallElement[]>([]);

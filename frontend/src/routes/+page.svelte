@@ -1,9 +1,9 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { goto } from '$app/navigation';
-  import { weddingId } from '$lib/stores/weddingId';
+  import { weddingId } from '#lib/stores/weddingId.ts';
   import { get } from 'svelte/store';
-  import { validateToken } from '$lib/utils/auth';
+  import { validateToken } from '#lib/utils/auth.ts';
 
   onMount(async () => {
     if (!await validateToken()) return;

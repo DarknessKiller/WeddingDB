@@ -1,4 +1,4 @@
-import { getAuth } from '$lib/stores';
+import { getAuth } from '#lib/stores/index.ts';
 
 export interface GuestEvent {
 	type: 'create' | 'update' | 'delete' | 'checkin' | 'checkout' | 'seat_assign';
@@ -26,7 +26,7 @@ type EventHandler = (event: GuestEvent) => void;
 type StatusHandler = (status: 'connected' | 'reconnecting', reconnect: boolean) => void;
 
 class SSEClient {
-	private eventSource: EventSource | null = null;
+	private controller: AbortController | null = null;
 	private handlers: Set<EventHandler> = new Set();
 	private statusHandlers: Set<StatusHandler> = new Set();
 	private reconnectTimeout: ReturnType<typeof setTimeout> | null = null;
@@ -35,37 +35,63 @@ class SSEClient {
 	private wid = '';
 
 	connect(weddingId: string) {
-		if (this.eventSource) this.disconnect();
+		this.controller?.abort();
+		this.controller = null;
+		if (this.reconnectTimeout) clearTimeout(this.reconnectTimeout);
+		this.reconnectTimeout = null;
 		this.wid = weddingId;
 		const { accessToken } = getAuth();
-		if (!accessToken) {
-			console.warn('SSE: No access token available');
-			return;
-		}
-		const url = `/api/weddings/${weddingId}/events?token=${encodeURIComponent(accessToken)}`;
-		this.eventSource = new EventSource(url);
-		this.eventSource.onopen = () => {
+		if (!accessToken) return;
+		const controller = new AbortController();
+		this.controller = controller;
+		void this.stream(weddingId, accessToken, controller);
+	}
+
+	private async stream(weddingId: string, accessToken: string, controller: AbortController) {
+		try {
+			const response = await fetch(`/api/weddings/${weddingId}/events`, {
+				headers: { Authorization: `Bearer ${accessToken}` },
+				signal: controller.signal
+			});
+			if (!response.ok || !response.body) throw new Error(`SSE request failed: ${response.status}`);
+
 			const reconnect = this.reconnectDelay > 1000;
 			this.reconnectDelay = 1000;
 			this.statusHandlers.forEach((handler) => handler('connected', reconnect));
-		};
-		this.eventSource.onmessage = (event) => {
-			try {
-				const data: GuestEvent = JSON.parse(event.data);
-				this.handlers.forEach((handler) => handler(data));
-			} catch (e) {
-				console.error('SSE: Failed to parse event', e);
+			const reader = response.body.getReader();
+			const decoder = new TextDecoder();
+			let buffer = '';
+			while (true) {
+				const { value, done } = await reader.read();
+				buffer += decoder.decode(value, { stream: !done });
+				const messages = buffer.split(/\r?\n\r?\n/);
+				buffer = messages.pop() ?? '';
+				for (const message of messages) {
+					const data = message.split(/\r?\n/).filter((line) => line.startsWith('data:')).map((line) => line.slice(5).trimStart()).join('\n');
+					if (!data) continue;
+					try {
+						const event: GuestEvent = JSON.parse(data);
+						this.handlers.forEach((handler) => handler(event));
+					} catch (e) {
+						console.error('SSE: Failed to parse event', e);
+					}
+				}
+				if (done) break;
 			}
-		};
-		this.eventSource.onerror = () => {
+		} catch {
+			if (controller.signal.aborted) return;
 			this.statusHandlers.forEach((handler) => handler('reconnecting', false));
-			this.scheduleReconnect();
-		};
+		} finally {
+			if (this.controller === controller) {
+				this.controller = null;
+				this.scheduleReconnect();
+			}
+		}
 	}
 
 	disconnect() {
-		this.eventSource?.close();
-		this.eventSource = null;
+		this.controller?.abort();
+		this.controller = null;
 		if (this.reconnectTimeout) clearTimeout(this.reconnectTimeout);
 		this.reconnectTimeout = null;
 		this.reconnectDelay = 1000;

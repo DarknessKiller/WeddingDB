@@ -1,9 +1,9 @@
 import { apiFetch } from './client';
 import { get } from 'svelte/store';
-import { weddingId } from '$lib/stores/weddingId';
-import { applyGuestResponse } from '$lib/stores/guestEvents';
-import { enqueue, syncQueue } from '$lib/offline/queue';
-import { guestList, guestMap } from '$lib/stores/guestEvents';
+import { weddingId } from '#lib/stores/weddingId.ts';
+import { applyGuestResponse } from '#lib/stores/guestEvents.ts';
+import { enqueue, syncQueue } from '#lib/offline/queue.ts';
+import { guestList, guestMap } from '#lib/stores/guestEvents.ts';
 
 function isOffline() {
 	return typeof navigator !== 'undefined' && !navigator.onLine;
@@ -21,7 +21,7 @@ function optimisticPatch(op: string, guestId: string, data?: Record<string, unkn
 	try {
 		if (op === 'create' && data) {
 			const now = new Date();
-			const g = { id: guestId, name: (data.name as string) || '', email: (data.email as string) || '', pax: (data.pax as number) || 1, rsvp: (data.rsvp as string) || 'no_response', isVip: !!data.isVip, notes: (data.notes as string) || '', dietaryRequirements: (data.dietary as string[]) || [], tableId: (data.tableId as string | null) || null, seatNumber: (data.seatNum as number | null) ?? null, checkedIn: false, createdAt: now, updatedAt: now } as unknown as import('$lib/types').Guest;
+			const g = { id: guestId, name: (data.name as string) || '', email: (data.email as string) || '', pax: (data.pax as number) || 1, rsvp: (data.rsvp as string) || 'no_response', isVip: !!data.isVip, notes: (data.notes as string) || '', dietaryRequirements: (data.dietary as string[]) || [], tableId: (data.tableId as string | null) || null, seatNumber: (data.seatNum as number | null) ?? null, checkedIn: false, createdAt: now, updatedAt: now } as unknown as import('#lib/types/index.ts').Guest;
 			guestList.update(l => [...l, g]); guestMap.update(m => { const n = new Map(m); n.set(guestId, g); return n; });
 		} else if (op === 'update' && data) {
 			// Explicit null (or "") in the patch overrides/clears the old value;
@@ -40,7 +40,7 @@ function optimisticPatch(op: string, guestId: string, data?: Record<string, unkn
 				angbaoAmount: data.angbaoAmt !== undefined ? ((data.angbaoAmt as number | null) ?? undefined) : x.angbaoAmount,
 				giftItem: data.giftItem !== undefined ? ((data.giftItem as string | null) ?? undefined) : x.giftItem,
 				updatedAt: new Date()
-			} as unknown as import('$lib/types').Guest : x));
+			} as unknown as import('#lib/types/index.ts').Guest : x));
 		} else if (op === 'delete') {
 			guestList.update(l => l.filter(x => x.id !== guestId)); guestMap.update(m => { const n = new Map(m); n.delete(guestId); return n; });
 		} else if (op === 'checkin') {
@@ -52,9 +52,9 @@ function optimisticPatch(op: string, guestId: string, data?: Record<string, unkn
 				angbaoAmount: data?.angbaoAmt !== undefined ? ((data.angbaoAmt as number | null) ?? undefined) : x.angbaoAmount,
 				giftItem: data?.giftItem !== undefined ? ((data.giftItem as string | null) ?? undefined) : x.giftItem,
 				updatedAt: now
-			} as unknown as import('$lib/types').Guest : x));
+			} as unknown as import('#lib/types/index.ts').Guest : x));
 		} else if (op === 'checkout') {
-			guestList.update(l => l.map(x => x.id === guestId ? { ...x, checkedIn: false, checkedInAt: undefined, updatedAt: new Date() } as unknown as import('$lib/types').Guest : x));
+			guestList.update(l => l.map(x => x.id === guestId ? { ...x, checkedIn: false, checkedInAt: undefined, updatedAt: new Date() } as unknown as import('#lib/types/index.ts').Guest : x));
 		}
 	} catch {}
 }

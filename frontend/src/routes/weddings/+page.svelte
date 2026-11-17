@@ -1,9 +1,9 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
   import { goto } from '$app/navigation';
-  import { addToast, getAuth, setAuth } from '$lib/stores';
-  import { weddingId, setWeddingId } from '$lib/stores/weddingId';
-  import { listWeddings, createWedding, updateWedding, deleteWedding, type Wedding } from '$lib/api/weddings';
+  import { addToast, getAuth, setAuth } from '#lib/stores/index.ts';
+  import { weddingId, setWeddingId } from '#lib/stores/weddingId.ts';
+  import { listWeddings, createWedding, updateWedding, deleteWedding, type Wedding } from '#lib/api/weddings.ts';
   import Plus from 'lucide-svelte/icons/plus';
 import Pencil from 'lucide-svelte/icons/pencil';
 import Trash2 from 'lucide-svelte/icons/trash-2';
@@ -12,8 +12,8 @@ import Calendar from 'lucide-svelte/icons/calendar';
 import Check from 'lucide-svelte/icons/check';
 import ChevronRight from 'lucide-svelte/icons/chevron-right';
   import dayjs from 'dayjs';
-  import { validateToken } from '$lib/utils/auth';
-  import { apiFetch } from '$lib/api/client';
+  import { validateToken } from '#lib/utils/auth.ts';
+  import { apiFetch } from '#lib/api/client.ts';
 
   let weddings = $state<Wedding[]>([]);
   let loading = $state(true);

@@ -1,20 +1,20 @@
 <script lang="ts">
-  import { listTables } from '$lib/api/search';
-  import { weddingTitle } from '$lib/stores/weddingTitle';
-  import { getLayout } from '$lib/api/layout';
-  import { addToast, selectedGuest, isDrawerOpen } from '$lib/stores';
-  import { weddingId } from '$lib/stores/weddingId';
-  import { guestList } from '$lib/stores/guestEvents';
+  import { listTables } from '#lib/api/search.ts';
+  import { weddingTitle } from '#lib/stores/weddingTitle.ts';
+  import { getLayout } from '#lib/api/layout.ts';
+  import { addToast, selectedGuest, isDrawerOpen } from '#lib/stores/index.ts';
+  import { weddingId } from '#lib/stores/weddingId.ts';
+  import { guestList } from '#lib/stores/guestEvents.ts';
   import { get } from 'svelte/store';
-  import Badge from '$lib/components/ui/Badge.svelte';
-  import { getInitials, cn } from '$lib/utils';
-  import { formatPartySize } from '$lib/utils/seat';
+  import Badge from '#lib/components/ui/Badge.svelte';
+  import { getInitials, cn } from '#lib/utils/index.ts';
+  import { formatPartySize } from '#lib/utils/seat.ts';
   import Search from 'lucide-svelte/icons/search';
 import CheckCircle2 from 'lucide-svelte/icons/check-circle-2';
   import { onMount } from 'svelte';
-  import type { Guest, BanquetTable, HallElement } from '$lib/types';
-  import { rankGuests } from '$lib/utils/guestSearch';
-  import HallMap from '$lib/components/seating/HallMap.svelte';
+  import type { Guest, BanquetTable, HallElement } from '#lib/types/index.ts';
+  import { rankGuests } from '#lib/utils/guestSearch.ts';
+  import HallMap from '#lib/components/seating/HallMap.svelte';
 
   let query = $state('');
   let results = $state<Guest[]>([]);

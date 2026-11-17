@@ -18,7 +18,7 @@ import AlignCenterHorizontal from 'lucide-svelte/icons/align-center-horizontal';
 import AlignEndHorizontal from 'lucide-svelte/icons/align-end-horizontal';
 import AlignHorizontalDistributeCenter from 'lucide-svelte/icons/align-horizontal-distribute-center';
 import AlignVerticalDistributeCenter from 'lucide-svelte/icons/align-vertical-distribute-center';
-  import type { HallElement, ElementType } from '$lib/types';
+  import type { HallElement, ElementType } from '#lib/types/index.ts';
 
   type AlignOp = 'left' | 'centerX' | 'right' | 'top' | 'middle' | 'bottom' | 'distX' | 'distY';
 

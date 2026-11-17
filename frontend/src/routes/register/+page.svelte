@@ -1,11 +1,11 @@
 <script lang="ts">
 
-  import { addToast } from '$lib/stores';
+  import { addToast } from '#lib/stores/index.ts';
   import Eye from 'lucide-svelte/icons/eye';
 import EyeOff from 'lucide-svelte/icons/eye-off';
 import UserPlus from 'lucide-svelte/icons/user-plus';
 import Mail from 'lucide-svelte/icons/mail';
-  import PasswordRequirements from '$lib/components/ui/PasswordRequirements.svelte';
+  import PasswordRequirements from '#lib/components/ui/PasswordRequirements.svelte';
 
   let name = $state('');
   let email = $state('');

@@ -1,13 +1,13 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { get } from 'svelte/store';
-import type { Guest } from '$lib/types';
+import type { Guest } from '#lib/types/index.ts';
 
-vi.mock('$lib/stores', () => ({
+vi.mock('#lib/stores/index.ts', () => ({
 	selectedGuest: { set: vi.fn(), update: vi.fn(), subscribe: vi.fn(() => vi.fn()) },
 	getAuth: () => ({ accessToken: 'test-token' })
 }));
 
-vi.mock('$lib/stores/weddingId', () => ({
+vi.mock('#lib/stores/weddingId.ts', () => ({
 	// subscribe must invoke the callback so svelte's get() returns 'w1'
 	weddingId: { get: () => 'w1', subscribe: vi.fn((run: (v: string) => void) => { run('w1'); return () => {}; }), set: vi.fn(), update: vi.fn() }
 }));
@@ -15,7 +15,7 @@ vi.mock('$lib/stores/weddingId', () => ({
 // Captures the SSE event handler so tests can drive handleGuestEvent.
 const sseState = vi.hoisted(() => ({ eventHandler: undefined as ((e: unknown) => void) | undefined }));
 
-vi.mock('$lib/api/sse', () => ({
+vi.mock('#lib/api/sse.ts', () => ({
 	connectSSE: vi.fn(() => ({
 		onEvent: vi.fn((cb: (e: unknown) => void) => { sseState.eventHandler = cb; return () => {}; }),
 		onStatus: vi.fn(() => () => {}),

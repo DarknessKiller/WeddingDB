@@ -1,5 +1,5 @@
-import { getAuth, setAuth, clearAuth } from '$lib/stores';
-import { setWeddingId } from '$lib/stores/weddingId';
+import { getAuth, setAuth, clearAuth } from '#lib/stores/index.ts';
+import { setWeddingId } from '#lib/stores/weddingId.ts';
 
 const BASE = '';
 

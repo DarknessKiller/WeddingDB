@@ -1,19 +1,19 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
   import { page } from '$app/state';
-  import Sidebar from '$lib/components/layout/Sidebar.svelte';
-  import Header from '$lib/components/layout/Header.svelte';
-  import Drawer from '$lib/components/ui/Drawer.svelte';
-  import { selectedGuest, isDrawerOpen, drawerStartEditing, drawerCreateMode, sidebarCollapsed, showSeatNumbers, setShowSeatNumbers } from '$lib/stores';
-  import { weddingId, setWeddingId } from '$lib/stores/weddingId';
-  import { weddingTitle } from '$lib/stores/weddingTitle';
-  import { validateToken } from '$lib/utils/auth';
-  import { fetchAllGuests } from '$lib/api/guests';
-  import { syncQueue } from '$lib/offline/queue';
-  import { getWedding } from '$lib/api/weddings';
-  import { listTables } from '$lib/api/tables';
-  import { initializeSSE, refreshGuests } from '$lib/stores/guestEvents';
-  import type { BanquetTable } from '$lib/types';
+  import Sidebar from '#lib/components/layout/Sidebar.svelte';
+  import Header from '#lib/components/layout/Header.svelte';
+  import Drawer from '#lib/components/ui/Drawer.svelte';
+  import { selectedGuest, isDrawerOpen, drawerStartEditing, drawerCreateMode, sidebarCollapsed, showSeatNumbers, setShowSeatNumbers } from '#lib/stores/index.ts';
+  import { weddingId, setWeddingId } from '#lib/stores/weddingId.ts';
+  import { weddingTitle } from '#lib/stores/weddingTitle.ts';
+  import { validateToken } from '#lib/utils/auth.ts';
+  import { fetchAllGuests } from '#lib/api/guests.ts';
+  import { syncQueue } from '#lib/offline/queue.ts';
+  import { getWedding } from '#lib/api/weddings.ts';
+  import { listTables } from '#lib/api/tables.ts';
+  import { initializeSSE, refreshGuests } from '#lib/stores/guestEvents.ts';
+  import type { BanquetTable } from '#lib/types/index.ts';
 
   let { children } = $props();
 

@@ -19,7 +19,7 @@ const REFRESH_OK = { accessToken: 'new-access', refreshToken: 'refresh-2', role:
 let fetchMock: ReturnType<typeof vi.fn>;
 let location: { href: string };
 
-beforeEach(() => {
+beforeEach(async () => {
 	vi.resetModules();
 	Object.defineProperty(globalThis, 'localStorage', { value: memoryStorage(), configurable: true });
 	localStorage.setItem('weddingdb_access_token', 'old-access');
@@ -28,6 +28,8 @@ beforeEach(() => {
 	Object.defineProperty(globalThis, 'window', { value: { location, addEventListener: () => {} }, configurable: true });
 	fetchMock = vi.fn();
 	Object.defineProperty(globalThis, 'fetch', { value: fetchMock, configurable: true });
+	const { setAuth } = await import('#lib/stores/index.ts');
+	setAuth('old-access', 'refresh-1', 'admin', 'A');
 });
 
 afterEach(() => {
@@ -57,20 +59,20 @@ describe('apiFetch refresh recovery', () => {
 		fetchMock.mockResolvedValueOnce(res({}, 401)).mockRejectedValueOnce(new TypeError('Failed to fetch'));
 
 		const { apiFetch } = await import('./client');
-		const { getAuth } = await import('$lib/stores');
+		const { getAuth } = await import('#lib/stores/index.ts');
 		const result = await apiFetch('/api/guests');
 
 		expect(result.status).toBe(401);
 		expect(location.href).toBe('');
 		expect(getAuth()).toMatchObject({ accessToken: 'old-access', refreshToken: 'refresh-1' });
-		expect(localStorage.getItem('weddingdb_refresh_token')).toBe('refresh-1');
+		expect(localStorage.getItem('weddingdb_refresh_token')).toBeNull();
 	});
 
 	it('keeps the session when refresh fails with a server error', async () => {
 		fetchMock.mockResolvedValueOnce(res({}, 401)).mockResolvedValueOnce(res({ title: 'boom' }, 502));
 
 		const { apiFetch } = await import('./client');
-		const { getAuth } = await import('$lib/stores');
+		const { getAuth } = await import('#lib/stores/index.ts');
 		await apiFetch('/api/guests');
 
 		expect(location.href).toBe('');
@@ -83,7 +85,7 @@ describe('apiFetch refresh recovery', () => {
 			.mockResolvedValueOnce(res({ title: 'invalid refresh token' }, 401));
 
 		const { apiFetch } = await import('./client');
-		const { getAuth } = await import('$lib/stores');
+		const { getAuth } = await import('#lib/stores/index.ts');
 		const result = await apiFetch('/api/guests');
 
 		expect(result.status).toBe(401);

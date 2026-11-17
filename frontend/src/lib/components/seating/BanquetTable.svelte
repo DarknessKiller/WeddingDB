@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import type { BanquetTable, Guest } from '$lib/types';
-  import { getInitials } from '$lib/utils';
+  import type { BanquetTable, Guest } from '#lib/types/index.ts';
+  import { getInitials } from '#lib/utils/index.ts';
 
   let {
     table,

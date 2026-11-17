@@ -1,5 +1,5 @@
 <script lang="ts">
-  import type { RSVPStatus } from '$lib/types';
+  import type { RSVPStatus } from '#lib/types/index.ts';
 
   let { status }: { status: RSVPStatus } = $props();
 

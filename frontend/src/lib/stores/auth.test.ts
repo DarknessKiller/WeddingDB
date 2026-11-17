@@ -35,25 +35,15 @@ afterEach(() => {
 	delete (globalThis as any).localStorage;
 });
 
-describe('auth tab sync', () => {
-	it('adopts tokens another tab rotated', async () => {
-		const { getAuth } = await import('$lib/stores');
-		expect(getAuth().accessToken).toBe('old-access');
+describe('auth storage', () => {
+	it('does not load persisted tokens or write tokens to localStorage', async () => {
+		const { getAuth, setAuth } = await import('#lib/stores/index.ts');
+		expect(getAuth()).toMatchObject({ accessToken: null, refreshToken: null });
 
-		storage.setItem('weddingdb_access_token', 'new-access');
-		storage.setItem('weddingdb_refresh_token', 'refresh-2');
-		listeners.storage[0]({ key: 'weddingdb_access_token' } as StorageEvent);
+		setAuth('new-access', 'refresh-2', 'admin', 'A');
 
 		expect(getAuth()).toMatchObject({ accessToken: 'new-access', refreshToken: 'refresh-2' });
-	});
-
-	it('mirrors another tab logging out', async () => {
-		const { getAuth } = await import('$lib/stores');
-		expect(getAuth().accessToken).toBe('old-access');
-
-		storage.clear();
-		listeners.storage[0]({ key: null } as StorageEvent);
-
-		expect(getAuth()).toMatchObject({ accessToken: null, refreshToken: null });
+		expect(storage.getItem('weddingdb_access_token')).toBeNull();
+		expect(storage.getItem('weddingdb_refresh_token')).toBeNull();
 	});
 });

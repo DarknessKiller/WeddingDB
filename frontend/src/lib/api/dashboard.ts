@@ -1,5 +1,5 @@
 import { apiFetch } from './client';
-import type { DashboardStats, TableOccupancy } from '$lib/types';
+import type { DashboardStats, TableOccupancy } from '#lib/types/index.ts';
 
 interface RawGuest {
   id: string;

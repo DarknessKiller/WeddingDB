@@ -1,7 +1,7 @@
 <script lang="ts">
   import { page } from '$app/state';
-  import { sidebarCollapsed, getAuth, clearAuth } from '$lib/stores';
-  import { setWeddingId } from '$lib/stores/weddingId';
+  import { sidebarCollapsed, getAuth, clearAuth } from '#lib/stores/index.ts';
+  import { setWeddingId } from '#lib/stores/weddingId.ts';
   import { goto } from '$app/navigation';
   import Menu from 'lucide-svelte/icons/menu';
 import X from 'lucide-svelte/icons/x';

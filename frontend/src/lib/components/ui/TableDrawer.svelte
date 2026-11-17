@@ -4,8 +4,8 @@ import Check from 'lucide-svelte/icons/check';
 import Pencil from 'lucide-svelte/icons/pencil';
 import Star from 'lucide-svelte/icons/star';
 import Users from 'lucide-svelte/icons/users';
-  import { cn } from '$lib/utils';
-  import { trapFocus } from '$lib/utils/focus';
+  import { cn } from '#lib/utils/index.ts';
+  import { trapFocus } from '#lib/utils/focus.ts';
   import { untrack } from 'svelte';
 
   let {

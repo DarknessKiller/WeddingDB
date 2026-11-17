@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { defaultSlot, reorderElements } from './layout';
-import type { BanquetTable, HallElement } from '$lib/types';
+import type { BanquetTable, HallElement } from '#lib/types/index.ts';
 
 const t = (x: number, y: number): BanquetTable => ({
 	id: crypto.randomUUID(), name: '', capacity: 10, x, y, degree: 0, isVip: false

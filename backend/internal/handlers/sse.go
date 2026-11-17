@@ -22,11 +22,11 @@ func NewSSEHandler(sseHub *services.SSEHub, authService *services.AuthService) *
 
 // StreamHandler returns an http.HandlerFunc for SSE streaming.
 // Registered directly on the mux to bypass Fuego's response buffering.
-// Auth: EventSource cannot send headers, so the JWT is passed via ?token= query param.
+// Auth: clients must send the JWT in an Authorization: Bearer header.
 func (h *SSEHandler) StreamHandler() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		// Validate token from query param (EventSource can't set headers).
-		token := r.URL.Query().Get("token")
+		// Read token from the standard Authorization: Bearer header.
+		token := middleware.ExtractBearer(r)
 		if token == "" {
 			http.Error(w, `{"error":"Missing token"}`, http.StatusUnauthorized)
 			return

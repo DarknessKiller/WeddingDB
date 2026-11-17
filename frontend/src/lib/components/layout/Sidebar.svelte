@@ -1,6 +1,6 @@
 <script lang="ts">
-  import { cn } from '$lib/utils';
-  import { sidebarCollapsed, getAuth } from '$lib/stores';
+  import { cn } from '#lib/utils/index.ts';
+  import { sidebarCollapsed, getAuth } from '#lib/stores/index.ts';
   import LayoutDashboard from 'lucide-svelte/icons/layout-dashboard';
 import Users from 'lucide-svelte/icons/users';
 import MapPin from 'lucide-svelte/icons/map-pin';

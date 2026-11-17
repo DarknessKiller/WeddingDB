@@ -1,6 +1,6 @@
 import { goto } from '$app/navigation';
-import { getAuth, setAuth, clearAuth } from '$lib/stores';
-import { setWeddingId } from '$lib/stores/weddingId';
+import { getAuth, setAuth, clearAuth } from '#lib/stores/index.ts';
+import { setWeddingId } from '#lib/stores/weddingId.ts';
 
 function toLogin() {
   clearAuth();

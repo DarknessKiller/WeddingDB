@@ -1,5 +1,5 @@
 import { writable } from 'svelte/store';
-import type { Guest } from '$lib/types';
+import type { Guest } from '#lib/types/index.ts';
 
 // Selected guest for drawer
 export const selectedGuest = writable<Guest | null>(null);
@@ -26,30 +26,17 @@ export function addToast(message: string, type: Toast['type'] = 'info') {
 // Sidebar state
 export const sidebarCollapsed = writable(false);
 
-// Auth state (backed by localStorage for persistence)
+// Auth tokens stay in memory only; backend has no cookie-backed session.
+if (typeof window !== 'undefined') {
+  try {
+    localStorage.removeItem('weddingdb_access_token');
+    localStorage.removeItem('weddingdb_refresh_token');
+  } catch {}
+}
 let _accessToken: string | null = null;
 let _refreshToken: string | null = null;
 let _role: string | null = null;
 let _name: string | null = null;
-
-function loadAuth() {
-  if (typeof window === 'undefined') return;
-  try {
-    _accessToken = localStorage.getItem('weddingdb_access_token');
-    _refreshToken = localStorage.getItem('weddingdb_refresh_token');
-    _role = localStorage.getItem('weddingdb_role');
-    _name = localStorage.getItem('weddingdb_name');
-  } catch {}
-}
-loadAuth();
-
-// Another tab can refresh or clear the session. Mirror it instead of replaying
-// a refresh token that tab already consumed (single-use rotation).
-if (typeof window !== 'undefined') {
-  window.addEventListener('storage', (e) => {
-    if (e.key === null || e.key.startsWith('weddingdb_')) loadAuth();
-  });
-}
 
 export function getAuth() {
   return { accessToken: _accessToken, refreshToken: _refreshToken, role: _role, name: _name };
@@ -60,12 +47,6 @@ export function setAuth(access: string, refresh: string, r: string, n: string) {
   _refreshToken = refresh;
   _role = r;
   _name = n;
-  if (typeof window !== 'undefined') {
-    localStorage.setItem('weddingdb_access_token', access);
-    localStorage.setItem('weddingdb_refresh_token', refresh);
-    localStorage.setItem('weddingdb_role', r);
-    localStorage.setItem('weddingdb_name', n);
-  }
 }
 
 export function clearAuth() {
@@ -76,8 +57,6 @@ export function clearAuth() {
   if (typeof window !== 'undefined') {
     localStorage.removeItem('weddingdb_access_token');
     localStorage.removeItem('weddingdb_refresh_token');
-    localStorage.removeItem('weddingdb_role');
-    localStorage.removeItem('weddingdb_name');
   }
 }
 
