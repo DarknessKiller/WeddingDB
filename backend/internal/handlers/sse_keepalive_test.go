@@ -63,9 +63,10 @@ func TestSSEKeepalive(t *testing.T) {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	req, err := http.NewRequest("GET", ts.URL+"/api/weddings/"+wid.String()+"/events?token="+token, nil)
+	req, err := http.NewRequest("GET", ts.URL+"/api/weddings/"+wid.String()+"/events", nil)
 	testutil.NoErr(t, err)
 	req = req.WithContext(ctx)
+	req.Header.Set("Authorization", "Bearer "+token)
 
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
@@ -98,4 +99,37 @@ func TestSSEKeepalive(t *testing.T) {
 		}
 	}
 	t.Fatalf("no keepalive ping within deadline; got %q", sb.String())
+}
+
+func TestSSERejectsQueryToken(t *testing.T) {
+	ts, _, token, wid := newTestSSEServer(t)
+
+	for _, test := range []struct {
+		name   string
+		query  string
+		header string
+	}{
+		{name: "query token", query: "?token=" + token},
+		{name: "missing token"},
+		{name: "malformed header", header: "Token " + token},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			req, err := http.NewRequest("GET", ts.URL+"/api/weddings/"+wid.String()+"/events"+test.query, nil)
+			testutil.NoErr(t, err)
+			if test.header != "" {
+				req.Header.Set("Authorization", test.header)
+			}
+
+			resp, err := http.DefaultClient.Do(req)
+			testutil.NoErr(t, err)
+			defer func() {
+				if err := resp.Body.Close(); err != nil {
+					t.Errorf("close: %v", err)
+				}
+			}()
+			if resp.StatusCode != http.StatusUnauthorized {
+				t.Errorf("status = %d, want %d", resp.StatusCode, http.StatusUnauthorized)
+			}
+		})
+	}
 }
