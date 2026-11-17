@@ -28,7 +28,7 @@ beforeEach(async () => {
 	Object.defineProperty(globalThis, 'window', { value: { location, addEventListener: () => {} }, configurable: true });
 	fetchMock = vi.fn();
 	Object.defineProperty(globalThis, 'fetch', { value: fetchMock, configurable: true });
-	const { setAuth } = await import('$lib/stores');
+	const { setAuth } = await import('#lib/stores/index.ts');
 	setAuth('old-access', 'refresh-1', 'admin', 'A');
 });
 
@@ -59,7 +59,7 @@ describe('apiFetch refresh recovery', () => {
 		fetchMock.mockResolvedValueOnce(res({}, 401)).mockRejectedValueOnce(new TypeError('Failed to fetch'));
 
 		const { apiFetch } = await import('./client');
-		const { getAuth } = await import('$lib/stores');
+		const { getAuth } = await import('#lib/stores/index.ts');
 		const result = await apiFetch('/api/guests');
 
 		expect(result.status).toBe(401);
@@ -72,7 +72,7 @@ describe('apiFetch refresh recovery', () => {
 		fetchMock.mockResolvedValueOnce(res({}, 401)).mockResolvedValueOnce(res({ title: 'boom' }, 502));
 
 		const { apiFetch } = await import('./client');
-		const { getAuth } = await import('$lib/stores');
+		const { getAuth } = await import('#lib/stores/index.ts');
 		await apiFetch('/api/guests');
 
 		expect(location.href).toBe('');
@@ -85,7 +85,7 @@ describe('apiFetch refresh recovery', () => {
 			.mockResolvedValueOnce(res({ title: 'invalid refresh token' }, 401));
 
 		const { apiFetch } = await import('./client');
-		const { getAuth } = await import('$lib/stores');
+		const { getAuth } = await import('#lib/stores/index.ts');
 		const result = await apiFetch('/api/guests');
 
 		expect(result.status).toBe(401);

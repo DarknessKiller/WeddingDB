@@ -1,5 +1,5 @@
 import { apiFetch } from './client';
-import type { HallLayoutData, HallElement } from '$lib/types';
+import type { HallLayoutData, HallElement } from '#lib/types/index.ts';
 
 export async function getLayout(wid: string): Promise<HallLayoutData> {
 	const res = await apiFetch(`/api/weddings/${wid}/layout`);

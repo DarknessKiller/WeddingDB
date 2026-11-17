@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-vi.mock('$lib/stores', () => ({
+vi.mock('#lib/stores/index.ts', () => ({
 	getAuth: () => ({ accessToken: 'test-token-123' })
 }));
 

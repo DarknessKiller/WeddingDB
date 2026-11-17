@@ -1,8 +1,8 @@
 <script lang="ts">
   import { page } from '$app/state';
-  import { weddingTitle } from '$lib/stores/weddingTitle';
-  import { weddingId } from '$lib/stores/weddingId';
-  import { exportAngpaoReport } from '$lib/api/reports';
+  import { weddingTitle } from '#lib/stores/weddingTitle.ts';
+  import { weddingId } from '#lib/stores/weddingId.ts';
+  import { exportAngpaoReport } from '#lib/api/reports.ts';
   import Download from 'lucide-svelte/icons/download';
 import FileSpreadsheet from 'lucide-svelte/icons/file-spreadsheet';
 import FileText from 'lucide-svelte/icons/file-text';

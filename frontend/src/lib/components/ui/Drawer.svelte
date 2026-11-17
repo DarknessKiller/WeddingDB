@@ -1,6 +1,6 @@
 <script lang="ts">
-  import type { Guest, BanquetTable, RSVPStatus } from '$lib/types';
-  import { trapFocus } from '$lib/utils/focus';
+  import type { Guest, BanquetTable, RSVPStatus } from '#lib/types/index.ts';
+  import { trapFocus } from '#lib/utils/focus.ts';
   import X from 'lucide-svelte/icons/x';
 import Mail from 'lucide-svelte/icons/mail';
 import Utensils from 'lucide-svelte/icons/utensils';
@@ -15,15 +15,15 @@ import ArrowUpDown from 'lucide-svelte/icons/arrow-up-down';
   import Badge from './Badge.svelte';
   import ConfirmDialog from './ConfirmDialog.svelte';
   import CheckInModal from './CheckInModal.svelte';
-  import { getInitials, cn } from '$lib/utils';
-  import { formatSeatRange } from '$lib/utils/seat';
-  import { addToast } from '$lib/stores';
-  import { weddingId } from '$lib/stores/weddingId';
-  import { guestList } from '$lib/stores/guestEvents';
-  import { updateGuest, createGuest, checkInGuest, checkOutGuest, unassignSeat, getGuest, ConflictError } from '$lib/api/guests';
+  import { getInitials, cn } from '#lib/utils/index.ts';
+  import { formatSeatRange } from '#lib/utils/seat.ts';
+  import { addToast } from '#lib/stores/index.ts';
+  import { weddingId } from '#lib/stores/weddingId.ts';
+  import { guestList } from '#lib/stores/guestEvents.ts';
+  import { updateGuest, createGuest, checkInGuest, checkOutGuest, unassignSeat, getGuest, ConflictError } from '#lib/api/guests.ts';
   import { get } from 'svelte/store';
   import { fade } from 'svelte/transition';
-  import { slideOut as drawerSlideOut } from '$lib/utils/motion';
+  import { slideOut as drawerSlideOut } from '#lib/utils/motion.ts';
 
   // Exit: WAAPI slide continuing from the panel's current (possibly mid-drag) transform.
   function outfade(node: HTMLElement) {

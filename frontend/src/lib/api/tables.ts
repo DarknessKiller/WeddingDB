@@ -1,5 +1,5 @@
 import { apiFetch } from './client';
-import type { BanquetTable } from '$lib/types';
+import type { BanquetTable } from '#lib/types/index.ts';
 
 function wid(weddingId: string, path: string) {
 	return `/api/weddings/${weddingId}${path}`;

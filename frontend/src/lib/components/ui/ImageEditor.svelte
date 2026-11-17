@@ -3,8 +3,8 @@
 import X from 'lucide-svelte/icons/x';
 import Move from 'lucide-svelte/icons/move';
 import Maximize2 from 'lucide-svelte/icons/maximize-2';
-  import { uploadFile } from '$lib/api/client';
-  import { addToast } from '$lib/stores';
+  import { uploadFile } from '#lib/api/client.ts';
+  import { addToast } from '#lib/stores/index.ts';
 
   let {
     value = $bindable(''),

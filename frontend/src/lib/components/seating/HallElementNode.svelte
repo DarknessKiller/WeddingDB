@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import type { HallElement } from '$lib/types';
+  import type { HallElement } from '#lib/types/index.ts';
 
   let { element, hallWidth, hallHeight, dark = false, mode = 'view', isSelected = false, ondragstart, ondragmove, ondragend, ontransformend, onselect, onrefready }: {
     element: HallElement;

@@ -1,9 +1,9 @@
 <script lang="ts">
-  import { toasts } from '$lib/stores';
+  import { toasts } from '#lib/stores/index.ts';
   import CheckCircle from 'lucide-svelte/icons/check-circle';
 import XCircle from 'lucide-svelte/icons/x-circle';
 import Info from 'lucide-svelte/icons/info';
-  import { toastOut } from '$lib/utils/motion';
+  import { toastOut } from '#lib/utils/motion.ts';
 </script>
 
 <div class="toast-container" aria-live="polite" role="status">

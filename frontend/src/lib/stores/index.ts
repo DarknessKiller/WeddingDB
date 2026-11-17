@@ -1,5 +1,5 @@
 import { writable } from 'svelte/store';
-import type { Guest } from '$lib/types';
+import type { Guest } from '#lib/types/index.ts';
 
 // Selected guest for drawer
 export const selectedGuest = writable<Guest | null>(null);

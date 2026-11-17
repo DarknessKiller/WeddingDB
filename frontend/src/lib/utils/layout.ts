@@ -1,4 +1,4 @@
-import type { BanquetTable, HallElement } from '$lib/types';
+import type { BanquetTable, HallElement } from '#lib/types/index.ts';
 
 // ponytail: fixed 5-col default grid; drag exists for everything else
 export function defaultSlot(tables: BanquetTable[]): { x: number; y: number } {

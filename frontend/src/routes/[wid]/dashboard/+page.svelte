@@ -1,10 +1,10 @@
 <script lang="ts">
-  import { getOccupancy } from '$lib/api/dashboard';
-  import { weddingTitle } from '$lib/stores/weddingTitle';
-  import { addToast } from '$lib/stores';
+  import { getOccupancy } from '#lib/api/dashboard.ts';
+  import { weddingTitle } from '#lib/stores/weddingTitle.ts';
+  import { addToast } from '#lib/stores/index.ts';
   import { get } from 'svelte/store';
-  import { weddingId } from '$lib/stores/weddingId';
-  import { guestList } from '$lib/stores/guestEvents';
+  import { weddingId } from '#lib/stores/weddingId.ts';
+  import { guestList } from '#lib/stores/guestEvents.ts';
   import Users from 'lucide-svelte/icons/users';
 import UserCheck from 'lucide-svelte/icons/user-check';
 import Clock from 'lucide-svelte/icons/clock';
@@ -20,9 +20,9 @@ import ExternalLink from 'lucide-svelte/icons/external-link';
   import dayjs from 'dayjs';
   import relativeTime from 'dayjs/plugin/relativeTime';
   import { onMount } from 'svelte';
-  import type { DashboardStats, TableOccupancy, ActivityItem, Guest } from '$lib/types';
-  import { getActivityTimestamp } from '$lib/utils/activity';
-  import NumberTicker from '$lib/components/ui/NumberTicker.svelte';
+  import type { DashboardStats, TableOccupancy, ActivityItem, Guest } from '#lib/types/index.ts';
+  import { getActivityTimestamp } from '#lib/utils/activity.ts';
+  import NumberTicker from '#lib/components/ui/NumberTicker.svelte';
 
   dayjs.extend(relativeTime);
 

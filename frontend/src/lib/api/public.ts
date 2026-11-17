@@ -1,5 +1,5 @@
-import type { Guest, BanquetTable } from '$lib/types';
-import { weddingId } from '$lib/stores/weddingId';
+import type { Guest, BanquetTable } from '#lib/types/index.ts';
+import { weddingId } from '#lib/stores/weddingId.ts';
 import { get } from 'svelte/store';
 
 interface PublicGuest {

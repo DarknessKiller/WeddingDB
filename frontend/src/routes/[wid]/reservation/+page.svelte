@@ -1,19 +1,19 @@
 <script lang="ts">
-  import { addToast } from '$lib/stores';
-  import { weddingTitle } from '$lib/stores/weddingTitle';
+  import { addToast } from '#lib/stores/index.ts';
+  import { weddingTitle } from '#lib/stores/weddingTitle.ts';
   import { goto } from '$app/navigation';
-  import { cn } from '$lib/utils';
+  import { cn } from '#lib/utils/index.ts';
   import { z } from 'zod';
   import CheckCircle2 from 'lucide-svelte/icons/check-circle-2';
 import AlertCircle from 'lucide-svelte/icons/alert-circle';
-  import { fetchAllGuests, createGuest, type GuestResponse } from '$lib/api/guests';
-  import { listTables } from '$lib/api/tables';
-  import { getLayout } from '$lib/api/layout';
-  import { weddingId } from '$lib/stores/weddingId';
+  import { fetchAllGuests, createGuest, type GuestResponse } from '#lib/api/guests.ts';
+  import { listTables } from '#lib/api/tables.ts';
+  import { getLayout } from '#lib/api/layout.ts';
+  import { weddingId } from '#lib/stores/weddingId.ts';
   import { get } from 'svelte/store';
   import { onMount } from 'svelte';
-  import type { BanquetTable, Guest, HallElement, RSVPStatus } from '$lib/types';
-  import HallMap from '$lib/components/seating/HallMap.svelte';
+  import type { BanquetTable, Guest, HallElement, RSVPStatus } from '#lib/types/index.ts';
+  import HallMap from '#lib/components/seating/HallMap.svelte';
 
   let apiTables = $state<BanquetTable[]>([]);
   let apiGuests = $state<Guest[]>([]);

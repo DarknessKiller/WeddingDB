@@ -1,10 +1,10 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { goto } from '$app/navigation';
-  import { addToast, getAuth } from '$lib/stores';
-  import { weddingId } from '$lib/stores/weddingId';
-  import { listUsers, createUser, deleteUser, revokeUser, assignWeddings, resetPassword, getUserWeddings, updateRole, type User } from '$lib/api/users';
-  import { listWeddings, type Wedding } from '$lib/api/weddings';
+  import { addToast, getAuth } from '#lib/stores/index.ts';
+  import { weddingId } from '#lib/stores/weddingId.ts';
+  import { listUsers, createUser, deleteUser, revokeUser, assignWeddings, resetPassword, getUserWeddings, updateRole, type User } from '#lib/api/users.ts';
+  import { listWeddings, type Wedding } from '#lib/api/weddings.ts';
   import Plus from 'lucide-svelte/icons/plus';
 import Trash2 from 'lucide-svelte/icons/trash-2';
 import X from 'lucide-svelte/icons/x';
@@ -14,8 +14,8 @@ import Key from 'lucide-svelte/icons/key';
 import Shield from 'lucide-svelte/icons/shield';
 import Check from 'lucide-svelte/icons/check';
 import LogOut from 'lucide-svelte/icons/log-out';
-  import { weddingTitle } from '$lib/stores/weddingTitle';
-  import PasswordRequirements from '$lib/components/ui/PasswordRequirements.svelte';
+  import { weddingTitle } from '#lib/stores/weddingTitle.ts';
+  import PasswordRequirements from '#lib/components/ui/PasswordRequirements.svelte';
 
   let admins = $state<User[]>([]);
   let weddings = $state<Wedding[]>([]);

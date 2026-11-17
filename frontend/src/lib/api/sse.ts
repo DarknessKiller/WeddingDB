@@ -1,4 +1,4 @@
-import { getAuth } from '$lib/stores';
+import { getAuth } from '#lib/stores/index.ts';
 
 export interface GuestEvent {
 	type: 'create' | 'update' | 'delete' | 'checkin' | 'checkout' | 'seat_assign';

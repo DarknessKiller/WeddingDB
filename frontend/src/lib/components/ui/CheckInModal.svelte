@@ -4,7 +4,7 @@ import UserCheck from 'lucide-svelte/icons/user-check';
 import Loader2 from 'lucide-svelte/icons/loader-2';
   import { fade } from 'svelte/transition';
   import { onMount } from 'svelte';
-  import { slideOut as sheetSlideOut } from '$lib/utils/motion';
+  import { slideOut as sheetSlideOut } from '#lib/utils/motion.ts';
 
   function outfade(node: HTMLElement) {
     return { duration: sheetSlideOut(node, { dir: 'y', duration: 300 }) };

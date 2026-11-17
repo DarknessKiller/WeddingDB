@@ -1,10 +1,10 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { weddingTitle } from '$lib/stores/weddingTitle';
-  import { addToast, showSeatNumbers, setShowSeatNumbers } from '$lib/stores';
-  import { weddingId } from '$lib/stores/weddingId';
+  import { weddingTitle } from '#lib/stores/weddingTitle.ts';
+  import { addToast, showSeatNumbers, setShowSeatNumbers } from '#lib/stores/index.ts';
+  import { weddingId } from '#lib/stores/weddingId.ts';
   import { get } from 'svelte/store';
-  import { getWedding, updateKioskSettings, type Wedding, type KioskSettings } from '$lib/api/weddings';
+  import { getWedding, updateKioskSettings, type Wedding, type KioskSettings } from '#lib/api/weddings.ts';
   import Monitor from 'lucide-svelte/icons/monitor';
 import Save from 'lucide-svelte/icons/save';
 import Loader2 from 'lucide-svelte/icons/loader-2';
@@ -15,8 +15,8 @@ import Type from 'lucide-svelte/icons/type';
 import FileText from 'lucide-svelte/icons/file-text';
 import Upload from 'lucide-svelte/icons/upload';
 import MapPin from 'lucide-svelte/icons/map-pin';
-  import ImageEditor from '$lib/components/ui/ImageEditor.svelte';
-  import { uploadFile } from '$lib/api/client';
+  import ImageEditor from '#lib/components/ui/ImageEditor.svelte';
+  import { uploadFile } from '#lib/api/client.ts';
 
   let wedding = $state<Wedding | null>(null);
   let loading = $state(true);

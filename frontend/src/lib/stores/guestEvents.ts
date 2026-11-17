@@ -1,9 +1,9 @@
 import { writable, get } from 'svelte/store';
-import { selectedGuest } from '$lib/stores';
-import { connectSSE, disconnectSSE, type GuestEvent } from '$lib/api/sse';
-import { weddingId } from '$lib/stores/weddingId';
-import type { Guest, RSVPStatus } from '$lib/types';
-import type { GuestResponse } from '$lib/api/guests';
+import { selectedGuest } from '#lib/stores/index.ts';
+import { connectSSE, disconnectSSE, type GuestEvent } from '#lib/api/sse.ts';
+import { weddingId } from '#lib/stores/weddingId.ts';
+import type { Guest, RSVPStatus } from '#lib/types/index.ts';
+import type { GuestResponse } from '#lib/api/guests.ts';
 
 // All guests for the current wedding, kept in sync via SSE.
 export const guestList = writable<Guest[]>([]);

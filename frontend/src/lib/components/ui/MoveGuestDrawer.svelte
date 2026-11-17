@@ -1,9 +1,9 @@
 <script lang="ts">
   import X from 'lucide-svelte/icons/x';
 import ArrowUpDown from 'lucide-svelte/icons/arrow-up-down';
-  import { getInitials } from '$lib/utils';
-  import type { Guest, BanquetTable } from '$lib/types';
-  import { trapFocus } from '$lib/utils/focus';
+  import { getInitials } from '#lib/utils/index.ts';
+  import type { Guest, BanquetTable } from '#lib/types/index.ts';
+  import { trapFocus } from '#lib/utils/focus.ts';
   import { untrack } from 'svelte';
 
   let {

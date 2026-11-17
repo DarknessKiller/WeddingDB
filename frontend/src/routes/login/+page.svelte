@@ -1,7 +1,7 @@
 <script lang="ts">
   import { goto } from '$app/navigation';
-  import { setAuth, addToast } from '$lib/stores';
-  import { weddingId, setWeddingId } from '$lib/stores/weddingId';
+  import { setAuth, addToast } from '#lib/stores/index.ts';
+  import { weddingId, setWeddingId } from '#lib/stores/weddingId.ts';
   import { get } from 'svelte/store';
   import Eye from 'lucide-svelte/icons/eye';
 import EyeOff from 'lucide-svelte/icons/eye-off';

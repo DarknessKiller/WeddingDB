@@ -37,7 +37,7 @@ afterEach(() => {
 
 describe('auth storage', () => {
 	it('does not load persisted tokens or write tokens to localStorage', async () => {
-		const { getAuth, setAuth } = await import('$lib/stores');
+		const { getAuth, setAuth } = await import('#lib/stores/index.ts');
 		expect(getAuth()).toMatchObject({ accessToken: null, refreshToken: null });
 
 		setAuth('new-access', 'refresh-2', 'admin', 'A');

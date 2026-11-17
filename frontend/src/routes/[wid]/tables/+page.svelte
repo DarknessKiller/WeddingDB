@@ -1,11 +1,11 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { weddingTitle } from '$lib/stores/weddingTitle';
+  import { weddingTitle } from '#lib/stores/weddingTitle.ts';
   import { goto } from '$app/navigation';
-  import { cn } from '$lib/utils';
-  import { addToast, isDrawerOpen } from '$lib/stores';
-  import TableDrawer from '$lib/components/ui/TableDrawer.svelte';
-  import ConfirmDialog from '$lib/components/ui/ConfirmDialog.svelte';
+  import { cn } from '#lib/utils/index.ts';
+  import { addToast, isDrawerOpen } from '#lib/stores/index.ts';
+  import TableDrawer from '#lib/components/ui/TableDrawer.svelte';
+  import ConfirmDialog from '#lib/components/ui/ConfirmDialog.svelte';
   import Star from 'lucide-svelte/icons/star';
 import Users from 'lucide-svelte/icons/users';
 import Plus from 'lucide-svelte/icons/plus';
@@ -14,15 +14,15 @@ import Pencil from 'lucide-svelte/icons/pencil';
 import Trash2 from 'lucide-svelte/icons/trash-2';
 import AlertCircle from 'lucide-svelte/icons/alert-circle';
 import Map from 'lucide-svelte/icons/map';
-  import { listTables, createTable, updateTable, deleteTable, getOccupancy } from '$lib/api/tables';
-  import { getLayout, saveLayout } from '$lib/api/layout';
-  import { defaultSlot } from '$lib/utils/layout';
-  import { weddingId } from '$lib/stores/weddingId';
+  import { listTables, createTable, updateTable, deleteTable, getOccupancy } from '#lib/api/tables.ts';
+  import { getLayout, saveLayout } from '#lib/api/layout.ts';
+  import { defaultSlot } from '#lib/utils/layout.ts';
+  import { weddingId } from '#lib/stores/weddingId.ts';
   import { get } from 'svelte/store';
-  import type { BanquetTable, TableOccupancy, HallElement, HallLayoutData } from '$lib/types';
+  import type { BanquetTable, TableOccupancy, HallElement, HallLayoutData } from '#lib/types/index.ts';
 
   type TableCreateData = Omit<BanquetTable, 'id'>;
-  import HallMap from '$lib/components/seating/HallMap.svelte';
+  import HallMap from '#lib/components/seating/HallMap.svelte';
 
   const RING_R = 24;
   const RING_CIRCUM = 2 * Math.PI * RING_R;

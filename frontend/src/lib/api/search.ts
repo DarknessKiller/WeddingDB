@@ -1,7 +1,7 @@
 import { apiFetch } from './client';
-import { weddingId } from '$lib/stores/weddingId';
+import { weddingId } from '#lib/stores/weddingId.ts';
 import { get } from 'svelte/store';
-import type { Guest, BanquetTable, RSVPStatus } from '$lib/types';
+import type { Guest, BanquetTable, RSVPStatus } from '#lib/types/index.ts';
 
 const VALID_RSVP = ['confirmed', 'pending', 'declined', 'no_response'];
 function safeRsvp(v: unknown): RSVPStatus {
