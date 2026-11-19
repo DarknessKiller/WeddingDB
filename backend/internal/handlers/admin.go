@@ -109,6 +109,12 @@ func (h *AdminHandler) Delete(c fuego.ContextWithBody[any]) (any, error) {
 			return nil, fuego.BadRequestError{Title: "Cannot delete the last admin"}
 		}
 	}
+	// Revoke first: ValidateToken never checks that the user still exists, so
+	// a deleted user's access tokens and open SSE streams live on otherwise.
+	if err := h.authService.RevokeUserTokens(ctx, id); err != nil {
+		slog.Error("revoke tokens before user delete failed", "user", id, "err", err)
+		return nil, fuego.InternalServerError{Title: "Failed to revoke user sessions"}
+	}
 	if err := h.adminRepo.Delete(ctx, id); err != nil {
 		return nil, err
 	}
@@ -218,6 +224,8 @@ func (h *AdminHandler) ResetPassword(c fuego.ContextWithBody[ResetPasswordReques
 		return nil, fuego.InternalServerError{Title: "Failed to hash password"}
 	}
 	admin.Password = string(hash)
+	// The admin chose and knows this password, so the user must replace it.
+	admin.ForcePasswordChange = true
 	if err := h.adminRepo.Update(ctx, admin); err != nil {
 		return nil, fuego.InternalServerError{Title: "Failed to update password"}
 	}
