@@ -10,6 +10,11 @@ services:
       REDIS_URL: "redis://:${REDIS_PASSWORD:?REDIS_PASSWORD must be set}@redis:6379"
       JWT_SECRET: "${JWT_SECRET:?JWT_SECRET must be set, e.g. openssl rand -hex 32}"
       ADMIN_BOOTSTRAP_PASSWORD: "${ADMIN_BOOTSTRAP_PASSWORD:-}"
+      # Rate limits key on the client IP from X-Forwarded-For. Without this the
+      # proxy's own address is used for every request and one client can lock
+      # everyone out. Loopback for a host proxy, the Docker bridge range for a
+      # containerized one reaching the app through the published port.
+      TRUSTED_PROXIES: "127.0.0.1/32,::1/128,172.16.0.0/12"
       STATIC_DIR: "./static"
       # Opt-in tracing: uncomment + run `docker compose --profile tracing up` to enable.
       # OTEL_ENABLED: true
