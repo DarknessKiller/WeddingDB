@@ -67,7 +67,9 @@ func openStream(t *testing.T, ctx context.Context, url, token string) *http.Resp
 	req.Header.Set("Authorization", "Bearer "+token)
 	resp, err := http.DefaultClient.Do(req)
 	testutil.NoErr(t, err)
-	t.Cleanup(func() { resp.Body.Close() })
+	t.Cleanup(func() {
+		resp.Body.Close() //nolint:errcheck // can't fail in a way the test can act on
+	})
 	return resp
 }
 
@@ -89,7 +91,7 @@ func countPingsUntilEOF(body io.ReadCloser, deadline time.Duration) (pings int, 
 	case n := <-result:
 		return n, true
 	case <-time.After(deadline):
-		body.Close() // unblocks the scanner
+		body.Close() //nolint:errcheck // unblocks the scanner; error has no bearing on the result
 		return <-result, false
 	}
 }
