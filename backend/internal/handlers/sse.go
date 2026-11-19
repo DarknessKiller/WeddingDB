@@ -97,7 +97,11 @@ func (h *SSEHandler) StreamHandler() http.HandlerFunc {
 			case <-keepalive.C:
 				// Logout, password change or reset, user deletion and wedding
 				// unassignment all revoke the token; end the stream when they do.
-				// Expiry is not enforced here: the client cannot refresh mid-stream.
+				// Also end at token expiry: the stream outlives the access token.
+				if claims.ExpiresAt == nil || time.Now().After(claims.ExpiresAt.Time) {
+					slog.Info("SSE: closing expired stream", "user", claims.AdminID, "wedding", wid)
+					return
+				}
 				if err := h.authService.CheckRevoked(ctx, claims); err != nil {
 					slog.Info("SSE: closing revoked stream", "user", claims.AdminID, "wedding", wid, "err", err)
 					return

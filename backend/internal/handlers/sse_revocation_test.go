@@ -46,13 +46,18 @@ func newFastSSEServer(t *testing.T) (*httptest.Server, *services.AuthService) {
 
 func mintSSEToken(t *testing.T, pwc bool) (string, *services.AccessClaims) {
 	t.Helper()
+	return mintSSETokenWithExpiry(t, pwc, time.Now().Add(time.Hour))
+}
+
+func mintSSETokenWithExpiry(t *testing.T, pwc bool, expiry time.Time) (string, *services.AccessClaims) {
+	t.Helper()
 	claims := &services.AccessClaims{
 		AdminID:             uuid.New(),
 		Role:                "admin",
 		ForcePasswordChange: pwc,
 		RegisteredClaims: jwt.RegisteredClaims{
 			ID:        uuid.NewString(),
-			ExpiresAt: jwt.NewNumericDate(time.Now().Add(time.Hour)),
+			ExpiresAt: jwt.NewNumericDate(expiry),
 		},
 	}
 	token, err := jwt.NewWithClaims(jwt.SigningMethodHS256, claims).SignedString([]byte(sseTestSecret))
@@ -113,6 +118,26 @@ func TestSSEStream_ClosesOnRevocation(t *testing.T) {
 
 	if _, closed := countPingsUntilEOF(resp.Body, 2*time.Second); !closed {
 		t.Fatal("stream still open after token was revoked")
+	}
+}
+
+// A stream that outlives its access token must close on the next keepalive
+// tick instead of streaming guest events after the token expired.
+func TestSSEStream_ClosesOnExpiry(t *testing.T) {
+	ts, _ := newFastSSEServer(t)
+	// jwt truncates exp to whole seconds, so keep it at least a second ahead;
+	// it still expires while the stream is open.
+	token, _ := mintSSETokenWithExpiry(t, false, time.Now().Add(2*time.Second))
+
+	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+	defer cancel()
+	resp := openStream(t, ctx, ts.URL, token)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want 200", resp.StatusCode)
+	}
+
+	if _, closed := countPingsUntilEOF(resp.Body, 4*time.Second); !closed {
+		t.Fatal("stream still open after the access token expired")
 	}
 }
 
