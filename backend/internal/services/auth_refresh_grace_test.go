@@ -89,7 +89,8 @@ func TestRefresh_ConcurrentRefreshesShareSuccessor(t *testing.T) {
 	}
 }
 
-// Replay protection still holds outside the grace window.
+// A replay of a consumed refresh token outside the grace window is theft: the
+// whole family must die, not just the replayed row.
 func TestRefresh_ReplayAfterGraceRejected(t *testing.T) {
 	svc, _, db := newIntegrationAuthService(t, "test-secret")
 	adminID := uuid.New()
@@ -107,6 +108,19 @@ func TestRefresh_ReplayAfterGraceRejected(t *testing.T) {
 
 	if _, err := svc.Refresh(context.Background(), refreshStr, ""); err == nil {
 		t.Fatal("expected a replay outside the grace window to be rejected")
+	}
+
+	var live int64
+	db.Model(&models.RefreshToken{}).Where("admin_id = ?", adminID).Count(&live)
+	if live != 0 {
+		t.Errorf("replay left %d refresh tokens alive, want the family revoked", live)
+	}
+	tv, err := svc.GetTokenVersion(context.Background(), adminID)
+	if err != nil {
+		t.Fatalf("read token version: %v", err)
+	}
+	if tv != 1 {
+		t.Errorf("token version = %d after replay, want 1 (access tokens revoked)", tv)
 	}
 }
 
