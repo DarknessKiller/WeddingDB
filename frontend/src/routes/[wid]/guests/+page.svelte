@@ -223,8 +223,11 @@ import Users from 'lucide-svelte/icons/users';
   );
 
   // Quote every field: double quotes around the value, internal quotes escaped as "".
+  // Text starting with = + - @ tab or CR runs as a formula in spreadsheet apps,
+  // so it gets a leading apostrophe. Numbers (pax, angbao) pass through as-is.
   function csvField(v: unknown): string {
-    const s = v === null || v === undefined ? '' : String(v);
+    let s = v === null || v === undefined ? '' : String(v);
+    if (typeof v === 'string' && /^[=+\-@\t\r]/.test(s)) s = `'${s}`;
     return `"${s.replace(/"/g, '""')}"`;
   }
 

@@ -10,14 +10,19 @@ import (
 	"weddingdb/internal/services"
 )
 
+// sseKeepaliveInterval keeps proxies/NAT from killing silent streams (~60s idle)
+// and paces the revocation re-check on open streams.
+const sseKeepaliveInterval = 20 * time.Second
+
 // SSEHandler provides raw HTTP handlers for SSE streaming.
 type SSEHandler struct {
 	sseHub      *services.SSEHub
 	authService *services.AuthService
+	keepalive   time.Duration
 }
 
 func NewSSEHandler(sseHub *services.SSEHub, authService *services.AuthService) *SSEHandler {
-	return &SSEHandler{sseHub: sseHub, authService: authService}
+	return &SSEHandler{sseHub: sseHub, authService: authService, keepalive: sseKeepaliveInterval}
 }
 
 // StreamHandler returns an http.HandlerFunc for SSE streaming.
@@ -34,6 +39,10 @@ func (h *SSEHandler) StreamHandler() http.HandlerFunc {
 		claims, err := h.authService.ValidateToken(r.Context(), token)
 		if err != nil {
 			http.Error(w, `{"error":"Invalid token"}`, http.StatusUnauthorized)
+			return
+		}
+		if claims.ForcePasswordChange {
+			http.Error(w, `{"error":"Password change required"}`, http.StatusForbidden)
 			return
 		}
 
@@ -75,7 +84,7 @@ func (h *SSEHandler) StreamHandler() http.HandlerFunc {
 		flusher.Flush()
 
 		// Periodic keepalive: silent streams get killed by proxies/NAT at ~60s idle.
-		keepalive := time.NewTicker(20 * time.Second)
+		keepalive := time.NewTicker(h.keepalive)
 		defer keepalive.Stop()
 
 		ctx := r.Context()
@@ -86,6 +95,13 @@ func (h *SSEHandler) StreamHandler() http.HandlerFunc {
 			case <-client.Done:
 				return
 			case <-keepalive.C:
+				// Logout, password change or reset, user deletion and wedding
+				// unassignment all revoke the token; end the stream when they do.
+				// Expiry is not enforced here: the client cannot refresh mid-stream.
+				if err := h.authService.CheckRevoked(ctx, claims); err != nil {
+					slog.Info("SSE: closing revoked stream", "user", claims.AdminID, "wedding", wid, "err", err)
+					return
+				}
 				if _, err := fmt.Fprintf(w, ": ping\n\n"); err != nil {
 					return
 				}

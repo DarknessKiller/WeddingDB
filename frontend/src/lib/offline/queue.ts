@@ -1,4 +1,5 @@
 import { apiFetch } from '#lib/api/client.ts';
+import { QUEUE_PREFIX, STAFF_CACHE_PREFIX, KIOSK_CACHE_PREFIX } from '#lib/offline/storage.ts';
 
 export type SyncOp = 'create' | 'update' | 'delete' | 'checkin' | 'checkout';
 
@@ -11,8 +12,9 @@ export interface QueuedMutation {
 	payload?: Record<string, unknown> | null;
 }
 
-function qkey(wid: string) { return `offline_queue_${wid}`; }
-function ckey(wid: string) { return `offline_cache_${wid}`; }
+function qkey(wid: string) { return `${QUEUE_PREFIX}${wid}`; }
+function ckey(wid: string) { return `${STAFF_CACHE_PREFIX}${wid}`; }
+function kkey(wid: string) { return `${KIOSK_CACHE_PREFIX}${wid}`; }
 
 export function getQueue(wid: string): QueuedMutation[] {
 	if (typeof window === 'undefined' || !wid) return [];
@@ -45,15 +47,23 @@ export function queuedCount(wid: string): number {
 	return getQueue(wid).length;
 }
 
-export function cacheGuests(wid: string, guests: unknown[]) {
-	try { localStorage.setItem(ckey(wid), JSON.stringify(guests)); } catch {}
+function writeCache(key: string, guests: unknown[]) {
+	try { localStorage.setItem(key, JSON.stringify(guests)); } catch {}
 }
-export function loadCachedGuests<T>(wid: string): T[] | null {
+function readCache<T>(key: string): T[] | null {
 	try {
-		const v = localStorage.getItem(ckey(wid));
+		const v = localStorage.getItem(key);
 		return v ? JSON.parse(v) as T[] : null;
 	} catch { return null; }
 }
+
+/** Staff guest records for offline reads; cleared on logout. */
+export function cacheGuests(wid: string, guests: unknown[]) { writeCache(ckey(wid), guests); }
+export function loadCachedGuests<T>(wid: string): T[] | null { return readCache<T>(ckey(wid)); }
+
+/** Public kiosk records; kept apart from the staff cache. */
+export function cacheKioskGuests(wid: string, guests: unknown[]) { writeCache(kkey(wid), guests); }
+export function loadCachedKioskGuests<T>(wid: string): T[] | null { return readCache<T>(kkey(wid)); }
 
 export async function syncQueue(wid: string): Promise<{ applied: number; skipped: number; results: unknown[] }> {
 	const q = getQueue(wid);

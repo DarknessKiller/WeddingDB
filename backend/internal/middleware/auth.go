@@ -15,6 +15,10 @@ const (
 	RoleKey      contextKey = "role"
 )
 
+// ChangePasswordPath is the only authenticated route open to a token that
+// carries the force-password-change claim.
+const ChangePasswordPath = "/api/auth/change-password"
+
 func AuthMiddleware(authService *services.AuthService) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -30,6 +34,12 @@ func AuthMiddleware(authService *services.AuthService) func(http.Handler) http.H
 			claims, err := authService.ValidateToken(r.Context(), token)
 			if err != nil {
 				http.Error(w, `{"error":"Invalid token"}`, http.StatusUnauthorized)
+				return
+			}
+			// A user flagged for a forced password change may only change it.
+			// Logout and refresh sit outside this middleware and stay reachable.
+			if claims.ForcePasswordChange && r.URL.Path != ChangePasswordPath {
+				http.Error(w, `{"error":"Password change required"}`, http.StatusForbidden)
 				return
 			}
 

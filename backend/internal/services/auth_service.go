@@ -25,6 +25,8 @@ type AccessClaims struct {
 	WeddingID    *uuid.UUID `json:"wid,omitempty"`
 	Role         string     `json:"role"`
 	TokenVersion int        `json:"tv"`
+	// ForcePasswordChange limits the token to the change-password endpoint.
+	ForcePasswordChange bool `json:"pwc,omitzero"`
 	jwt.RegisteredClaims
 }
 
@@ -382,27 +384,34 @@ func (s *AuthService) ValidateToken(ctx context.Context, tokenStr string) (*Acce
 		return nil, errors.New("token missing expiration")
 	}
 
+	if err := s.CheckRevoked(ctx, claims); err != nil {
+		return nil, err
+	}
+	return claims, nil
+}
+
+// CheckRevoked rejects claims whose JTI is blacklisted or whose token version
+// is stale. It fails closed on Redis errors. Long-lived connections such as SSE
+// call it periodically, since they outlive the check made at connect time.
+func (s *AuthService) CheckRevoked(ctx context.Context, claims *AccessClaims) error {
 	// Check blacklist (targeted, time-bounded check — do this first)
 	blacklisted, err := s.IsTokenBlacklisted(ctx, claims.ID)
 	if err != nil {
-		// Fail-closed: Redis error = reject
-		return nil, fmt.Errorf("service temporarily unavailable: %w", err)
+		return fmt.Errorf("service temporarily unavailable: %w", err)
 	}
 	if blacklisted {
-		return nil, errors.New("token has been revoked")
+		return errors.New("token has been revoked")
 	}
 
 	// Check token version (broader sweep)
 	storedTV, err := s.GetTokenVersion(ctx, claims.AdminID)
 	if err != nil {
-		// Fail-closed: Redis error = reject
-		return nil, fmt.Errorf("service temporarily unavailable: %w", err)
+		return fmt.Errorf("service temporarily unavailable: %w", err)
 	}
 	if claims.TokenVersion < storedTV {
-		return nil, errors.New("token version is stale")
+		return errors.New("token version is stale")
 	}
-
-	return claims, nil
+	return nil
 }
 
 // BlacklistAccessToken adds the JTI to the Redis blacklist with TTL = remaining token life.
@@ -497,10 +506,11 @@ func (s *AuthService) generateAccessToken(ctx context.Context, admin *models.Adm
 	now := time.Now()
 	expiry := now.Add(15 * time.Minute)
 	claims := AccessClaims{
-		AdminID:      admin.ID,
-		WeddingID:    weddingID,
-		Role:         admin.Role,
-		TokenVersion: tv,
+		AdminID:             admin.ID,
+		WeddingID:           weddingID,
+		Role:                admin.Role,
+		TokenVersion:        tv,
+		ForcePasswordChange: admin.ForcePasswordChange,
 		RegisteredClaims: jwt.RegisteredClaims{
 			ID:        uuid.New().String(),
 			IssuedAt:  jwt.NewNumericDate(now),

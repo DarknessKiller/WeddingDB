@@ -1,5 +1,6 @@
 import { writable } from 'svelte/store';
 import type { Guest } from '#lib/types/index.ts';
+import { clearStaffOfflineData } from '#lib/offline/storage.ts';
 
 // Selected guest for drawer
 export const selectedGuest = writable<Guest | null>(null);
@@ -58,6 +59,9 @@ export function clearAuth() {
     localStorage.removeItem('weddingdb_access_token');
     localStorage.removeItem('weddingdb_refresh_token');
   }
+  // Staff guest data and unsynced edits must not outlive the session: the next
+  // person at this device (or the public kiosk) could read or replay them.
+  clearStaffOfflineData();
 }
 
 // Show seat numbers setting. Shared so every page reacts without a reload, and
