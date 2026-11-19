@@ -9,7 +9,7 @@
   import { weddingTitle } from '#lib/stores/weddingTitle.ts';
   import { validateToken } from '#lib/utils/auth.ts';
   import { fetchAllGuests } from '#lib/api/guests.ts';
-  import { syncQueue } from '#lib/offline/queue.ts';
+  import { syncQueue, loadCachedGuests } from '#lib/offline/queue.ts';
   import { getWedding } from '#lib/api/weddings.ts';
   import { listTables } from '#lib/api/tables.ts';
   import { initializeSSE, refreshGuests } from '#lib/stores/guestEvents.ts';
@@ -58,7 +58,7 @@
         return guests;
       } catch {
         try {
-          const cached = JSON.parse(localStorage.getItem(`offline_cache_${$weddingId}`) || 'null');
+          const cached = loadCachedGuests<any>($weddingId);
           if (cached) return (cached as any[]).map(toGuest);
         } catch {}
         throw new Error('offline');

@@ -2,7 +2,7 @@
   import HallMap from '#lib/components/seating/HallMap.svelte';
   import { publicListGuests } from '#lib/api/public.ts';
   import { getPublicLayout } from '#lib/api/layout.ts';
-  import { cacheGuests, loadCachedGuests } from '#lib/offline/queue.ts';
+  import { cacheKioskGuests, loadCachedKioskGuests } from '#lib/offline/queue.ts';
   import { rankGuests } from '#lib/utils/guestSearch.ts';
   import { cn, getInitials } from '#lib/utils/index.ts';
   import { formatSeatRange, formatPartySize } from '#lib/utils/seat.ts';
@@ -80,7 +80,7 @@ import X from 'lucide-svelte/icons/x';
     try {
       allGuests = await publicListGuests({ signal });
       if (req !== guestsRequest) return;
-      cacheGuests(wid, allGuests);
+      cacheKioskGuests(wid, allGuests);
       showingCachedGuests = false;
       guestsLoaded = true;
       guestsError = false;
@@ -89,7 +89,7 @@ import X from 'lucide-svelte/icons/x';
       guestsError = true;
       showingCachedGuests = guestsLoaded;
       if (!allGuests.length) {
-        const cached = loadCachedGuests<Guest>(wid);
+        const cached = loadCachedKioskGuests<Guest>(wid);
         if (cached?.length) {
           allGuests = cached;
           showingCachedGuests = true;

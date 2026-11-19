@@ -4,6 +4,7 @@ import { connectSSE, disconnectSSE, type GuestEvent } from '#lib/api/sse.ts';
 import { weddingId } from '#lib/stores/weddingId.ts';
 import type { Guest, RSVPStatus } from '#lib/types/index.ts';
 import type { GuestResponse } from '#lib/api/guests.ts';
+import { cacheGuests } from '#lib/offline/queue.ts';
 
 // All guests for the current wedding, kept in sync via SSE.
 export const guestList = writable<Guest[]>([]);
@@ -100,7 +101,7 @@ export function seedGuests(guests: Guest[]) {
 	// cache for offline reads
 	try {
 		const wid = get(weddingId);
-		if (wid) localStorage.setItem(`offline_cache_${wid}`, JSON.stringify(guests));
+		if (wid) cacheGuests(wid, guests);
 	} catch {}
 	if (syncing) {
 		syncing = false;
