@@ -76,7 +76,21 @@ func (s *ReportService) GenerateCSV(ctx context.Context, weddingID uuid.UUID) ([
 	}
 
 	rows, summary := s.buildRows(guests, tableMap)
+	data, err := s.writeCSV(rows, summary)
+	if err != nil {
+		return nil, "", err
+	}
 
+	filename := fmt.Sprintf("angpao-report-%s-%s.csv",
+		s.sanitizeFilename(wedding.Name),
+		time.Now().Format("2006-01-02"))
+
+	return data, filename, nil
+}
+
+// writeCSV renders the report rows and summary as CSV. User-entered text goes
+// through csvText so the file is safe to open in a spreadsheet app.
+func (s *ReportService) writeCSV(rows []angpaoRow, summary angpaoSummary) ([]byte, error) {
 	var buf bytes.Buffer
 	w := csv.NewWriter(&buf)
 
@@ -85,7 +99,7 @@ func (s *ReportService) GenerateCSV(ctx context.Context, weddingID uuid.UUID) ([
 
 	// Data rows
 	for _, r := range rows {
-		w.Write([]string{r.GuestName, r.TableName, r.SeatStr, r.AngbaoStr, r.GiftItem, r.CheckedIn})
+		w.Write([]string{csvText(r.GuestName), csvText(r.TableName), r.SeatStr, r.AngbaoStr, csvText(r.GiftItem), r.CheckedIn})
 	}
 
 	// Blank row separator
@@ -102,7 +116,7 @@ func (s *ReportService) GenerateCSV(ctx context.Context, weddingID uuid.UUID) ([
 	w.Write([]string{"TABLE TOTALS", "Angbao (RM)", "", "", "", ""})
 	sortedTableNames := s.sortedTableKeys(summary.TotalByTable)
 	for _, tName := range sortedTableNames {
-		w.Write([]string{tName, fmt.Sprintf("RM %d", summary.TotalByTable[tName]), "", "", "", ""})
+		w.Write([]string{csvText(tName), fmt.Sprintf("RM %d", summary.TotalByTable[tName]), "", "", "", ""})
 	}
 
 	// Gift items
@@ -110,20 +124,15 @@ func (s *ReportService) GenerateCSV(ctx context.Context, weddingID uuid.UUID) ([
 		w.Write([]string{})
 		w.Write([]string{"GIFT ITEMS", "", "", "", "", ""})
 		for _, g := range summary.GiftItems {
-			w.Write([]string{g, "", "", "", "", ""})
+			w.Write([]string{csvText(g), "", "", "", "", ""})
 		}
 	}
 
 	w.Flush()
 	if err := w.Error(); err != nil {
-		return nil, "", err
+		return nil, err
 	}
-
-	filename := fmt.Sprintf("angpao-report-%s-%s.csv",
-		s.sanitizeFilename(wedding.Name),
-		time.Now().Format("2006-01-02"))
-
-	return buf.Bytes(), filename, nil
+	return buf.Bytes(), nil
 }
 
 func (s *ReportService) GenerateXLSX(ctx context.Context, weddingID uuid.UUID) ([]byte, string, error) {
@@ -358,6 +367,16 @@ func (s *ReportService) sanitizeFilename(name string) string {
 		name = name[:50]
 	}
 	return name
+}
+
+// csvText neutralises user-entered text for CSV export. Spreadsheet apps run
+// a cell that starts with = + - @ tab or CR as a formula, so such values get a
+// leading apostrophe, which the apps hide and treat as "this is text".
+func csvText(s string) string {
+	if s != "" && strings.ContainsRune("=+-@\t\r", rune(s[0])) {
+		return "'" + s
+	}
+	return s
 }
 
 func cellName(col, row int) string {
