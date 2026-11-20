@@ -11,7 +11,9 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"syscall"
+	"time"
 
 	"github.com/go-fuego/fuego"
 	"github.com/google/uuid"
@@ -33,10 +35,47 @@ const maxUploadFileBytes = 5 * 1024 * 1024
 // of multipart framing and headers.
 const maxUploadBytes = maxUploadFileBytes + 1024*1024
 
-type UploadHandler struct{}
+// uploadQuotaPerScope caps stored bytes per scope (a wedding, or the shared
+// "global" admin namespace). Kiosk artwork is small; a filled disk takes the
+// whole service down.
+const uploadQuotaPerScope = 100 * 1024 * 1024
+
+// uploadRateLimit caps how many uploads one scope may start per window.
+const (
+	uploadRateLimit  = 30
+	uploadRateWindow = time.Hour
+)
+
+type UploadHandler struct {
+	mu      sync.Mutex
+	windows map[string]*uploadWindow
+}
+
+type uploadWindow struct {
+	start time.Time
+	count int
+}
 
 func NewUploadHandler() *UploadHandler {
-	return &UploadHandler{}
+	return &UploadHandler{windows: make(map[string]*uploadWindow)}
+}
+
+// allow applies a fixed-window rate limit per scope so one wedding cannot
+// burn bandwidth and disk in a burst.
+func (h *UploadHandler) allow(scope string) bool {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	now := time.Now()
+	w, ok := h.windows[scope]
+	if !ok || now.Sub(w.start) >= uploadRateWindow {
+		h.windows[scope] = &uploadWindow{start: now, count: 1}
+		return true
+	}
+	if w.count >= uploadRateLimit {
+		return false
+	}
+	w.count++
+	return true
 }
 
 // closeLogged closes c and logs a failure the caller cannot act on.
@@ -57,6 +96,9 @@ func (h *UploadHandler) Upload(c fuego.ContextWithBody[any]) (any, error) {
 	scope := "global"
 	if wid := WeddingIDFromContext(c.Context()); RoleFromContext(c.Context()) != "admin" && wid != nil {
 		scope = wid.String()
+	}
+	if !h.allow(scope) {
+		return nil, fuego.HTTPError{Status: http.StatusTooManyRequests, Title: "Too many uploads, try again later"}
 	}
 	r := c.Request()
 	r.Body = http.MaxBytesReader(c.Response(), r.Body, maxUploadBytes)
@@ -112,26 +154,37 @@ func (h *UploadHandler) Upload(c fuego.ContextWithBody[any]) (any, error) {
 	}
 	hash := hex.EncodeToString(hasher.Sum(nil))
 
-	// Check if file with same hash already exists via index file
+	// The index is both the dedupe table and the quota ledger. Read it under
+	// the same lock that appends to it, or two concurrent uploads of the same
+	// bytes both miss the existing entry and store a copy.
 	indexPath := filepath.Join(uploadDir, ".hash-index")
-	if idx, err := os.ReadFile(indexPath); err == nil {
-		for _, line := range strings.Split(string(idx), "\n") {
-			parts := strings.SplitN(line, " ", 3)
-			// Old entries have two fields and belong to the global namespace.
-			entryScope, entryHash, entryName := "global", "", ""
-			if len(parts) == 3 {
-				entryScope, entryHash, entryName = parts[0], parts[1], parts[2]
-			} else if len(parts) == 2 {
-				entryHash, entryName = parts[0], parts[1]
-			}
-			if entryHash == hash && entryScope == scope {
-				return map[string]any{
-					"url":      "/uploads/" + entryName,
-					"filename": entryName,
-					"hash":     hash,
-				}, nil
-			}
+	lockFile, err := os.OpenFile(indexPath+".lock", os.O_CREATE|os.O_RDWR, 0644)
+	if err != nil {
+		return nil, fuego.InternalServerError{Title: "Failed to save file"}
+	}
+	defer closeLogged(lockFile)
+	if err := syscall.Flock(int(lockFile.Fd()), syscall.LOCK_EX); err != nil {
+		return nil, fuego.InternalServerError{Title: "Failed to save file"}
+	}
+	defer func() {
+		if err := syscall.Flock(int(lockFile.Fd()), syscall.LOCK_UN); err != nil {
+			slog.Warn("unlock upload index failed", "err", err)
 		}
+	}()
+
+	existing, used, err := scanUploadIndex(indexPath, uploadDir, scope, hash)
+	if err != nil && !errors.Is(err, os.ErrNotExist) {
+		return nil, fuego.InternalServerError{Title: "Failed to read upload index"}
+	}
+	if existing != "" {
+		return map[string]any{
+			"url":      "/uploads/" + existing,
+			"filename": existing,
+			"hash":     hash,
+		}, nil
+	}
+	if used+header.Size > uploadQuotaPerScope {
+		return nil, fuego.HTTPError{Status: http.StatusRequestEntityTooLarge, Title: "Upload quota exceeded for this wedding"}
 	}
 
 	// Save new file with hash as prefix
@@ -152,23 +205,9 @@ func (h *UploadHandler) Upload(c fuego.ContextWithBody[any]) (any, error) {
 		return nil, fuego.InternalServerError{Title: "Failed to save file"}
 	}
 
-	// Append hash to index file with file lock
-	lockPath := indexPath + ".lock"
-	lockFile, err := os.OpenFile(lockPath, os.O_CREATE|os.O_RDWR, 0644)
-	if err == nil {
-		defer closeLogged(lockFile)
-		if err := syscall.Flock(int(lockFile.Fd()), syscall.LOCK_EX); err != nil {
-			slog.Warn("lock upload index failed", "err", err)
-		}
-		defer func() {
-			if err := syscall.Flock(int(lockFile.Fd()), syscall.LOCK_UN); err != nil {
-				slog.Warn("unlock upload index failed", "err", err)
-			}
-		}()
-	}
 	f, err := os.OpenFile(indexPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 	if err != nil {
-		// ponytail: index write failure is non-critical — file is already saved
+		// Index write failure is non-critical: the file is already saved.
 	} else {
 		if _, err := fmt.Fprintf(f, "%s %s %s\n", scope, hash, filename); err != nil {
 			slog.Warn("write upload index failed", "err", err)
@@ -182,4 +221,35 @@ func (h *UploadHandler) Upload(c fuego.ContextWithBody[any]) (any, error) {
 		"filename": filename,
 		"hash":     hash,
 	}, nil
+}
+
+// scanUploadIndex returns the stored filename for hash in scope and the total
+// bytes that scope currently occupies.
+func scanUploadIndex(indexPath, uploadDir, scope, hash string) (string, int64, error) {
+	idx, err := os.ReadFile(indexPath)
+	if err != nil {
+		return "", 0, err
+	}
+	var existing string
+	var used int64
+	for line := range strings.SplitSeq(string(idx), "\n") {
+		parts := strings.SplitN(line, " ", 3)
+		// Old entries have two fields and belong to the global namespace.
+		entryScope, entryHash, entryName := "global", "", ""
+		if len(parts) == 3 {
+			entryScope, entryHash, entryName = parts[0], parts[1], parts[2]
+		} else if len(parts) == 2 {
+			entryHash, entryName = parts[0], parts[1]
+		}
+		if entryName == "" || entryScope != scope {
+			continue
+		}
+		if fi, err := os.Stat(filepath.Join(uploadDir, entryName)); err == nil {
+			used += fi.Size()
+		}
+		if entryHash == hash {
+			existing = entryName
+		}
+	}
+	return existing, used, nil
 }
