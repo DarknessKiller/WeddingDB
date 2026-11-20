@@ -179,3 +179,16 @@ describe('guestEvents store', () => {
 		expect(get(guestList)[0].pinyin).toBe('zhangwei');
 	});
 });
+
+describe('refreshGuests overlap', () => {
+	it('lets only the newest of two overlapping refreshes seed', async () => {
+		const mod = await freshModule();
+		let releaseOld: (g: Guest[]) => void = () => {};
+		const older = mod.refreshGuests(() => new Promise<Guest[]>(r => { releaseOld = r; }));
+		const newer = mod.refreshGuests(async () => [makeGuest({ id: 'g1', name: 'Fresh' })]);
+		await newer;
+		releaseOld([makeGuest({ id: 'g1', name: 'Stale' })]);
+		await older;
+		expect(get(mod.guestList).map(g => g.name)).toEqual(['Fresh']);
+	});
+});

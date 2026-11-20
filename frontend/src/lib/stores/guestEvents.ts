@@ -18,6 +18,9 @@ export const sseConnected = writable(false);
 let initialized = false;
 let syncing = false;
 let queuedEvents: GuestEvent[] = [];
+// Bumped by every refreshGuests call; only the newest may seed or close the
+// syncing window, so an older snapshot landing late cannot overwrite events.
+let refreshGen = 0;
 let resync: (() => Promise<Guest[]>) | undefined;
 
 /**
@@ -69,15 +72,20 @@ export function initializeSSE(onResync?: () => Promise<Guest[]>): (() => void) |
  */
 export async function refreshGuests(fetchFn: () => Promise<Guest[]>): Promise<Guest[]> {
 	const wid = get(weddingId);
+	const gen = ++refreshGen;
 	syncing = true;
 	try {
 		const guests = await fetchFn();
+		// A newer refresh started after this one: its snapshot is fresher and it
+		// owns the syncing window, so this one must not seed.
+		if (gen !== refreshGen) return guests;
 		// The wedding changed mid-fetch: this roster belongs to the old one, so it
 		// must not be shown or cached under the new id. The new wedding's own load seeds.
 		if (get(weddingId) !== wid) return guests;
 		seedGuests(guests);
 		return guests;
 	} catch (e) {
+		if (gen !== refreshGen) throw e;
 		// Abandon the window; replay anything that queued up meanwhile.
 		syncing = false;
 		const pending = queuedEvents;
