@@ -34,6 +34,20 @@ export function clearStaffOfflineData() {
 }
 
 /**
+ * Session expiry (the server rejected the refresh token), not logout. Drops
+ * the cached roster but keeps unsynced edits and their owner key, so the same
+ * user's queued changes still sync after re-login. A different user logging in
+ * clears them through claimStaffOfflineData.
+ */
+export function expireStaffOfflineData() {
+	if (typeof window === 'undefined') return;
+	try {
+		removePrefixed(localStorage, [STAFF_CACHE_PREFIX]);
+		removePrefixed(sessionStorage, [STAFF_CACHE_PREFIX]);
+	} catch {}
+}
+
+/**
  * Called on login. Keeps queued edits when the same user logs back in (after a
  * reload, say) so they still sync; clears them when someone else logs in.
  */

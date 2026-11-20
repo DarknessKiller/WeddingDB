@@ -1,6 +1,6 @@
 import { writable } from 'svelte/store';
 import type { Guest } from '#lib/types/index.ts';
-import { clearStaffOfflineData } from '#lib/offline/storage.ts';
+import { clearStaffOfflineData, expireStaffOfflineData } from '#lib/offline/storage.ts';
 
 // Selected guest for drawer
 export const selectedGuest = writable<Guest | null>(null);
@@ -86,15 +86,27 @@ function writeStoredAuth() {
   } catch {}
 }
 
-export function clearAuth() {
+function resetAuthState() {
   _accessToken = null;
   _refreshToken = null;
   _role = null;
   _name = null;
   if (typeof window !== 'undefined') localStorage.removeItem(AUTH_KEY);
-  // Staff guest data and unsynced edits must not outlive the session: the next
-  // person at this device (or the public kiosk) could read or replay them.
+}
+
+/** Explicit logout: the next person at this device must not inherit data. */
+export function clearAuth() {
+  resetAuthState();
   clearStaffOfflineData();
+}
+
+/**
+ * The server rejected the refresh token. End the session but keep unsynced
+ * edits and their owner so the same user's queued changes sync after login.
+ */
+export function expireAuth() {
+  resetAuthState();
+  expireStaffOfflineData();
 }
 
 // Show seat numbers setting. Shared so every page reacts without a reload, and

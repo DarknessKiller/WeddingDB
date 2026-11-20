@@ -1,4 +1,4 @@
-import { getAuth, setAuth, clearAuth } from '#lib/stores/index.ts';
+import { getAuth, setAuth, expireAuth } from '#lib/stores/index.ts';
 import { setWeddingId } from '#lib/stores/weddingId.ts';
 
 const BASE = '';
@@ -37,7 +37,9 @@ async function doRefresh(): Promise<boolean> {
 	}
 	// Only a definite rejection means the refresh token is dead. Keep the session on 5xx.
 	if (refreshRes.status !== 400 && refreshRes.status !== 401) return false;
-	clearAuth();
+	// Session expiry, not logout: the queue must survive so offline edits made
+	// before the token died still sync after the user logs back in.
+	expireAuth();
 	setWeddingId('');
 	if (typeof window !== 'undefined') window.location.href = '/login';
 	return false;

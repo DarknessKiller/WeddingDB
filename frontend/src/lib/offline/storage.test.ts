@@ -97,6 +97,25 @@ describe('staff data across reloads and logins', () => {
 
 		expect(getQueue('w1')).toEqual([]);
 	});
+
+	it('session expiry keeps unsynced edits but drops the cached roster', async () => {
+		const { cacheGuests, enqueue, getQueue } = await import('#lib/offline/queue.ts');
+		const { claimStaffOfflineData } = await import('#lib/offline/storage.ts');
+		const { expireAuth } = await import('#lib/stores/index.ts');
+		claimStaffOfflineData('staff@x.test');
+		cacheGuests('w1', [staffGuest]);
+		enqueue('w1', edit);
+
+		expireAuth();
+
+		expect(session.getItem('offline_cache_w1')).toBeNull();
+		expect(storage.getItem('weddingdb_auth')).toBeNull();
+		expect(getQueue('w1')).toEqual([edit]);
+
+		// The same user logging back in keeps the queue for sync.
+		claimStaffOfflineData('staff@x.test');
+		expect(getQueue('w1')).toEqual([edit]);
+	});
 });
 
 describe('kiosk and staff caches', () => {
