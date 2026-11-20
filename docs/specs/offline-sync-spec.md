@@ -10,7 +10,7 @@ search. Queued mutations replay when the network returns.
 | Guest | `GuestRecord` row, scoped to `wedding_id`. Has `UpdatedAt`. |
 | Mutation | One offline intent: `create`, `update`, `delete`, `checkin`, `checkout`. Stored in a `localStorage` queue per wedding. |
 | Queue | `localStorage` key `offline_queue_{wid}`: FIFO array of `QueuedMutation`. |
-| Cache | `localStorage` key `offline_cache_{wid}`: last complete guest list for the wedding. |
+| Cache | `sessionStorage` key `offline_cache_{wid}`: last complete guest list for the wedding. Tab-scoped so a closed tab leaves no roster. |
 | LWW | Last-write-wins on the guest's `UpdatedAt`, with the client timestamp as the candidate. |
 
 ## Domain model

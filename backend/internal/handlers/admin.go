@@ -61,6 +61,8 @@ func (h *AdminHandler) Create(c fuego.ContextWithBody[AdminRequest]) (any, error
 		Password: string(hash),
 		Name:     body.Name,
 		Role:     body.Role,
+		// Admin chose this password, so the user must replace it on first login.
+		ForcePasswordChange: true,
 	}
 	if err := h.adminRepo.Create(ctx, admin); err != nil {
 		return nil, err

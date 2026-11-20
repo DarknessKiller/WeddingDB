@@ -6,6 +6,7 @@ import (
 	"net"
 	"net/http"
 	"net/mail"
+	"os"
 	"unicode"
 	"weddingdb/internal/middleware"
 	"weddingdb/internal/models"
@@ -232,6 +233,9 @@ func (h *AuthHandler) ChangePassword(c fuego.ContextWithBody[ChangePasswordReque
 }
 
 func (h *AuthHandler) Register(c fuego.ContextWithBody[RegisterRequest]) (any, error) {
+	if os.Getenv("ALLOW_REGISTRATION") != "true" {
+		return nil, fuego.ForbiddenError{Title: "Registration is disabled. Ask an admin for an account."}
+	}
 	body, err := c.Body()
 	if err != nil {
 		return nil, fuego.BadRequestError{Title: "Invalid request"}

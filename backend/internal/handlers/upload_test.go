@@ -2,17 +2,27 @@ package handlers
 
 import (
 	"bytes"
+	"context"
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 
+	"weddingdb/internal/middleware"
+
 	"github.com/go-fuego/fuego"
+	"github.com/google/uuid"
 )
 
 // runUpload drives the upload controller via fuego's HTTPHandler, isolated in a
 // temp CWD so ./uploads stays out of the repo tree.
 func runUpload(t *testing.T, filename string, content []byte) *httptest.ResponseRecorder {
+	t.Helper()
+	return runUploadAs(t, context.WithValue(context.Background(), middleware.RoleKey, "admin"), filename, content)
+}
+
+// runUploadAs runs the upload with ctx standing in for AuthMiddleware's identity.
+func runUploadAs(t *testing.T, ctx context.Context, filename string, content []byte) *httptest.ResponseRecorder {
 	t.Helper()
 	t.Chdir(t.TempDir())
 
@@ -31,7 +41,7 @@ func runUpload(t *testing.T, filename string, content []byte) *httptest.Response
 		t.Fatal(err)
 	}
 
-	req := httptest.NewRequest(http.MethodPost, "/upload", &body)
+	req := httptest.NewRequestWithContext(ctx, http.MethodPost, "/upload", &body)
 	req.Header.Set("Content-Type", mw.FormDataContentType())
 	rec := httptest.NewRecorder()
 
@@ -62,6 +72,25 @@ func TestUpload_MagicMismatchRejected(t *testing.T) {
 	rec := runUpload(t, "evil.png", []byte("definitely not a png"))
 	if rec.Code != http.StatusBadRequest {
 		t.Fatalf("status = %d, want 400, body = %s", rec.Code, rec.Body.String())
+	}
+}
+
+// A freshly registered user has no wedding yet and must not be able to host files.
+func TestUpload_UserWithoutWeddingForbidden(t *testing.T) {
+	ctx := context.WithValue(context.Background(), middleware.RoleKey, "user")
+	rec := runUploadAs(t, ctx, "a.jpg", []byte{0xff, 0xd8, 0xff})
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("status = %d, want 403, body = %s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestUpload_UserWithWeddingAllowed(t *testing.T) {
+	wid := uuid.New()
+	ctx := context.WithValue(context.Background(), middleware.RoleKey, "user")
+	ctx = context.WithValue(ctx, middleware.WeddingIDKey, &wid)
+	rec := runUploadAs(t, ctx, "a.jpg", []byte{0xff, 0xd8, 0xff})
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("status = %d, want 201, body = %s", rec.Code, rec.Body.String())
 	}
 }
 

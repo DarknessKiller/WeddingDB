@@ -47,23 +47,23 @@ export function queuedCount(wid: string): number {
 	return getQueue(wid).length;
 }
 
-function writeCache(key: string, guests: unknown[]) {
-	try { localStorage.setItem(key, JSON.stringify(guests)); } catch {}
+function writeCache(store: Storage, key: string, guests: unknown[]) {
+	try { store.setItem(key, JSON.stringify(guests)); } catch {}
 }
-function readCache<T>(key: string): T[] | null {
+function readCache<T>(store: Storage, key: string): T[] | null {
 	try {
-		const v = localStorage.getItem(key);
+		const v = store.getItem(key);
 		return v ? JSON.parse(v) as T[] : null;
 	} catch { return null; }
 }
 
-/** Staff guest records for offline reads; cleared on logout. */
-export function cacheGuests(wid: string, guests: unknown[]) { writeCache(ckey(wid), guests); }
-export function loadCachedGuests<T>(wid: string): T[] | null { return readCache<T>(ckey(wid)); }
+/** Staff guest records for offline reads; tab-scoped, cleared on logout. */
+export function cacheGuests(wid: string, guests: unknown[]) { writeCache(sessionStorage, ckey(wid), guests); }
+export function loadCachedGuests<T>(wid: string): T[] | null { return readCache<T>(sessionStorage, ckey(wid)); }
 
 /** Public kiosk records; kept apart from the staff cache. */
-export function cacheKioskGuests(wid: string, guests: unknown[]) { writeCache(kkey(wid), guests); }
-export function loadCachedKioskGuests<T>(wid: string): T[] | null { return readCache<T>(kkey(wid)); }
+export function cacheKioskGuests(wid: string, guests: unknown[]) { writeCache(localStorage, kkey(wid), guests); }
+export function loadCachedKioskGuests<T>(wid: string): T[] | null { return readCache<T>(localStorage, kkey(wid)); }
 
 export async function syncQueue(wid: string): Promise<{ applied: number; skipped: number; results: unknown[] }> {
 	const q = getQueue(wid);

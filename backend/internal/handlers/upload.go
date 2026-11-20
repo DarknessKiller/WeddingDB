@@ -47,6 +47,10 @@ func closeLogged(c io.Closer) {
 }
 
 func (h *UploadHandler) Upload(c fuego.ContextWithBody[any]) (any, error) {
+	// Uploads feed kiosk settings, so only admins or users scoped to a wedding may upload.
+	if RoleFromContext(c.Context()) != "admin" && WeddingIDFromContext(c.Context()) == nil {
+		return nil, fuego.ForbiddenError{Title: "Select a wedding before uploading"}
+	}
 	r := c.Request()
 	r.Body = http.MaxBytesReader(c.Response(), r.Body, maxUploadBytes)
 	file, header, err := r.FormFile("file")
