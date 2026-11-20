@@ -80,7 +80,7 @@ func RegisterRoutes(
 
 	// ── Auth + Wedding scope ──
 	scoped := fuego.Group(api, "/weddings/{wid}")
-	fuego.Use(scoped, middleware.WeddingScopeMiddleware)
+	fuego.Use(scoped, middleware.WeddingScopeMiddleware(adminRepo, weddingService))
 
 	// Tables
 	fuego.Get(scoped, "/tables", tableHandler.List)
@@ -115,5 +115,5 @@ func RegisterRoutes(
 	// Reports
 	reportHandler := NewReportHandler(reportService)
 	s.Mux.Handle("GET /api/weddings/{wid}/reports/angpao",
-		middleware.AuthMiddleware(authService)(middleware.WeddingScopeMiddleware(http.HandlerFunc(reportHandler.ExportAngpao))))
+		middleware.AuthMiddleware(authService)(middleware.WeddingScopeMiddleware(adminRepo, weddingService)(http.HandlerFunc(reportHandler.ExportAngpao))))
 }
