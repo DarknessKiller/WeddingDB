@@ -62,7 +62,7 @@ func validatePax(pax int) error {
 // gift amount into storage and the public kiosk payload.
 const (
 	MaxGuestNameLen        = 200
-	MaxGuestEmailLen       = 320
+	MaxGuestEmailLen       = 255 // the email column is varchar(255)
 	MaxGuestNotesLen       = 2000
 	MaxGuestGiftItemLen    = 200
 	MaxGuestDietaryItems   = 20
