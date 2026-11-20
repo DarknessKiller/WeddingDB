@@ -123,12 +123,14 @@ func TestOpenAPI_SpecJSON(t *testing.T) {
 }
 
 func TestNewFuegoServer_TimeoutsForLongTransfers(t *testing.T) {
-	// fuego defaults Read/WriteTimeout to 30s; both would reset large uploads
-	// and SSE streams mid-transfer. Zeroing them is the app-level contract
-	// behind "the reverse proxy owns request limits".
+	// SSE needs an unbounded write deadline, but the read side must stay
+	// bounded so a client cannot hold a connection open by trickling a body.
 	s := NewFuegoServer(Env{Port: "0"}, "test")
-	if s.ReadTimeout != 0 {
-		t.Errorf("ReadTimeout = %v, want 0 (proxy owns transfer duration)", s.ReadTimeout)
+	if s.ReadTimeout != requestReadTimeout {
+		t.Errorf("ReadTimeout = %v, want %v (bounded slow-body guard)", s.ReadTimeout, requestReadTimeout)
+	}
+	if s.ReadTimeout <= 0 {
+		t.Error("ReadTimeout = 0 allows an unbounded slow-body connection")
 	}
 	if s.WriteTimeout != 0 {
 		t.Errorf("WriteTimeout = %v, want 0 (SSE must not be cut)", s.WriteTimeout)

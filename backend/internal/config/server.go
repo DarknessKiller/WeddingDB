@@ -5,10 +5,16 @@ import (
 	"errors"
 	"log/slog"
 	"net/http"
+	"time"
 
 	"github.com/getkin/kin-openapi/openapi3"
 	"github.com/go-fuego/fuego"
 )
+
+// requestReadTimeout bounds how long one request may spend sending its body.
+// Zero would let a client trickle bytes forever and hold a connection; 5
+// minutes still fits a 1 MiB upload on a bad mobile link.
+const requestReadTimeout = 5 * time.Minute
 
 func NewFuegoServer(env Env, version string) *fuego.Server {
 	s := fuego.NewServer(
@@ -35,10 +41,11 @@ func NewFuegoServer(env Env, version string) *fuego.Server {
 	// deadline and fuego's 30s default would kill every stream at 30s, forcing
 	// a reconnect/resync loop. Keepalive pings cannot extend it.
 	s.WriteTimeout = 0
-	// Large/slow uploads must not be reset mid-transfer (fuego defaults
-	// ReadTimeout to 30s). ReadHeaderTimeout still applies so slowloris headers
-	// die; body size is capped above.
-	s.ReadTimeout = 0
+	// Large/slow uploads need more than fuego's 30s ReadTimeout default, but it
+	// must stay bounded: an unbounded read lets a client hold the connection
+	// open by trickling a body. ReadHeaderTimeout still guards slowloris
+	// headers, and the body size is capped above.
+	s.ReadTimeout = requestReadTimeout
 
 	// Set the public server URL in the OpenAPI spec
 	if env.PublicURL != "" {
