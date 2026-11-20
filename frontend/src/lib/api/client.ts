@@ -50,6 +50,11 @@ async function refreshIfNeeded(): Promise<boolean> {
 	return refreshPromise;
 }
 
+// Shared with the SSE client, which cannot use apiFetch for a streamed response.
+export async function refreshAccessToken(): Promise<boolean> {
+	return refreshIfNeeded();
+}
+
 export async function apiFetch(path: string, opts: RequestInit = {}): Promise<Response> {
 	const { accessToken } = getAuth();
 	const isDelete = opts.method === 'DELETE';
