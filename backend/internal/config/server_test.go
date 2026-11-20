@@ -2,8 +2,13 @@ package config
 
 import (
 	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"os"
+	"strings"
 	"testing"
+
+	"github.com/go-fuego/fuego"
 )
 
 func TestNewFuegoServer_SetsOpenAPIInfo(t *testing.T) {
@@ -128,5 +133,25 @@ func TestNewFuegoServer_TimeoutsForLongTransfers(t *testing.T) {
 	}
 	if s.ReadHeaderTimeout == 0 {
 		t.Error("ReadHeaderTimeout = 0, want non-zero (slowloris guard)")
+	}
+}
+
+func TestNewFuegoServer_RejectsOversizedBody(t *testing.T) {
+	s := NewFuegoServer(Env{Port: "0"}, "test")
+	fuego.Post(s, "/echo", func(c fuego.ContextWithBody[map[string]string]) (any, error) {
+		if _, err := c.Body(); err != nil {
+			return nil, fuego.BadRequestError{Title: "Invalid request"}
+		}
+		return map[string]string{"ok": "1"}, nil
+	})
+
+	payload := `{"x":"` + strings.Repeat("a", 2*1024*1024) + `"}`
+	req := httptest.NewRequest(http.MethodPost, "/echo", strings.NewReader(payload))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	s.Mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400 for a body over the limit", rec.Code)
 	}
 }
