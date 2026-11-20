@@ -3,6 +3,7 @@ package handlers
 import (
 	"errors"
 	"log/slog"
+	"slices"
 	"strconv"
 	"time"
 	"weddingdb/internal/models"
@@ -11,6 +12,7 @@ import (
 
 	"github.com/go-fuego/fuego"
 	"github.com/google/uuid"
+	"gorm.io/gorm"
 )
 
 type GuestHandler struct{ guestService *services.GuestService }
@@ -127,14 +129,24 @@ func (h *GuestHandler) Create(c fuego.ContextWithBody[GuestCreateRequest]) (any,
 	// One transaction creates the guest and checks the seat, so a refused seat
 	// leaves no guest behind and no create/delete events go out.
 	if err := h.guestService.Create(ctx, guest); err != nil {
-		if errors.Is(err, services.ErrGuestCapExceeded) || errors.Is(err, services.ErrInvalidPax) || errors.Is(err, services.ErrInvalidGuestField) ||
-			errors.Is(err, services.ErrSeatOverlap) || errors.Is(err, services.ErrSeatRange) || errors.Is(err, services.ErrTableFull) || errors.Is(err, services.ErrTableNotFound) {
+		if isGuestRuleError(err) {
 			return nil, fuego.BadRequestError{Title: err.Error()}
 		}
 		return nil, err
 	}
 	c.SetStatus(201)
 	return guest, nil
+}
+
+// guestRuleErrors are guest write failures the caller can fix. They answer 400
+// with their message; anything else goes to the internal error handler.
+var guestRuleErrors = []error{
+	services.ErrGuestCapExceeded, services.ErrInvalidPax, services.ErrInvalidGuestField,
+	services.ErrSeatOverlap, services.ErrSeatRange, services.ErrTableFull, services.ErrTableNotFound,
+}
+
+func isGuestRuleError(err error) bool {
+	return slices.ContainsFunc(guestRuleErrors, func(target error) bool { return errors.Is(err, target) })
 }
 
 func (h *GuestHandler) Update(c fuego.ContextWithBody[GuestCreateRequest]) (any, error) {
@@ -191,8 +203,11 @@ func (h *GuestHandler) Update(c fuego.ContextWithBody[GuestCreateRequest]) (any,
 		}
 	}
 	if err := h.guestService.UpdateWithSeat(ctx, guest, tid, seatNum, body.BaseUpdatedAt); err != nil {
-		if errors.Is(err, services.ErrGuestCapExceeded) || errors.Is(err, services.ErrInvalidPax) || errors.Is(err, services.ErrInvalidGuestField) {
+		if isGuestRuleError(err) {
 			return nil, fuego.BadRequestError{Title: err.Error()}
+		}
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, fuego.NotFoundError{Title: "Guest not found"}
 		}
 		if errors.Is(err, services.ErrStaleGuest) {
 			return nil, fuego.ConflictError{Title: "Someone else changed this guest. Reload to see their changes."}
@@ -369,10 +384,10 @@ func (h *GuestHandler) BulkImport(c fuego.ContextWithBody[BulkImportRequest]) (a
 	}
 	count, err := h.guestService.BulkCreate(ctx, guests)
 	if err != nil {
-		if errors.Is(err, services.ErrGuestCapExceeded) || errors.Is(err, services.ErrInvalidPax) || errors.Is(err, services.ErrInvalidGuestField) {
+		if isGuestRuleError(err) {
 			return nil, fuego.BadRequestError{Title: err.Error()}
 		}
-		return nil, fuego.BadRequestError{Title: "Bulk import failed"}
+		return nil, err
 	}
 	return map[string]any{"imported": count}, nil
 }
@@ -401,7 +416,13 @@ func (h *GuestHandler) AssignSeat(c fuego.ContextWithBody[AssignSeatRequest]) (a
 		return nil, fuego.BadRequestError{Title: "Invalid table ID"}
 	}
 	if err := h.guestService.AssignSeat(ctx, guestID, wid, tableID, body.SeatNum); err != nil {
-		return nil, fuego.BadRequestError{Title: err.Error()}
+		if isGuestRuleError(err) {
+			return nil, fuego.BadRequestError{Title: err.Error()}
+		}
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, fuego.NotFoundError{Title: "Guest not found"}
+		}
+		return nil, err
 	}
 	c.SetStatus(204)
 	return nil, nil

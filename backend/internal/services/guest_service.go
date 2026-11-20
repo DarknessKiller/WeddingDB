@@ -468,10 +468,10 @@ func (s *GuestService) BulkCreate(ctx context.Context, guests []models.GuestReco
 			guests[i].Pax = 1
 		}
 		if err := validatePax(guests[i].Pax); err != nil {
-			return 0, err
+			return 0, fmt.Errorf("row %d: %w", i+1, err)
 		}
 		if err := validateGuestFields(&guests[i]); err != nil {
-			return 0, err
+			return 0, fmt.Errorf("row %d: %w", i+1, err)
 		}
 		incoming += guests[i].Pax
 	}
@@ -496,35 +496,9 @@ func (s *GuestService) BulkCreate(ctx context.Context, guests []models.GuestReco
 		}
 		for i := range guests {
 			g := &guests[i]
-			if g.Pax < 1 {
-				g.Pax = 1
-			}
-			if g.TableID == nil {
-				if err := txGuestRepo.Create(ctx, g); err != nil {
-					return err
-				}
-				events = append(events, pendingEvent{"create", g})
-				created++
-				continue
-			}
-			tid := *g.TableID
-			// A table without a seat still checks ownership and party capacity.
-			if g.SeatNum == nil {
-				if err := checkSeatNotTaken(ctx, tx, g); err != nil {
-					return fmt.Errorf("table %s: %w", tid.String(), err)
-				}
-				if err := txGuestRepo.Create(ctx, g); err != nil {
-					return err
-				}
-				events = append(events, pendingEvent{"create", g})
-				created++
-				continue
-			}
-			if err := checkSeatTx(ctx, tx, g.WeddingID, tid, uuid.Nil, g.Pax, *g.SeatNum); err != nil {
-				return err
-			}
-			if err := txGuestRepo.Create(ctx, g); err != nil {
-				return err
+			if err := bulkCreateOne(ctx, tx, txGuestRepo, g); err != nil {
+				// Name the CSV row, so an 800-row import says which one to fix.
+				return fmt.Errorf("row %d: %w", i+1, err)
 			}
 			events = append(events, pendingEvent{"create", g})
 			created++
@@ -539,6 +513,26 @@ func (s *GuestService) BulkCreate(ctx context.Context, guests []models.GuestReco
 		s.sseHub.publishGuest(e.eventType, e.guest, e.guest.WeddingID)
 	}
 	return created, nil
+}
+
+// bulkCreateOne checks g's table and seat inside tx, then creates it.
+func bulkCreateOne(ctx context.Context, tx *gorm.DB, repo *repository.GuestRepo, g *models.GuestRecord) error {
+	if g.Pax < 1 {
+		g.Pax = 1
+	}
+	switch {
+	case g.TableID == nil:
+	case g.SeatNum == nil:
+		// A table without a seat still checks ownership and party capacity.
+		if err := checkSeatNotTaken(ctx, tx, g); err != nil {
+			return fmt.Errorf("table %s: %w", g.TableID.String(), err)
+		}
+	default:
+		if err := checkSeatTx(ctx, tx, g.WeddingID, *g.TableID, uuid.Nil, g.Pax, *g.SeatNum); err != nil {
+			return err
+		}
+	}
+	return repo.Create(ctx, g)
 }
 
 func (s *GuestService) Occupancy(ctx context.Context, weddingID uuid.UUID) ([]repository.TableOccupancy, error) {
