@@ -1,6 +1,9 @@
 package config
 
 import (
+	"context"
+	"errors"
+	"log/slog"
 	"net/http"
 
 	"github.com/getkin/kin-openapi/openapi3"
@@ -24,6 +27,7 @@ func NewFuegoServer(env Env, version string) *fuego.Server {
 					return fuego.DefaultOpenAPIHandler(specURL)
 				},
 			}),
+			fuego.WithErrorHandler(internalErrorHandler),
 		),
 	)
 
@@ -45,4 +49,17 @@ func NewFuegoServer(env Env, version string) *fuego.Server {
 	}
 
 	return s
+}
+
+// internalErrorHandler keeps unexpected errors out of responses: fuego's
+// default serializes the raw error, leaking Postgres schema and query detail
+// on 500s.
+func internalErrorHandler(ctx context.Context, err error) error {
+	var httpErr fuego.HTTPError
+	var statusErr fuego.ErrorWithStatus
+	if errors.As(err, &httpErr) || errors.As(err, &statusErr) {
+		return fuego.HandleHTTPError(ctx, err)
+	}
+	slog.ErrorContext(ctx, "unhandled error", "error", err)
+	return fuego.HTTPError{Status: http.StatusInternalServerError, Title: "Internal error"}
 }

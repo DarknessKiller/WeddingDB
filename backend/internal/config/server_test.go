@@ -1,7 +1,9 @@
 package config
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -133,6 +135,54 @@ func TestNewFuegoServer_TimeoutsForLongTransfers(t *testing.T) {
 	}
 	if s.ReadHeaderTimeout == 0 {
 		t.Error("ReadHeaderTimeout = 0, want non-zero (slowloris guard)")
+	}
+}
+
+func TestInternalErrorHandler_PassesFuegoErrorsThrough(t *testing.T) {
+	err := internalErrorHandler(context.Background(), fuego.BadRequestError{Title: "bad input"})
+	var httpErr fuego.HTTPError
+	if !errors.As(err, &httpErr) {
+		t.Fatalf("error = %v, want HTTPError", err)
+	}
+	if httpErr.StatusCode() != 400 {
+		t.Errorf("status = %d, want 400", httpErr.StatusCode())
+	}
+}
+
+func TestInternalErrorHandler_HidesUnexpectedErrors(t *testing.T) {
+	err := internalErrorHandler(context.Background(), errors.New("pq: relation secret_table does not exist"))
+	var httpErr fuego.HTTPError
+	if !errors.As(err, &httpErr) {
+		t.Fatalf("error = %v, want HTTPError", err)
+	}
+	if httpErr.StatusCode() != 500 {
+		t.Errorf("status = %d, want 500", httpErr.StatusCode())
+	}
+	if strings.Contains(httpErr.Error(), "secret_table") {
+		t.Fatalf("response leaks the internal error: %v", httpErr)
+	}
+}
+
+// leakyError mimics driver errors such as *pgconn.PgError, whose exported
+// fields get serialized by the default error writer.
+type leakyError struct{ Message string }
+
+func (e leakyError) Error() string { return e.Message }
+
+func TestNewFuegoServer_UnexpectedErrorBecomesGeneric500(t *testing.T) {
+	s := NewFuegoServer(Env{Port: "0"}, "test")
+	fuego.Get(s, "/boom", func(fuego.ContextNoBody) (any, error) {
+		return nil, leakyError{Message: "pq: relation secret_table does not exist"}
+	})
+
+	rec := httptest.NewRecorder()
+	s.Mux.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/boom", nil))
+
+	if rec.Code != http.StatusInternalServerError {
+		t.Fatalf("status = %d, want 500", rec.Code)
+	}
+	if strings.Contains(rec.Body.String(), "secret_table") {
+		t.Fatalf("response leaks the internal error: %s", rec.Body.String())
 	}
 }
 
