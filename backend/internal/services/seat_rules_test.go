@@ -9,8 +9,10 @@ import (
 
 	"weddingdb/internal/models"
 	"weddingdb/internal/repository"
+	"weddingdb/internal/testutil"
 
 	"github.com/google/uuid"
+	"gorm.io/gorm"
 )
 
 // seedTable inserts a banquet table in wid and returns its id.
@@ -164,5 +166,64 @@ func TestUpdateWithSeat_AppliesBoth(t *testing.T) {
 	}
 	if stored.Name != "Renamed" || stored.TableID == nil || *stored.TableID != tid || stored.SeatNum == nil || *stored.SeatNum != 4 {
 		t.Fatalf("stored = %+v", stored)
+	}
+}
+
+// A table without a seat number still enforces capacity: three 4-pax parties
+// do not fit on a 10-seat table.
+func TestUpdateWithoutSeat_RejectsOverCapacity(t *testing.T) {
+	svc, _, wid := newGuestSyncService(t)
+	ctx := context.Background()
+	tid := seedTable(t, svc, wid, "T1", 10)
+	for i, name := range []string{"A", "B", "C"} {
+		g := seedGuest(t, svc, wid, name)
+		g.Pax = 4
+		g.TableID = &tid
+		err := svc.Update(ctx, g)
+		if i < 2 && err != nil {
+			t.Fatalf("party %s should fit: %v", name, err)
+		}
+		if i == 2 && err == nil {
+			t.Fatal("third 4-pax party must be rejected on a 10-seat table")
+		}
+	}
+}
+
+// Seat moves and check-out write only their own columns, so a concurrent
+// check-in or notes edit made after the guest was loaded survives.
+func TestSeatAndCheckOut_KeepConcurrentEdits(t *testing.T) {
+	svc, db, wid := newGuestSyncService(t)
+	ctx := context.Background()
+	tid := seedTable(t, svc, wid, "T1", 10)
+	g := seedGuest(t, svc, wid, "A")
+
+	// Another staff phone writes after service loaded guest but
+	// before its own update runs.
+	var concurrent func(*gorm.DB)
+	testutil.NoErr(t, db.Callback().Update().Before("gorm:update").Register("test:concurrent_write", func(tx *gorm.DB) {
+		if f := concurrent; f != nil {
+			concurrent = nil
+			f(tx.Session(&gorm.Session{NewDB: true}))
+		}
+	}))
+
+	concurrent = func(tx *gorm.DB) {
+		testutil.NoErr(t, tx.Exec("UPDATE guest_records SET checked_in_at = ? WHERE id = ?", time.Now(), g.ID).Error)
+	}
+	testutil.NoErr(t, svc.AssignSeat(ctx, g.ID, wid, tid, 1))
+	got, err := svc.Get(ctx, g.ID, wid)
+	testutil.NoErr(t, err)
+	if got.CheckedInAt == nil {
+		t.Fatal("AssignSeat cleared concurrent check-in")
+	}
+
+	concurrent = func(tx *gorm.DB) {
+		testutil.NoErr(t, tx.Exec("UPDATE guest_records SET notes = ? WHERE id = ?", "late note", g.ID).Error)
+	}
+	testutil.NoErr(t, svc.CheckOut(ctx, g.ID, wid))
+	got, err = svc.Get(ctx, g.ID, wid)
+	testutil.NoErr(t, err)
+	if got.CheckedInAt != nil || got.Notes != "late note" || got.TableID == nil {
+		t.Fatalf("checkout must clear only checked_in_at: %+v", got)
 	}
 }

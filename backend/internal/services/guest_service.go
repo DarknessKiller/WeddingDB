@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"slices"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -242,15 +243,9 @@ func (s *GuestService) Search(ctx context.Context, weddingID uuid.UUID, query st
 // on the same table row and share the capacity/overlap rules.
 // The row lock is Postgres-only; sqlite (tests) has one writer.
 func checkSeatTx(ctx context.Context, tx *gorm.DB, weddingID, tableID uuid.UUID, guestID uuid.UUID, pax, seatNum int) error {
-	if tx.Name() == "postgres" {
-		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Select("id").
-			Where("id = ? AND wedding_id = ?", tableID, weddingID).First(&models.BanquetTable{}).Error; err != nil {
-			return errors.New("table not found")
-		}
-	}
-	table, err := repository.NewTableRepo(tx).FindByID(ctx, tableID, weddingID)
+	table, err := lockTableTx(ctx, tx, weddingID, tableID)
 	if err != nil {
-		return errors.New("table not found")
+		return err
 	}
 	if pax < 1 {
 		return errors.New("guest pax must be at least 1")
@@ -285,14 +280,40 @@ func checkSeatNotTaken(ctx context.Context, tx *gorm.DB, g *models.GuestRecord) 
 		return nil
 	}
 	if g.SeatNum == nil {
-		// Table without a seat: only the wedding-scoped ownership check applies,
-		// but a cross-wedding table id must still be rejected.
-		if _, err := repository.NewTableRepo(tx).FindByID(ctx, *g.TableID, g.WeddingID); err != nil {
-			return errors.New("table not found")
+		// Table without a seat: no seat range to check, but the party must still
+		// fit, under the same table lock as seat writes.
+		table, err := lockTableTx(ctx, tx, g.WeddingID, *g.TableID)
+		if err != nil {
+			return err
+		}
+		var seated int64
+		if err := tx.Model(&models.GuestRecord{}).Select("COALESCE(SUM(pax), 0)").
+			Where("wedding_id = ? AND table_id = ? AND id <> ?", g.WeddingID, *g.TableID, g.ID).
+			Scan(&seated).Error; err != nil {
+			return fmt.Errorf("sum table pax: %w", err)
+		}
+		if int(seated)+g.Pax > table.Capacity {
+			return errors.New("table capacity exceeded")
 		}
 		return nil
 	}
 	return checkSeatTx(ctx, tx, g.WeddingID, *g.TableID, g.ID, g.Pax, *g.SeatNum)
+}
+
+// lockTableTx row-locks the table on Postgres (sqlite tests have one writer)
+// and returns it, so every seat/capacity check serializes on the same row.
+func lockTableTx(ctx context.Context, tx *gorm.DB, weddingID, tableID uuid.UUID) (*models.BanquetTable, error) {
+	if tx.Name() == "postgres" {
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Select("id").
+			Where("id = ? AND wedding_id = ?", tableID, weddingID).First(&models.BanquetTable{}).Error; err != nil {
+			return nil, errors.New("table not found")
+		}
+	}
+	table, err := repository.NewTableRepo(tx).FindByID(ctx, tableID, weddingID)
+	if err != nil {
+		return nil, errors.New("table not found")
+	}
+	return table, nil
 }
 
 func (s *GuestService) AssignSeat(ctx context.Context, guestID, weddingID, tableID uuid.UUID, seatNum int) error {
@@ -314,12 +335,29 @@ func (s *GuestService) AssignSeat(ctx context.Context, guestID, weddingID, table
 		}
 		guest.TableID = &tableID
 		guest.SeatNum = &seatNum
-		return txGuestRepo.Update(ctx, guest)
+		return txGuestRepo.SetSeat(ctx, guestID, weddingID, guest.TableID, guest.SeatNum)
 	})
 	if err != nil {
 		return err
 	}
 	s.sseHub.publishGuest("seat_assign", guest, weddingID)
+	return nil
+}
+
+// UnassignSeat clears only the seat columns, so a concurrent check-in or notes
+// edit is not overwritten by a stale full-row write.
+func (s *GuestService) UnassignSeat(ctx context.Context, guestID, weddingID uuid.UUID) error {
+	if err := s.guestRepo.SetSeat(ctx, guestID, weddingID, nil, nil); err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return ErrGuestNotFound
+		}
+		return err
+	}
+	guest, err := s.guestRepo.FindByID(ctx, guestID, weddingID)
+	if err != nil {
+		return err
+	}
+	s.sseHub.publishGuest("update", guest, weddingID)
 	return nil
 }
 
@@ -381,12 +419,11 @@ func (s *GuestService) CheckIn(ctx context.Context, id, weddingID uuid.UUID, not
 }
 
 func (s *GuestService) CheckOut(ctx context.Context, id, weddingID uuid.UUID) error {
-	guest, err := s.guestRepo.FindByID(ctx, id, weddingID)
-	if err != nil {
+	if err := s.guestRepo.CheckOut(ctx, id, weddingID, time.Now()); err != nil {
 		return err
 	}
-	guest.CheckedInAt = nil
-	if err := s.guestRepo.Update(ctx, guest); err != nil {
+	guest, err := s.guestRepo.FindByID(ctx, id, weddingID)
+	if err != nil {
 		return err
 	}
 	s.sseHub.publishGuest("checkout", guest, weddingID)
@@ -422,7 +459,6 @@ func (s *GuestService) BulkCreate(ctx context.Context, guests []models.GuestReco
 
 	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		txGuestRepo := repository.NewGuestRepo(tx)
-		txTableRepo := repository.NewTableRepo(tx)
 		created = 0
 		events = events[:0]
 		total, err := guestCountLocked(tx, weddingID)
@@ -432,9 +468,6 @@ func (s *GuestService) BulkCreate(ctx context.Context, guests []models.GuestReco
 		if total+incoming > MaxGuestsPerWedding {
 			return guestCapError(total, incoming)
 		}
-		// Cache table ownership checks for this batch. Seat rows are row-locked
-		// by checkSeatTx, so an import serializes on the same rows as AssignSeat.
-		checked := make(map[uuid.UUID]bool)
 		for i := range guests {
 			g := &guests[i]
 			if g.Pax < 1 {
@@ -449,14 +482,10 @@ func (s *GuestService) BulkCreate(ctx context.Context, guests []models.GuestReco
 				continue
 			}
 			tid := *g.TableID
-			// A table without a seat is a plain table assignment; still verify
-			// ownership so an import cannot attach another wedding's table.
+			// A table without a seat still checks ownership and party capacity.
 			if g.SeatNum == nil {
-				if !checked[tid] {
-					if _, err := txTableRepo.FindByID(ctx, tid, g.WeddingID); err != nil {
-						return fmt.Errorf("table %s not found", tid.String())
-					}
-					checked[tid] = true
+				if err := checkSeatNotTaken(ctx, tx, g); err != nil {
+					return fmt.Errorf("table %s: %w", tid.String(), err)
 				}
 				if err := txGuestRepo.Create(ctx, g); err != nil {
 					return err
@@ -468,7 +497,6 @@ func (s *GuestService) BulkCreate(ctx context.Context, guests []models.GuestReco
 			if err := checkSeatTx(ctx, tx, g.WeddingID, tid, uuid.Nil, g.Pax, *g.SeatNum); err != nil {
 				return err
 			}
-			checked[tid] = true
 			if err := txGuestRepo.Create(ctx, g); err != nil {
 				return err
 			}
@@ -727,6 +755,7 @@ func (s *GuestService) applySyncMutation(ctx context.Context, weddingID uuid.UUI
 		if existing.CheckedInAt != nil && opTime.Before(existing.UpdatedAt) {
 			return SyncResult{GuestID: m.GuestID, Status: "skipped", Reason: "older than server", ServerRecord: existing}
 		}
+		wasCheckedIn := existing.CheckedInAt != nil
 		existing.CheckedInAt = &opTime
 		existing.RSVP = "confirmed"
 		if m.Payload != nil {
@@ -739,7 +768,12 @@ func (s *GuestService) applySyncMutation(ctx context.Context, weddingID uuid.UUI
 			// A notes value in a checkin payload is appended to the guest's notes,
 			// never replacing them, so a queued note never wipes existing notes.
 			if m.Payload.Notes != nil {
-				existing.Notes = appendNote(existing.Notes, strings.TrimSpace(*m.Payload.Notes))
+				// A retried checkin whose response was lost finds the guest checked
+				// in with its note already present: skip it, don't duplicate it.
+				note := strings.TrimSpace(*m.Payload.Notes)
+				if !wasCheckedIn || !slices.Contains(strings.Split(existing.Notes, "\n"), note) {
+					existing.Notes = appendNote(existing.Notes, note)
+				}
 			}
 		}
 		if err := validateGuestFields(existing); err != nil {
@@ -749,7 +783,7 @@ func (s *GuestService) applySyncMutation(ctx context.Context, weddingID uuid.UUI
 		if opTime.After(existing.UpdatedAt) {
 			existing.UpdatedAt = opTime
 		}
-		if err := s.guestRepo.SyncUpdate(ctx, existing); err != nil {
+		if err := s.guestRepo.SyncCheckIn(ctx, existing); err != nil {
 			return SyncResult{GuestID: m.GuestID, Status: "failed", Reason: err.Error()}
 		}
 		s.sseHub.publishGuest("checkin", existing, weddingID)
@@ -764,7 +798,7 @@ func (s *GuestService) applySyncMutation(ctx context.Context, weddingID uuid.UUI
 		}
 		existing.CheckedInAt = nil
 		existing.UpdatedAt = opTime
-		if err := s.guestRepo.SyncUpdate(ctx, existing); err != nil {
+		if err := s.guestRepo.CheckOut(ctx, gid, weddingID, opTime); err != nil {
 			return SyncResult{GuestID: m.GuestID, Status: "failed", Reason: err.Error()}
 		}
 		s.sseHub.publishGuest("checkout", existing, weddingID)

@@ -537,3 +537,28 @@ func TestSync_RejectsUnknownRSVP(t *testing.T) {
 		t.Fatalf("unknown RSVP must fail, got %s", res[0].Status)
 	}
 }
+
+// A phone that retries a checkin after a lost response must not duplicate
+// the note it carried.
+func TestSync_CheckInReplayDoesNotDuplicateNotes(t *testing.T) {
+	svc, db, wid := newGuestSyncService(t)
+	ctx := context.Background()
+	base := time.Now().Add(-time.Hour).UTC()
+	gid := uuid.New()
+	db.Create(&models.GuestRecord{ID: gid, WeddingID: wid, Name: "Retry", Pax: 1, Notes: "vip", CreatedAt: base, UpdatedAt: base})
+
+	note := "brought gift"
+	m := SyncMutation{Op: SyncOpCheckIn, GuestID: gid.String(), ClientUpdatedAt: base.Add(time.Minute), Payload: &SyncPayload{Notes: &note}}
+	for range 2 {
+		res, err := svc.Sync(ctx, wid, []SyncMutation{m})
+		testutil.NoErr(t, err)
+		if res[0].Status != "applied" {
+			t.Fatalf("checkin status = %s (%s)", res[0].Status, res[0].Reason)
+		}
+	}
+	g, err := svc.Get(ctx, gid, wid)
+	testutil.NoErr(t, err)
+	if g.Notes != "vip\nbrought gift" {
+		t.Fatalf("notes = %q, want one appended line", g.Notes)
+	}
+}
