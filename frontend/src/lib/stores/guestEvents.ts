@@ -12,9 +12,6 @@ export const guestList = writable<Guest[]>([]);
 // Table occupancy: tableId -> total pax seated.
 export const tableOccupancy = writable<Map<string, number>>(new Map());
 
-// Whether the SSE connection is active.
-export const sseConnected = writable(false);
-
 let initialized = false;
 // True once the stores hold the wedding's full roster (seedGuests), false
 // after clearGuests. Only a full roster may overwrite the offline cache.
@@ -45,7 +42,6 @@ export function initializeSSE(onResync?: () => Promise<Guest[]>): (() => void) |
 
 	const client = connectSSE(wid);
 	const unsubscribeStatus = client.onStatus((status, reconnect) => {
-		sseConnected.set(status === 'connected');
 		if (status === 'connected' && reconnect && resync) {
 			refreshGuests(resync).catch(() => {});
 		}
@@ -59,7 +55,6 @@ export function initializeSSE(onResync?: () => Promise<Guest[]>): (() => void) |
 		unsubscribe();
 		unsubscribeStatus();
 		disconnectSSE();
-		sseConnected.set(false);
 		initialized = false;
 		syncing = false;
 		queuedEvents = [];
