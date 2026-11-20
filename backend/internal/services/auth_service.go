@@ -230,6 +230,9 @@ func (s *AuthService) resumeRotation(ctx context.Context, consumed *models.Refre
 		}
 		return nil, errors.New("invalid refresh token")
 	}
+	// A replay inside the window is indistinguishable from a lost response or a
+	// second tab, so it is answered; log it so a repeated pattern is visible.
+	slog.Warn("refresh token reused inside grace window", "user", consumed.AdminID, "rotatedAt", consumed.RotatedAt)
 	replacement, err := s.tokenRepo.FindByToken(ctx, *consumed.ReplacedBy)
 	if err != nil {
 		return nil, errors.New("invalid refresh token")

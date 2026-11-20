@@ -441,9 +441,12 @@ transaction (`TokenRepo.Rotate`). The claim is a conditional update on
 A consumed token stays in the table with `rotated_at` + `replaced_by` set. For
 `refreshGraceWindow` (60s) after the rotation, presenting it again returns the
 same successor — a response lost in transit, or a second tab replaying the
-token it still holds, no longer ends the session. After the window the token is
-rejected as replayed (no family revocation: rejecting is already the whole
-response, and revoking would log out honest clients retrying a stale tab).
+token it still holds, no longer ends the session. Each such reuse is logged, so
+a repeated pattern is visible even though it cannot be told apart from an
+honest retry. Past the window the token is treated as stolen: `RevokeUserTokens`
+deletes the family's refresh tokens and bumps the token version, killing the
+attacker's access tokens too. An honest client retrying a tab left open for
+more than a minute is logged out; that is the intended cost of detecting reuse.
 
 Consumed rows are reclaimed by `TokenRepo.DeleteExpired` once `expires_at`
 passes. Migration is two nullable columns via the existing `AutoMigrate` in
