@@ -82,7 +82,7 @@ func TestTableDelete_PublishesUnassignedGuests(t *testing.T) {
 		t.Fatal("Subscribe rejected the first client")
 	}
 
-	svc := NewTableService(repository.NewTableRepo(db), repository.NewGuestRepo(db), hub)
+	svc := NewTableService(repository.NewTableRepo(db), repository.NewGuestRepo(db), hub, db)
 	if err := svc.Delete(context.Background(), tableID, wid); err != nil {
 		t.Fatalf("delete: %v", err)
 	}
@@ -114,5 +114,36 @@ func TestTableDelete_PublishesUnassignedGuests(t *testing.T) {
 		}
 	case <-time.After(2 * time.Second):
 		t.Fatal("timed out waiting for unassign SSE event")
+	}
+}
+
+// A failed delete must roll back the guest unassign: no half-deleted table
+// leaves seated guests detached from a table that still exists.
+func TestTableDelete_RollsBackOnFailure(t *testing.T) {
+	_, db, wid := newGuestSyncService(t)
+	tableID := uuid.New()
+	seat := 1
+	guest := &models.GuestRecord{ID: uuid.New(), WeddingID: wid, Name: "Seated", Pax: 1, TableID: &tableID, SeatNum: &seat}
+	if err := db.Create(guest).Error; err != nil {
+		t.Fatalf("seed guest: %v", err)
+	}
+	if err := db.Create(&models.BanquetTable{ID: tableID, WeddingID: wid, Name: "T1", Capacity: 8}).Error; err != nil {
+		t.Fatalf("seed table: %v", err)
+	}
+	if err := db.Migrator().DropTable(&models.BanquetTable{}); err != nil {
+		t.Fatalf("drop table store: %v", err)
+	}
+
+	svc := NewTableService(repository.NewTableRepo(db), repository.NewGuestRepo(db), nil, db)
+	if err := svc.Delete(context.Background(), tableID, wid); err == nil {
+		t.Fatal("delete should fail when the table store is unavailable")
+	}
+
+	var got models.GuestRecord
+	if err := db.First(&got, "id = ?", guest.ID).Error; err != nil {
+		t.Fatalf("reload guest: %v", err)
+	}
+	if got.TableID == nil || *got.TableID != tableID {
+		t.Fatalf("failed delete left the guest unassigned, table = %v", got.TableID)
 	}
 }

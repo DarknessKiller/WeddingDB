@@ -58,7 +58,7 @@ func validatePax(pax int) error {
 
 // guestCountLocked serializes guest additions for one wedding and returns the
 // current count. The row lock is Postgres-only; sqlite (tests) has one writer.
-func (s *GuestService) guestCountLocked(tx *gorm.DB, weddingID uuid.UUID) (int, error) {
+func guestCountLocked(tx *gorm.DB, weddingID uuid.UUID) (int, error) {
 	if tx.Name() == "postgres" {
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
 			Select("id").Where("id = ?", weddingID).First(&models.WeddingEvent{}).Error; err != nil {
@@ -83,7 +83,7 @@ func (s *GuestService) createGuestTx(ctx context.Context, tx *gorm.DB, g *models
 	}
 	// Wedding row first, table row second: every write path locks in this
 	// order, so the two lock sets cannot deadlock.
-	total, err := s.guestCountLocked(tx, g.WeddingID)
+	total, err := guestCountLocked(tx, g.WeddingID)
 	if err != nil {
 		return err
 	}
@@ -107,7 +107,7 @@ func (s *GuestService) updateGuestTx(ctx context.Context, tx *gorm.DB, g *models
 	if err := validatePax(g.Pax); err != nil {
 		return err
 	}
-	total, err := s.guestCountLocked(tx, g.WeddingID)
+	total, err := guestCountLocked(tx, g.WeddingID)
 	if err != nil {
 		return err
 	}
@@ -248,7 +248,7 @@ func (s *GuestService) AssignSeat(ctx context.Context, guestID, weddingID, table
 		}
 		// Wedding row lock keeps the lock order identical to create/update, so
 		// a concurrent seat move and import cannot deadlock each other.
-		if _, err := s.guestCountLocked(tx, weddingID); err != nil {
+		if _, err := guestCountLocked(tx, weddingID); err != nil {
 			return err
 		}
 		if err := checkSeatTx(ctx, tx, weddingID, tableID, guestID, guest.Pax, seatNum); err != nil {
@@ -361,7 +361,7 @@ func (s *GuestService) BulkCreate(ctx context.Context, guests []models.GuestReco
 		txTableRepo := repository.NewTableRepo(tx)
 		created = 0
 		events = events[:0]
-		total, err := s.guestCountLocked(tx, weddingID)
+		total, err := guestCountLocked(tx, weddingID)
 		if err != nil {
 			return err
 		}
