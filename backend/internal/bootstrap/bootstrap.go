@@ -154,7 +154,9 @@ func Init(env config.Env, version string) *App {
 	layoutService := services.NewLayoutService(layoutRepo)
 	reportService := services.NewReportService(guestRepo, tableRepo, weddingRepo)
 
-	server := config.NewFuegoServer(env, version)
+	// CORS wraps the router: a preflight OPTIONS matches no method-specific
+	// route, so as a route middleware it never ran and the mux answered 405.
+	server := config.NewFuegoServer(env, version, fuego.WithGlobalMiddlewares(middleware.CORSMiddleware))
 
 	// ProxyAware must run outside tracing: it rewrites RemoteAddr in place, and
 	// both fuego's logger and the tracing span read RemoteAddr afterwards.
@@ -164,7 +166,6 @@ func Init(env config.Env, version string) *App {
 	if tracingEnabled {
 		fuego.Use(server, tracing.Middleware)
 	}
-	fuego.Use(server, middleware.CORSMiddleware)
 
 	// Serve uploaded files (block directory listing)
 	server.Mux.HandleFunc("GET /uploads/{file}", func(w http.ResponseWriter, r *http.Request) {

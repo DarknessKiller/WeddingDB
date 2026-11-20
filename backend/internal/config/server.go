@@ -16,12 +16,14 @@ import (
 // minutes still fits a 1 MiB upload on a bad mobile link.
 const requestReadTimeout = 5 * time.Minute
 
-func NewFuegoServer(env Env, version string) *fuego.Server {
-	s := fuego.NewServer(
-		fuego.WithAddr(":"+env.Port),
+// NewFuegoServer builds the server. opts are appended to the defaults; global
+// middlewares must come in this way, since they wrap the router itself.
+func NewFuegoServer(env Env, version string, opts ...fuego.ServerOption) *fuego.Server {
+	s := fuego.NewServer(append([]fuego.ServerOption{
+		fuego.WithAddr(":" + env.Port),
 		// Direct deployments have no reverse proxy to cap request bodies; 1 MiB
 		// covers every JSON payload this API accepts.
-		fuego.WithMaxBodySize(1024*1024),
+		fuego.WithMaxBodySize(1024 * 1024),
 		fuego.WithEngineOptions(
 			fuego.WithOpenAPIConfig(fuego.OpenAPIConfig{
 				Info: &openapi3.Info{
@@ -35,6 +37,7 @@ func NewFuegoServer(env Env, version string) *fuego.Server {
 			}),
 			fuego.WithErrorHandler(internalErrorHandler),
 		),
+	}, opts...)...,
 	)
 
 	// SSE streams must stay open indefinitely; WriteTimeout is a whole-response
