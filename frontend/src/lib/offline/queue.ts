@@ -51,6 +51,28 @@ export function queuedCount(wid: string): number {
 	return getQueue(wid).length;
 }
 
+/** Weddings whose unsynced edits are still queued on this device. */
+export function weddingsWithQueuedEdits(): string[] {
+	if (typeof window === 'undefined') return [];
+	const ids: string[] = [];
+	for (let i = 0; i < localStorage.length; i++) {
+		const key = localStorage.key(i) ?? '';
+		if (!key.startsWith(QUEUE_PREFIX)) continue;
+		const wid = key.slice(QUEUE_PREFIX.length);
+		if (queuedCount(wid) > 0) ids.push(wid);
+	}
+	return ids;
+}
+
+/**
+ * Tries to send every wedding's queued edits, then reports how many are left.
+ * Call before anything that deletes the queue or strands it (logout).
+ */
+export async function flushAllQueues(): Promise<number> {
+	for (const wid of weddingsWithQueuedEdits()) await syncQueue(wid).catch(() => {});
+	return weddingsWithQueuedEdits().reduce((n, wid) => n + queuedCount(wid), 0);
+}
+
 function writeCache(store: Storage, key: string, guests: unknown[]) {
 	try { store.setItem(key, JSON.stringify(guests)); } catch {}
 }

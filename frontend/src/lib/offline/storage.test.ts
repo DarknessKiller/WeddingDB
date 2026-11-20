@@ -131,3 +131,22 @@ describe('kiosk and staff caches', () => {
 		expect(loadCachedKioskGuests('w1')).toEqual([kioskGuest]);
 	});
 });
+
+describe('flushAllQueues', () => {
+	it('syncs every wedding with queued edits and counts what is left', async () => {
+		const fetchMock = vi.fn(async (url: string) => {
+			if (url.includes('/w1/')) return new Response(JSON.stringify({ results: [{ guestId: 'g1', status: 'applied' }] }), { status: 200 });
+			throw new TypeError('Failed to fetch');
+		});
+		Object.defineProperty(globalThis, 'fetch', { value: fetchMock, configurable: true });
+		const { enqueue, flushAllQueues, queuedCount } = await import('#lib/offline/queue.ts');
+		const m = { op: 'checkin' as const, guestId: 'g1', clientUpdatedAt: '2026-01-01T10:00:00Z' };
+		enqueue('w1', { ...m, mutationId: 'a' });
+		enqueue('w2', { ...m, mutationId: 'b' });
+		enqueue('w2', { ...m, mutationId: 'c' });
+
+		expect(await flushAllQueues()).toBe(2);
+		expect(queuedCount('w1')).toBe(0);
+		expect(fetchMock.mock.calls.map(([u]) => u)).toEqual(['/api/weddings/w1/guests/sync', '/api/weddings/w2/guests/sync']);
+	});
+});
