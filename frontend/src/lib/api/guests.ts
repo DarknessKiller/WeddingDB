@@ -66,6 +66,13 @@ function optimisticPatch(op: string, guestId: string, data?: Record<string, unkn
 	} catch {}
 }
 
+// serverError keeps the server's reason (table full, seat taken, guest cap)
+// for the toast, falling back to the status when the body has none.
+async function serverError(res: Response, action: string): Promise<Error> {
+	const err = await res.json().catch(() => ({}));
+	return new Error(err.title || `Failed to ${action}: ${res.status}`);
+}
+
 export class ConflictError extends Error {
 	constructor(message: string) {
 		super(message);
@@ -158,7 +165,7 @@ export async function createGuest(weddingId: string, data: GuestCreateData): Pro
 	};
 	try {
 		const res = await apiFetch(`/api/weddings/${weddingId}/guests`, { method: 'POST', body: JSON.stringify(data) });
-		if (!res.ok) throw new Error(`Failed to create guest: ${res.status}`);
+		if (!res.ok) throw await serverError(res, 'create guest');
 		const resp: GuestResponse = await res.json();
 		applyGuestResponse(resp);
 		return resp;
@@ -189,7 +196,7 @@ export async function updateGuest(weddingId: string, guestId: string, data: Gues
 	try {
 		const res = await apiFetch(`/api/weddings/${weddingId}/guests/${guestId}`, { method: 'PUT', body: JSON.stringify(data) });
 		if (res.status === 409) { const err = await res.json().catch(() => ({})); throw new ConflictError(err.title || 'Someone else changed this guest. Reload to see their changes.'); }
-		if (!res.ok) throw new Error(`Failed to update guest: ${res.status}`);
+		if (!res.ok) throw await serverError(res, 'update guest');
 		const resp: GuestResponse = await res.json();
 		applyGuestResponse(resp);
 		return resp;
@@ -251,7 +258,7 @@ export async function assignSeat(weddingId: string, guestId: string, tableId: st
 	if (isOffline()) { doQueue(); return; }
 	try {
 		const res = await apiFetch(`/api/weddings/${weddingId}/guests/${guestId}/seat`, { method: 'POST', body: JSON.stringify(payload) });
-		if (!res.ok) throw new Error(`Failed to assign seat: ${res.status}`);
+		if (!res.ok) throw await serverError(res, 'assign seat');
 	} catch (e) {
 		if (isNetworkError(e)) { doQueue(); return; }
 		throw e;

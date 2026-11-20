@@ -98,3 +98,22 @@ describe('queued edits carry the editor base', () => {
 		expect(enqueue.mock.calls[0][1].baseUpdatedAt).toBeNull();
 	});
 });
+
+describe('server errors', () => {
+	it('keeps the server reason for create, update and seat assign', async () => {
+		apiFetch.mockImplementation(async () => new Response(JSON.stringify({ title: 'table full' }), { status: 400 }));
+		const { createGuest, updateGuest, assignSeat } = await import('./guests');
+		const data = { name: 'A', pax: 1, rsvp: 'pending', isVip: false, notes: '', dietary: [] } as never;
+
+		await expect(createGuest('w1', data)).rejects.toThrow('table full');
+		await expect(updateGuest('w1', 'g1', data)).rejects.toThrow('table full');
+		await expect(assignSeat('w1', 'g1', 't1', 1)).rejects.toThrow('table full');
+	});
+
+	it('falls back to the status when the body has no reason', async () => {
+		apiFetch.mockResolvedValue(new Response('oops', { status: 500 }));
+		const { assignSeat } = await import('./guests');
+
+		await expect(assignSeat('w1', 'g1', 't1', 1)).rejects.toThrow('Failed to assign seat: 500');
+	});
+});

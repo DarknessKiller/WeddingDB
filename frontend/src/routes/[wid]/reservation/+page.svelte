@@ -241,7 +241,7 @@ import AlertCircle from 'lucide-svelte/icons/alert-circle';
       addToast(`Reservation for ${form.name} saved successfully`, 'success');
       goto(`/${wid}/guests`);
     } catch (e) {
-      addToast('Failed to save reservation', 'error');
+      addToast(e instanceof Error ? e.message : 'Failed to save reservation', 'error');
     } finally {
       isSubmitting = false;
     }
