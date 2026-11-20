@@ -22,8 +22,6 @@ let location: { href: string };
 beforeEach(async () => {
 	vi.resetModules();
 	Object.defineProperty(globalThis, 'localStorage', { value: memoryStorage(), configurable: true });
-	localStorage.setItem('weddingdb_access_token', 'old-access');
-	localStorage.setItem('weddingdb_refresh_token', 'refresh-1');
 	location = { href: '' };
 	Object.defineProperty(globalThis, 'window', { value: { location, addEventListener: () => {} }, configurable: true });
 	fetchMock = vi.fn();
@@ -65,7 +63,7 @@ describe('apiFetch refresh recovery', () => {
 		expect(result.status).toBe(401);
 		expect(location.href).toBe('');
 		expect(getAuth()).toMatchObject({ accessToken: 'old-access', refreshToken: 'refresh-1' });
-		expect(localStorage.getItem('weddingdb_refresh_token')).toBeNull();
+		expect(JSON.parse(localStorage.getItem('weddingdb_auth')!).refreshToken).toBe('refresh-1');
 	});
 
 	it('keeps the session when refresh fails with a server error', async () => {
@@ -91,6 +89,6 @@ describe('apiFetch refresh recovery', () => {
 		expect(result.status).toBe(401);
 		expect(location.href).toBe('/login');
 		expect(getAuth().accessToken).toBeNull();
-		expect(localStorage.getItem('weddingdb_refresh_token')).toBeNull();
+		expect(localStorage.getItem('weddingdb_auth')).toBeNull();
 	});
 });

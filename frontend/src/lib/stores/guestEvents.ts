@@ -111,6 +111,16 @@ export function seedGuests(guests: Guest[]) {
 	}
 }
 
+/**
+ * Clear the guest stores without caching, for a wedding/user switch. Seeding an
+ * empty list here would overwrite the next wedding's offline cache.
+ */
+export function clearGuests() {
+	guestList.set([]);
+	guestMap.set(new Map());
+	tableOccupancy.set(new Map());
+}
+
 function handleGuestEvent(event: GuestEvent) {
 	const { type, guest: guestData } = event;
 	if (!guestData) return;

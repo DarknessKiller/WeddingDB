@@ -3,6 +3,7 @@ package services
 import (
 	"context"
 	"errors"
+	"math"
 	"testing"
 	"time"
 
@@ -31,9 +32,19 @@ func seedGuest(t *testing.T, svc *GuestService, wid uuid.UUID, name string) *mod
 	return g
 }
 
-func tableIDPtr(id uuid.UUID) *string {
-	s := id.String()
-	return &s
+// A seat number near the int limit must be rejected instead of wrapping past
+// the capacity check.
+func TestAssignSeat_RejectsOverflowingSeatRange(t *testing.T) {
+	svc, _, wid := newGuestSyncService(t)
+	tid := seedTable(t, svc, wid, "T1", 10)
+	guest := seedGuest(t, svc, wid, "A")
+	guest.Pax = 2
+	if err := svc.db.Save(guest).Error; err != nil {
+		t.Fatalf("save guest: %v", err)
+	}
+	if err := svc.AssignSeat(context.Background(), guest.ID, wid, tid, math.MaxInt); err == nil {
+		t.Fatal("seat near the int limit should be rejected")
+	}
 }
 
 // Offline sync must apply the same overlap rule as AssignSeat, not just a
@@ -45,7 +56,7 @@ func TestSyncCreate_RejectsSeatOverlap(t *testing.T) {
 
 	first := SyncMutation{
 		Op: SyncOpCreate, GuestID: uuid.New().String(), ClientUpdatedAt: now,
-		Payload: &SyncPayload{Name: "A", Pax: 1, TableID: tableIDPtr(tid), SeatNum: intPtr(3)},
+		Payload: &SyncPayload{Name: syncStr("A"), Pax: syncInt(1), TableID: syncTable(tid.String()), SeatNum: intPtr(3)},
 	}
 	firstRes, err := svc.Sync(context.Background(), wid, []SyncMutation{first})
 	if err != nil || firstRes[0].Status != "applied" {
@@ -54,7 +65,7 @@ func TestSyncCreate_RejectsSeatOverlap(t *testing.T) {
 
 	second := SyncMutation{
 		Op: SyncOpCreate, GuestID: uuid.New().String(), ClientUpdatedAt: now.Add(time.Second),
-		Payload: &SyncPayload{Name: "B", Pax: 1, TableID: tableIDPtr(tid), SeatNum: intPtr(3)},
+		Payload: &SyncPayload{Name: syncStr("B"), Pax: syncInt(1), TableID: syncTable(tid.String()), SeatNum: intPtr(3)},
 	}
 	res, err := svc.Sync(context.Background(), wid, []SyncMutation{second})
 	if err != nil {

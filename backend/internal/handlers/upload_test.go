@@ -3,9 +3,14 @@ package handlers
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
+	"strings"
+	"sync"
 	"testing"
 
 	"weddingdb/internal/middleware"
@@ -25,7 +30,12 @@ func runUpload(t *testing.T, filename string, content []byte) *httptest.Response
 func runUploadAs(t *testing.T, ctx context.Context, filename string, content []byte) *httptest.ResponseRecorder {
 	t.Helper()
 	t.Chdir(t.TempDir())
+	return doUpload(t, ctx, filename, content)
+}
 
+// doUpload drives the upload controller in the current working directory.
+func doUpload(t *testing.T, ctx context.Context, filename string, content []byte) *httptest.ResponseRecorder {
+	t.Helper()
 	s := fuego.NewServer(fuego.WithAddr(":0"))
 
 	var body bytes.Buffer
@@ -98,5 +108,120 @@ func TestUpload_RejectsUnknownExtension(t *testing.T) {
 	rec := runUpload(t, "x.exe", []byte("MZ"))
 	if rec.Code != http.StatusBadRequest {
 		t.Fatalf("status = %d, want 400, body = %s", rec.Code, rec.Body.String())
+	}
+}
+
+// Identical bytes uploaded by two different weddings must not share a file:
+// otherwise one tenant's upload resolves to another tenant's URL.
+func TestUpload_HashIndexScopedPerWedding(t *testing.T) {
+	t.Chdir(t.TempDir())
+	content := []byte{0xff, 0xd8, 0xff}
+	upload := func(wid uuid.UUID) map[string]any {
+		ctx := context.WithValue(context.Background(), middleware.RoleKey, "user")
+		ctx = context.WithValue(ctx, middleware.WeddingIDKey, &wid)
+		rec := doUpload(t, ctx, "logo.jpg", content)
+		if rec.Code != http.StatusCreated && rec.Code != http.StatusOK {
+			t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
+		}
+		var body map[string]any
+		if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+			t.Fatalf("decode response: %v", err)
+		}
+		return body
+	}
+
+	first := upload(uuid.New())
+	second := upload(uuid.New())
+	if first["filename"] == second["filename"] {
+		t.Fatalf("different weddings shared upload %v", first["filename"])
+	}
+
+	// Re-uploading in the same wedding still dedupes.
+	wedding := uuid.MustParse("00000000-0000-0000-0000-000000000001")
+	if a, b := upload(wedding), upload(wedding); a["filename"] != b["filename"] {
+		t.Fatalf("same-wedding dedupe failed: %v != %v", a["filename"], b["filename"])
+	}
+}
+
+func TestUpload_ScopeQuotaRejected(t *testing.T) {
+	t.Chdir(t.TempDir())
+	uploadDir := "./uploads"
+	if err := os.MkdirAll(uploadDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	filler, err := os.Create(filepath.Join(uploadDir, "filler.jpg"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := filler.Truncate(uploadQuotaPerScope); err != nil {
+		t.Fatal(err)
+	}
+	if err := filler.Close(); err != nil {
+		t.Fatal(err)
+	}
+	index := "global " + strings.Repeat("0", 64) + " filler.jpg\n"
+	if err := os.WriteFile(filepath.Join(uploadDir, ".hash-index"), []byte(index), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	rec := doUpload(t, context.WithValue(context.Background(), middleware.RoleKey, "admin"), "a.jpg", []byte{0xff, 0xd8, 0xff})
+	if rec.Code != http.StatusRequestEntityTooLarge {
+		t.Fatalf("status = %d, want 413, body = %s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestUpload_RateLimitedPerScope(t *testing.T) {
+	h := NewUploadHandler()
+	for range uploadRateLimit {
+		if !h.allow("w1") {
+			t.Fatal("upload within the limit was rejected")
+		}
+	}
+	if h.allow("w1") {
+		t.Fatal("upload over the rate limit was allowed")
+	}
+	if !h.allow("w2") {
+		t.Fatal("rate limit must apply per scope, not globally")
+	}
+}
+
+// Two concurrent uploads of identical bytes must produce one stored file.
+func TestUpload_ConcurrentSameContentDedupes(t *testing.T) {
+	t.Chdir(t.TempDir())
+	content := []byte{0xff, 0xd8, 0xff}
+	ctx := context.WithValue(context.Background(), middleware.RoleKey, "admin")
+
+	var wg sync.WaitGroup
+	names := make([]string, 2)
+	for i := range names {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			rec := doUpload(t, ctx, "logo.jpg", content)
+			var body map[string]any
+			if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+				t.Errorf("decode response: %v", err)
+				return
+			}
+			names[i], _ = body["filename"].(string)
+		}()
+	}
+	wg.Wait()
+	if names[0] == "" || names[0] != names[1] {
+		t.Fatalf("concurrent uploads returned different files: %v", names)
+	}
+
+	entries, err := os.ReadDir("./uploads")
+	if err != nil {
+		t.Fatal(err)
+	}
+	files := 0
+	for _, e := range entries {
+		if !strings.HasPrefix(e.Name(), ".") {
+			files++
+		}
+	}
+	if files != 1 {
+		t.Fatalf("stored %d files for identical content, want 1", files)
 	}
 }

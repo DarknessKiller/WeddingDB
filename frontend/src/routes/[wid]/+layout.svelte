@@ -12,7 +12,7 @@
   import { syncQueue, loadCachedGuests } from '#lib/offline/queue.ts';
   import { getWedding } from '#lib/api/weddings.ts';
   import { listTables } from '#lib/api/tables.ts';
-  import { initializeSSE, refreshGuests } from '#lib/stores/guestEvents.ts';
+  import { initializeSSE, refreshGuests, clearGuests } from '#lib/stores/guestEvents.ts';
   import type { BanquetTable } from '#lib/types/index.ts';
 
   let { children } = $props();
@@ -31,42 +31,73 @@
     try { queued = JSON.parse(localStorage.getItem(`offline_queue_${wid}`) || '[]').length; } catch { queued = 0; }
   }
 
+  const toGuest = (g: any) => {
+    const createdAt = g.createdAt ? new Date(g.createdAt) : new Date();
+    return {
+      id: g.id, name: g.name, email: g.email,
+      pinyin: g.pinyin,
+      rsvp: g.rsvp as any, pax: g.pax, tableId: g.tableId, seatNumber: g.seatNum,
+      checkedIn: !!g.checkedInAt, checkedInAt: g.checkedInAt ? new Date(g.checkedInAt) : undefined,
+      notes: g.notes, dietaryRequirements: g.dietary ?? [], isVip: g.isVip,
+      angbaoAmount: g.angbaoAmt ?? undefined, giftItem: g.giftItem ?? undefined,
+      createdAt, updatedAt: g.updatedAt ? new Date(g.updatedAt) : createdAt,
+    };
+  };
+
+  const loadGuests = async (w: string) => {
+    try {
+      const guests = (await fetchAllGuests(w)).map(toGuest);
+      return guests;
+    } catch {
+      // Only a genuinely offline fetch may fall back to cached data. An HTTP
+      // rejection (401/403/404) means the server denied access; serving a
+      // cached roster would leak a wedding the user can no longer open.
+      if (typeof navigator !== 'undefined' && !navigator.onLine) {
+        const cached = loadCachedGuests<any>(w);
+        if (cached) return (cached as any[]).map(toGuest);
+      }
+      throw new Error('offline');
+    }
+  };
+
+  // Guest stores are module state shared across routes. Clear them before a new
+  // wedding renders, so the previous wedding's or user's roster never shows.
+  function resetWeddingState() {
+    clearGuests();
+    selectedGuest.set(null);
+    isDrawerOpen.set(false);
+    drawerCreateMode.set(false);
+    guestCount = 0;
+    tables = [];
+  }
+
+  async function startWedding(w: string) {
+    cleanupSSE?.();
+    setWeddingId(w);
+    resetWeddingState();
+    // Subscribe before the snapshot; guestEvents queues mutations until seeding completes.
+    cleanupSSE = initializeSSE(() => loadGuests(w));
+    try {
+      // refreshGuests keeps the syncing window open across fetch+seed even if
+      // initializeSSE early-returned, so mid-fetch SSE events can't be clobbered.
+      const guests = await refreshGuests(() => loadGuests(w));
+      guestCount = guests.length;
+    } catch {}
+    if (destroyed) return;
+    listTables(w).then((t) => {
+      tables = t;
+    }).catch(() => {});
+    getWedding(w).then((wedding) => {
+      weddingTitle.set(wedding.name || '');
+      setShowSeatNumbers(w, wedding.showSeatNumbers ?? false);
+    }).catch(() => {});
+  }
+
   let destroyed = false;
+  let activeWid = '';
   let cleanupListeners: (() => void) | undefined;
   onMount(async () => {
     if (!await validateToken() || destroyed) return;
-    if (wid) {
-      setWeddingId(wid);
-    }
-    authChecked = true;
-
-    const toGuest = (g: any) => {
-      const createdAt = g.createdAt ? new Date(g.createdAt) : new Date();
-      return {
-        id: g.id, name: g.name, email: g.email,
-        pinyin: g.pinyin,
-        rsvp: g.rsvp as any, pax: g.pax, tableId: g.tableId, seatNumber: g.seatNum,
-        checkedIn: !!g.checkedInAt, checkedInAt: g.checkedInAt ? new Date(g.checkedInAt) : undefined,
-        notes: g.notes, dietaryRequirements: g.dietary ?? [], isVip: g.isVip,
-        angbaoAmount: g.angbaoAmt ?? undefined, giftItem: g.giftItem ?? undefined,
-        createdAt, updatedAt: g.updatedAt ? new Date(g.updatedAt) : createdAt,
-      };
-    };
-    const loadGuests = async () => {
-      try {
-        const guests = (await fetchAllGuests($weddingId)).map(toGuest);
-        return guests;
-      } catch {
-        // Only a genuinely offline fetch may fall back to cached data. An HTTP
-        // rejection (401/403/404) means the server denied access; serving a
-        // cached roster would leak a wedding the user can no longer open.
-        if (typeof navigator !== 'undefined' && !navigator.onLine) {
-          const cached = loadCachedGuests<any>($weddingId);
-          if (cached) return (cached as any[]).map(toGuest);
-        }
-        throw new Error('offline');
-      }
-    };
 
     async function doSync() {
       if (!wid || typeof window === 'undefined' || !navigator.onLine) return;
@@ -74,7 +105,7 @@
         await syncQueue(wid);
         // Refresh inside the syncing window so SSE events arriving mid-fetch
         // are queued and replayed after the seed instead of being clobbered.
-        const guests = await refreshGuests(loadGuests);
+        const guests = await refreshGuests(() => loadGuests(wid));
         guestCount = guests.length;
         refreshQueued();
       } catch {}
@@ -99,25 +130,24 @@
     refreshQueued();
 
     // initial sync before seed
-    if (navigator.onLine) { try { await syncQueue(wid); } catch {} }
+    if (wid && navigator.onLine) { try { await syncQueue(wid); } catch {} }
 
     if (destroyed) return;
-    // Subscribe before the snapshot; guestEvents queues mutations until seeding completes.
-    cleanupSSE = initializeSSE(loadGuests);
-    try {
-      // refreshGuests keeps the syncing window open across fetch+seed even if
-      // initializeSSE early-returned, so mid-fetch SSE events can't be clobbered.
-      const guests = await refreshGuests(loadGuests);
-      guestCount = guests.length;
-    } catch {}
+    if (wid) {
+      activeWid = wid;
+      await startWedding(wid);
+    }
+    if (destroyed) return;
+    authChecked = true;
+  });
 
-    listTables($weddingId).then((t) => {
-      tables = t;
-    }).catch(() => {});
-    getWedding(wid).then((w) => {
-      weddingTitle.set(w.name || '');
-      setShowSeatNumbers(wid, w.showSeatNumbers ?? false);
-    }).catch(() => {});
+  // A wedding switch reuses this layout without a remount; never keep the
+  // previous wedding's roster on screen.
+  $effect(() => {
+    const next = wid;
+    if (!next || !authChecked || next === activeWid) return;
+    activeWid = next;
+    void startWedding(next);
   });
 
   onDestroy(() => {

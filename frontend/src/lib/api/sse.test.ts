@@ -50,4 +50,18 @@ describe('SSEClient', () => {
 		await vi.waitFor(() => expect(handler).toHaveBeenCalledWith(event));
 		client.disconnect();
 	});
+
+	it('refreshes the access token when the stream is rejected with 401', async () => {
+		const refreshAccessToken = vi.fn(async () => true);
+		vi.doMock('#lib/api/client', () => ({ refreshAccessToken }));
+		fetchMock.mockResolvedValueOnce({ ok: false, status: 401, body: null });
+
+		const { getSSIClient } = await import('./sse');
+		const client = getSSIClient();
+		client.connect('wedding-123');
+
+		await vi.waitFor(() => expect(refreshAccessToken).toHaveBeenCalledOnce());
+		client.disconnect();
+		vi.doUnmock('#lib/api/client');
+	});
 });

@@ -27,6 +27,12 @@ func NewGuestRepo(db *gorm.DB) *GuestRepo {
 	return &GuestRepo{db: db}
 }
 
+var likeEscaper = strings.NewReplacer(`\`, `\\`, "%", `\%`, "_", `\_`)
+
+func escapeLike(s string) string {
+	return likeEscaper.Replace(s)
+}
+
 func parseCursorID(s string) (uuid.UUID, error) {
 	if id, err := uuid.Parse(s); err == nil {
 		return id, nil
@@ -73,10 +79,13 @@ func (r *GuestRepo) FindByTable(ctx context.Context, weddingID, tableID uuid.UUI
 
 func (r *GuestRepo) SearchByWedding(ctx context.Context, weddingID uuid.UUID, query string) ([]models.GuestRecord, error) {
 	guests := make([]models.GuestRecord, 0)
-	escaped := strings.ReplaceAll(query, "%", "\\%")
-	escaped = strings.ReplaceAll(escaped, "_", "\\_")
+	// Escape LIKE metacharacters including backslash: a stray backslash would
+	// otherwise pair with the wildcard we append and change the pattern (or
+	// error). The pinyin pattern needs the same treatment because the
+	// generator keeps non-Han characters verbatim.
+	escaped := escapeLike(query)
 	q := fmt.Sprintf("%%%s%%", escaped)
-	pinyinQ := fmt.Sprintf("%%%s%%", strings.ToLower(models.GenerateNamePinyin(query)))
+	pinyinQ := fmt.Sprintf("%%%s%%", escapeLike(models.GenerateNamePinyin(query)))
 	lowerQ := strings.ToLower(query)
 	prefix := fmt.Sprintf("%s%%", lowerQ)
 	err := r.db.WithContext(ctx).Raw(`
@@ -103,7 +112,7 @@ func (r *GuestRepo) Create(ctx context.Context, g *models.GuestRecord) error {
 
 func (r *GuestRepo) Update(ctx context.Context, g *models.GuestRecord) error {
 	g.NamePinyin = models.GenerateNamePinyin(g.Name)
-	return r.db.WithContext(ctx).Model(g).Where("id = ? AND wedding_id = ?", g.ID, g.WeddingID).Updates(map[string]interface{}{
+	res := r.db.WithContext(ctx).Model(g).Where("id = ? AND wedding_id = ?", g.ID, g.WeddingID).Updates(map[string]interface{}{
 		"name":          g.Name,
 		"name_pinyin":   g.NamePinyin,
 		"email":         g.Email,
@@ -117,11 +126,26 @@ func (r *GuestRepo) Update(ctx context.Context, g *models.GuestRecord) error {
 		"is_vip":        g.IsVip,
 		"angbao_amt":    g.AngbaoAmt,
 		"gift_item":     g.GiftItem,
-	}).Error
+	})
+	return checkAffected(res)
+}
+
+// checkAffected turns a write that matched no row into ErrRecordNotFound: a
+// stale id or a row deleted mid-transaction must not report success and
+// broadcast a ghost event.
+func checkAffected(res *gorm.DB) error {
+	if res.Error != nil {
+		return res.Error
+	}
+	if res.RowsAffected == 0 {
+		return gorm.ErrRecordNotFound
+	}
+	return nil
 }
 
 func (r *GuestRepo) Delete(ctx context.Context, id, weddingID uuid.UUID) error {
-	return r.db.WithContext(ctx).Where("id = ? AND wedding_id = ?", id, weddingID).Delete(&models.GuestRecord{}).Error
+	res := r.db.WithContext(ctx).Where("id = ? AND wedding_id = ?", id, weddingID).Delete(&models.GuestRecord{})
+	return checkAffected(res)
 }
 
 // SyncCreate creates a guest with explicit CreatedAt/UpdatedAt for offline sync LWW.
@@ -133,7 +157,7 @@ func (r *GuestRepo) SyncCreate(ctx context.Context, g *models.GuestRecord) error
 // SyncUpdate updates a guest and forces UpdatedAt to the provided time for LWW.
 func (r *GuestRepo) SyncUpdate(ctx context.Context, g *models.GuestRecord) error {
 	g.NamePinyin = models.GenerateNamePinyin(g.Name)
-	return r.db.WithContext(ctx).Model(g).Where("id = ? AND wedding_id = ?", g.ID, g.WeddingID).Updates(map[string]interface{}{
+	res := r.db.WithContext(ctx).Model(g).Where("id = ? AND wedding_id = ?", g.ID, g.WeddingID).Updates(map[string]interface{}{
 		"name":          g.Name,
 		"name_pinyin":   g.NamePinyin,
 		"email":         g.Email,
@@ -148,7 +172,8 @@ func (r *GuestRepo) SyncUpdate(ctx context.Context, g *models.GuestRecord) error
 		"angbao_amt":    g.AngbaoAmt,
 		"gift_item":     g.GiftItem,
 		"updated_at":    g.UpdatedAt,
-	}).Error
+	})
+	return checkAffected(res)
 }
 
 // UnassignByTable clears table_id and seat_num for all guests at a given table.

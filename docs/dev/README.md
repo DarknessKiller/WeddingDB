@@ -46,7 +46,7 @@ New here? The [root README](../../README.md) explains what the product does.
 
 ### Deployment
 - Docker Compose (`docker-compose.yml`; the `redis` service runs DragonflyDB), distroless image, timezone set.
-- The Release workflow publishes images to GitHub Container Registry (`ghcr.io/darknesskiller/weddingdb`) on `v*` tags (multi-arch: amd64 + arm64). The compose file pulls `ghcr.io/darknesskiller/weddingdb:latest`, so nothing builds locally.
+- The Release workflow publishes images to GitHub Container Registry (`ghcr.io/darknesskiller/weddingdb`) on `v*` tags (multi-arch: amd64 + arm64). The compose file pins `ghcr.io/darknesskiller/weddingdb:v0.14.6`, so nothing builds locally and a redeploy runs the version you tested.
 - CI (`ci.yml`) runs on push and PR to `master`: backend `golangci-lint`, `go test -race`, `govulncheck`; frontend `npm audit`, `npm run check`, tests, and build.
 
 ## Deployment (Docker Compose)
@@ -124,39 +124,38 @@ docker compose up -d
 - `weddingdb_pgdata` volume: PostgreSQL data. Survives `down`, removed by `down -v`.
 - `weddingdb_uploads` volume: uploaded kiosk logos and backgrounds, mounted at `/app/uploads`.
 
-### Backup and restore
+### Backups
 
-Run from the repository root. Both scripts discover Postgres with `docker compose ps -q postgres`; `CONTAINER` is the fallback when Compose is unavailable. `DB_USER` defaults to `weddingdb`.
+There are no backup scripts. Dump the database with `pg_dump` through Compose:
 
 ```sh
-./backup-db.sh
-./restore-db.sh ./backups/weddingdb_<timestamp>.sql.gz weddingdb_restore
+mkdir -p backups
+(umask 077; docker compose exec -T postgres pg_dump -U weddingdb weddingdb | gzip > "backups/weddingdb_$(date +%Y%m%d_%H%M%S).sql.gz")
 ```
-
-Backups use private permissions and publish only after a nonempty, valid gzip dump completes. Override `BACKUP_DIR` or `DB_NAME` for backups if needed.
-
-Restore loads the dump into a scratch database (`<name>_restore`) first, in one transaction with errors fatal, then prints counts for `wedding_events`, `guest_records`, `banquet_tables`, and `admin_users`. Only a dump that loads completely is renamed into place; a failed import drops the scratch copy and leaves the target untouched.
 
 Uploads live in a volume, not the database. Back them up separately:
 
 ```sh
-mkdir -p backups
 (umask 077; docker run --rm -v weddingdb_uploads:/uploads:ro alpine:3.21 tar -C /uploads -czf - . > "backups/uploads_$(date +%Y%m%d_%H%M%S).tar.gz")
+```
+
+Restore into an empty database with:
+
+```sh
+gunzip -c backups/weddingdb_<timestamp>.sql.gz | docker compose exec -T postgres psql -U weddingdb -d weddingdb
 ```
 
 Store backups off-host and rehearse restores before relying on them.
 
-- Restore: `./restore-db.sh backups/<file>.sql.gz weddingdb --force`
-
-`--force` drops and recreates an existing target database. Leave it off and restore into a fresh name to keep the old data intact.
-
 ### Updating
+
+The compose file pins an explicit app image tag. To upgrade, bump `image:` to the new release tag, then:
 
 ```sh
 docker compose pull app && docker compose up -d
 ```
 
-New releases are tagged `v*`, and `latest` tracks the newest tag. To pin a version for reproducibility, use `ghcr.io/darknesskiller/weddingdb:v0.1.0`.
+New releases are tagged `v*`. `latest` tracks the newest tag, but the compose file never uses it: a mutable tag makes every redeploy a different image.
 
 ## Local development
 
@@ -192,7 +191,7 @@ Server runs at `http://localhost:8080`.
 | `JWT_SECRET` | Secret for JWT signing (required) | none |
 | `PORT` | Server port | `8080` |
 | `PUBLIC_URL` | Public server URL (used in OpenAPI spec) | `http://localhost:{PORT}` |
-| `CORS_ORIGIN` | Allowed CORS origin (credentials allowed only for this origin; unset reflects request origin without credentials) | `http://localhost:5173` |
+| `CORS_ORIGIN` | Allowed CORS origin (credentials allowed only for this exact origin; unset blocks all cross-origin requests) | `http://localhost:5173` |
 | `TRUSTED_PROXIES` | Comma-separated IPs/CIDRs of reverse proxies whose `X-Forwarded-For` is trusted | unset (header ignored) |
 | `OTEL_ENABLED` | Enable OpenTelemetry tracing | `false` |
 | `OTEL_EXPORTER_OTLP_ENDPOINT` | OTLP HTTP endpoint | `http://localhost:4318/v1/traces` |

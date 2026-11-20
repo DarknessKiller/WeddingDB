@@ -1,6 +1,6 @@
 import { writable } from 'svelte/store';
 import type { Guest } from '#lib/types/index.ts';
-import { clearStaffOfflineData } from '#lib/offline/storage.ts';
+import { clearStaffOfflineData, expireStaffOfflineData } from '#lib/offline/storage.ts';
 
 // Selected guest for drawer
 export const selectedGuest = writable<Guest | null>(null);
@@ -27,17 +27,40 @@ export function addToast(message: string, type: Toast['type'] = 'info') {
 // Sidebar state
 export const sidebarCollapsed = writable(false);
 
-// Auth tokens stay in memory only; backend has no cookie-backed session.
-if (typeof window !== 'undefined') {
-  try {
-    localStorage.removeItem('weddingdb_access_token');
-    localStorage.removeItem('weddingdb_refresh_token');
-  } catch {}
+// Auth persists in localStorage so an offline reload or browser restart keeps
+// the staff pages and their cached guest list usable. Logout clears it.
+const AUTH_KEY = 'weddingdb_auth';
+
+interface StoredAuth {
+  accessToken: string;
+  refreshToken: string;
+  role: string;
+  name: string;
 }
-let _accessToken: string | null = null;
-let _refreshToken: string | null = null;
-let _role: string | null = null;
-let _name: string | null = null;
+
+function readStoredAuth(): StoredAuth | null {
+  if (typeof window === 'undefined') return null;
+  try {
+    const raw = localStorage.getItem(AUTH_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as Partial<StoredAuth>;
+    if (!parsed.accessToken || !parsed.refreshToken) return null;
+    return {
+      accessToken: parsed.accessToken,
+      refreshToken: parsed.refreshToken,
+      role: parsed.role ?? '',
+      name: parsed.name ?? ''
+    };
+  } catch {
+    return null;
+  }
+}
+
+const storedAuth = readStoredAuth();
+let _accessToken: string | null = storedAuth?.accessToken ?? null;
+let _refreshToken: string | null = storedAuth?.refreshToken ?? null;
+let _role: string | null = storedAuth?.role ?? null;
+let _name: string | null = storedAuth?.name ?? null;
 
 export function getAuth() {
   return { accessToken: _accessToken, refreshToken: _refreshToken, role: _role, name: _name };
@@ -48,20 +71,42 @@ export function setAuth(access: string, refresh: string, r: string, n: string) {
   _refreshToken = refresh;
   _role = r;
   _name = n;
+  writeStoredAuth();
 }
 
-export function clearAuth() {
+function writeStoredAuth() {
+  if (typeof window === 'undefined' || !_accessToken || !_refreshToken) return;
+  try {
+    localStorage.setItem(AUTH_KEY, JSON.stringify({
+      accessToken: _accessToken,
+      refreshToken: _refreshToken,
+      role: _role ?? '',
+      name: _name ?? ''
+    } satisfies StoredAuth));
+  } catch {}
+}
+
+function resetAuthState() {
   _accessToken = null;
   _refreshToken = null;
   _role = null;
   _name = null;
-  if (typeof window !== 'undefined') {
-    localStorage.removeItem('weddingdb_access_token');
-    localStorage.removeItem('weddingdb_refresh_token');
-  }
-  // Staff guest data and unsynced edits must not outlive the session: the next
-  // person at this device (or the public kiosk) could read or replay them.
+  if (typeof window !== 'undefined') localStorage.removeItem(AUTH_KEY);
+}
+
+/** Explicit logout: the next person at this device must not inherit data. */
+export function clearAuth() {
+  resetAuthState();
   clearStaffOfflineData();
+}
+
+/**
+ * The server rejected the refresh token. End the session but keep unsynced
+ * edits and their owner so the same user's queued changes sync after login.
+ */
+export function expireAuth() {
+  resetAuthState();
+  expireStaffOfflineData();
 }
 
 // Show seat numbers setting. Shared so every page reacts without a reload, and

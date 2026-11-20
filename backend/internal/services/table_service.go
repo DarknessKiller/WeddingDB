@@ -9,16 +9,19 @@ import (
 	"weddingdb/internal/repository"
 
 	"github.com/google/uuid"
+	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 type TableService struct {
 	tableRepo *repository.TableRepo
 	guestRepo *repository.GuestRepo
 	sseHub    *SSEHub
+	db        *gorm.DB
 }
 
-func NewTableService(tableRepo *repository.TableRepo, guestRepo *repository.GuestRepo, sseHub *SSEHub) *TableService {
-	return &TableService{tableRepo: tableRepo, guestRepo: guestRepo, sseHub: sseHub}
+func NewTableService(tableRepo *repository.TableRepo, guestRepo *repository.GuestRepo, sseHub *SSEHub, db *gorm.DB) *TableService {
+	return &TableService{tableRepo: tableRepo, guestRepo: guestRepo, sseHub: sseHub, db: db}
 }
 
 func (s *TableService) List(ctx context.Context, weddingID uuid.UUID) ([]models.BanquetTable, error) {
@@ -38,17 +41,33 @@ func (s *TableService) Update(ctx context.Context, t *models.BanquetTable) error
 }
 
 func (s *TableService) Delete(ctx context.Context, id, weddingID uuid.UUID) error {
-	// Surface the guests seated at this table before unassigning so their
-	// updates can be broadcast afterwards.
-	affected, err := s.guestRepo.FindByTable(ctx, weddingID, id)
+	var affected []models.GuestRecord
+	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		// Same lock order as every guest write: wedding row first, table row
+		// second. A concurrent AssignSeat either commits before this delete
+		// (and gets unassigned below) or blocks and then fails its table
+		// lookup, so no guest can end up pointing at a deleted table.
+		if _, err := guestCountLocked(tx, weddingID); err != nil {
+			return err
+		}
+		if tx.Name() == "postgres" {
+			if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Select("id").
+				Where("id = ? AND wedding_id = ?", id, weddingID).First(&models.BanquetTable{}).Error; err != nil {
+				return err
+			}
+		}
+		txGuestRepo := repository.NewGuestRepo(tx)
+		var err error
+		affected, err = txGuestRepo.FindByTable(ctx, weddingID, id)
+		if err != nil {
+			return err
+		}
+		if err := txGuestRepo.UnassignByTable(ctx, weddingID, id); err != nil {
+			return err
+		}
+		return repository.NewTableRepo(tx).Delete(ctx, id, weddingID)
+	})
 	if err != nil {
-		return err
-	}
-	// Unassign guests from this table before deleting
-	if err := s.guestRepo.UnassignByTable(ctx, weddingID, id); err != nil {
-		return err
-	}
-	if err := s.tableRepo.Delete(ctx, id, weddingID); err != nil {
 		return err
 	}
 	for i := range affected {

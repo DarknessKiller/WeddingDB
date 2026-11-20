@@ -1,4 +1,5 @@
 import { getAuth } from '#lib/stores/index.ts';
+import { refreshAccessToken } from '#lib/api/client.ts';
 
 export interface GuestEvent {
 	type: 'create' | 'update' | 'delete' | 'checkin' | 'checkout' | 'seat_assign';
@@ -53,6 +54,11 @@ class SSEClient {
 				headers: { Authorization: `Bearer ${accessToken}` },
 				signal: controller.signal
 			});
+			if (response.status === 401) {
+				// Refresh once, then let the reconnect path retry with the new token.
+				await refreshAccessToken();
+				throw new Error('SSE unauthorized');
+			}
 			if (!response.ok || !response.body) throw new Error(`SSE request failed: ${response.status}`);
 
 			const reconnect = this.reconnectDelay > 1000;

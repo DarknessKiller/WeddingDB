@@ -200,7 +200,7 @@ func TestCheckInPromotesRSVPAndAppendsNotes(t *testing.T) {
 			Op:              SyncOpCheckIn,
 			GuestID:         gid.String(),
 			ClientUpdatedAt: time.Now(),
-			Payload:         &SyncPayload{Notes: "no gift"},
+			Payload:         &SyncPayload{Notes: syncStr("no gift")},
 		}})
 		if err != nil {
 			t.Fatalf("sync: %v", err)

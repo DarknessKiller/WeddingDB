@@ -150,3 +150,22 @@ func TestDeleteUser_RevokesTokens(t *testing.T) {
 		t.Errorf("token version %d did not increase (was %d)", after, before)
 	}
 }
+
+// POST /users must reject malformed emails, missing fields, and duplicates with
+// a client error instead of creating a user or failing with an opaque 500.
+func TestCreateUser_ValidatesInput(t *testing.T) {
+	c := newAdminTestServer(t, uuid.New())
+
+	if code := c.do(http.MethodPost, "/users", `{"email":"not-an-email","password":"Str0ngPassw0rd!","name":"A"}`); code != http.StatusBadRequest {
+		t.Errorf("invalid email: status = %d, want 400", code)
+	}
+	if code := c.do(http.MethodPost, "/users", `{"email":"a@b.test","password":"Str0ngPassw0rd!","name":""}`); code != http.StatusBadRequest {
+		t.Errorf("missing name: status = %d, want 400", code)
+	}
+	if code := c.do(http.MethodPost, "/users", `{"email":"dup@b.test","password":"Str0ngPassw0rd!","name":"A"}`); code != http.StatusCreated {
+		t.Fatalf("first create: status = %d, want 201", code)
+	}
+	if code := c.do(http.MethodPost, "/users", `{"email":"dup@b.test","password":"Str0ngPassw0rd!","name":"A"}`); code != http.StatusConflict {
+		t.Errorf("duplicate email: status = %d, want 409", code)
+	}
+}

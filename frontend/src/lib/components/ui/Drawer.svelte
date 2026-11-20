@@ -184,8 +184,17 @@ import ArrowUpDown from 'lucide-svelte/icons/arrow-up-down';
     giftItem: '',
   });
 
+  // Remember which guest/edit state the form was loaded for. SSE updates to the
+  // same guest must not overwrite unsaved edits; a different guest or entering
+  // edit mode reloads the form from the latest data.
+  let formSource = $state<{ id: string; editing: boolean } | null>(null);
+
   $effect(() => {
-    if (!guest) return;
+    if (!guest) {
+      formSource = null;
+      return;
+    }
+    if (formSource?.id === guest.id && formSource.editing === editing) return;
     form.name = guest.name;
     form.email = guest.email ?? '';
     form.pax = guest.pax;
@@ -195,6 +204,7 @@ import ArrowUpDown from 'lucide-svelte/icons/arrow-up-down';
     form.dietary = guest.dietaryRequirements;
     form.angbaoAmt = guest.angbaoAmount != null ? String(guest.angbaoAmount) : '';
     form.giftItem = guest.giftItem ?? '';
+    formSource = { id: guest.id, editing };
   });
 
   async function save() {
