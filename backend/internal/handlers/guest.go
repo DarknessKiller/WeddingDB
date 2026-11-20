@@ -356,10 +356,12 @@ func (h *GuestHandler) BulkImport(c fuego.ContextWithBody[BulkImportRequest]) (a
 			Notes:     g.Notes,
 			Dietary:   g.Dietary,
 		}
-		if g.TableID != nil {
-			if tid, err := DecodeID(*g.TableID); err == nil {
-				gr.TableID = &tid
+		if g.TableID != nil && *g.TableID != "" {
+			tid, err := DecodeID(*g.TableID)
+			if err != nil {
+				return nil, fuego.BadRequestError{Title: "Invalid table ID"}
 			}
+			gr.TableID = &tid
 		}
 		if g.SeatNum != nil {
 			gr.SeatNum = g.SeatNum
