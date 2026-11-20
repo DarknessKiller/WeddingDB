@@ -59,31 +59,45 @@ export async function refreshAccessToken(): Promise<boolean> {
 	return refreshIfNeeded();
 }
 
-export async function apiFetch(path: string, opts: RequestInit = {}): Promise<Response> {
-	const { accessToken } = getAuth();
-	const isDelete = opts.method === 'DELETE';
-	let res = await fetch(`${BASE}${path}`, {
-		...opts,
-		headers: {
-			...(!isDelete ? { 'Content-Type': 'application/json' } : {}),
-			...opts.headers,
-			...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {})
-		}
-	});
+// Tabs share one refresh token. When another tab picks a different wedding,
+// our next refresh comes back scoped to that one and every call here gets 403.
+// Re-pick the wedding in the URL once; admins are not wedding-scoped.
+async function reselectWedding(wid: string): Promise<boolean> {
+	const { accessToken, refreshToken, role, name } = getAuth();
+	if (!refreshToken || role === 'admin') return false;
+	try {
+		const res = await fetch(`${BASE}/api/auth/select-wedding`, {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json', ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}) },
+			body: JSON.stringify({ weddingId: wid, refreshToken })
+		});
+		if (!res.ok) return false;
+		const data = await res.json();
+		setAuth(data.accessToken, refreshToken, role ?? '', name ?? '');
+		return true;
+	} catch {
+		return false;
+	}
+}
 
-	if (res.status === 401) {
-		const refreshed = await refreshIfNeeded();
-		if (refreshed) {
-			const { accessToken: newToken } = getAuth();
-			res = await fetch(`${BASE}${path}`, {
-				...opts,
-				headers: {
-					'Content-Type': 'application/json',
-					...opts.headers,
-					Authorization: `Bearer ${newToken}`
-				}
-			});
-		}
+export async function apiFetch(path: string, opts: RequestInit = {}): Promise<Response> {
+	const isDelete = opts.method === 'DELETE';
+	const send = () => {
+		const { accessToken } = getAuth();
+		return fetch(`${BASE}${path}`, {
+			...opts,
+			headers: {
+				...(!isDelete ? { 'Content-Type': 'application/json' } : {}),
+				...opts.headers,
+				...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {})
+			}
+		});
+	};
+	let res = await send();
+	if (res.status === 401 && (await refreshIfNeeded())) res = await send();
+	if (res.status === 403) {
+		const wid = path.match(/^\/api\/weddings\/([^/?]+)/)?.[1];
+		if (wid && (await reselectWedding(wid))) res = await send();
 	}
 	return res;
 }

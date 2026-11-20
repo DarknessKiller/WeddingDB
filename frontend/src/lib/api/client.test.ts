@@ -108,4 +108,34 @@ describe('apiFetch refresh recovery', () => {
 		expect(fetchMock.mock.calls[1][1].headers.Authorization).toBe('Bearer tab2-access');
 		expect(getAuth().refreshToken).toBe('refresh-2');
 	});
+
+	it('re-picks the URL wedding when another tab rescoped the shared token', async () => {
+		const { setAuth, getAuth } = await import('#lib/stores/index.ts');
+		setAuth('scoped-b', 'refresh-1', 'staff', 'S');
+		fetchMock
+			.mockResolvedValueOnce(res({ error: 'Access denied' }, 403))
+			.mockResolvedValueOnce(res({ accessToken: 'scoped-a' }))
+			.mockResolvedValueOnce(res({ guests: [] }));
+
+		const { apiFetch } = await import('./client');
+		const result = await apiFetch('/api/weddings/wA/guests');
+
+		expect(result.status).toBe(200);
+		expect(fetchMock.mock.calls[1][0]).toContain('/api/auth/select-wedding');
+		expect(JSON.parse(fetchMock.mock.calls[1][1].body)).toEqual({ weddingId: 'wA', refreshToken: 'refresh-1' });
+		expect(fetchMock.mock.calls[2][1].headers.Authorization).toBe('Bearer scoped-a');
+		expect(getAuth().accessToken).toBe('scoped-a');
+	});
+
+	it('returns the 403 when the user really has no access', async () => {
+		const { setAuth } = await import('#lib/stores/index.ts');
+		setAuth('scoped-b', 'refresh-1', 'staff', 'S');
+		fetchMock.mockResolvedValueOnce(res({}, 403)).mockResolvedValueOnce(res({ title: 'No access' }, 403));
+
+		const { apiFetch } = await import('./client');
+		const result = await apiFetch('/api/weddings/wA/guests');
+
+		expect(result.status).toBe(403);
+		expect(fetchMock).toHaveBeenCalledTimes(2);
+	});
 });
