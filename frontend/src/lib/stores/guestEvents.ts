@@ -16,6 +16,9 @@ export const tableOccupancy = writable<Map<string, number>>(new Map());
 export const sseConnected = writable(false);
 
 let initialized = false;
+// True once the stores hold the wedding's full roster (seedGuests), false
+// after clearGuests. Only a full roster may overwrite the offline cache.
+let seeded = false;
 let syncing = false;
 let queuedEvents: GuestEvent[] = [];
 // Bumped by every refreshGuests call; only the newest may seed or close the
@@ -100,6 +103,7 @@ export async function refreshGuests(fetchFn: () => Promise<Guest[]>): Promise<Gu
  */
 export function seedGuests(guests: Guest[]) {
 	guestList.set(guests);
+	seeded = true;
 	recalculateOccupancy();
 	// cache for offline reads
 	try {
@@ -119,6 +123,7 @@ export function seedGuests(guests: Guest[]) {
  * empty list here would overwrite the next wedding's offline cache.
  */
 export function clearGuests() {
+	seeded = false;
 	guestList.set([]);
 	tableOccupancy.set(new Map());
 }
@@ -159,6 +164,20 @@ function handleGuestEvent(event: GuestEvent) {
 	if (current?.id === guest.id) {
 		selectedGuest.set(guest);
 	}
+	cacheGuestList();
+}
+
+/**
+ * Re-cache the live roster after a local or SSE change, so a reload while
+ * offline shows it. Skipped until a full roster is seeded: caching a partial
+ * list would overwrite the wedding's offline copy.
+ */
+export function cacheGuestList() {
+	if (!seeded) return;
+	try {
+		const wid = get(weddingId);
+		if (wid) cacheGuests(wid, get(guestList));
+	} catch {}
 }
 
 function recalculateOccupancy() {
@@ -211,6 +230,7 @@ export function applyGuestResponse(resp: GuestResponse) {
 
 	const current = get(selectedGuest);
 	if (current?.id === guest.id) selectedGuest.set(guest);
+	cacheGuestList();
 }
 
 function eventGuestToGuest(d: NonNullable<GuestEvent['guest']>, eventTimestamp: number): Guest {

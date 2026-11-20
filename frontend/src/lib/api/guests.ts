@@ -3,7 +3,7 @@ import { get } from 'svelte/store';
 import { weddingId } from '#lib/stores/weddingId.ts';
 import { applyGuestResponse } from '#lib/stores/guestEvents.ts';
 import { enqueue, getQueue } from '#lib/offline/queue.ts';
-import { guestList } from '#lib/stores/guestEvents.ts';
+import { guestList, cacheGuestList } from '#lib/stores/guestEvents.ts';
 
 function isOffline() {
 	return typeof navigator !== 'undefined' && !navigator.onLine;
@@ -60,6 +60,9 @@ function optimisticPatch(op: string, guestId: string, data?: Record<string, unkn
 		} else if (op === 'checkout') {
 			guestList.update(l => l.map(x => x.id === guestId ? { ...x, checkedIn: false, checkedInAt: undefined, updatedAt: new Date() } as unknown as import('#lib/types/index.ts').Guest : x));
 		}
+		// Persist the patched roster: an offline reload must show queued edits,
+		// or staff re-create a guest that is still waiting to sync.
+		cacheGuestList();
 	} catch {}
 }
 
