@@ -79,7 +79,7 @@ func (r *TokenRepo) DeleteByToken(ctx context.Context, token string) (int64, err
 // the same user keep their own scope. Reports whether a row matched.
 func (r *TokenRepo) UpdateWeddingScope(ctx context.Context, adminID uuid.UUID, token string, weddingID uuid.UUID) (bool, error) {
 	res := r.db.WithContext(ctx).Model(&models.RefreshToken{}).
-		Where("admin_id = ? AND token = ? AND expires_at > ?", adminID, token, time.Now()).
+		Where("admin_id = ? AND token = ? AND rotated_at IS NULL AND expires_at > ?", adminID, token, time.Now()).
 		Update("wedding_id", weddingID)
 	return res.RowsAffected > 0, res.Error
 }

@@ -91,3 +91,20 @@ func TestTokenRepo_RevokeDuringRotateDeletesSuccessor(t *testing.T) {
 		t.Fatalf("tokens left after revoke = %v, want none", left)
 	}
 }
+
+// Select-wedding must not rescope a token that was already rotated: the live
+// successor would keep the old wedding and silently switch the user back.
+func TestTokenRepo_UpdateWeddingScopeSkipsRotatedToken(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	testutil.NoErr(t, err)
+	testutil.NoErr(t, db.Exec(`CREATE TABLE refresh_tokens (id TEXT PRIMARY KEY, admin_id TEXT NOT NULL, wedding_id TEXT,
+		token TEXT NOT NULL UNIQUE, expires_at DATETIME, created_at DATETIME, rotated_at DATETIME, replaced_by TEXT)`).Error)
+	adminID, now := uuid.New(), time.Now()
+	testutil.NoErr(t, db.Create(&models.RefreshToken{ID: uuid.New(), AdminID: adminID, Token: "used", ExpiresAt: now.Add(time.Hour), RotatedAt: &now}).Error)
+
+	found, err := NewTokenRepo(db).UpdateWeddingScope(t.Context(), adminID, "used", uuid.New())
+	testutil.NoErr(t, err)
+	if found {
+		t.Fatal("rescoped a rotated token")
+	}
+}
