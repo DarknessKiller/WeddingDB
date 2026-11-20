@@ -105,7 +105,12 @@ const inFlight = new Map<string, Promise<SyncOutcome>>();
 export function syncQueue(wid: string): Promise<SyncOutcome> {
 	const running = inFlight.get(wid);
 	if (running) return running;
-	const run = runSync(wid).finally(() => {
+	// inFlight only covers this tab. A Web Lock also holds off other tabs of
+	// this browser; runSync re-reads the queue inside it, so a second tab
+	// sends only what the first one left.
+	const locks = typeof navigator !== 'undefined' ? navigator.locks : undefined;
+	const sync = locks ? locks.request(`weddingdb-sync-${wid}`, () => runSync(wid)) : runSync(wid);
+	const run = sync.finally(() => {
 		if (inFlight.get(wid) === run) inFlight.delete(wid);
 	});
 	inFlight.set(wid, run);

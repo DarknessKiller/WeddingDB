@@ -32,6 +32,49 @@ afterEach(() => {
 });
 
 describe('syncQueue', () => {
+	it('lets a second tab send only what the first tab left', async () => {
+		// A fake Web Locks API that runs same-name requests one after another.
+		const tail = new Map<string, Promise<unknown>>();
+		const locks = {
+			request: (name: string, cb: () => Promise<unknown>) => {
+				const run = (tail.get(name) ?? Promise.resolve()).then(cb);
+				tail.set(name, run.catch(() => {}));
+				return run;
+			}
+		};
+		const realNavigator = globalThis.navigator;
+		Object.defineProperty(globalThis, 'navigator', { value: { onLine: true, locks }, configurable: true });
+		try {
+			localStorage.setItem(
+				'offline_queue_w1',
+				JSON.stringify([{ mutationId: 'm1', op: 'checkin', guestId: 'g1', clientUpdatedAt: '2026-01-01T00:00:00Z' }])
+			);
+			const pending: (() => void)[] = [];
+			const release = () => pending.forEach((r) => r());
+			apiFetch.mockImplementation(
+				() =>
+					new Promise((resolve) => {
+						pending.push(() => resolve({ ok: true, json: async () => ({ results: [{ guestId: 'g1', status: 'applied' }] }) }));
+					})
+			);
+
+			// Each import is a separate tab: its own module state, shared storage and locks.
+			const tabA = await import('./queue');
+			vi.resetModules();
+			const tabB = await import('./queue');
+			const a = tabA.syncQueue('w1');
+			const b = tabB.syncQueue('w1');
+			await Promise.resolve();
+			release();
+			await Promise.all([a, b]);
+
+			expect(apiFetch).toHaveBeenCalledOnce();
+			expect(tabB.getQueue('w1')).toEqual([]);
+		} finally {
+			Object.defineProperty(globalThis, 'navigator', { value: realNavigator, configurable: true });
+		}
+	});
+
 	it('sends one request for overlapping sync calls and dequeues once', async () => {
 		localStorage.setItem(
 			'offline_queue_w1',
