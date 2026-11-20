@@ -10,7 +10,12 @@ export interface QueuedMutation {
 	clientUpdatedAt: string;
 	baseUpdatedAt?: string | null;
 	payload?: Record<string, unknown> | null;
+	/** Failed server attempts; dropped once it reaches the limit. */
+	attempts?: number;
 }
+
+const QUEUE_LIMIT = 500;
+const MAX_ATTEMPTS = 5;
 
 function qkey(wid: string) { return `${QUEUE_PREFIX}${wid}`; }
 function ckey(wid: string) { return `${STAFF_CACHE_PREFIX}${wid}`; }
@@ -21,12 +26,15 @@ export function getQueue(wid: string): QueuedMutation[] {
 	try { return JSON.parse(localStorage.getItem(qkey(wid)) || '[]'); } catch { return []; }
 }
 function setQueue(wid: string, q: QueuedMutation[]) {
-	localStorage.setItem(qkey(wid), JSON.stringify(q.slice(0, 500)));
+	localStorage.setItem(qkey(wid), JSON.stringify(q.slice(0, QUEUE_LIMIT)));
 }
 
 export function enqueue(wid: string, m: QueuedMutation) {
 	const q = getQueue(wid);
-	if (q.length >= 500) q.shift();
+	if (q.length >= QUEUE_LIMIT) {
+		// Refuse instead of shifting: the oldest entry is an unsynced edit.
+		throw new Error(`Offline queue is full (${QUEUE_LIMIT}); sync before adding more edits.`);
+	}
 	q.push(m);
 	setQueue(wid, q);
 	notifyChanged();
@@ -99,18 +107,43 @@ async function runSync(wid: string): Promise<SyncOutcome> {
 	}
 	const data = await res.json() as { results: { guestId: string; status: string; serverRecord?: unknown; reason?: string }[] };
 	const appliedIds: string[] = [];
+	const failedIds: string[] = [];
 	let applied = 0, skipped = 0;
 	for (let i = 0; i < q.length && i < data.results.length; i++) {
 		const r = data.results[i];
 		if (r.status === 'applied') { applied++; appliedIds.push(q[i].mutationId); }
 		else if (r.status === 'skipped') { skipped++; appliedIds.push(q[i].mutationId); }
+		else if (r.status === 'failed') failedIds.push(q[i].mutationId);
 	}
 	// drop processed (both applied and skipped) - skipped already reverted by caller via serverRecord
 	dequeueByIds(wid, appliedIds);
+	const dropped = bumpAttempts(wid, failedIds);
+	if (dropped) console.warn(`offline sync: dropped ${dropped} mutation(s) after ${MAX_ATTEMPTS} failed attempts`);
 	// ponytail: expose for support
 	if (typeof window !== 'undefined') (window as unknown as Record<string, unknown>).__syncLastResults = data.results;
 	console.log(`offline sync: ${applied} applied, ${skipped} skipped`);
 	return { applied, skipped, results: data.results };
+}
+
+// bumpAttempts counts a failed server attempt per mutation and drops entries
+// that keep failing with the same validation error, so they cannot retry
+// forever and block nothing else.
+function bumpAttempts(wid: string, ids: string[]): number {
+	if (!ids.length) return 0;
+	const set = new Set(ids);
+	let dropped = 0;
+	const kept = getQueue(wid).flatMap(m => {
+		if (!set.has(m.mutationId)) return [m];
+		const attempts = (m.attempts ?? 0) + 1;
+		if (attempts >= MAX_ATTEMPTS) {
+			dropped++;
+			return [];
+		}
+		return [{ ...m, attempts }];
+	});
+	setQueue(wid, kept);
+	notifyChanged();
+	return dropped;
 }
 
 // Same-tab notification that the queue changed (storage events only fire in

@@ -59,3 +59,68 @@ describe('syncQueue', () => {
 		expect(getQueue('w1')).toEqual([]);
 	});
 });
+
+describe('queue limits', () => {
+	it('refuses new edits when full instead of dropping the oldest', async () => {
+		const { enqueue, getQueue } = await import('./queue');
+		for (let i = 0; i < 500; i++) {
+			enqueue('w1', {
+				mutationId: `m${i}`,
+				op: 'update',
+				guestId: 'g1',
+				clientUpdatedAt: '2026-01-01T00:00:00Z'
+			});
+		}
+
+		expect(() =>
+			enqueue('w1', {
+				mutationId: 'overflow',
+				op: 'update',
+				guestId: 'g1',
+				clientUpdatedAt: '2026-01-01T00:00:00Z'
+			})
+		).toThrow(/full/);
+
+		const q = getQueue('w1');
+		expect(q).toHaveLength(500);
+		expect(q[0].mutationId).toBe('m0');
+	});
+
+	it('drops a mutation after repeated failed syncs', async () => {
+		localStorage.setItem(
+			'offline_queue_w1',
+			JSON.stringify([
+				{ mutationId: 'm1', op: 'update', guestId: 'g1', clientUpdatedAt: '2026-01-01T00:00:00Z', attempts: 4 }
+			])
+		);
+		apiFetch.mockResolvedValue({
+			ok: true,
+			json: async () => ({ results: [{ guestId: 'g1', status: 'failed', reason: 'invalid pax' }] })
+		});
+
+		const { syncQueue, getQueue } = await import('./queue');
+		await syncQueue('w1');
+
+		expect(getQueue('w1')).toEqual([]);
+	});
+
+	it('keeps a failed mutation and counts the attempt below the limit', async () => {
+		localStorage.setItem(
+			'offline_queue_w1',
+			JSON.stringify([
+				{ mutationId: 'm1', op: 'update', guestId: 'g1', clientUpdatedAt: '2026-01-01T00:00:00Z' }
+			])
+		);
+		apiFetch.mockResolvedValue({
+			ok: true,
+			json: async () => ({ results: [{ guestId: 'g1', status: 'failed', reason: 'invalid pax' }] })
+		});
+
+		const { syncQueue, getQueue } = await import('./queue');
+		await syncQueue('w1');
+
+		const q = getQueue('w1');
+		expect(q).toHaveLength(1);
+		expect(q[0].attempts).toBe(1);
+	});
+});
