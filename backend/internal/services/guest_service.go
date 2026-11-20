@@ -544,6 +544,8 @@ func (s *GuestService) Occupancy(ctx context.Context, weddingID uuid.UUID) ([]re
 // clients in the order they were written, or an older state lands last.
 // Uses context.Background() so a request cancelled after commit still
 // publishes. A nil hub (tests, SSE disabled) is a no-op.
+const publishTimeout = 500 * time.Millisecond
+
 func (h *SSEHub) publishGuest(eventType string, guest *models.GuestRecord, weddingID uuid.UUID) {
 	if h == nil {
 		return
@@ -557,7 +559,11 @@ func (h *SSEHub) publishGuest(eventType string, guest *models.GuestRecord, weddi
 		Timestamp: time.Now().UnixMilli(),
 	}
 
-	if err := h.Publish(context.Background(), weddingID, event); err != nil {
+	// Bounded: the write already committed, and a stalled Redis must not hold
+	// every check-in (and each item of a sync batch) for go-redis's retries.
+	ctx, cancel := context.WithTimeout(context.Background(), publishTimeout)
+	defer cancel()
+	if err := h.Publish(ctx, weddingID, event); err != nil {
 		log.Printf("SSE: publish %s for guest %s in wedding %s: %v", eventType, guest.ID, weddingID, err)
 	}
 }
