@@ -421,3 +421,20 @@ func TestPublishGuest_PreservesOrder(t *testing.T) {
 		}
 	}
 }
+
+// Shutdown must end open streams; otherwise a graceful HTTP shutdown waits
+// on them until its deadline.
+func TestSSEHub_ShutdownClosesStreams(t *testing.T) {
+	mr := miniredis.RunT(t)
+	hub := NewSSEHub(redis.NewClient(&redis.Options{Addr: mr.Addr()}))
+	client, ok := hub.Subscribe(uuid.New(), uuid.New())
+	if !ok {
+		t.Fatal("subscribe rejected")
+	}
+	hub.Shutdown()
+	select {
+	case <-client.Done:
+	case <-time.After(time.Second):
+		t.Fatal("open stream was not closed by Shutdown")
+	}
+}

@@ -191,9 +191,18 @@ func (h *SSEHub) Publish(ctx context.Context, weddingID uuid.UUID, event GuestEv
 	return h.redis.Publish(ctx, fmt.Sprintf("wedding:%s:guests", weddingID.String()), data).Err()
 }
 
-// Shutdown gracefully stops the Redis subscriber.
+// Shutdown stops the Redis subscriber and ends every open stream.
 func (h *SSEHub) Shutdown() {
 	h.cancel()
+	// End every open stream so a graceful HTTP shutdown is not held open by
+	// connections that would otherwise last until the client leaves.
+	h.mu.Lock()
+	for _, clients := range h.clients {
+		for _, c := range clients {
+			c.doneOnce.Do(func() { close(c.Done) })
+		}
+	}
+	h.mu.Unlock()
 	if h.pubsub != nil {
 		if err := h.pubsub.Close(); err != nil {
 			log.Printf("SSE: subscriber close failed: %v", err)
