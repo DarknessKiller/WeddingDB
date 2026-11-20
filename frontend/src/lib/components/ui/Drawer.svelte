@@ -222,7 +222,7 @@ import ArrowUpDown from 'lucide-svelte/icons/arrow-up-down';
         onClose();
       } else {
         const updated = await updateGuest(wid, guest!.id, {
-          name: form.name, email: form.email || undefined,
+          name: form.name, email: form.email ?? '',
           pax: form.pax, rsvp: form.rsvp, isVip: form.isVip, notes: form.notes,
           dietary: form.dietary, angbaoAmt: form.angbaoAmt ? Number(form.angbaoAmt) : null,
           giftItem: form.giftItem || null,

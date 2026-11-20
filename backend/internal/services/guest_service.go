@@ -566,7 +566,8 @@ const (
 
 // SyncPayload is a partial guest record from the offline queue. Pointer fields
 // distinguish "absent" from a zero value, so a seat-only or notes-only mutation
-// never erases the rest of the record.
+// never erases the rest of the record. Fields a user can clear (table, angbao,
+// gift) use NullableJSON so an explicit null clears them.
 type SyncPayload struct {
 	Name      *string              `json:"name"`
 	Email     *string              `json:"email"`
@@ -577,8 +578,8 @@ type SyncPayload struct {
 	Dietary   *[]string            `json:"dietary"`
 	TableID   NullableJSON[string] `json:"tableId"`
 	SeatNum   *int                 `json:"seatNum"`
-	AngbaoAmt *int                 `json:"angbaoAmt"`
-	GiftItem  *string              `json:"giftItem"`
+	AngbaoAmt NullableJSON[int]    `json:"angbaoAmt"`
+	GiftItem  NullableJSON[string] `json:"giftItem"`
 }
 
 // NullableJSON records whether a JSON field was present and whether it was null.
@@ -684,8 +685,8 @@ func (s *GuestService) applySyncMutation(ctx context.Context, weddingID uuid.UUI
 			WeddingID: weddingID,
 			Name:      *m.Payload.Name,
 			Pax:       pax,
-			AngbaoAmt: m.Payload.AngbaoAmt,
-			GiftItem:  m.Payload.GiftItem,
+			AngbaoAmt: m.Payload.AngbaoAmt.Value,
+			GiftItem:  m.Payload.GiftItem.Value,
 			CreatedAt: opTime,
 			UpdatedAt: opTime,
 		}
@@ -772,11 +773,11 @@ func (s *GuestService) applySyncMutation(ctx context.Context, weddingID uuid.UUI
 		existing.CheckedInAt = &opTime
 		existing.RSVP = "confirmed"
 		if m.Payload != nil {
-			if m.Payload.AngbaoAmt != nil {
-				existing.AngbaoAmt = m.Payload.AngbaoAmt
+			if m.Payload.AngbaoAmt.Value != nil {
+				existing.AngbaoAmt = m.Payload.AngbaoAmt.Value
 			}
-			if m.Payload.GiftItem != nil {
-				existing.GiftItem = m.Payload.GiftItem
+			if m.Payload.GiftItem.Value != nil {
+				existing.GiftItem = m.Payload.GiftItem.Value
 			}
 			// A notes value in a checkin payload is appended to the guest's notes,
 			// never replacing them, so a queued note never wipes existing notes.
@@ -844,11 +845,12 @@ func applySyncPayload(g *models.GuestRecord, p *SyncPayload, gid *uuid.UUID) err
 	if p.Dietary != nil {
 		g.Dietary = *p.Dietary
 	}
-	if p.AngbaoAmt != nil {
-		g.AngbaoAmt = p.AngbaoAmt
+	// Present-but-null clears the value; absent leaves it alone.
+	if p.AngbaoAmt.Set {
+		g.AngbaoAmt = p.AngbaoAmt.Value
 	}
-	if p.GiftItem != nil {
-		g.GiftItem = p.GiftItem
+	if p.GiftItem.Set {
+		g.GiftItem = p.GiftItem.Value
 	}
 	// Only an explicitly sent tableId touches the seat assignment: absent means
 	// "leave it alone", null or empty means unassign.

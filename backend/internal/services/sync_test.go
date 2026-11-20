@@ -2,6 +2,7 @@ package services
 
 import (
 	"context"
+	"encoding/json"
 	"testing"
 	"time"
 
@@ -206,7 +207,7 @@ func TestSync_OfflineCheckInSurvivesNewerEdit(t *testing.T) {
 	db.Create(&models.GuestRecord{ID: gid, WeddingID: wid, Name: "Late", Pax: 1, CreatedAt: base, UpdatedAt: base.Add(5 * time.Minute)})
 
 	amt := 88
-	m := SyncMutation{Op: SyncOpCheckIn, GuestID: gid.String(), ClientUpdatedAt: base, Payload: &SyncPayload{AngbaoAmt: &amt}}
+	m := SyncMutation{Op: SyncOpCheckIn, GuestID: gid.String(), ClientUpdatedAt: base, Payload: &SyncPayload{AngbaoAmt: NullableJSON[int]{Set: true, Value: &amt}}}
 	res, err := svc.Sync(ctx, wid, []SyncMutation{m})
 	testutil.NoErr(t, err)
 	if res[0].Status != "applied" {
@@ -578,5 +579,32 @@ func TestSync_LookupErrorIsFailedNotSkipped(t *testing.T) {
 				t.Fatalf("status = %q (%s), want failed", res[0].Status, res[0].Reason)
 			}
 		})
+	}
+}
+
+// An offline edit that clears the angbao or gift sends JSON null; the server
+// must clear the value, as the online PUT does, not keep the old one.
+func TestSyncUpdate_NullClearsAngbaoAndGift(t *testing.T) {
+	svc, db, wid := newGuestSyncService(t)
+	gid := uuid.New()
+	amt, gift := 200, "Bangle"
+	testutil.NoErr(t, db.Create(&models.GuestRecord{
+		ID: gid, WeddingID: wid, Name: "A", Pax: 1, AngbaoAmt: &amt, GiftItem: &gift,
+		UpdatedAt: time.Now().Add(-time.Hour),
+	}).Error)
+
+	var m SyncMutation
+	testutil.NoErr(t, json.Unmarshal([]byte(`{"op":"update","guestId":"`+gid.String()+
+		`","clientUpdatedAt":"`+time.Now().Format(time.RFC3339Nano)+
+		`","payload":{"name":"A","angbaoAmt":null,"giftItem":null}}`), &m))
+	res, err := svc.Sync(t.Context(), wid, []SyncMutation{m})
+	testutil.NoErr(t, err)
+	if res[0].Status != "applied" {
+		t.Fatalf("status = %q (%s), want applied", res[0].Status, res[0].Reason)
+	}
+	var got models.GuestRecord
+	testutil.NoErr(t, db.First(&got, "id = ?", gid).Error)
+	if got.AngbaoAmt != nil || got.GiftItem != nil {
+		t.Fatalf("angbao=%v gift=%v, want both cleared", got.AngbaoAmt, got.GiftItem)
 	}
 }

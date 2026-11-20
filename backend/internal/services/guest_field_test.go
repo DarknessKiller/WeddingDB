@@ -69,7 +69,7 @@ func TestSync_RejectsInvalidFields(t *testing.T) {
 			Op:              SyncOpCreate,
 			GuestID:         uuid.New().String(),
 			ClientUpdatedAt: time.Now(),
-			Payload:         &SyncPayload{Name: ptr("Alice"), Pax: ptr(1), AngbaoAmt: ptr(-5)},
+			Payload:         &SyncPayload{Name: ptr("Alice"), Pax: ptr(1), AngbaoAmt: NullableJSON[int]{Set: true, Value: ptr(-5)}},
 		},
 	})
 	if err != nil {
