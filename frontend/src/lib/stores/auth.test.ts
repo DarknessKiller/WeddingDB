@@ -16,6 +16,7 @@ let listeners: Record<string, ((e: StorageEvent) => void)[]>;
 beforeEach(() => {
 	vi.resetModules();
 	storage = memoryStorage();
+	// Legacy per-token keys must be ignored; the session lives under one JSON key.
 	storage.setItem('weddingdb_access_token', 'old-access');
 	storage.setItem('weddingdb_refresh_token', 'refresh-1');
 	Object.defineProperty(globalThis, 'localStorage', { value: storage, configurable: true });
@@ -36,14 +37,43 @@ afterEach(() => {
 });
 
 describe('auth storage', () => {
-	it('does not load persisted tokens or write tokens to localStorage', async () => {
-		const { getAuth, setAuth } = await import('#lib/stores/index.ts');
+	it('restores a persisted session after a reload', async () => {
+		storage.setItem(
+			'weddingdb_auth',
+			JSON.stringify({ accessToken: 'saved', refreshToken: 'saved-refresh', role: 'staff', name: 'N' })
+		);
+
+		const { getAuth } = await import('#lib/stores/index.ts');
+
+		expect(getAuth()).toEqual({
+			accessToken: 'saved',
+			refreshToken: 'saved-refresh',
+			role: 'staff',
+			name: 'N'
+		});
+	});
+
+	it('ignores malformed persisted sessions', async () => {
+		storage.setItem('weddingdb_auth', '{not json');
+
+		const { getAuth } = await import('#lib/stores/index.ts');
+
 		expect(getAuth()).toMatchObject({ accessToken: null, refreshToken: null });
+	});
+
+	it('persists on setAuth and removes the session on clearAuth', async () => {
+		const { getAuth, setAuth, clearAuth } = await import('#lib/stores/index.ts');
 
 		setAuth('new-access', 'refresh-2', 'admin', 'A');
+		expect(JSON.parse(storage.getItem('weddingdb_auth')!)).toEqual({
+			accessToken: 'new-access',
+			refreshToken: 'refresh-2',
+			role: 'admin',
+			name: 'A'
+		});
 
-		expect(getAuth()).toMatchObject({ accessToken: 'new-access', refreshToken: 'refresh-2' });
-		expect(storage.getItem('weddingdb_access_token')).toBeNull();
-		expect(storage.getItem('weddingdb_refresh_token')).toBeNull();
+		clearAuth();
+		expect(storage.getItem('weddingdb_auth')).toBeNull();
+		expect(getAuth()).toMatchObject({ accessToken: null, refreshToken: null, role: null, name: null });
 	});
 });
