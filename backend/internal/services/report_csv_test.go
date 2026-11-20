@@ -49,6 +49,9 @@ func TestWriteCSV_NeutralisesFormulas(t *testing.T) {
 	if err != nil {
 		t.Fatalf("writeCSV: %v", err)
 	}
+	if !bytes.HasPrefix(data, []byte("\xEF\xBB\xBF")) {
+		t.Error("CSV must start with a UTF-8 BOM so Excel reads Chinese names")
+	}
 	r := csv.NewReader(bytes.NewReader(data))
 	r.FieldsPerRecord = -1
 	records, err := r.ReadAll()

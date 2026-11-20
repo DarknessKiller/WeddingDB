@@ -2,10 +2,11 @@ package services
 
 import (
 	"bytes"
+	"cmp"
 	"context"
 	"encoding/csv"
 	"fmt"
-	"sort"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -46,9 +47,14 @@ type angpaoRow struct {
 	CheckedIn string
 }
 
+type tableTotal struct {
+	Name   string
+	Amount int
+}
+
 type angpaoSummary struct {
 	TotalAngbao     int
-	TotalByTable    map[string]int
+	TotalByTable    []tableTotal // sorted by name; keyed by table ID so same-named tables stay apart
 	TotalGuests     int
 	CheckedInGuests int
 	GiftItems       []string
@@ -92,6 +98,8 @@ func (s *ReportService) GenerateCSV(ctx context.Context, weddingID uuid.UUID) ([
 // through csvText so the file is safe to open in a spreadsheet app.
 func (s *ReportService) writeCSV(rows []angpaoRow, summary angpaoSummary) ([]byte, error) {
 	var buf bytes.Buffer
+	// UTF-8 BOM so Excel decodes Chinese names instead of guessing a codepage.
+	buf.WriteString("\xEF\xBB\xBF")
 	w := csv.NewWriter(&buf)
 
 	// Header
@@ -114,9 +122,8 @@ func (s *ReportService) writeCSV(rows []angpaoRow, summary angpaoSummary) ([]byt
 
 	// Per-table totals
 	w.Write([]string{"TABLE TOTALS", "Angbao (RM)", "", "", "", ""})
-	sortedTableNames := s.sortedTableKeys(summary.TotalByTable)
-	for _, tName := range sortedTableNames {
-		w.Write([]string{csvText(tName), fmt.Sprintf("RM %d", summary.TotalByTable[tName]), "", "", "", ""})
+	for _, t := range summary.TotalByTable {
+		w.Write([]string{csvText(t.Name), fmt.Sprintf("RM %d", t.Amount), "", "", "", ""})
 	}
 
 	// Gift items
@@ -256,11 +263,10 @@ func (s *ReportService) GenerateXLSX(ctx context.Context, weddingID uuid.UUID) (
 	f.SetCellValue(summarySheet, "B7", "Angbao (RM)")
 	f.SetCellStyle(summarySheet, "A7", "B7", summaryHeader)
 
-	sortedTableNames := s.sortedTableKeys(summary.TotalByTable)
 	rowNum := 8
-	for _, tName := range sortedTableNames {
-		f.SetCellValue(summarySheet, cellName(1, rowNum), tName)
-		f.SetCellValue(summarySheet, cellName(2, rowNum), summary.TotalByTable[tName])
+	for _, t := range summary.TotalByTable {
+		f.SetCellValue(summarySheet, cellName(1, rowNum), t.Name)
+		f.SetCellValue(summarySheet, cellName(2, rowNum), t.Amount)
 		f.SetCellStyle(summarySheet, cellName(2, rowNum), cellName(2, rowNum), currencyStyle)
 		rowNum++
 	}
@@ -294,14 +300,15 @@ func (s *ReportService) GenerateXLSX(ctx context.Context, weddingID uuid.UUID) (
 
 func (s *ReportService) buildRows(guests []models.GuestRecord, tableMap map[uuid.UUID]string) ([]angpaoRow, angpaoSummary) {
 	rows := make([]angpaoRow, 0, len(guests))
-	summary := angpaoSummary{
-		TotalByTable: make(map[string]int),
-	}
+	summary := angpaoSummary{}
+	byTable := make(map[uuid.UUID]int) // uuid.Nil = unassigned
 
 	for _, g := range guests {
 		tableName := ""
+		tableID := uuid.Nil
 		if g.TableID != nil {
-			tableName = tableMap[*g.TableID]
+			tableID = *g.TableID
+			tableName = tableMap[tableID]
 		}
 
 		seatNum := 0
@@ -317,7 +324,7 @@ func (s *ReportService) buildRows(guests []models.GuestRecord, tableMap map[uuid
 			angbaoAmt = *g.AngbaoAmt
 			angbaoStr = strconv.Itoa(*g.AngbaoAmt)
 			summary.TotalAngbao += *g.AngbaoAmt
-			summary.TotalByTable[tableName] += *g.AngbaoAmt
+			byTable[tableID] += *g.AngbaoAmt
 		}
 
 		giftStr := "-"
@@ -344,17 +351,17 @@ func (s *ReportService) buildRows(guests []models.GuestRecord, tableMap map[uuid
 		})
 	}
 
+	for id, amt := range byTable {
+		name := tableMap[id]
+		if id == uuid.Nil {
+			name = "Unassigned"
+		}
+		summary.TotalByTable = append(summary.TotalByTable, tableTotal{Name: name, Amount: amt})
+	}
+	slices.SortFunc(summary.TotalByTable, func(a, b tableTotal) int { return cmp.Compare(a.Name, b.Name) })
+
 	summary.TotalGuests = len(guests)
 	return rows, summary
-}
-
-func (s *ReportService) sortedTableKeys(m map[string]int) []string {
-	keys := make([]string, 0, len(m))
-	for k := range m {
-		keys = append(keys, k)
-	}
-	sort.Strings(keys)
-	return keys
 }
 
 func (s *ReportService) sanitizeFilename(name string) string {
