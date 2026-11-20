@@ -60,7 +60,7 @@ func TestNewFuegoServer_EmptyPublicURL_NoServers(t *testing.T) {
 
 func TestLoadEnv_PublicURLDefault(t *testing.T) {
 	// LoadEnv requires JWT_SECRET; set it for test
-	t.Setenv("JWT_SECRET", "test-secret")
+	t.Setenv("JWT_SECRET", "test-secret-0123456789abcdef0123456789")
 	t.Setenv("PORT", "9999")
 	// PUBLIC_URL not set → should default to http://localhost:9999
 	env := LoadEnv()
@@ -71,7 +71,7 @@ func TestLoadEnv_PublicURLDefault(t *testing.T) {
 }
 
 func TestLoadEnv_PublicURLExplicit(t *testing.T) {
-	t.Setenv("JWT_SECRET", "test-secret")
+	t.Setenv("JWT_SECRET", "test-secret-0123456789abcdef0123456789")
 	t.Setenv("PUBLIC_URL", "https://prod.example.com")
 	env := LoadEnv()
 	if env.PublicURL != "https://prod.example.com" {
