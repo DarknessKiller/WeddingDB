@@ -49,3 +49,15 @@ describe('guest mutations on network error', () => {
 		expect(enqueue).not.toHaveBeenCalled();
 	});
 });
+
+describe('updateGuest conflicts', () => {
+	it('turns a 409 into ConflictError and does not queue the edit', async () => {
+		apiFetch.mockResolvedValue(new Response(JSON.stringify({ title: 'Someone else changed this guest.' }), { status: 409 }));
+		const { updateGuest, ConflictError } = await import('./guests');
+
+		const p = updateGuest('w1', 'g1', { name: 'A', pax: 1, rsvp: 'pending', isVip: false, notes: '', dietary: [], baseUpdatedAt: '2026-01-01T09:00:00Z' });
+		await expect(p).rejects.toBeInstanceOf(ConflictError);
+		expect(JSON.parse(apiFetch.mock.calls[0][1].body).baseUpdatedAt).toBe('2026-01-01T09:00:00Z');
+		expect(enqueue).not.toHaveBeenCalled();
+	});
+});

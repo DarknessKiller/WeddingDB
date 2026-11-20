@@ -4,6 +4,7 @@ import (
 	"errors"
 	"log/slog"
 	"strconv"
+	"time"
 	"weddingdb/internal/models"
 	"weddingdb/internal/repository"
 	"weddingdb/internal/services"
@@ -30,6 +31,9 @@ type GuestCreateRequest struct {
 	SeatNum   *int     `json:"seatNum"`
 	AngbaoAmt *int     `json:"angbaoAmt"`
 	GiftItem  *string  `json:"giftItem"`
+	// BaseUpdatedAt is the updatedAt the editor loaded. When set, an update
+	// is refused with 409 if the guest changed since.
+	BaseUpdatedAt *time.Time `json:"baseUpdatedAt"`
 }
 
 func (h *GuestHandler) List(c fuego.ContextNoBody) (any, error) {
@@ -190,9 +194,12 @@ func (h *GuestHandler) Update(c fuego.ContextWithBody[GuestCreateRequest]) (any,
 			}
 		}
 	}
-	if err := h.guestService.UpdateWithSeat(ctx, guest, tid, seatNum); err != nil {
+	if err := h.guestService.UpdateWithSeat(ctx, guest, tid, seatNum, body.BaseUpdatedAt); err != nil {
 		if errors.Is(err, services.ErrGuestCapExceeded) || errors.Is(err, services.ErrInvalidPax) || errors.Is(err, services.ErrInvalidGuestField) {
 			return nil, fuego.BadRequestError{Title: err.Error()}
+		}
+		if errors.Is(err, services.ErrStaleGuest) {
+			return nil, fuego.ConflictError{Title: "Someone else changed this guest. Reload to see their changes."}
 		}
 		return nil, err
 	}

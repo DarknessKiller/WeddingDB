@@ -20,7 +20,8 @@ import ArrowUpDown from 'lucide-svelte/icons/arrow-up-down';
   import { addToast } from '#lib/stores/index.ts';
   import { weddingId } from '#lib/stores/weddingId.ts';
   import { guestList } from '#lib/stores/guestEvents.ts';
-  import { updateGuest, createGuest, checkInGuest, checkOutGuest, unassignSeat, getGuest, ConflictError } from '#lib/api/guests.ts';
+  import { updateGuest, createGuest, checkInGuest, checkOutGuest, unassignSeat, getGuest, ConflictError, type GuestResponse } from '#lib/api/guests.ts';
+  import { untrack } from 'svelte';
   import { get } from 'svelte/store';
   import { fade } from 'svelte/transition';
   import { slideOut as drawerSlideOut } from '#lib/utils/motion.ts';
@@ -205,7 +206,42 @@ import ArrowUpDown from 'lucide-svelte/icons/arrow-up-down';
     form.angbaoAmt = guest.angbaoAmount != null ? String(guest.angbaoAmount) : '';
     form.giftItem = guest.giftItem ?? '';
     formSource = { id: guest.id, editing };
+    if (editing && !createMode) {
+      const id = guest.id;
+      untrack(() => loadServerCopy(id, true));
+    }
   });
+
+  // Server updatedAt the edit form is based on. Sent with the save so the server
+  // refuses it (409) if someone changed the guest meanwhile.
+  let editBase: string | null = null;
+
+  function fillForm(g: GuestResponse) {
+    form.name = g.name;
+    form.email = g.email ?? '';
+    form.pax = g.pax;
+    form.rsvp = g.rsvp as RSVPStatus;
+    form.isVip = g.isVip;
+    form.notes = g.notes;
+    form.dietary = g.dietary ?? [];
+    form.angbaoAmt = g.angbaoAmt != null ? String(g.angbaoAmt) : '';
+    form.giftItem = g.giftItem ?? '';
+  }
+
+  // Load the server's copy so the form and editBase describe the same row. With
+  // onlyIfUntouched, input typed before the fetch lands is kept and the save
+  // goes without a base.
+  async function loadServerCopy(id: string, onlyIfUntouched: boolean) {
+    editBase = null;
+    const loaded = JSON.stringify($state.snapshot(form));
+    try {
+      const fresh = await getGuest(get(weddingId), id);
+      if (formSource?.id !== id || !formSource.editing) return;
+      if (onlyIfUntouched && JSON.stringify($state.snapshot(form)) !== loaded) return;
+      fillForm(fresh);
+      editBase = fresh.updatedAt;
+    } catch {}
+  }
 
   async function save() {
     saving = true;
@@ -226,6 +262,7 @@ import ArrowUpDown from 'lucide-svelte/icons/arrow-up-down';
           pax: form.pax, rsvp: form.rsvp, isVip: form.isVip, notes: form.notes,
           dietary: form.dietary, angbaoAmt: form.angbaoAmt ? Number(form.angbaoAmt) : null,
           giftItem: form.giftItem || null,
+          baseUpdatedAt: editBase ?? undefined,
         });
         Object.assign(guest!, {
           name: updated.name, email: updated.email,
@@ -242,6 +279,11 @@ import ArrowUpDown from 'lucide-svelte/icons/arrow-up-down';
         await refreshGuest();
       }
     } catch (e: any) {
+      if (e instanceof ConflictError && guest) {
+        addToast('Someone else changed this guest. The form now shows their version; make your change again.', 'error');
+        await loadServerCopy(guest.id, false);
+        return;
+      }
       addToast(e.message ?? 'Save failed', 'error');
     } finally {
       saving = false;

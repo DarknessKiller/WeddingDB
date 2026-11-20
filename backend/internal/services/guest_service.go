@@ -152,7 +152,10 @@ func (s *GuestService) createGuestTx(ctx context.Context, tx *gorm.DB, g *models
 	return repo.Create(ctx, g)
 }
 
-func (s *GuestService) updateGuestTx(ctx context.Context, tx *gorm.DB, g *models.GuestRecord, syncWrite bool) error {
+// updateGuestTx writes a full guest row. A non-nil base is the updated_at the
+// editor loaded: if the row has changed since, the write is refused with
+// ErrStaleGuest so it cannot silently undo someone else's change.
+func (s *GuestService) updateGuestTx(ctx context.Context, tx *gorm.DB, g *models.GuestRecord, syncWrite bool, base *time.Time) error {
 	if err := validateGuestFields(g); err != nil {
 		return err
 	}
@@ -170,10 +173,16 @@ func (s *GuestService) updateGuestTx(ctx context.Context, tx *gorm.DB, g *models
 		return err
 	}
 	var current models.GuestRecord
-	if err := tx.Select("id", "pax").
-		Where("id = ? AND wedding_id = ?", g.ID, g.WeddingID).
-		First(&current).Error; err != nil {
+	q := tx.Select("id", "pax", "updated_at").Where("id = ? AND wedding_id = ?", g.ID, g.WeddingID)
+	if tx.Name() == "postgres" {
+		// Row lock so a check-in cannot commit between this read and the write.
+		q = q.Clauses(clause.Locking{Strength: "UPDATE"})
+	}
+	if err := q.First(&current).Error; err != nil {
 		return err
+	}
+	if base != nil && !current.UpdatedAt.Equal(*base) {
+		return ErrStaleGuest
 	}
 	if g.Pax > current.Pax && total-current.Pax+g.Pax > MaxGuestsPerWedding {
 		return guestCapError(total, g.Pax-current.Pax)
@@ -206,7 +215,7 @@ func (s *GuestService) Create(ctx context.Context, g *models.GuestRecord) error 
 
 func (s *GuestService) Update(ctx context.Context, g *models.GuestRecord) error {
 	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		return s.updateGuestTx(ctx, tx, g, false)
+		return s.updateGuestTx(ctx, tx, g, false, nil)
 	})
 	if err != nil {
 		return err
@@ -374,14 +383,15 @@ func (s *GuestService) UnassignSeat(ctx context.Context, guestID, weddingID uuid
 // UpdateWithSeat saves edited fields and, when tableID is set, moves the guest
 // to that table in the same transaction — a failed seat check leaves the
 // fields untouched and a failed field write leaves the seat where it was.
-// A nil tableID preserves the current seat assignment.
-func (s *GuestService) UpdateWithSeat(ctx context.Context, g *models.GuestRecord, tableID *uuid.UUID, seatNum int) error {
+// A nil tableID preserves the current seat assignment. A non-nil base refuses
+// the write with ErrStaleGuest if the row changed after the editor loaded it.
+func (s *GuestService) UpdateWithSeat(ctx context.Context, g *models.GuestRecord, tableID *uuid.UUID, seatNum int, base *time.Time) error {
 	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if tableID != nil {
 			g.TableID = tableID
 			g.SeatNum = &seatNum
 		}
-		return s.updateGuestTx(ctx, tx, g, false)
+		return s.updateGuestTx(ctx, tx, g, false, base)
 	})
 	if err != nil {
 		return err
@@ -666,7 +676,7 @@ func (s *GuestService) applySyncMutation(ctx context.Context, weddingID uuid.UUI
 			}
 			existing.UpdatedAt = opTime
 			if err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-				return s.updateGuestTx(ctx, tx, existing, true)
+				return s.updateGuestTx(ctx, tx, existing, true, nil)
 			}); err != nil {
 				return SyncResult{GuestID: m.GuestID, Status: "failed", Reason: err.Error()}
 			}
@@ -738,7 +748,7 @@ func (s *GuestService) applySyncMutation(ctx context.Context, weddingID uuid.UUI
 		}
 		existing.UpdatedAt = opTime
 		if err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-			return s.updateGuestTx(ctx, tx, existing, true)
+			return s.updateGuestTx(ctx, tx, existing, true, nil)
 		}); err != nil {
 			return SyncResult{GuestID: m.GuestID, Status: "failed", Reason: err.Error()}
 		}

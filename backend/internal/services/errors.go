@@ -11,6 +11,10 @@ var (
 
 	// ErrGuestNotFound is returned when the guest does not exist in the wedding.
 	ErrGuestNotFound = errors.New("guest not found")
+
+	// ErrStaleGuest is returned when an edit was based on a guest row that
+	// someone else changed since the editor loaded it.
+	ErrStaleGuest = errors.New("guest was changed by someone else")
 )
 
 // SelectWedding sentinels; handlers map them to 401/403.

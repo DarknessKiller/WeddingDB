@@ -133,7 +133,7 @@ func TestUpdateWithSeat_FailedSeatLeavesFieldsUntouched(t *testing.T) {
 	}
 
 	g.Name = "Renamed"
-	err := svc.UpdateWithSeat(context.Background(), g, &tid, 2)
+	err := svc.UpdateWithSeat(context.Background(), g, &tid, 2, nil)
 	if !errors.Is(err, ErrSeatOverlap) {
 		t.Fatalf("error = %v, want ErrSeatOverlap", err)
 	}
@@ -157,7 +157,7 @@ func TestUpdateWithSeat_AppliesBoth(t *testing.T) {
 	g := seedGuest(t, svc, wid, "Alice")
 
 	g.Name = "Renamed"
-	if err := svc.UpdateWithSeat(context.Background(), g, &tid, 4); err != nil {
+	if err := svc.UpdateWithSeat(context.Background(), g, &tid, 4, nil); err != nil {
 		t.Fatalf("update: %v", err)
 	}
 	stored, err := repository.NewGuestRepo(svc.db).FindByID(context.Background(), g.ID, wid)
@@ -252,4 +252,31 @@ func TestCapacity_CountsSeatlessGuests(t *testing.T) {
 	if err := ts.Update(t.Context(), table); !errors.Is(err, repository.ErrCapacityBelowSeats) {
 		t.Fatalf("capacity cut below 8 seatless guests: err = %v, want ErrCapacityBelowSeats", err)
 	}
+}
+
+// An edit based on a row that someone else has since changed (here, a
+// check-in) must be refused instead of overwriting their change.
+func TestUpdateWithSeat_RejectsStaleBase(t *testing.T) {
+	svc, _, wid := newGuestSyncService(t)
+	g := seedGuest(t, svc, wid, "A")
+	loaded, err := svc.Get(t.Context(), g.ID, wid)
+	testutil.NoErr(t, err)
+	base := loaded.UpdatedAt
+
+	time.Sleep(2 * time.Millisecond) // updated_at must move past base
+	testutil.NoErr(t, svc.CheckIn(t.Context(), g.ID, wid, "brought +1"))
+
+	edit := *loaded
+	edit.RSVP = "pending"
+	if err := svc.UpdateWithSeat(t.Context(), &edit, nil, 0, &base); !errors.Is(err, ErrStaleGuest) {
+		t.Fatalf("stale edit: err = %v, want ErrStaleGuest", err)
+	}
+	fresh, err := svc.Get(t.Context(), g.ID, wid)
+	testutil.NoErr(t, err)
+	if fresh.Notes != "brought +1" || fresh.RSVP != "confirmed" {
+		t.Fatalf("check-in was overwritten: notes=%q rsvp=%q", fresh.Notes, fresh.RSVP)
+	}
+	fresh.RSVP = "pending"
+	freshBase := fresh.UpdatedAt
+	testutil.NoErr(t, svc.UpdateWithSeat(t.Context(), fresh, nil, 0, &freshBase))
 }
