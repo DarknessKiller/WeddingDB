@@ -12,7 +12,7 @@
   import { syncQueue, loadCachedGuests } from '#lib/offline/queue.ts';
   import { getWedding } from '#lib/api/weddings.ts';
   import { listTables } from '#lib/api/tables.ts';
-  import { initializeSSE, refreshGuests, clearGuests } from '#lib/stores/guestEvents.ts';
+  import { initializeSSE, refreshGuests, clearGuests, guestList } from '#lib/stores/guestEvents.ts';
   import type { BanquetTable } from '#lib/types/index.ts';
 
   let { children } = $props();
@@ -20,7 +20,8 @@
   let currentPath = $derived(page.url.pathname);
   let wid = $derived(page.params.wid ?? '');
   let authChecked = $state(false);
-  let guestCount = $state(0);
+  // Follows the live list, so SSE creates, deletes and imports update the badge.
+  let guestCount = $derived($guestList.length);
   let tables = $state<BanquetTable[]>([]);
   let cleanupSSE: (() => void) | undefined;
   let offline = $state(typeof navigator !== 'undefined' ? !navigator.onLine : false);
@@ -67,7 +68,6 @@
     selectedGuest.set(null);
     isDrawerOpen.set(false);
     drawerCreateMode.set(false);
-    guestCount = 0;
     tables = [];
   }
 
@@ -80,8 +80,7 @@
     try {
       // refreshGuests keeps the syncing window open across fetch+seed even if
       // initializeSSE early-returned, so mid-fetch SSE events can't be clobbered.
-      const guests = await refreshGuests(() => loadGuests(w));
-      if (w === $weddingId) guestCount = guests.length;
+      await refreshGuests(() => loadGuests(w));
     } catch {}
     // Another startWedding took over while this one loaded; its own calls own the UI.
     if (destroyed || w !== $weddingId) return;
@@ -109,8 +108,7 @@
         // Refresh inside the syncing window so SSE events arriving mid-fetch
         // are queued and replayed after the seed instead of being clobbered.
         const w = wid;
-        const guests = await refreshGuests(() => loadGuests(w));
-        if (w === $weddingId) guestCount = guests.length;
+        await refreshGuests(() => loadGuests(w));
         refreshQueued();
       } catch {}
     }
