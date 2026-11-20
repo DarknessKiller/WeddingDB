@@ -54,6 +54,7 @@ type SSEClient struct {
 	Chan      chan []byte
 	Done      chan struct{}
 	doneOnce  sync.Once
+	openedAt  time.Time
 }
 
 // SSEHub manages SSE connections per wedding and Redis pub/sub.
@@ -122,7 +123,7 @@ func (h *SSEHub) subscribeRedis() {
 }
 
 // Subscribe registers a new SSE client for a wedding. It reports false when the
-// per-wedding or per-user connection cap is reached.
+// per-wedding cap is reached; at the per-user cap it evicts that user's oldest stream.
 func (h *SSEHub) Subscribe(weddingID, ownerID uuid.UUID) (*SSEClient, bool) {
 	h.mu.Lock()
 	clients := h.clients[weddingID]
@@ -130,23 +131,34 @@ func (h *SSEHub) Subscribe(weddingID, ownerID uuid.UUID) (*SSEClient, bool) {
 		h.mu.Unlock()
 		return nil, false
 	}
+	// At the per-user cap, evict that owner's oldest stream: a phone that went
+	// away without closing its socket would otherwise hold a slot for minutes.
 	sameOwner := 0
+	var oldest *SSEClient
 	for _, existing := range clients {
 		if existing.OwnerID == ownerID {
 			sameOwner++
+			if oldest == nil || existing.openedAt.Before(oldest.openedAt) {
+				oldest = existing
+			}
 		}
 	}
+	var evicted *SSEClient
 	if sameOwner >= maxClientsPerUser {
-		h.mu.Unlock()
-		return nil, false
+		delete(clients, oldest.ID)
+		evicted = oldest
 	}
-	client := &SSEClient{ID: uuid.New().String(), WeddingID: weddingID, OwnerID: ownerID, Chan: make(chan []byte, 64), Done: make(chan struct{})}
+	client := &SSEClient{ID: uuid.New().String(), WeddingID: weddingID, OwnerID: ownerID, Chan: make(chan []byte, 64), Done: make(chan struct{}), openedAt: time.Now()}
 	if clients == nil {
 		clients = make(map[string]*SSEClient)
 		h.clients[weddingID] = clients
 	}
 	clients[client.ID] = client
 	h.mu.Unlock()
+	if evicted != nil {
+		evicted.doneOnce.Do(func() { close(evicted.Done) })
+		log.Printf("SSE: client %s evicted from wedding %s (per-user cap)", evicted.ID, weddingID)
+	}
 	log.Printf("SSE: client %s connected for wedding %s", client.ID, weddingID)
 	return client, true
 }

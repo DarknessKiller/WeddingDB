@@ -330,22 +330,45 @@ type mockGuestRecord struct {
 	giftItem    *string
 }
 
-// One account must not hold unlimited streams in a wedding.
-func TestSSEHub_RejectsPerUserCap(t *testing.T) {
+// At the per-user cap a new stream evicts that user's oldest one, so dead
+// phone streams cannot lock the user out.
+func TestSSEHub_EvictsOldestAtPerUserCap(t *testing.T) {
 	hub := &SSEHub{clients: make(map[uuid.UUID]map[string]*SSEClient), ctx: context.Background()}
 	wid := uuid.New()
 	owner := uuid.New()
-	for range maxClientsPerUser {
-		if _, ok := hub.Subscribe(wid, owner); !ok {
-			t.Fatalf("connection %d should be allowed", maxClientsPerUser)
+	var first *SSEClient
+	for i := range maxClientsPerUser {
+		c, ok := hub.Subscribe(wid, owner)
+		if !ok {
+			t.Fatalf("connection %d should be allowed", i)
+		}
+		if i == 0 {
+			first = c
 		}
 	}
-	if _, ok := hub.Subscribe(wid, owner); ok {
-		t.Fatalf("connection over the per-user cap of %d was allowed", maxClientsPerUser)
+	newest, ok := hub.Subscribe(wid, owner)
+	if !ok {
+		t.Fatal("connection at per-user cap should evict oldest, not be rejected")
 	}
-	// Another user still gets a slot.
+	select {
+	case <-first.Done:
+	default:
+		t.Fatal("oldest stream was not closed")
+	}
+	if _, still := hub.clients[wid][first.ID]; still {
+		t.Fatal("oldest stream still registered")
+	}
+	if _, ok := hub.clients[wid][newest.ID]; !ok || len(hub.clients[wid]) != maxClientsPerUser {
+		t.Fatalf("want %d streams incl. newest, got %d", maxClientsPerUser, len(hub.clients[wid]))
+	}
+	// Handler's deferred Unsubscribe on the evicted client must not panic.
+	hub.Unsubscribe(first)
+	if len(hub.clients[wid]) != maxClientsPerUser {
+		t.Fatal("unsubscribing evicted client removed another stream")
+	}
+	// Another user still gets slot.
 	if _, ok := hub.Subscribe(wid, uuid.New()); !ok {
-		t.Fatal("a different user should not be blocked by another user's streams")
+		t.Fatal("different user should not be blocked by another user's streams")
 	}
 }
 
