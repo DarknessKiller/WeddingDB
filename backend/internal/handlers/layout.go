@@ -9,6 +9,7 @@ import (
 	"weddingdb/internal/services"
 
 	"github.com/go-fuego/fuego"
+	"gorm.io/gorm"
 )
 
 type LayoutHandler struct {
@@ -145,6 +146,10 @@ func (h *LayoutHandler) Save(c fuego.ContextWithBody[LayoutRequest]) (any, error
 	if err := h.layoutService.Save(ctx, wid, body.HallWidth, body.HallHeight, tables, elements); err != nil {
 		if errors.Is(err, repository.ErrCapacityBelowSeats) {
 			return nil, fuego.ConflictError{Title: "Table capacity is below seats already assigned; move those guests first"}
+		}
+		// A table or element in this editor was deleted by someone else.
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, fuego.ConflictError{Title: "The layout changed since you opened it. Reload to see the changes."}
 		}
 		log.Printf("layout save error: %v", err)
 		return nil, fuego.InternalServerError{Title: "Failed to save layout"}
