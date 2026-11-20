@@ -42,8 +42,18 @@ func (r *AdminRepo) List(ctx context.Context) ([]models.AdminUser, error) {
 	return admins, err
 }
 
-func (r *AdminRepo) Update(ctx context.Context, admin *models.AdminUser) error {
-	return r.db.WithContext(ctx).Save(admin).Error
+// SetPassword writes only the password hash and the force-change flag, so a
+// concurrent role or profile change made from another request survives.
+func (r *AdminRepo) SetPassword(ctx context.Context, id uuid.UUID, hash string, forceChange bool) error {
+	res := r.db.WithContext(ctx).Model(&models.AdminUser{}).Where("id = ?", id).
+		Updates(map[string]any{"password": hash, "force_password_change": forceChange})
+	if res.Error != nil {
+		return res.Error
+	}
+	if res.RowsAffected == 0 {
+		return gorm.ErrRecordNotFound
+	}
+	return nil
 }
 
 // CountByRole returns the number of admins with the given role.

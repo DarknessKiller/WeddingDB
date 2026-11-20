@@ -90,3 +90,22 @@ func TestAdminRepo_ConcurrentDemoteKeepsOneAdmin(t *testing.T) {
 		}
 	}
 }
+
+// A password write must not carry a stale copy of the rest of the row: a role
+// change made after the handler loaded the user has to survive it.
+func TestAdminRepo_SetPasswordKeepsConcurrentRoleChange(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	testutil.NoErr(t, err)
+	testutil.NoErr(t, db.Exec(adminUsersDDL).Error)
+	id := seedAdmins(t, db, 2)[0] // two admins, so demoting one is allowed
+	repo := NewAdminRepo(db)
+
+	testutil.NoErr(t, repo.UpdateRole(t.Context(), id, "user")) // lands between load and password write
+	testutil.NoErr(t, repo.SetPassword(t.Context(), id, "new-hash", true))
+
+	got, err := repo.FindByID(t.Context(), id)
+	testutil.NoErr(t, err)
+	if got.Role != "user" || got.Password != "new-hash" || !got.ForcePasswordChange {
+		t.Fatalf("role=%q password=%q force=%v, want user/new-hash/true", got.Role, got.Password, got.ForcePasswordChange)
+	}
+}

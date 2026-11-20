@@ -251,10 +251,8 @@ func (h *AdminHandler) ResetPassword(c fuego.ContextWithBody[ResetPasswordReques
 	if err != nil {
 		return nil, fuego.InternalServerError{Title: "Failed to hash password"}
 	}
-	admin.Password = string(hash)
 	// The admin chose and knows this password, so the user must replace it.
-	admin.ForcePasswordChange = true
-	if err := h.adminRepo.Update(ctx, admin); err != nil {
+	if err := h.adminRepo.SetPassword(ctx, admin.ID, string(hash), true); err != nil {
 		return nil, fuego.InternalServerError{Title: "Failed to update password"}
 	}
 	// Kill sessions minted under the old password. Password is already
