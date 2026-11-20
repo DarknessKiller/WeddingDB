@@ -19,7 +19,10 @@ func TestSSEHub_SubscribeUnsubscribe(t *testing.T) {
 	}
 
 	wid := uuid.New()
-	client := hub.Subscribe(wid)
+	client, ok := hub.Subscribe(wid, uuid.New())
+	if !ok {
+		t.Fatal("Subscribe rejected the first client")
+	}
 
 	if client == nil {
 		t.Fatal("Subscribe returned nil client")
@@ -58,7 +61,11 @@ func TestSSEHub_FanOut(t *testing.T) {
 	const numClients = 3
 	clients := make([]*SSEClient, numClients)
 	for i := range numClients {
-		clients[i] = hub.Subscribe(wid)
+		c, ok := hub.Subscribe(wid, uuid.New())
+		if !ok {
+			t.Fatalf("client %d rejected", i)
+		}
+		clients[i] = c
 	}
 
 	// Manually fan out an event (simulating what subscribeRedis does).
@@ -119,7 +126,10 @@ func TestSSEHub_BufferFull(t *testing.T) {
 	}
 
 	wid := uuid.New()
-	client := hub.Subscribe(wid)
+	client, ok := hub.Subscribe(wid, uuid.New())
+	if !ok {
+		t.Fatal("Subscribe rejected the first client")
+	}
 
 	// Fill the buffer (capacity 64).
 	for range 64 {
@@ -158,8 +168,11 @@ func TestSSEHub_MultipleWeddings(t *testing.T) {
 
 	wid1 := uuid.New()
 	wid2 := uuid.New()
-	client1 := hub.Subscribe(wid1)
-	client2 := hub.Subscribe(wid2)
+	client1, ok1 := hub.Subscribe(wid1, uuid.New())
+	client2, ok2 := hub.Subscribe(wid2, uuid.New())
+	if !ok1 || !ok2 {
+		t.Fatal("Subscribe rejected a first client")
+	}
 
 	// Send event to wedding 1.
 	event := GuestEvent{
@@ -315,4 +328,41 @@ type mockGuestRecord struct {
 	checkedInAt *time.Time
 	angbaoAmt   *int
 	giftItem    *string
+}
+
+// One account must not hold unlimited streams in a wedding.
+func TestSSEHub_RejectsPerUserCap(t *testing.T) {
+	hub := &SSEHub{clients: make(map[uuid.UUID]map[string]*SSEClient), ctx: context.Background()}
+	wid := uuid.New()
+	owner := uuid.New()
+	for range maxClientsPerUser {
+		if _, ok := hub.Subscribe(wid, owner); !ok {
+			t.Fatalf("connection %d should be allowed", maxClientsPerUser)
+		}
+	}
+	if _, ok := hub.Subscribe(wid, owner); ok {
+		t.Fatalf("connection over the per-user cap of %d was allowed", maxClientsPerUser)
+	}
+	// Another user still gets a slot.
+	if _, ok := hub.Subscribe(wid, uuid.New()); !ok {
+		t.Fatal("a different user should not be blocked by another user's streams")
+	}
+}
+
+// A wedding cannot accumulate unbounded streams from distinct users either.
+func TestSSEHub_RejectsPerWeddingCap(t *testing.T) {
+	hub := &SSEHub{clients: make(map[uuid.UUID]map[string]*SSEClient), ctx: context.Background()}
+	wid := uuid.New()
+	for range maxClientsPerWedding {
+		if _, ok := hub.Subscribe(wid, uuid.New()); !ok {
+			t.Fatalf("connection %d should be allowed", maxClientsPerWedding)
+		}
+	}
+	if _, ok := hub.Subscribe(wid, uuid.New()); ok {
+		t.Fatalf("connection over the per-wedding cap of %d was allowed", maxClientsPerWedding)
+	}
+	// Other weddings are unaffected.
+	if _, ok := hub.Subscribe(uuid.New(), uuid.New()); !ok {
+		t.Fatal("another wedding should not be blocked by a full wedding")
+	}
 }

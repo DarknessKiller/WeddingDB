@@ -39,10 +39,18 @@ type GuestEventData struct {
 	GiftItem    *string  `json:"giftItem"`
 }
 
+// maxClientsPerWedding bounds the fan-out and memory one wedding's stream can
+// hold on a single instance.
+const maxClientsPerWedding = 100
+
+// maxClientsPerUser stops one account from taking every slot in a wedding.
+const maxClientsPerUser = 5
+
 // SSEClient represents a connected SSE client.
 type SSEClient struct {
 	ID        string
 	WeddingID uuid.UUID
+	OwnerID   uuid.UUID
 	Chan      chan []byte
 	Done      chan struct{}
 	doneOnce  sync.Once
@@ -113,17 +121,34 @@ func (h *SSEHub) subscribeRedis() {
 	}
 }
 
-// Subscribe registers a new SSE client for a wedding.
-func (h *SSEHub) Subscribe(weddingID uuid.UUID) *SSEClient {
-	client := &SSEClient{ID: uuid.New().String(), WeddingID: weddingID, Chan: make(chan []byte, 64), Done: make(chan struct{})}
+// Subscribe registers a new SSE client for a wedding. It reports false when the
+// per-wedding or per-user connection cap is reached.
+func (h *SSEHub) Subscribe(weddingID, ownerID uuid.UUID) (*SSEClient, bool) {
 	h.mu.Lock()
-	if h.clients[weddingID] == nil {
-		h.clients[weddingID] = make(map[string]*SSEClient)
+	clients := h.clients[weddingID]
+	if len(clients) >= maxClientsPerWedding {
+		h.mu.Unlock()
+		return nil, false
 	}
-	h.clients[weddingID][client.ID] = client
+	sameOwner := 0
+	for _, existing := range clients {
+		if existing.OwnerID == ownerID {
+			sameOwner++
+		}
+	}
+	if sameOwner >= maxClientsPerUser {
+		h.mu.Unlock()
+		return nil, false
+	}
+	client := &SSEClient{ID: uuid.New().String(), WeddingID: weddingID, OwnerID: ownerID, Chan: make(chan []byte, 64), Done: make(chan struct{})}
+	if clients == nil {
+		clients = make(map[string]*SSEClient)
+		h.clients[weddingID] = clients
+	}
+	clients[client.ID] = client
 	h.mu.Unlock()
 	log.Printf("SSE: client %s connected for wedding %s", client.ID, weddingID)
-	return client
+	return client, true
 }
 
 // Unsubscribe removes an SSE client.

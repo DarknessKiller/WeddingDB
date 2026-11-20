@@ -77,7 +77,10 @@ func TestTableDelete_PublishesUnassignedGuests(t *testing.T) {
 		t.Fatalf("seed table: %v", err)
 	}
 
-	client := hub.Subscribe(wid)
+	client, ok := hub.Subscribe(wid, uuid.New())
+	if !ok {
+		t.Fatal("Subscribe rejected the first client")
+	}
 
 	svc := NewTableService(repository.NewTableRepo(db), repository.NewGuestRepo(db), hub)
 	if err := svc.Delete(context.Background(), tableID, wid); err != nil {

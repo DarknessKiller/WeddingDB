@@ -62,6 +62,15 @@ func (h *SSEHandler) StreamHandler() http.HandlerFunc {
 			}
 		}
 
+		// Subscribe before writing headers so a rejected connection can still
+		// return a normal 503 instead of a half-started stream.
+		client, subscribed := h.sseHub.Subscribe(wid, claims.AdminID)
+		if !subscribed {
+			http.Error(w, `{"error":"Too many open streams"}`, http.StatusServiceUnavailable)
+			return
+		}
+		defer h.sseHub.Unsubscribe(client)
+
 		w.Header().Set("Content-Type", "text/event-stream")
 		w.Header().Set("Cache-Control", "no-cache")
 		w.Header().Set("Connection", "keep-alive")
@@ -72,10 +81,6 @@ func (h *SSEHandler) StreamHandler() http.HandlerFunc {
 			http.Error(w, "streaming not supported", http.StatusInternalServerError)
 			return
 		}
-
-		// Subscribe to wedding events.
-		client := h.sseHub.Subscribe(wid)
-		defer h.sseHub.Unsubscribe(client)
 
 		// Send initial keepalive comment.
 		if _, err := fmt.Fprintf(w, ": keepalive\n\n"); err != nil {
