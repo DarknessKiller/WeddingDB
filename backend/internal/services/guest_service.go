@@ -176,7 +176,9 @@ func checkSeatTx(ctx context.Context, tx *gorm.DB, weddingID, tableID uuid.UUID,
 	if pax < 1 {
 		return errors.New("guest pax must be at least 1")
 	}
-	if seatNum < 1 || seatNum+pax-1 > table.Capacity {
+	// Compare against capacity-pax+1 so seatNum+pax cannot overflow past the
+	// check for large seatNum values.
+	if seatNum < 1 || seatNum > table.Capacity-pax+1 {
 		return errors.New("seat range exceeds table capacity")
 	}
 	existing, err := repository.NewGuestRepo(tx).FindByTable(ctx, weddingID, tableID)

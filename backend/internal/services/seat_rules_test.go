@@ -3,6 +3,7 @@ package services
 import (
 	"context"
 	"errors"
+	"math"
 	"testing"
 	"time"
 
@@ -34,6 +35,21 @@ func seedGuest(t *testing.T, svc *GuestService, wid uuid.UUID, name string) *mod
 func tableIDPtr(id uuid.UUID) *string {
 	s := id.String()
 	return &s
+}
+
+// A seat number near the int limit must be rejected instead of wrapping past
+// the capacity check.
+func TestAssignSeat_RejectsOverflowingSeatRange(t *testing.T) {
+	svc, _, wid := newGuestSyncService(t)
+	tid := seedTable(t, svc, wid, "T1", 10)
+	guest := seedGuest(t, svc, wid, "A")
+	guest.Pax = 2
+	if err := svc.db.Save(guest).Error; err != nil {
+		t.Fatalf("save guest: %v", err)
+	}
+	if err := svc.AssignSeat(context.Background(), guest.ID, wid, tid, math.MaxInt); err == nil {
+		t.Fatal("seat near the int limit should be rejected")
+	}
 }
 
 // Offline sync must apply the same overlap rule as AssignSeat, not just a
