@@ -109,35 +109,31 @@ func (h *GuestHandler) Create(c fuego.ContextWithBody[GuestCreateRequest]) (any,
 		IsVip:     body.IsVip,
 		Notes:     body.Notes,
 		Dietary:   body.Dietary,
+		AngbaoAmt: body.AngbaoAmt,
+		GiftItem:  body.GiftItem,
 	}
-	if err := h.guestService.Create(ctx, guest); err != nil {
-		if errors.Is(err, services.ErrGuestCapExceeded) || errors.Is(err, services.ErrInvalidPax) || errors.Is(err, services.ErrInvalidGuestField) {
-			return nil, fuego.BadRequestError{Title: err.Error()}
-		}
-		return nil, err
-	}
-	c.SetStatus(201)
 	if body.TableID != nil && *body.TableID != "" {
 		tid, err := DecodeID(*body.TableID)
 		if err != nil {
-			if err := h.guestService.Delete(ctx, guest.ID, wid); err != nil {
-				slog.Warn("rollback guest after invalid table failed", "guest", guest.ID, "err", err)
-			}
 			return nil, fuego.BadRequestError{Title: "Invalid table ID"}
 		}
 		seatNum := 1
 		if body.SeatNum != nil {
 			seatNum = *body.SeatNum
 		}
-		if err := h.guestService.AssignSeat(ctx, guest.ID, wid, tid, seatNum); err != nil {
-			if err := h.guestService.Delete(ctx, guest.ID, wid); err != nil {
-				slog.Warn("rollback guest after seat assignment failed", "guest", guest.ID, "err", err)
-			}
-			return nil, fuego.BadRequestError{Title: err.Error()}
-		}
 		guest.TableID = &tid
 		guest.SeatNum = &seatNum
 	}
+	// One transaction creates the guest and checks the seat, so a refused seat
+	// leaves no guest behind and no create/delete events go out.
+	if err := h.guestService.Create(ctx, guest); err != nil {
+		if errors.Is(err, services.ErrGuestCapExceeded) || errors.Is(err, services.ErrInvalidPax) || errors.Is(err, services.ErrInvalidGuestField) ||
+			errors.Is(err, services.ErrSeatOverlap) || errors.Is(err, services.ErrSeatRange) || errors.Is(err, services.ErrTableFull) || errors.Is(err, services.ErrTableNotFound) {
+			return nil, fuego.BadRequestError{Title: err.Error()}
+		}
+		return nil, err
+	}
+	c.SetStatus(201)
 	return guest, nil
 }
 
