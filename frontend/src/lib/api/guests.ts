@@ -2,7 +2,7 @@ import { apiFetch } from './client';
 import { get } from 'svelte/store';
 import { weddingId } from '#lib/stores/weddingId.ts';
 import { applyGuestResponse } from '#lib/stores/guestEvents.ts';
-import { enqueue } from '#lib/offline/queue.ts';
+import { enqueue, getQueue } from '#lib/offline/queue.ts';
 import { guestList } from '#lib/stores/guestEvents.ts';
 
 function isOffline() {
@@ -174,7 +174,14 @@ export async function createGuest(weddingId: string, data: GuestCreateData): Pro
 
 export async function updateGuest(weddingId: string, guestId: string, data: GuestCreateData): Promise<GuestResponse> {
 	const clientUpdatedAt = nowIso();
-	const doQueue = () => { enqueue(weddingId, { mutationId: genId(), op: 'update', guestId, clientUpdatedAt, payload: data as unknown as Record<string, unknown> }); optimisticPatch('update', guestId, data as unknown as Record<string, unknown>); };
+	const doQueue = () => {
+		// The base lets the server refuse an edit made on a stale copy, as the
+		// online 409 does. Drop it when an earlier queued edit of this guest is
+		// still pending: that edit will move updatedAt, and it is our own.
+		const ownPending = getQueue(weddingId).some(m => m.guestId === guestId);
+		enqueue(weddingId, { mutationId: genId(), op: 'update', guestId, clientUpdatedAt, baseUpdatedAt: ownPending ? null : data.baseUpdatedAt ?? null, payload: data as unknown as Record<string, unknown> });
+		optimisticPatch('update', guestId, data as unknown as Record<string, unknown>);
+	};
 	if (isOffline()) { doQueue(); const now = nowIso(); return { id: guestId, weddingId, name: data.name, email: data.email || '', pax: data.pax, rsvp: data.rsvp, isVip: data.isVip, notes: data.notes, dietary: data.dietary, tableId: (data.tableId as string | null) ?? null, seatNum: data.seatNum ?? null, checkedInAt: null, angbaoAmt: data.angbaoAmt ?? null, giftItem: data.giftItem ?? null, createdAt: now, updatedAt: now }; }
 	try {
 		const res = await apiFetch(`/api/weddings/${weddingId}/guests/${guestId}`, { method: 'PUT', body: JSON.stringify(data) });

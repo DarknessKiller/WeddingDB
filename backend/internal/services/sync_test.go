@@ -3,6 +3,7 @@ package services
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"testing"
 	"time"
 
@@ -643,5 +644,51 @@ func TestSyncCheckIn_AlreadyCheckedInKeepsAngbaoAndArrival(t *testing.T) {
 	}
 	if got.Notes != "came late" {
 		t.Fatalf("notes = %q, want the queued note appended", got.Notes)
+	}
+}
+
+// An offline edit made on a copy older than the server's must not apply: here
+// it would clear the angbao another desk keyed after the copy was loaded.
+func TestSync_StaleBaseKeepsOtherDesksAngbao(t *testing.T) {
+	svc, db, wid := newGuestSyncService(t)
+	gid := uuid.New()
+	loaded := time.Now().Add(-time.Hour).UTC().Truncate(time.Second)
+	keyed := loaded.Add(15 * time.Minute)
+	amt := 288
+	testutil.NoErr(t, db.Create(&models.GuestRecord{ID: gid, WeddingID: wid, Name: "Tan", Pax: 1, AngbaoAmt: &amt, UpdatedAt: keyed}).Error)
+
+	res, err := svc.Sync(t.Context(), wid, []SyncMutation{{
+		Op: SyncOpUpdate, GuestID: gid.String(), ClientUpdatedAt: keyed.Add(5 * time.Minute), BaseUpdatedAt: &loaded,
+		Payload: &SyncPayload{Name: syncStr("Tan Ah Kow"), AngbaoAmt: NullableJSON[int]{Set: true}},
+	}})
+	testutil.NoErr(t, err)
+	if res[0].Status != "failed" || res[0].Retryable {
+		t.Fatalf("status = %q retryable=%v, want a non-retryable failure", res[0].Status, res[0].Retryable)
+	}
+	var got models.GuestRecord
+	testutil.NoErr(t, db.First(&got, "id = ?", gid).Error)
+	if got.AngbaoAmt == nil || *got.AngbaoAmt != amt || got.Name != "Tan" {
+		t.Fatalf("guest = %q angbao %v, want the server copy untouched", got.Name, got.AngbaoAmt)
+	}
+}
+
+// With no client base, a write that lands between this sync's read and its own
+// write is caught too, and reported retryable so the edit stays queued.
+func TestSyncUpdate_ChangeAfterLoadIsRetryable(t *testing.T) {
+	svc, db, wid := newGuestSyncService(t)
+	gid := uuid.New()
+	at := time.Now().Add(-time.Hour).UTC().Truncate(time.Second)
+	testutil.NoErr(t, db.Create(&models.GuestRecord{ID: gid, WeddingID: wid, Name: "Lim", Pax: 1, UpdatedAt: at}).Error)
+	g, err := svc.Get(t.Context(), gid, wid)
+	testutil.NoErr(t, err)
+	testutil.NoErr(t, db.Model(&models.GuestRecord{}).Where("id = ?", gid).Update("updated_at", at.Add(time.Minute)).Error)
+
+	m := SyncMutation{Op: SyncOpUpdate, GuestID: gid.String()}
+	err = svc.syncUpdate(t.Context(), g, m, time.Now())
+	if !errors.Is(err, errGuestChangedDuringSync) {
+		t.Fatalf("err = %v, want errGuestChangedDuringSync", err)
+	}
+	if !syncFailed(m, err).Retryable {
+		t.Fatal("a change during sync must stay retryable")
 	}
 }

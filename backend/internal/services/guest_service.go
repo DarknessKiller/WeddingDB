@@ -1,6 +1,7 @@
 package services
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"errors"
@@ -693,10 +694,7 @@ func (s *GuestService) applySyncMutation(ctx context.Context, weddingID uuid.UUI
 					return syncFailed(m, err)
 				}
 			}
-			existing.UpdatedAt = opTime
-			if err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-				return s.updateGuestTx(ctx, tx, existing, true, nil)
-			}); err != nil {
+			if err := s.syncUpdate(ctx, existing, m, opTime); err != nil {
 				return syncFailed(m, err)
 			}
 			s.sseHub.publishGuest("update", existing, weddingID)
@@ -765,10 +763,7 @@ func (s *GuestService) applySyncMutation(ctx context.Context, weddingID uuid.UUI
 				return syncFailed(m, err)
 			}
 		}
-		existing.UpdatedAt = opTime
-		if err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-			return s.updateGuestTx(ctx, tx, existing, true, nil)
-		}); err != nil {
+		if err := s.syncUpdate(ctx, existing, m, opTime); err != nil {
 			return syncFailed(m, err)
 		}
 		s.sseHub.publishGuest("update", existing, weddingID)
@@ -855,6 +850,26 @@ func (s *GuestService) applySyncMutation(ctx context.Context, weddingID uuid.UUI
 	default:
 		return SyncResult{GuestID: m.GuestID, Status: "skipped", Reason: "unknown op"}
 	}
+}
+
+// errGuestChangedDuringSync means the guest changed between this sync's own
+// read and its write. Not in syncRuleErrors: a retry reloads and succeeds.
+var errGuestChangedDuringSync = errors.New("guest changed during sync")
+
+// syncUpdate writes a queued edit of g. The client's base (the updatedAt its
+// editor loaded) refuses edits made on a stale copy, like the online 409; that
+// is a rule error. With no client base, the check still guards the gap since
+// this sync loaded g.
+func (s *GuestService) syncUpdate(ctx context.Context, g *models.GuestRecord, m SyncMutation, opTime time.Time) error {
+	base := cmp.Or(m.BaseUpdatedAt, new(g.UpdatedAt))
+	g.UpdatedAt = opTime
+	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		return s.updateGuestTx(ctx, tx, g, true, base)
+	})
+	if m.BaseUpdatedAt == nil && errors.Is(err, ErrStaleGuest) {
+		return errGuestChangedDuringSync
+	}
+	return err
 }
 
 func applySyncPayload(g *models.GuestRecord, p *SyncPayload, gid *uuid.UUID) error {

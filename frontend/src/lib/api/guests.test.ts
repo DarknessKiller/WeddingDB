@@ -2,16 +2,18 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 const apiFetch = vi.fn();
 const enqueue = vi.fn();
+const getQueue = vi.fn((): { guestId: string }[] => []);
 
 vi.mock('./client', () => ({ apiFetch: (...args: unknown[]) => apiFetch(...args) }));
-vi.mock('#lib/offline/queue.ts', () => ({ enqueue: (...args: unknown[]) => enqueue(...args), syncQueue: vi.fn() }));
-vi.mock('#lib/stores/guestEvents.ts', () => ({ applyGuestResponse: vi.fn(), guestList: { update: vi.fn() } }));
+vi.mock('#lib/offline/queue.ts', () => ({ enqueue: (...args: unknown[]) => enqueue(...args), getQueue: () => getQueue(), syncQueue: vi.fn() }));
+vi.mock('#lib/stores/guestEvents.ts', () => ({ applyGuestResponse: vi.fn(), cacheGuestList: vi.fn(), guestList: { update: vi.fn() } }));
 
 const realNavigator = globalThis.navigator;
 
 beforeEach(() => {
 	apiFetch.mockReset();
 	enqueue.mockReset();
+	getQueue.mockReturnValue([]);
 	Object.defineProperty(globalThis, 'navigator', { value: { onLine: true }, configurable: true });
 	vi.useFakeTimers();
 	vi.setSystemTime(new Date('2026-01-01T10:00:00Z'));
@@ -71,5 +73,28 @@ describe('offline ids', () => {
 		const g = await createGuest('w1', { name: 'A', pax: 1, rsvp: 'pending', isVip: false, notes: '', dietary: [] });
 		expect(g.id).toMatch(/^[A-Za-z0-9_-]{22}$/);
 		expect(enqueue.mock.calls[0][1].guestId).toBe(g.id);
+	});
+});
+
+describe('queued edits carry the editor base', () => {
+	const edit = { name: 'A', pax: 1, rsvp: 'pending', isVip: false, notes: '', dietary: [], baseUpdatedAt: '2026-01-01T09:00:00Z' } as never;
+
+	it('sends the loaded updatedAt so the server can refuse a stale copy', async () => {
+		apiFetch.mockRejectedValue(new TypeError('Failed to fetch'));
+		const { updateGuest } = await import('./guests');
+
+		await updateGuest('w1', 'g1', edit);
+
+		expect(enqueue.mock.calls[0][1].baseUpdatedAt).toBe('2026-01-01T09:00:00Z');
+	});
+
+	it('drops the base when an earlier queued edit of the same guest is pending', async () => {
+		apiFetch.mockRejectedValue(new TypeError('Failed to fetch'));
+		getQueue.mockReturnValue([{ guestId: 'g1' }]);
+		const { updateGuest } = await import('./guests');
+
+		await updateGuest('w1', 'g1', edit);
+
+		expect(enqueue.mock.calls[0][1].baseUpdatedAt).toBeNull();
 	});
 });
