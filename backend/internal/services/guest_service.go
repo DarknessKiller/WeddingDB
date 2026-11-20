@@ -634,8 +634,12 @@ func (s *GuestService) applySyncMutation(ctx context.Context, weddingID uuid.UUI
 		opTime = time.Now()
 	}
 
-	// Load server record if exists
+	// Load server record if exists. Only "no such row" means not found: any
+	// other error must stay "failed", or the client dequeues the mutation.
 	existing, err := s.guestRepo.FindByID(ctx, gid, weddingID)
+	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+		return SyncResult{GuestID: m.GuestID, Status: "failed", Reason: fmt.Sprintf("load guest: %v", err)}
+	}
 	found := err == nil
 
 	switch m.Op {

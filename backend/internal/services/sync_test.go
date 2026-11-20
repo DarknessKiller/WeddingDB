@@ -562,3 +562,21 @@ func TestSync_CheckInReplayDoesNotDuplicateNotes(t *testing.T) {
 		t.Fatalf("notes = %q, want one appended line", g.Notes)
 	}
 }
+
+// A lookup error that is not "no such row" must report failed, so the client
+// keeps the mutation queued instead of dropping an offline check-in.
+func TestSync_LookupErrorIsFailedNotSkipped(t *testing.T) {
+	svc, db, wid := newGuestSyncService(t)
+	testutil.NoErr(t, db.Exec("DROP TABLE guest_records").Error)
+	for _, op := range []SyncOp{SyncOpUpdate, SyncOpCheckIn, SyncOpCheckOut, SyncOpDelete} {
+		t.Run(string(op), func(t *testing.T) {
+			res, err := svc.Sync(t.Context(), wid, []SyncMutation{{
+				Op: op, GuestID: uuid.New().String(), ClientUpdatedAt: time.Now(),
+			}})
+			testutil.NoErr(t, err)
+			if res[0].Status != "failed" {
+				t.Fatalf("status = %q (%s), want failed", res[0].Status, res[0].Reason)
+			}
+		})
+	}
+}
