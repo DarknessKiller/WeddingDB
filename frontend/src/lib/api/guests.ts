@@ -3,7 +3,7 @@ import { get } from 'svelte/store';
 import { weddingId } from '#lib/stores/weddingId.ts';
 import { applyGuestResponse } from '#lib/stores/guestEvents.ts';
 import { enqueue, syncQueue } from '#lib/offline/queue.ts';
-import { guestList, guestMap } from '#lib/stores/guestEvents.ts';
+import { guestList } from '#lib/stores/guestEvents.ts';
 
 function isOffline() {
 	return typeof navigator !== 'undefined' && !navigator.onLine;
@@ -16,14 +16,15 @@ function isNetworkError(e: unknown) {
 function genId(): string {
 	try { return crypto.randomUUID(); } catch { return `${Date.now()}-${Math.random().toString(36).slice(2)}`; }
 }
+// Capture once per user action and reuse for the queued op: a retry after a lost
+// response must not look newer than the original under server last-write-wins.
 function nowIso() { return new Date().toISOString(); }
 function optimisticPatch(op: string, guestId: string, data?: Record<string, unknown>) {
 	try {
 		if (op === 'create' && data) {
 			const now = new Date();
 			const g = { id: guestId, name: (data.name as string) || '', email: (data.email as string) || '', pax: (data.pax as number) || 1, rsvp: (data.rsvp as string) || 'no_response', isVip: !!data.isVip, notes: (data.notes as string) || '', dietaryRequirements: (data.dietary as string[]) || [], tableId: (data.tableId as string | null) || null, seatNumber: (data.seatNum as number | null) ?? null, checkedIn: false, createdAt: now, updatedAt: now } as unknown as import('#lib/types/index.ts').Guest;
-			guestList.update(l => [...l, g]); guestMap.update(m => { const n = new Map(m); n.set(guestId, g); return n; });
-		} else if (op === 'update' && data) {
+			guestList.update(l => [...l, g]);		} else if (op === 'update' && data) {
 			// Explicit null (or "") in the patch overrides/clears the old value;
 			// undefined keeps the old value (partial payloads like seat assign).
 			guestList.update(l => l.map(x => x.id === guestId ? {
@@ -42,8 +43,7 @@ function optimisticPatch(op: string, guestId: string, data?: Record<string, unkn
 				updatedAt: new Date()
 			} as unknown as import('#lib/types/index.ts').Guest : x));
 		} else if (op === 'delete') {
-			guestList.update(l => l.filter(x => x.id !== guestId)); guestMap.update(m => { const n = new Map(m); n.delete(guestId); return n; });
-		} else if (op === 'checkin') {
+			guestList.update(l => l.filter(x => x.id !== guestId));		} else if (op === 'checkin') {
 			const now = new Date();
 			const addedNotes = typeof data?.notes === 'string' ? data.notes.trim() : '';
 			guestList.update(l => l.map(x => x.id === guestId ? {
@@ -142,8 +142,10 @@ export async function getGuest(weddingId: string, guestId: string): Promise<Gues
 }
 
 export async function createGuest(weddingId: string, data: GuestCreateData): Promise<GuestResponse> {
+	const clientUpdatedAt = nowIso();
+	const wasOffline = isOffline();
 	const doQueue = (id: string) => {
-		enqueue(weddingId, { mutationId: genId(), op: 'create', guestId: id, clientUpdatedAt: nowIso(), payload: data as unknown as Record<string, unknown> });
+		enqueue(weddingId, { mutationId: genId(), op: 'create', guestId: id, clientUpdatedAt, payload: data as unknown as Record<string, unknown> });
 	};
 	try {
 		const res = await apiFetch(`/api/weddings/${weddingId}/guests`, { method: 'POST', body: JSON.stringify(data) });
@@ -152,7 +154,9 @@ export async function createGuest(weddingId: string, data: GuestCreateData): Pro
 		applyGuestResponse(resp);
 		return resp;
 	} catch (e) {
-		if (isNetworkError(e)) {
+		// Online POST assigns a server id, so a create whose response was lost cannot be
+		// replayed safely. Queue only when the request never left the device.
+		if (wasOffline && isNetworkError(e)) {
 			const id = genId();
 			doQueue(id); optimisticPatch('create', id, data as unknown as Record<string, unknown>);
 			const now = nowIso();
@@ -163,7 +167,8 @@ export async function createGuest(weddingId: string, data: GuestCreateData): Pro
 }
 
 export async function updateGuest(weddingId: string, guestId: string, data: GuestCreateData): Promise<GuestResponse> {
-	const doQueue = () => { enqueue(weddingId, { mutationId: genId(), op: 'update', guestId, clientUpdatedAt: nowIso(), payload: data as unknown as Record<string, unknown> }); optimisticPatch('update', guestId, data as unknown as Record<string, unknown>); };
+	const clientUpdatedAt = nowIso();
+	const doQueue = () => { enqueue(weddingId, { mutationId: genId(), op: 'update', guestId, clientUpdatedAt, payload: data as unknown as Record<string, unknown> }); optimisticPatch('update', guestId, data as unknown as Record<string, unknown>); };
 	if (isOffline()) { doQueue(); const now = nowIso(); return { id: guestId, weddingId, name: data.name, email: data.email || '', pax: data.pax, rsvp: data.rsvp, isVip: data.isVip, notes: data.notes, dietary: data.dietary, tableId: (data.tableId as string | null) ?? null, seatNum: data.seatNum ?? null, checkedInAt: null, angbaoAmt: data.angbaoAmt ?? null, giftItem: data.giftItem ?? null, createdAt: now, updatedAt: now }; }
 	try {
 		const res = await apiFetch(`/api/weddings/${weddingId}/guests/${guestId}`, { method: 'PUT', body: JSON.stringify(data) });
@@ -178,7 +183,8 @@ export async function updateGuest(weddingId: string, guestId: string, data: Gues
 }
 
 export async function deleteGuest(weddingId: string, guestId: string): Promise<void> {
-	const doQueue = () => { enqueue(weddingId, { mutationId: genId(), op: 'delete', guestId, clientUpdatedAt: nowIso() }); optimisticPatch('delete', guestId); };
+	const clientUpdatedAt = nowIso();
+	const doQueue = () => { enqueue(weddingId, { mutationId: genId(), op: 'delete', guestId, clientUpdatedAt }); optimisticPatch('delete', guestId); };
 	if (isOffline()) { doQueue(); return; }
 	try {
 		const res = await apiFetch(`/api/weddings/${weddingId}/guests/${guestId}`, { method: 'DELETE' });
@@ -194,7 +200,8 @@ export async function deleteGuest(weddingId: string, guestId: string): Promise<v
 export async function checkInGuest(weddingId: string, guestId: string, notes?: string): Promise<void> {
 	const trimmed = (notes ?? '').trim();
 	const payload = trimmed ? { notes: trimmed } : undefined;
-	const doQueue = () => { enqueue(weddingId, { mutationId: genId(), op: 'checkin', guestId, clientUpdatedAt: nowIso(), payload: payload ?? null }); optimisticPatch('checkin', guestId, payload); };
+	const clientUpdatedAt = nowIso();
+	const doQueue = () => { enqueue(weddingId, { mutationId: genId(), op: 'checkin', guestId, clientUpdatedAt, payload: payload ?? null }); optimisticPatch('checkin', guestId, payload); };
 	if (isOffline()) { doQueue(); return; }
 	try {
 		const res = await apiFetch(`/api/weddings/${weddingId}/guests/${guestId}/checkin`, { method: 'POST', body: JSON.stringify({ notes: trimmed }) });
@@ -208,7 +215,8 @@ export async function checkInGuest(weddingId: string, guestId: string, notes?: s
 }
 
 export async function checkOutGuest(weddingId: string, guestId: string): Promise<void> {
-	const doQueue = () => { enqueue(weddingId, { mutationId: genId(), op: 'checkout', guestId, clientUpdatedAt: nowIso() }); optimisticPatch('checkout', guestId); };
+	const clientUpdatedAt = nowIso();
+	const doQueue = () => { enqueue(weddingId, { mutationId: genId(), op: 'checkout', guestId, clientUpdatedAt }); optimisticPatch('checkout', guestId); };
 	if (isOffline()) { doQueue(); return; }
 	try {
 		const res = await apiFetch(`/api/weddings/${weddingId}/guests/${guestId}/checkout`, { method: 'POST' });
@@ -221,7 +229,8 @@ export async function checkOutGuest(weddingId: string, guestId: string): Promise
 
 export async function assignSeat(weddingId: string, guestId: string, tableId: string, seatNum: number): Promise<void> {
 	const payload = { tableId, seatNum };
-	const doQueue = () => { enqueue(weddingId, { mutationId: genId(), op: 'update', guestId, clientUpdatedAt: nowIso(), payload: payload as unknown as Record<string, unknown> }); optimisticPatch('update', guestId, payload as unknown as Record<string, unknown>); };
+	const clientUpdatedAt = nowIso();
+	const doQueue = () => { enqueue(weddingId, { mutationId: genId(), op: 'update', guestId, clientUpdatedAt, payload: payload as unknown as Record<string, unknown> }); optimisticPatch('update', guestId, payload as unknown as Record<string, unknown>); };
 	if (isOffline()) { doQueue(); return; }
 	try {
 		const res = await apiFetch(`/api/weddings/${weddingId}/guests/${guestId}/seat`, { method: 'POST', body: JSON.stringify(payload) });
@@ -233,7 +242,8 @@ export async function assignSeat(weddingId: string, guestId: string, tableId: st
 }
 
 export async function unassignSeat(weddingId: string, guestId: string): Promise<void> {
-	const doQueue = () => { enqueue(weddingId, { mutationId: genId(), op: 'update', guestId, clientUpdatedAt: nowIso(), payload: { tableId: null, seatNum: null } }); optimisticPatch('update', guestId, { tableId: null, seatNum: null }); };
+	const clientUpdatedAt = nowIso();
+	const doQueue = () => { enqueue(weddingId, { mutationId: genId(), op: 'update', guestId, clientUpdatedAt, payload: { tableId: null, seatNum: null } }); optimisticPatch('update', guestId, { tableId: null, seatNum: null }); };
 	if (isOffline()) { doQueue(); return; }
 	try {
 		const res = await apiFetch(`/api/weddings/${weddingId}/guests/${guestId}/seat`, { method: 'DELETE' });

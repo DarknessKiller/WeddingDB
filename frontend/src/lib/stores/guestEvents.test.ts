@@ -7,9 +7,11 @@ vi.mock('#lib/stores/index.ts', () => ({
 	getAuth: () => ({ accessToken: 'test-token' })
 }));
 
+const widState = vi.hoisted(() => ({ value: 'w1' }));
+
 vi.mock('#lib/stores/weddingId.ts', () => ({
-	// subscribe must invoke the callback so svelte's get() returns 'w1'
-	weddingId: { get: () => 'w1', subscribe: vi.fn((run: (v: string) => void) => { run('w1'); return () => {}; }), set: vi.fn(), update: vi.fn() }
+	// subscribe must invoke the callback so svelte's get() returns the active id
+	weddingId: { get: () => widState.value, subscribe: vi.fn((run: (v: string) => void) => { run(widState.value); return () => {}; }), set: vi.fn(), update: vi.fn() }
 }));
 
 // Captures the SSE event handler so tests can drive handleGuestEvent.
@@ -47,16 +49,16 @@ function makeGuest(overrides: Partial<Guest> = {}): Guest {
 /** Import the module fresh and reset all stores to empty. */
 async function freshModule() {
 	vi.resetModules();
+	widState.value = 'w1';
 	const mod = await import('./guestEvents');
 	mod.guestList.set([]);
-	mod.guestMap.set(new Map());
 	mod.tableOccupancy.set(new Map());
 	return mod;
 }
 
 describe('guestEvents store', () => {
-	it('seedGuests populates guestList and guestMap', async () => {
-		const { seedGuests, guestList, guestMap } = await freshModule();
+	it('seedGuests populates guestList', async () => {
+		const { seedGuests, guestList } = await freshModule();
 		const guests = [
 			makeGuest({ id: 'g1', name: 'Alice' }),
 			makeGuest({ id: 'g2', name: 'Bob', tableId: 't2' })
@@ -67,11 +69,18 @@ describe('guestEvents store', () => {
 		const list = get(guestList);
 		expect(list).toHaveLength(2);
 		expect(list[0].name).toBe('Alice');
+	});
 
-		const map = get(guestMap);
-		expect(map.size).toBe(2);
-		expect(map.get('g1')?.name).toBe('Alice');
-		expect(map.get('g2')?.name).toBe('Bob');
+	it('refreshGuests drops a roster that resolves after the wedding changed', async () => {
+		const { refreshGuests, guestList } = await freshModule();
+		let resolve!: (g: Guest[]) => void;
+		const pending = refreshGuests(() => new Promise<Guest[]>((r) => { resolve = r; }));
+
+		widState.value = 'w2';
+		resolve([makeGuest({ id: 'old-wedding-guest' })]);
+		await pending;
+
+		expect(get(guestList)).toEqual([]);
 	});
 
 	it('seedGuests calculates occupancy', async () => {
@@ -158,5 +167,15 @@ describe('guestEvents store', () => {
 		sseState.eventHandler!(makeEvent({ type: 'create', guest: { id: 'g9', name: 'Zoe', email: '', pax: 4, rsvp: 'confirmed', isVip: false, notes: '', dietary: [], tableId: 't2', seatNum: 1, checkedInAt: null, angbaoAmt: null, giftItem: null } }));
 
 		expect(get(tableOccupancy).get('t2')).toBe(4);
+	});
+
+	it('update events keep the loaded pinyin', async () => {
+		const { initializeSSE, seedGuests, guestList } = await freshModule();
+		initializeSSE(() => Promise.resolve([]));
+		seedGuests([{ ...makeGuest({ id: 'g1', name: '张伟' }), pinyin: 'zhangwei' }]);
+
+		sseState.eventHandler!(makeEvent());
+
+		expect(get(guestList)[0].pinyin).toBe('zhangwei');
 	});
 });

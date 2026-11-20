@@ -9,9 +9,6 @@ import { cacheGuests } from '#lib/offline/queue.ts';
 // All guests for the current wedding, kept in sync via SSE.
 export const guestList = writable<Guest[]>([]);
 
-// Quick lookup by guest ID.
-export const guestMap = writable<Map<string, Guest>>(new Map());
-
 // Table occupancy: tableId -> total pax seated.
 export const tableOccupancy = writable<Map<string, number>>(new Map());
 
@@ -44,8 +41,7 @@ export function initializeSSE(onResync?: () => Promise<Guest[]>): (() => void) |
 	const unsubscribeStatus = client.onStatus((status, reconnect) => {
 		sseConnected.set(status === 'connected');
 		if (status === 'connected' && reconnect && resync) {
-			syncing = true;
-			resync().then(seedGuests).catch(() => { syncing = false; });
+			refreshGuests(resync).catch(() => {});
 		}
 	});
 	const unsubscribe = client.onEvent((event: GuestEvent) => {
@@ -72,9 +68,13 @@ export function initializeSSE(onResync?: () => Promise<Guest[]>): (() => void) |
  * (e.g. the wedding layout's online/visibility sync).
  */
 export async function refreshGuests(fetchFn: () => Promise<Guest[]>): Promise<Guest[]> {
+	const wid = get(weddingId);
 	syncing = true;
 	try {
 		const guests = await fetchFn();
+		// The wedding changed mid-fetch: this roster belongs to the old one, so it
+		// must not be shown or cached under the new id. The new wedding's own load seeds.
+		if (get(weddingId) !== wid) return guests;
 		seedGuests(guests);
 		return guests;
 	} catch (e) {
@@ -92,11 +92,6 @@ export async function refreshGuests(fetchFn: () => Promise<Guest[]>): Promise<Gu
  */
 export function seedGuests(guests: Guest[]) {
 	guestList.set(guests);
-	const map = new Map<string, Guest>();
-	for (const g of guests) {
-		map.set(g.id, g);
-	}
-	guestMap.set(map);
 	recalculateOccupancy();
 	// cache for offline reads
 	try {
@@ -117,7 +112,6 @@ export function seedGuests(guests: Guest[]) {
  */
 export function clearGuests() {
 	guestList.set([]);
-	guestMap.set(new Map());
 	tableOccupancy.set(new Map());
 }
 
@@ -137,20 +131,12 @@ function handleGuestEvent(event: GuestEvent) {
 		if (idx >= 0) {
 			const newList = [...list];
 			guest.createdAt = list[idx].createdAt;
+			// SSE payloads carry no pinyin; keep the one from the REST load so search still works.
+			guest.pinyin = list[idx].pinyin;
 			newList[idx] = guest;
 			return newList;
 		}
 		return [...list, guest];
-	});
-
-	guestMap.update((map) => {
-		const newMap = new Map(map);
-		if (type === 'delete') {
-			newMap.delete(guest.id);
-		} else {
-			newMap.set(guest.id, guest);
-		}
-		return newMap;
 	});
 
 	// 'create'/'update' events also carry table/seat/pax changes, so occupancy
@@ -213,7 +199,6 @@ export function applyGuestResponse(resp: GuestResponse) {
 		newList[idx] = guest;
 		return newList;
 	});
-	guestMap.update((map) => new Map(map).set(guest.id, guest));
 	recalculateOccupancy();
 
 	const current = get(selectedGuest);

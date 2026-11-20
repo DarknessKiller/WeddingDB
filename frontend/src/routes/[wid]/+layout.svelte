@@ -81,9 +81,10 @@
       // refreshGuests keeps the syncing window open across fetch+seed even if
       // initializeSSE early-returned, so mid-fetch SSE events can't be clobbered.
       const guests = await refreshGuests(() => loadGuests(w));
-      guestCount = guests.length;
+      if (w === $weddingId) guestCount = guests.length;
     } catch {}
-    if (destroyed) return;
+    // Another startWedding took over while this one loaded; its own calls own the UI.
+    if (destroyed || w !== $weddingId) return;
     listTables(w).then((t) => {
       tables = t;
     }).catch(() => {});
@@ -105,8 +106,9 @@
         await syncQueue(wid);
         // Refresh inside the syncing window so SSE events arriving mid-fetch
         // are queued and replayed after the seed instead of being clobbered.
-        const guests = await refreshGuests(() => loadGuests(wid));
-        guestCount = guests.length;
+        const w = wid;
+        const guests = await refreshGuests(() => loadGuests(w));
+        if (w === $weddingId) guestCount = guests.length;
         refreshQueued();
       } catch {}
     }
