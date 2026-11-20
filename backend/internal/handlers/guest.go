@@ -363,8 +363,7 @@ func (h *GuestHandler) BulkImport(c fuego.ContextWithBody[BulkImportRequest]) (a
 				return nil, fuego.BadRequestError{Title: "Invalid table ID"}
 			}
 			gr.TableID = &tid
-		}
-		if g.SeatNum != nil {
+			// A seat only means something at a table; drop it otherwise.
 			gr.SeatNum = g.SeatNum
 		}
 		guests = append(guests, gr)

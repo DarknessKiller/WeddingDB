@@ -14,6 +14,7 @@
   import ConfirmDialog from '#lib/components/ui/ConfirmDialog.svelte';
   import MoveGuestDrawer from '#lib/components/ui/MoveGuestDrawer.svelte';
   import { getInitials } from '#lib/utils/index.ts';
+  import { parseGuestCSV } from '#lib/utils/csv.ts';
   import Search from 'lucide-svelte/icons/search';
 import Download from 'lucide-svelte/icons/download';
 import Upload from 'lucide-svelte/icons/upload';
@@ -368,37 +369,6 @@ import Users from 'lucide-svelte/icons/users';
     }
   }
 
-  function parseCSV(text: string): GuestImportData[] {
-    const lines = text.trim().split('\n');
-    if (lines.length < 2) return [];
-    const headers = lines[0].split(',').map(h => h.trim().toLowerCase());
-    const nameIdx = headers.findIndex(h => h === 'name');
-    if (nameIdx === -1) return [];
-    const emailIdx = headers.findIndex(h => h === 'email');
-    const paxIdx = headers.findIndex(h => h === 'pax');
-    const rsvpIdx = headers.findIndex(h => h === 'rsvp');
-    const vipIdx = headers.findIndex(h => h === 'vip' || h === 'isvip');
-    const notesIdx = headers.findIndex(h => h === 'notes');
-    const dietaryIdx = headers.findIndex(h => h === 'dietary');
-    const tableIdx = headers.findIndex(h => h === 'table' || h === 'tablename');
-    const seatIdx = headers.findIndex(h => h === 'seat' || h === 'seatnum' || h === 'seat_number');
-
-    return lines.slice(1).filter(l => l.trim()).map(line => {
-      const cols = line.split(',').map(c => c.trim().replace(/^"|"$/g, ''));
-      return {
-        name: cols[nameIdx] || '',
-        email: emailIdx >= 0 ? cols[emailIdx] : undefined,
-        pax: paxIdx >= 0 ? parseInt(cols[paxIdx]) || 1 : 1,
-        rsvp: rsvpIdx >= 0 ? cols[rsvpIdx] : 'no_response',
-        isVip: vipIdx >= 0 ? cols[vipIdx]?.toLowerCase() === 'yes' || cols[vipIdx] === '1' || cols[vipIdx]?.toLowerCase() === 'true' : false,
-        notes: notesIdx >= 0 ? cols[notesIdx] : undefined,
-        dietary: dietaryIdx >= 0 ? cols[dietaryIdx]?.split(';').map(d => d.trim()).filter(Boolean) : [],
-        table: tableIdx >= 0 ? cols[tableIdx] : undefined,
-        seat: seatIdx >= 0 ? parseInt(cols[seatIdx]) || undefined : undefined,
-      };
-    }).filter(g => g.name);
-  }
-
   function handleImportFile(e: Event) {
     const input = e.target as HTMLInputElement;
     const file = input.files?.[0];
@@ -408,7 +378,7 @@ import Users from 'lucide-svelte/icons/users';
     const reader = new FileReader();
     reader.onload = () => {
       try {
-        const guests = parseCSV(reader.result as string);
+        const guests = parseGuestCSV(reader.result as string);
         if (guests.length === 0) {
           importError = 'No valid guests found. Make sure CSV has a "name" column.';
           return;
@@ -425,11 +395,14 @@ import Users from 'lucide-svelte/icons/users';
     if (importPreview.length === 0) return;
     importing = true;
     try {
-      // Resolve table names to IDs
+      // Resolve table names to IDs. A name with no matching table imports the
+      // guest without a table, and a seat is meaningless without one.
+      const missing = new Set<string>();
       const resolved = importPreview.map(g => {
-        if (!g.table) return g;
+        if (!g.table) return { ...g, seat: undefined };
         const match = tables.find(t => t.name.toLowerCase() === g.table!.toLowerCase());
-        return { ...g, tableId: match?.id };
+        if (!match) missing.add(g.table);
+        return { ...g, tableId: match?.id, seat: match ? g.seat : undefined };
       });
       const result = await bulkImportGuests(resolved.map(g => ({
         name: g.name,
@@ -442,6 +415,9 @@ import Users from 'lucide-svelte/icons/users';
         tableId: g.tableId,
         seatNum: g.seat,
       })));
+      if (missing.size > 0) {
+        addToast(`No table named ${[...missing].map(n => `"${n}"`).join(', ')}; those guests were imported without a table`, 'error');
+      }
       addToast(`Imported ${result.imported} guests`, 'success');
       showImportModal = false;
       importPreview = [];
