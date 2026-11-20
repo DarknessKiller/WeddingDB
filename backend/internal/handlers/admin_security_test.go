@@ -184,3 +184,23 @@ func TestCreateUser_StoresBareAddress(t *testing.T) {
 		t.Fatalf("stored email = %q, want bob@x.test", email)
 	}
 }
+
+// A create whose wedding grants fail must not leave the user behind, and a
+// malformed wedding ID is a client error, not silently dropped.
+func TestCreateUser_WeddingGrantsAreAllOrNothing(t *testing.T) {
+	c := newAdminTestServer(t, uuid.New()) // no user_weddings table: every grant insert fails
+	body := func(wedding string) string {
+		return `{"email":"g@x.test","name":"G","role":"user","password":"TempPassw0rd!x","weddings":["` + wedding + `"]}`
+	}
+	if got := c.do(http.MethodPost, "/users", body("not-an-id")); got != http.StatusBadRequest {
+		t.Fatalf("malformed wedding ID: status = %d, want 400", got)
+	}
+	if got := c.do(http.MethodPost, "/users", body(uuid.New().String())); got < 500 {
+		t.Fatalf("failing grant: status = %d, want 5xx", got)
+	}
+	var n int64
+	testutil.NoErr(t, c.db.Raw(`SELECT COUNT(*) FROM admin_users WHERE email = 'g@x.test'`).Scan(&n).Error)
+	if n != 0 {
+		t.Fatalf("%d half-made users left behind", n)
+	}
+}

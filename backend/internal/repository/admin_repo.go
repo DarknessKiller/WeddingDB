@@ -112,21 +112,41 @@ func (r *AdminRepo) GetUserWeddings(ctx context.Context, userID uuid.UUID) ([]mo
 // SetUserWeddings replaces a user's wedding associations in a single transaction.
 func (r *AdminRepo) SetUserWeddings(ctx context.Context, userID uuid.UUID, weddingIDs []uuid.UUID) error {
 	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		if err := tx.Where("user_id = ?", userID).Delete(&models.UserWedding{}).Error; err != nil {
+		return setUserWeddings(tx, userID, weddingIDs)
+	})
+}
+
+// CreateWithWeddings creates a user and their wedding grants together, so a
+// failed grant never leaves a half-made account behind.
+func (r *AdminRepo) CreateWithWeddings(ctx context.Context, admin *models.AdminUser, weddingIDs []uuid.UUID) error {
+	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Create(admin).Error; err != nil {
 			return err
 		}
-		for _, wid := range weddingIDs {
-			uw := models.UserWedding{
-				ID:        uuid.New(),
-				UserID:    userID,
-				WeddingID: wid,
-			}
-			if err := tx.Create(&uw).Error; err != nil {
-				return err
-			}
-		}
-		return nil
+		// A new user has no grants yet, so there is nothing to delete first.
+		return insertUserWeddings(tx, admin.ID, weddingIDs)
 	})
+}
+
+func setUserWeddings(tx *gorm.DB, userID uuid.UUID, weddingIDs []uuid.UUID) error {
+	if err := tx.Where("user_id = ?", userID).Delete(&models.UserWedding{}).Error; err != nil {
+		return err
+	}
+	return insertUserWeddings(tx, userID, weddingIDs)
+}
+
+func insertUserWeddings(tx *gorm.DB, userID uuid.UUID, weddingIDs []uuid.UUID) error {
+	for _, wid := range weddingIDs {
+		uw := models.UserWedding{
+			ID:        uuid.New(),
+			UserID:    userID,
+			WeddingID: wid,
+		}
+		if err := tx.Create(&uw).Error; err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // HasWeddingAccess checks if a user has access to a specific wedding.

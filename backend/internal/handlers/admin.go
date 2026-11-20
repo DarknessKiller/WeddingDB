@@ -80,22 +80,12 @@ func (h *AdminHandler) Create(c fuego.ContextWithBody[AdminRequest]) (any, error
 		// Admin chose this password, so the user must replace it on first login.
 		ForcePasswordChange: true,
 	}
-	if err := h.adminRepo.Create(ctx, admin); err != nil {
+	ids, err := decodeWeddingIDs(body.Weddings)
+	if err != nil {
 		return nil, err
 	}
-	// Assign weddings if provided
-	if len(body.Weddings) > 0 {
-		var ids []uuid.UUID
-		for _, ws := range body.Weddings {
-			if id, err := DecodeID(ws); err == nil {
-				ids = append(ids, id)
-			}
-		}
-		if len(ids) > 0 {
-			if err := h.adminRepo.SetUserWeddings(ctx, admin.ID, ids); err != nil {
-				return nil, err
-			}
-		}
+	if err := h.adminRepo.CreateWithWeddings(ctx, admin, ids); err != nil {
+		return nil, err
 	}
 	c.SetStatus(201)
 	return admin, nil
@@ -166,11 +156,9 @@ func (h *AdminHandler) AssignWeddings(c fuego.ContextWithBody[AssignWeddingsRequ
 	if err != nil {
 		return nil, fuego.NotFoundError{Title: "Admin not found"}
 	}
-	var ids []uuid.UUID
-	for _, ws := range body.Weddings {
-		if wid, err := DecodeID(ws); err == nil {
-			ids = append(ids, wid)
-		}
+	ids, err := decodeWeddingIDs(body.Weddings)
+	if err != nil {
+		return nil, err
 	}
 	// Fetch the old grants so removing access can revoke live sessions.
 	oldWeddings, err := h.adminRepo.GetUserWeddings(ctx, admin.ID)
@@ -336,4 +324,18 @@ func (h *AdminHandler) RevokeUser(c fuego.ContextNoBody) (any, error) {
 	}
 
 	return map[string]any{"message": "User tokens revoked"}, nil
+}
+
+// decodeWeddingIDs parses every wedding ID or rejects the request. Silently
+// dropping a bad one would grant (or, on reassign, revoke) the wrong set.
+func decodeWeddingIDs(raw []string) ([]uuid.UUID, error) {
+	ids := make([]uuid.UUID, 0, len(raw))
+	for _, ws := range raw {
+		id, err := DecodeID(ws)
+		if err != nil {
+			return nil, fuego.BadRequestError{Title: "Invalid wedding ID: " + ws}
+		}
+		ids = append(ids, id)
+	}
+	return ids, nil
 }
