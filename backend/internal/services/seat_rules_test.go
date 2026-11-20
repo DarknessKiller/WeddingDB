@@ -32,11 +32,6 @@ func seedGuest(t *testing.T, svc *GuestService, wid uuid.UUID, name string) *mod
 	return g
 }
 
-func tableIDPtr(id uuid.UUID) *string {
-	s := id.String()
-	return &s
-}
-
 // A seat number near the int limit must be rejected instead of wrapping past
 // the capacity check.
 func TestAssignSeat_RejectsOverflowingSeatRange(t *testing.T) {
