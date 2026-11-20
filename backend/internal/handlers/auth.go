@@ -266,9 +266,13 @@ func (h *AuthHandler) Register(c fuego.ContextWithBody[RegisterRequest]) (any, e
 		return nil, fuego.BadRequestError{Title: "Name, email, and password are required"}
 	}
 	// Validate email format
-	if _, err := mail.ParseAddress(body.Email); err != nil {
+	addr, err := mail.ParseAddress(body.Email)
+	if err != nil {
 		return nil, fuego.BadRequestError{Title: "Invalid email format"}
 	}
+	// "Bob <bob@x.com>" parses too; keep only the address, or logging in
+	// with bob@x.com would never match the stored value.
+	body.Email = addr.Address
 	if err := validatePassword(body.Password); err != nil {
 		return nil, err
 	}

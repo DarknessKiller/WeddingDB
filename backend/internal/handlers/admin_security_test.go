@@ -169,3 +169,18 @@ func TestCreateUser_ValidatesInput(t *testing.T) {
 		t.Errorf("duplicate email: status = %d, want 409", code)
 	}
 }
+
+// "Name <addr>" is a valid RFC 5322 address; only the bare address may be
+// stored, or logging in with it never matches.
+func TestCreateUser_StoresBareAddress(t *testing.T) {
+	c := newAdminTestServer(t, uuid.New())
+
+	if got := c.do(http.MethodPost, "/users", `{"email":"Bob <Bob@X.test>","name":"Bob","role":"user","password":"TempPassw0rd!x"}`); got != http.StatusCreated {
+		t.Fatalf("status = %d, want 201", got)
+	}
+	var email string
+	testutil.NoErr(t, c.db.Raw(`SELECT email FROM admin_users`).Scan(&email).Error)
+	if email != "bob@x.test" {
+		t.Fatalf("stored email = %q, want bob@x.test", email)
+	}
+}

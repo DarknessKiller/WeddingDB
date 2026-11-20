@@ -50,9 +50,13 @@ func (h *AdminHandler) Create(c fuego.ContextWithBody[AdminRequest]) (any, error
 	if body.Email == "" || body.Name == "" {
 		return nil, fuego.BadRequestError{Title: "Name and email are required"}
 	}
-	if _, err := mail.ParseAddress(body.Email); err != nil {
+	addr, err := mail.ParseAddress(body.Email)
+	if err != nil {
 		return nil, fuego.BadRequestError{Title: "Invalid email format"}
 	}
+	// "Bob <bob@x.com>" parses too; keep only the address, or logging in
+	// with bob@x.com would never match the stored value.
+	body.Email = addr.Address
 	if err := validatePassword(body.Password); err != nil {
 		return nil, err
 	}
