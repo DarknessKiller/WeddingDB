@@ -608,3 +608,37 @@ func TestSyncUpdate_NullClearsAngbaoAndGift(t *testing.T) {
 		t.Fatalf("angbao=%v gift=%v, want both cleared", got.AngbaoAmt, got.GiftItem)
 	}
 }
+
+// A queued check-in for a guest someone already checked in must keep the
+// first arrival time and the angbao already keyed, as the online path does.
+func TestSyncCheckIn_AlreadyCheckedInKeepsAngbaoAndArrival(t *testing.T) {
+	svc, db, wid := newGuestSyncService(t)
+	gid := uuid.New()
+	arrived := time.Now().Add(-time.Hour).UTC().Truncate(time.Second)
+	amt := 200
+	testutil.NoErr(t, db.Create(&models.GuestRecord{
+		ID: gid, WeddingID: wid, Name: "A", Pax: 1, CheckedInAt: &arrived, AngbaoAmt: &amt,
+		UpdatedAt: arrived,
+	}).Error)
+
+	other := 100
+	res, err := svc.Sync(t.Context(), wid, []SyncMutation{{
+		Op: SyncOpCheckIn, GuestID: gid.String(), ClientUpdatedAt: time.Now(),
+		Payload: &SyncPayload{AngbaoAmt: NullableJSON[int]{Set: true, Value: &other}, Notes: syncStr("came late")},
+	}})
+	testutil.NoErr(t, err)
+	if res[0].Status != "applied" {
+		t.Fatalf("status = %q (%s), want applied", res[0].Status, res[0].Reason)
+	}
+	var got models.GuestRecord
+	testutil.NoErr(t, db.First(&got, "id = ?", gid).Error)
+	if got.AngbaoAmt == nil || *got.AngbaoAmt != 200 {
+		t.Fatalf("angbao = %v, want the first-keyed 200", got.AngbaoAmt)
+	}
+	if got.CheckedInAt == nil || !got.CheckedInAt.Equal(arrived) {
+		t.Fatalf("checked_in_at = %v, want first arrival %v", got.CheckedInAt, arrived)
+	}
+	if got.Notes != "came late" {
+		t.Fatalf("notes = %q, want the queued note appended", got.Notes)
+	}
+}

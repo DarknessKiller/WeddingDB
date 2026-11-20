@@ -780,14 +780,19 @@ func (s *GuestService) applySyncMutation(ctx context.Context, weddingID uuid.UUI
 			return SyncResult{GuestID: m.GuestID, Status: "skipped", Reason: "older than server", ServerRecord: existing}
 		}
 		wasCheckedIn := existing.CheckedInAt != nil
-		existing.CheckedInAt = &opTime
+		// A second check-in (another receptionist got there first) keeps the
+		// first arrival time and any angbao/gift already keyed, like the online
+		// path's 409: only fill what is still empty and append the note.
+		if !wasCheckedIn {
+			existing.CheckedInAt = &opTime
+		}
 		existing.RSVP = "confirmed"
 		if m.Payload != nil {
-			if m.Payload.AngbaoAmt.Value != nil {
-				existing.AngbaoAmt = m.Payload.AngbaoAmt.Value
+			if v := m.Payload.AngbaoAmt.Value; v != nil && (!wasCheckedIn || existing.AngbaoAmt == nil) {
+				existing.AngbaoAmt = v
 			}
-			if m.Payload.GiftItem.Value != nil {
-				existing.GiftItem = m.Payload.GiftItem.Value
+			if v := m.Payload.GiftItem.Value; v != nil && (!wasCheckedIn || existing.GiftItem == nil) {
+				existing.GiftItem = v
 			}
 			// A notes value in a checkin payload is appended to the guest's notes,
 			// never replacing them, so a queued note never wipes existing notes.
