@@ -118,10 +118,6 @@ func Init(env config.Env, version string) *App {
 	db.Exec("CREATE INDEX IF NOT EXISTS idx_refresh_tokens_wedding_id ON refresh_tokens (wedding_id)")
 	db.Exec("CREATE INDEX IF NOT EXISTS idx_refresh_tokens_expires_at ON refresh_tokens (expires_at)")
 
-	// Expired refresh tokens are unusable; drop them so the table does not grow
-	// forever. Keep a week for debugging.
-	db.Where("expires_at < ?", time.Now().AddDate(0, 0, -7)).Delete(&models.RefreshToken{})
-
 	if db.Migrator().HasColumn(&models.HallElement{}, "label") {
 		if err := db.Migrator().DropColumn(&models.HallElement{}, "label"); err != nil {
 			log.Printf("warning: could not drop legacy hall_elements.label: %v", err)
@@ -146,6 +142,7 @@ func Init(env config.Env, version string) *App {
 	tableRepo := repository.NewTableRepo(db)
 	guestRepo := repository.NewGuestRepo(db)
 	tokenRepo := repository.NewTokenRepo(db)
+	go pruneRefreshTokens(tokenRepo)
 	layoutRepo := repository.NewLayoutRepo(db)
 
 	sseHub := services.NewSSEHub(rdb)
@@ -269,4 +266,16 @@ func getEnv(key, fallback string) string {
 		return v
 	}
 	return fallback
+}
+
+// pruneRefreshTokens drops expired refresh tokens now and every hour after.
+// Every refresh rotates a row, so a server that only pruned at boot grew the
+// table for as long as it stayed up. Expired rows are kept a week for debugging.
+func pruneRefreshTokens(tokenRepo *repository.TokenRepo) {
+	for {
+		if err := tokenRepo.DeleteExpired(context.Background(), time.Now().AddDate(0, 0, -7)); err != nil {
+			log.Println("Warning: prune expired refresh tokens:", err)
+		}
+		<-time.After(time.Hour)
+	}
 }

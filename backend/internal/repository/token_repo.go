@@ -63,8 +63,9 @@ func (r *TokenRepo) UpdateWeddingScope(ctx context.Context, adminID uuid.UUID, t
 	return res.RowsAffected > 0, res.Error
 }
 
-func (r *TokenRepo) DeleteExpired(ctx context.Context) error {
-	return r.db.WithContext(ctx).Where("expires_at < ?", time.Now()).Delete(&models.RefreshToken{}).Error
+// DeleteExpired removes refresh tokens that expired before cutoff.
+func (r *TokenRepo) DeleteExpired(ctx context.Context, cutoff time.Time) error {
+	return r.db.WithContext(ctx).Where("expires_at < ?", cutoff).Delete(&models.RefreshToken{}).Error
 }
 
 // DeleteByAdminID deletes all refresh tokens for the given admin user.
