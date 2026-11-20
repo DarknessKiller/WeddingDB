@@ -2,12 +2,12 @@ package repository
 
 import (
 	"context"
-	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"weddingdb/internal/models"
 	"weddingdb/internal/utils"
@@ -33,20 +33,6 @@ func escapeLike(s string) string {
 	return likeEscaper.Replace(s)
 }
 
-func parseCursorID(s string) (uuid.UUID, error) {
-	if id, err := uuid.Parse(s); err == nil {
-		return id, nil
-	}
-	decoded, err := base64.RawURLEncoding.DecodeString(s)
-	if err != nil {
-		decoded, err = base64.URLEncoding.DecodeString(s)
-		if err != nil {
-			return uuid.Nil, err
-		}
-	}
-	return uuid.FromBytes(decoded)
-}
-
 func (r *GuestRepo) ListByWedding(ctx context.Context, weddingID uuid.UUID, cursor string, limit int) ([]models.GuestRecord, int64, error) {
 	guests := make([]models.GuestRecord, 0)
 	var total int64
@@ -55,7 +41,7 @@ func (r *GuestRepo) ListByWedding(ctx context.Context, weddingID uuid.UUID, curs
 	}
 	q := r.db.WithContext(ctx).Where("wedding_id = ?", weddingID).Order("id ASC").Limit(limit + 1)
 	if cursor != "" {
-		cid, err := parseCursorID(cursor)
+		cid, err := utils.DecodeUUID(cursor)
 		if err != nil {
 			return nil, 0, fmt.Errorf("%w: %v", ErrInvalidCursor, err)
 		}
@@ -87,7 +73,8 @@ func (r *GuestRepo) SearchByWedding(ctx context.Context, weddingID uuid.UUID, qu
 	q := fmt.Sprintf("%%%s%%", escaped)
 	pinyinQ := fmt.Sprintf("%%%s%%", escapeLike(models.GenerateNamePinyin(query)))
 	lowerQ := strings.ToLower(query)
-	prefix := fmt.Sprintf("%s%%", lowerQ)
+	lowerPinyin := strings.ToLower(models.GenerateNamePinyin(query))
+	// LEFT counts characters, so pass rune counts (Chinese names are multi-byte).
 	err := r.db.WithContext(ctx).Raw(`
 		SELECT * FROM guest_records
 		WHERE wedding_id = ? AND (name ILIKE ? OR name_pinyin ILIKE ?)
@@ -95,12 +82,12 @@ func (r *GuestRepo) SearchByWedding(ctx context.Context, weddingID uuid.UUID, qu
 			CASE
 				WHEN LOWER(name) = ? THEN 0
 				WHEN LEFT(LOWER(name), ?) = ? THEN 1
-				WHEN LEFT(name_pinyin, ?) = ? THEN 2
+				WHEN LEFT(LOWER(name_pinyin), ?) = ? THEN 2
 				ELSE 3
 			END, name
 		LIMIT 101`,
 		weddingID, q, pinyinQ,
-		lowerQ, len(lowerQ), prefix, len(lowerQ), strings.ToLower(models.GenerateNamePinyin(query))).
+		lowerQ, utf8.RuneCountInString(lowerQ), lowerQ, utf8.RuneCountInString(lowerPinyin), lowerPinyin).
 		Scan(&guests).Error
 	return guests, err
 }

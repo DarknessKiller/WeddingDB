@@ -1,9 +1,11 @@
 package handlers
 
 import (
+	"errors"
 	"log"
 	"weddingdb/internal/middleware"
 	"weddingdb/internal/models"
+	"weddingdb/internal/repository"
 	"weddingdb/internal/services"
 
 	"github.com/go-fuego/fuego"
@@ -141,6 +143,9 @@ func (h *LayoutHandler) Save(c fuego.ContextWithBody[LayoutRequest]) (any, error
 		elements = append(elements, el)
 	}
 	if err := h.layoutService.Save(ctx, wid, body.HallWidth, body.HallHeight, tables, elements); err != nil {
+		if errors.Is(err, repository.ErrCapacityBelowSeats) {
+			return nil, fuego.ConflictError{Title: "Table capacity is below seats already assigned; move those guests first"}
+		}
 		log.Printf("layout save error: %v", err)
 		return nil, fuego.InternalServerError{Title: "Failed to save layout"}
 	}

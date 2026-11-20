@@ -99,9 +99,33 @@ describe('queue limits', () => {
 		});
 
 		const { syncQueue, getQueue } = await import('./queue');
+		const { toasts } = await import('#lib/stores/index.ts');
+		const { get } = await import('svelte/store');
 		await syncQueue('w1');
 
 		expect(getQueue('w1')).toEqual([]);
+		expect(get(toasts).map(t => t.message)).toEqual([expect.stringMatching(/discarded/)]);
+	});
+
+	it('tells staff when a queued edit is skipped as older than the server', async () => {
+		localStorage.setItem(
+			'offline_queue_w1',
+			JSON.stringify([
+				{ mutationId: 'm1', op: 'update', guestId: 'g1', clientUpdatedAt: '2026-01-01T00:00:00Z' }
+			])
+		);
+		apiFetch.mockResolvedValue({
+			ok: true,
+			json: async () => ({ results: [{ guestId: 'g1', status: 'skipped', reason: 'older than server' }] })
+		});
+
+		const { syncQueue, getQueue } = await import('./queue');
+		const { toasts } = await import('#lib/stores/index.ts');
+		const { get } = await import('svelte/store');
+		await syncQueue('w1');
+
+		expect(getQueue('w1')).toEqual([]);
+		expect(get(toasts).map(t => t.message)).toEqual([expect.stringMatching(/not applied/)]);
 	});
 
 	it('keeps a failed mutation and counts the attempt below the limit', async () => {

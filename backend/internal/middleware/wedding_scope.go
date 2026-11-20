@@ -1,31 +1,18 @@
 package middleware
 
 import (
-	"encoding/base64"
 	"net/http"
 
 	"weddingdb/internal/repository"
 	"weddingdb/internal/services"
+	"weddingdb/internal/utils"
 
 	"github.com/google/uuid"
 )
 
 // DecodeWIDString parses a UUID from a base64 URL-safe string or a plain UUID string.
 func DecodeWIDString(s string) (uuid.UUID, error) {
-	// Try plain UUID first (e.g. "550e8400-e29b-41d4-a716-446655440000")
-	if id, err := uuid.Parse(s); err == nil {
-		return id, nil
-	}
-	// Try base64 URL-safe (with or without padding)
-	decoded, err := base64.RawURLEncoding.DecodeString(s)
-	if err != nil {
-		// Try with standard padding
-		decoded, err = base64.URLEncoding.DecodeString(s)
-		if err != nil {
-			return uuid.Nil, err
-		}
-	}
-	return uuid.FromBytes(decoded)
+	return utils.DecodeUUID(s)
 }
 
 // WeddingScopeMiddleware authorizes a request against the wedding in the URL.

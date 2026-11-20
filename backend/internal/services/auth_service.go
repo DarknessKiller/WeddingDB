@@ -124,7 +124,9 @@ func (s *AuthService) sessionResult(ctx context.Context, admin *models.AdminUser
 }
 
 // SelectWedding generates a new access token with the selected wedding embedded.
-func (s *AuthService) SelectWedding(ctx context.Context, adminID uuid.UUID, weddingID uuid.UUID) (string, error) {
+// refreshToken identifies the caller's device session; only that session's
+// scope changes.
+func (s *AuthService) SelectWedding(ctx context.Context, adminID, weddingID uuid.UUID, refreshToken string) (string, error) {
 	admin, err := s.adminRepo.FindByID(ctx, adminID)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -141,12 +143,16 @@ func (s *AuthService) SelectWedding(ctx context.Context, adminID uuid.UUID, wedd
 		if !hasAccess {
 			return "", ErrNoWeddingAccess
 		}
-		// Persist the wedding scope onto the caller's refresh token(s) so that
+		// Persist the wedding scope onto the caller's refresh token so that
 		// Refresh re-mints a scoped access token. Without this, the first
 		// refresh after SelectWedding drops the wedding and the user gets 403
 		// until they log in again. Admins keep a nil scope (all weddings).
-		if err := s.tokenRepo.UpdateWeddingScope(ctx, adminID, weddingID); err != nil {
+		found, err := s.tokenRepo.UpdateWeddingScope(ctx, adminID, refreshToken, weddingID)
+		if err != nil {
 			return "", fmt.Errorf("failed to persist wedding scope: %w", err)
+		}
+		if !found {
+			return "", ErrSessionNotFound
 		}
 	}
 	return s.generateAccessToken(ctx, admin, &weddingID)

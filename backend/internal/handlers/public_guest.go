@@ -1,7 +1,9 @@
 package handlers
 
 import (
+	"errors"
 	"strconv"
+	"weddingdb/internal/repository"
 	"weddingdb/internal/services"
 	"weddingdb/internal/utils"
 
@@ -43,8 +45,11 @@ func (h *PublicGuestHandler) List(c fuego.ContextNoBody) (any, error) {
 	if limit > 200 {
 		limit = 200
 	}
-	guests, _, err := h.guestService.List(ctx, wid, cursor, limit+1)
+	guests, _, err := h.guestService.List(ctx, wid, cursor, limit)
 	if err != nil {
+		if errors.Is(err, repository.ErrInvalidCursor) {
+			return nil, fuego.BadRequestError{Title: "Invalid cursor"}
+		}
 		return nil, err
 	}
 	var nextCursor string

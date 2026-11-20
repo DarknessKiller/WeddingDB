@@ -17,4 +17,5 @@ var (
 var (
 	ErrAdminNotFound   = errors.New("admin not found")
 	ErrNoWeddingAccess = errors.New("no access to this wedding")
+	ErrSessionNotFound = errors.New("refresh token not found or expired")
 )

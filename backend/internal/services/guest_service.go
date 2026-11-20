@@ -2,7 +2,6 @@ package services
 
 import (
 	"context"
-	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -72,7 +71,13 @@ const (
 // the angbao amount is negative.
 var ErrInvalidGuestField = errors.New("invalid guest field")
 
+// ValidRSVP lists the accepted RSVP statuses; empty means "not set".
+var ValidRSVP = map[string]bool{"confirmed": true, "pending": true, "declined": true, "no_response": true}
+
 func validateGuestFields(g *models.GuestRecord) error {
+	if g.RSVP != "" && !ValidRSVP[g.RSVP] {
+		return fmt.Errorf("%w: invalid RSVP status %q", ErrInvalidGuestField, g.RSVP)
+	}
 	if n := utf8.RuneCountInString(g.Name); n > MaxGuestNameLen {
 		return fmt.Errorf("%w: name must be at most %d characters, got %d", ErrInvalidGuestField, MaxGuestNameLen, n)
 	}
@@ -194,7 +199,7 @@ func (s *GuestService) Create(ctx context.Context, g *models.GuestRecord) error 
 	if err != nil {
 		return err
 	}
-	s.publishEvent("create", g, g.WeddingID)
+	s.sseHub.publishGuest("create", g, g.WeddingID)
 	return nil
 }
 
@@ -205,7 +210,7 @@ func (s *GuestService) Update(ctx context.Context, g *models.GuestRecord) error 
 	if err != nil {
 		return err
 	}
-	s.publishEvent("update", g, g.WeddingID)
+	s.sseHub.publishGuest("update", g, g.WeddingID)
 	return nil
 }
 
@@ -224,7 +229,7 @@ func (s *GuestService) Delete(ctx context.Context, id, weddingID uuid.UUID) erro
 		}
 		return err
 	}
-	s.publishEvent("delete", guest, weddingID)
+	s.sseHub.publishGuest("delete", guest, weddingID)
 	return nil
 }
 
@@ -314,7 +319,7 @@ func (s *GuestService) AssignSeat(ctx context.Context, guestID, weddingID, table
 	if err != nil {
 		return err
 	}
-	s.publishEvent("seat_assign", guest, weddingID)
+	s.sseHub.publishGuest("seat_assign", guest, weddingID)
 	return nil
 }
 
@@ -333,7 +338,7 @@ func (s *GuestService) UpdateWithSeat(ctx context.Context, g *models.GuestRecord
 	if err != nil {
 		return err
 	}
-	s.publishEvent("update", g, g.WeddingID)
+	s.sseHub.publishGuest("update", g, g.WeddingID)
 	return nil
 }
 
@@ -370,7 +375,7 @@ func (s *GuestService) CheckIn(ctx context.Context, id, weddingID uuid.UUID, not
 		log.Printf("guest lookup after check-in failed: %v", err)
 	}
 	if guest != nil {
-		s.publishEvent("checkin", guest, weddingID)
+		s.sseHub.publishGuest("checkin", guest, weddingID)
 	}
 	return nil
 }
@@ -384,7 +389,7 @@ func (s *GuestService) CheckOut(ctx context.Context, id, weddingID uuid.UUID) er
 	if err := s.guestRepo.Update(ctx, guest); err != nil {
 		return err
 	}
-	s.publishEvent("checkout", guest, weddingID)
+	s.sseHub.publishGuest("checkout", guest, weddingID)
 	return nil
 }
 
@@ -477,7 +482,7 @@ func (s *GuestService) BulkCreate(ctx context.Context, guests []models.GuestReco
 		return 0, err
 	}
 	for _, e := range events {
-		s.publishEvent(e.eventType, e.guest, e.guest.WeddingID)
+		s.sseHub.publishGuest(e.eventType, e.guest, e.guest.WeddingID)
 	}
 	return created, nil
 }
@@ -486,11 +491,12 @@ func (s *GuestService) Occupancy(ctx context.Context, weddingID uuid.UUID) ([]re
 	return s.guestRepo.TableOccupancy(ctx, weddingID)
 }
 
-// publishEvent broadcasts a guest mutation to all connected SSE clients via Redis.
+// publishGuest broadcasts a guest mutation to all connected SSE clients via Redis.
 // Uses context.Background() because the service layer does not yet propagate request
-// context. The goroutine ensures publishing never blocks the caller.
-func (s *GuestService) publishEvent(eventType string, guest *models.GuestRecord, weddingID uuid.UUID) {
-	if s.sseHub == nil {
+// context. The goroutine ensures publishing never blocks the caller. A nil hub
+// (tests, SSE disabled) is a no-op.
+func (h *SSEHub) publishGuest(eventType string, guest *models.GuestRecord, weddingID uuid.UUID) {
+	if h == nil {
 		return
 	}
 
@@ -503,7 +509,7 @@ func (s *GuestService) publishEvent(eventType string, guest *models.GuestRecord,
 	}
 
 	go func() {
-		if err := s.sseHub.Publish(context.Background(), weddingID, event); err != nil {
+		if err := h.Publish(context.Background(), weddingID, event); err != nil {
 			log.Printf("SSE: publish %s for guest %s in wedding %s: %v", eventType, guest.ID, weddingID, err)
 		}
 	}()
@@ -588,7 +594,7 @@ func (s *GuestService) Sync(ctx context.Context, weddingID uuid.UUID, mutations 
 }
 
 func (s *GuestService) applySyncMutation(ctx context.Context, weddingID uuid.UUID, m SyncMutation) SyncResult {
-	gid, err := parseSyncID(m.GuestID)
+	gid, err := utils.DecodeUUID(m.GuestID)
 	if err != nil {
 		return SyncResult{GuestID: m.GuestID, Status: "skipped", Reason: "invalid guestId"}
 	}
@@ -612,10 +618,9 @@ func (s *GuestService) applySyncMutation(ctx context.Context, weddingID uuid.UUI
 				return SyncResult{GuestID: m.GuestID, Status: "skipped", Reason: "older than server", ServerRecord: existing}
 			}
 			if m.Payload != nil {
-				if err := s.validateSyncTableSeat(ctx, weddingID, m.Payload); err != nil {
+				if err := applySyncPayload(existing, m.Payload, &gid); err != nil {
 					return SyncResult{GuestID: m.GuestID, Status: "failed", Reason: err.Error()}
 				}
-				applySyncPayload(existing, m.Payload, &gid)
 			}
 			existing.UpdatedAt = opTime
 			if err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
@@ -623,7 +628,7 @@ func (s *GuestService) applySyncMutation(ctx context.Context, weddingID uuid.UUI
 			}); err != nil {
 				return SyncResult{GuestID: m.GuestID, Status: "failed", Reason: err.Error()}
 			}
-			s.publishEvent("update", existing, weddingID)
+			s.sseHub.publishGuest("update", existing, weddingID)
 			return SyncResult{GuestID: m.GuestID, Status: "applied", ServerRecord: existing}
 		}
 		if m.Payload == nil || m.Payload.Name == nil || *m.Payload.Name == "" {
@@ -632,9 +637,6 @@ func (s *GuestService) applySyncMutation(ctx context.Context, weddingID uuid.UUI
 		pax := 1
 		if m.Payload.Pax != nil && *m.Payload.Pax >= 1 {
 			pax = *m.Payload.Pax
-		}
-		if err := s.validateSyncTableSeat(ctx, weddingID, m.Payload); err != nil {
-			return SyncResult{GuestID: m.GuestID, Status: "failed", Reason: err.Error()}
 		}
 		g := &models.GuestRecord{
 			ID:        gid,
@@ -662,9 +664,11 @@ func (s *GuestService) applySyncMutation(ctx context.Context, weddingID uuid.UUI
 			g.Dietary = *m.Payload.Dietary
 		}
 		if t := m.Payload.TableID; t.Set && t.Value != nil && *t.Value != "" {
-			if tid, err := parseSyncID(*t.Value); err == nil {
-				g.TableID = &tid
+			tid, err := utils.DecodeUUID(*t.Value)
+			if err != nil {
+				return SyncResult{GuestID: m.GuestID, Status: "failed", Reason: fmt.Sprintf("invalid tableId %q", *t.Value)}
 			}
+			g.TableID = &tid
 		}
 		if g.TableID != nil {
 			g.SeatNum = m.Payload.SeatNum
@@ -674,7 +678,7 @@ func (s *GuestService) applySyncMutation(ctx context.Context, weddingID uuid.UUI
 		}); err != nil {
 			return SyncResult{GuestID: m.GuestID, Status: "failed", Reason: err.Error()}
 		}
-		s.publishEvent("create", g, weddingID)
+		s.sseHub.publishGuest("create", g, weddingID)
 		return SyncResult{GuestID: m.GuestID, Status: "applied", ServerRecord: g}
 
 	case SyncOpUpdate:
@@ -686,10 +690,9 @@ func (s *GuestService) applySyncMutation(ctx context.Context, weddingID uuid.UUI
 			return SyncResult{GuestID: m.GuestID, Status: "skipped", Reason: "older than server", ServerRecord: existing}
 		}
 		if m.Payload != nil {
-			if err := s.validateSyncTableSeat(ctx, weddingID, m.Payload); err != nil {
+			if err := applySyncPayload(existing, m.Payload, nil); err != nil {
 				return SyncResult{GuestID: m.GuestID, Status: "failed", Reason: err.Error()}
 			}
-			applySyncPayload(existing, m.Payload, nil)
 		}
 		existing.UpdatedAt = opTime
 		if err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
@@ -697,7 +700,7 @@ func (s *GuestService) applySyncMutation(ctx context.Context, weddingID uuid.UUI
 		}); err != nil {
 			return SyncResult{GuestID: m.GuestID, Status: "failed", Reason: err.Error()}
 		}
-		s.publishEvent("update", existing, weddingID)
+		s.sseHub.publishGuest("update", existing, weddingID)
 		return SyncResult{GuestID: m.GuestID, Status: "applied", ServerRecord: existing}
 
 	case SyncOpDelete:
@@ -712,14 +715,16 @@ func (s *GuestService) applySyncMutation(ctx context.Context, weddingID uuid.UUI
 		if err := s.guestRepo.Delete(ctx, gid, weddingID); err != nil {
 			return SyncResult{GuestID: m.GuestID, Status: "failed", Reason: err.Error()}
 		}
-		s.publishEvent("delete", existing, weddingID)
+		s.sseHub.publishGuest("delete", existing, weddingID)
 		return SyncResult{GuestID: m.GuestID, Status: "applied"}
 
 	case SyncOpCheckIn:
 		if !found {
 			return SyncResult{GuestID: m.GuestID, Status: "skipped", Reason: "not found"}
 		}
-		if opTime.Before(existing.UpdatedAt) {
+		// An arrival recorded offline wins over unrelated newer edits (table
+		// moves, notes): skipping it would lose the check-in and angbao.
+		if existing.CheckedInAt != nil && opTime.Before(existing.UpdatedAt) {
 			return SyncResult{GuestID: m.GuestID, Status: "skipped", Reason: "older than server", ServerRecord: existing}
 		}
 		existing.CheckedInAt = &opTime
@@ -740,11 +745,14 @@ func (s *GuestService) applySyncMutation(ctx context.Context, weddingID uuid.UUI
 		if err := validateGuestFields(existing); err != nil {
 			return SyncResult{GuestID: m.GuestID, Status: "failed", Reason: err.Error()}
 		}
-		existing.UpdatedAt = opTime
+		// Never move updated_at backwards, or a stale queued edit could win next.
+		if opTime.After(existing.UpdatedAt) {
+			existing.UpdatedAt = opTime
+		}
 		if err := s.guestRepo.SyncUpdate(ctx, existing); err != nil {
 			return SyncResult{GuestID: m.GuestID, Status: "failed", Reason: err.Error()}
 		}
-		s.publishEvent("checkin", existing, weddingID)
+		s.sseHub.publishGuest("checkin", existing, weddingID)
 		return SyncResult{GuestID: m.GuestID, Status: "applied", ServerRecord: existing}
 
 	case SyncOpCheckOut:
@@ -759,7 +767,7 @@ func (s *GuestService) applySyncMutation(ctx context.Context, weddingID uuid.UUI
 		if err := s.guestRepo.SyncUpdate(ctx, existing); err != nil {
 			return SyncResult{GuestID: m.GuestID, Status: "failed", Reason: err.Error()}
 		}
-		s.publishEvent("checkout", existing, weddingID)
+		s.sseHub.publishGuest("checkout", existing, weddingID)
 		return SyncResult{GuestID: m.GuestID, Status: "applied", ServerRecord: existing}
 
 	default:
@@ -767,29 +775,7 @@ func (s *GuestService) applySyncMutation(ctx context.Context, weddingID uuid.UUI
 	}
 }
 
-// validateSyncTableSeat mirrors the table/seat rules of AssignSeat for offline
-// sync mutations: the table must exist in this wedding and the seat must fit
-// its capacity. A nil/empty tableId (unassign) needs no validation.
-func (s *GuestService) validateSyncTableSeat(ctx context.Context, weddingID uuid.UUID, p *SyncPayload) error {
-	if !p.TableID.Set || p.TableID.Value == nil || *p.TableID.Value == "" {
-		return nil
-	}
-	raw := *p.TableID.Value
-	tid, err := parseSyncID(raw)
-	if err != nil {
-		return fmt.Errorf("invalid tableId %q", raw)
-	}
-	table, err := s.tableRepo.FindByID(ctx, tid, weddingID)
-	if err != nil {
-		return fmt.Errorf("table %s not found", raw)
-	}
-	if p.SeatNum != nil && table.Capacity > 0 && *p.SeatNum > table.Capacity {
-		return fmt.Errorf("seat %d exceeds capacity %d of table %s", *p.SeatNum, table.Capacity, table.Name)
-	}
-	return nil
-}
-
-func applySyncPayload(g *models.GuestRecord, p *SyncPayload, gid *uuid.UUID) {
+func applySyncPayload(g *models.GuestRecord, p *SyncPayload, gid *uuid.UUID) error {
 	if p.Name != nil && *p.Name != "" {
 		g.Name = *p.Name
 	}
@@ -823,7 +809,11 @@ func applySyncPayload(g *models.GuestRecord, p *SyncPayload, gid *uuid.UUID) {
 		if p.TableID.Value == nil || *p.TableID.Value == "" {
 			g.TableID = nil
 			g.SeatNum = nil
-		} else if tid, err := parseSyncID(*p.TableID.Value); err == nil {
+		} else {
+			tid, err := utils.DecodeUUID(*p.TableID.Value)
+			if err != nil {
+				return fmt.Errorf("invalid tableId %q", *p.TableID.Value)
+			}
 			g.TableID = &tid
 			g.SeatNum = p.SeatNum
 		}
@@ -831,6 +821,7 @@ func applySyncPayload(g *models.GuestRecord, p *SyncPayload, gid *uuid.UUID) {
 	if gid != nil {
 		g.ID = *gid
 	}
+	return nil
 }
 
 // appendNote joins existing notes and notes added at check-in with a newline.
@@ -842,25 +833,6 @@ func appendNote(existing, notes string) string {
 		return notes
 	}
 	return existing + "\n" + notes
-}
-
-func parseSyncID(s string) (uuid.UUID, error) {
-	if id, err := uuid.Parse(s); err == nil {
-		return id, nil
-	}
-	// try base64 url
-	return parseBase64ID(s)
-}
-
-func parseBase64ID(s string) (uuid.UUID, error) {
-	decoded, err := base64.RawURLEncoding.DecodeString(s)
-	if err != nil {
-		decoded, err = base64.URLEncoding.DecodeString(s)
-		if err != nil {
-			return uuid.Nil, err
-		}
-	}
-	return uuid.FromBytes(decoded)
 }
 
 func guestToEventData(g *models.GuestRecord) *GuestEventData {

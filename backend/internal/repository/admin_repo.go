@@ -2,6 +2,7 @@ package repository
 
 import (
 	"context"
+	"strings"
 
 	"weddingdb/internal/models"
 
@@ -17,7 +18,7 @@ func NewAdminRepo(db *gorm.DB) *AdminRepo {
 
 func (r *AdminRepo) FindByEmail(ctx context.Context, email string) (*models.AdminUser, error) {
 	var admin models.AdminUser
-	err := r.db.WithContext(ctx).Where("email = ?", email).First(&admin).Error
+	err := r.db.WithContext(ctx).Where("LOWER(email) = ?", strings.ToLower(strings.TrimSpace(email))).First(&admin).Error
 	return &admin, err
 }
 
