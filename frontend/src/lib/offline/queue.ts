@@ -106,7 +106,7 @@ async function runSync(wid: string): Promise<SyncOutcome> {
 		const t = await res.text().catch(() => '');
 		throw new Error(`sync failed ${res.status} ${t}`);
 	}
-	const data = await res.json() as { results: { guestId: string; status: string; serverRecord?: unknown; reason?: string }[] };
+	const data = await res.json() as { results: { guestId: string; status: string; serverRecord?: unknown; reason?: string; retryable?: boolean }[] };
 	const appliedIds: string[] = [];
 	const failedIds: string[] = [];
 	let applied = 0, skipped = 0;
@@ -114,7 +114,9 @@ async function runSync(wid: string): Promise<SyncOutcome> {
 		const r = data.results[i];
 		if (r.status === 'applied') { applied++; appliedIds.push(q[i].mutationId); }
 		else if (r.status === 'skipped') { skipped++; appliedIds.push(q[i].mutationId); }
-		else if (r.status === 'failed') failedIds.push(q[i].mutationId);
+		// A retryable failure (server-side outage) stays queued without spending
+		// an attempt; only rejections of the edit itself count toward the limit.
+		else if (r.status === 'failed' && !r.retryable) failedIds.push(q[i].mutationId);
 	}
 	// drop processed (both applied and skipped); the server already holds the newer record
 	dequeueByIds(wid, appliedIds);

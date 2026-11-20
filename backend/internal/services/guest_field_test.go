@@ -78,6 +78,9 @@ func TestSync_RejectsInvalidFields(t *testing.T) {
 	if len(results) != 1 || results[0].Status != "failed" {
 		t.Fatalf("sync result = %+v, want one failed mutation", results)
 	}
+	if results[0].Retryable {
+		t.Fatal("a validation failure must not be retryable: retrying cannot fix it")
+	}
 }
 
 func ptr[T any](v T) *T { return &v }

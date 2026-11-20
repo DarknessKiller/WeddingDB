@@ -262,7 +262,7 @@ func checkSeatTx(ctx context.Context, tx *gorm.DB, weddingID, tableID uuid.UUID,
 	// Compare against capacity-pax+1 so seatNum+pax cannot overflow past the
 	// check for large seatNum values.
 	if seatNum < 1 || seatNum > table.Capacity-pax+1 {
-		return errors.New("seat range exceeds table capacity")
+		return ErrSeatRange
 	}
 	existing, err := repository.NewGuestRepo(tx).FindByTable(ctx, weddingID, tableID)
 	if err != nil {
@@ -286,7 +286,7 @@ func checkSeatTx(ctx context.Context, tx *gorm.DB, weddingID, tableID uuid.UUID,
 		}
 	}
 	if atTable > table.Capacity {
-		return errors.New("table capacity exceeded")
+		return ErrTableFull
 	}
 	return nil
 }
@@ -312,7 +312,7 @@ func checkSeatNotTaken(ctx context.Context, tx *gorm.DB, g *models.GuestRecord) 
 			return fmt.Errorf("sum table pax: %w", err)
 		}
 		if int(seated)+g.Pax > table.Capacity {
-			return errors.New("table capacity exceeded")
+			return ErrTableFull
 		}
 		return nil
 	}
@@ -325,12 +325,12 @@ func lockTableTx(ctx context.Context, tx *gorm.DB, weddingID, tableID uuid.UUID)
 	if tx.Name() == "postgres" {
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Select("id").
 			Where("id = ? AND wedding_id = ?", tableID, weddingID).First(&models.BanquetTable{}).Error; err != nil {
-			return nil, errors.New("table not found")
+			return nil, ErrTableNotFound
 		}
 	}
 	table, err := repository.NewTableRepo(tx).FindByID(ctx, tableID, weddingID)
 	if err != nil {
-		return nil, errors.New("table not found")
+		return nil, ErrTableNotFound
 	}
 	return table, nil
 }
@@ -628,6 +628,22 @@ type SyncResult struct {
 	Status       string              `json:"status"` // applied | skipped | failed
 	Reason       string              `json:"reason,omitempty"`
 	ServerRecord *models.GuestRecord `json:"serverRecord,omitempty"`
+	// Retryable marks a failure that is not the mutation's fault (database
+	// error, timeout). The client keeps it queued without spending a retry.
+	Retryable bool `json:"retryable,omitzero"`
+}
+
+// syncRuleErrors are failures that retrying the same mutation cannot fix.
+var syncRuleErrors = []error{
+	ErrInvalidGuestField, ErrInvalidPax, ErrGuestCapExceeded, ErrSeatOverlap, ErrStaleGuest,
+	ErrSeatRange, ErrTableFull, ErrTableNotFound, errInvalidTableID, gorm.ErrRecordNotFound,
+}
+
+// syncFailed reports err for m, marking anything that is not a rule
+// violation as retryable.
+func syncFailed(m SyncMutation, err error) SyncResult {
+	rule := slices.ContainsFunc(syncRuleErrors, func(target error) bool { return errors.Is(err, target) })
+	return SyncResult{GuestID: m.GuestID, Status: "failed", Reason: err.Error(), Retryable: !rule}
 }
 
 // Sync applies a batch of mutations with newer-time-wins.
@@ -658,7 +674,7 @@ func (s *GuestService) applySyncMutation(ctx context.Context, weddingID uuid.UUI
 	// other error must stay "failed", or the client dequeues the mutation.
 	existing, err := s.guestRepo.FindByID(ctx, gid, weddingID)
 	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
-		return SyncResult{GuestID: m.GuestID, Status: "failed", Reason: fmt.Sprintf("load guest: %v", err)}
+		return syncFailed(m, fmt.Errorf("load guest: %w", err))
 	}
 	found := err == nil
 
@@ -671,14 +687,14 @@ func (s *GuestService) applySyncMutation(ctx context.Context, weddingID uuid.UUI
 			}
 			if m.Payload != nil {
 				if err := applySyncPayload(existing, m.Payload, &gid); err != nil {
-					return SyncResult{GuestID: m.GuestID, Status: "failed", Reason: err.Error()}
+					return syncFailed(m, err)
 				}
 			}
 			existing.UpdatedAt = opTime
 			if err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 				return s.updateGuestTx(ctx, tx, existing, true, nil)
 			}); err != nil {
-				return SyncResult{GuestID: m.GuestID, Status: "failed", Reason: err.Error()}
+				return syncFailed(m, err)
 			}
 			s.sseHub.publishGuest("update", existing, weddingID)
 			return SyncResult{GuestID: m.GuestID, Status: "applied", ServerRecord: existing}
@@ -728,7 +744,7 @@ func (s *GuestService) applySyncMutation(ctx context.Context, weddingID uuid.UUI
 		if err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 			return s.createGuestTx(ctx, tx, g, true)
 		}); err != nil {
-			return SyncResult{GuestID: m.GuestID, Status: "failed", Reason: err.Error()}
+			return syncFailed(m, err)
 		}
 		s.sseHub.publishGuest("create", g, weddingID)
 		return SyncResult{GuestID: m.GuestID, Status: "applied", ServerRecord: g}
@@ -743,14 +759,14 @@ func (s *GuestService) applySyncMutation(ctx context.Context, weddingID uuid.UUI
 		}
 		if m.Payload != nil {
 			if err := applySyncPayload(existing, m.Payload, nil); err != nil {
-				return SyncResult{GuestID: m.GuestID, Status: "failed", Reason: err.Error()}
+				return syncFailed(m, err)
 			}
 		}
 		existing.UpdatedAt = opTime
 		if err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 			return s.updateGuestTx(ctx, tx, existing, true, nil)
 		}); err != nil {
-			return SyncResult{GuestID: m.GuestID, Status: "failed", Reason: err.Error()}
+			return syncFailed(m, err)
 		}
 		s.sseHub.publishGuest("update", existing, weddingID)
 		return SyncResult{GuestID: m.GuestID, Status: "applied", ServerRecord: existing}
@@ -765,7 +781,7 @@ func (s *GuestService) applySyncMutation(ctx context.Context, weddingID uuid.UUI
 			return SyncResult{GuestID: m.GuestID, Status: "failed", Reason: "older than server", ServerRecord: existing}
 		}
 		if err := s.guestRepo.Delete(ctx, gid, weddingID); err != nil {
-			return SyncResult{GuestID: m.GuestID, Status: "failed", Reason: err.Error()}
+			return syncFailed(m, err)
 		}
 		s.sseHub.publishGuest("delete", existing, weddingID)
 		return SyncResult{GuestID: m.GuestID, Status: "applied"}
@@ -806,14 +822,14 @@ func (s *GuestService) applySyncMutation(ctx context.Context, weddingID uuid.UUI
 			}
 		}
 		if err := validateGuestFields(existing); err != nil {
-			return SyncResult{GuestID: m.GuestID, Status: "failed", Reason: err.Error()}
+			return syncFailed(m, err)
 		}
 		// Never move updated_at backwards, or a stale queued edit could win next.
 		if opTime.After(existing.UpdatedAt) {
 			existing.UpdatedAt = opTime
 		}
 		if err := s.guestRepo.SyncCheckIn(ctx, existing); err != nil {
-			return SyncResult{GuestID: m.GuestID, Status: "failed", Reason: err.Error()}
+			return syncFailed(m, err)
 		}
 		s.sseHub.publishGuest("checkin", existing, weddingID)
 		return SyncResult{GuestID: m.GuestID, Status: "applied", ServerRecord: existing}
@@ -828,7 +844,7 @@ func (s *GuestService) applySyncMutation(ctx context.Context, weddingID uuid.UUI
 		existing.CheckedInAt = nil
 		existing.UpdatedAt = opTime
 		if err := s.guestRepo.CheckOut(ctx, gid, weddingID, opTime); err != nil {
-			return SyncResult{GuestID: m.GuestID, Status: "failed", Reason: err.Error()}
+			return syncFailed(m, err)
 		}
 		s.sseHub.publishGuest("checkout", existing, weddingID)
 		return SyncResult{GuestID: m.GuestID, Status: "applied", ServerRecord: existing}
@@ -876,7 +892,7 @@ func applySyncPayload(g *models.GuestRecord, p *SyncPayload, gid *uuid.UUID) err
 		} else {
 			tid, err := utils.DecodeUUID(*p.TableID.Value)
 			if err != nil {
-				return fmt.Errorf("invalid tableId %q", *p.TableID.Value)
+				return fmt.Errorf("%w %q", errInvalidTableID, *p.TableID.Value)
 			}
 			g.TableID = &tid
 			g.SeatNum = p.SeatNum

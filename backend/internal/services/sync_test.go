@@ -578,6 +578,9 @@ func TestSync_LookupErrorIsFailedNotSkipped(t *testing.T) {
 			if res[0].Status != "failed" {
 				t.Fatalf("status = %q (%s), want failed", res[0].Status, res[0].Reason)
 			}
+			if !res[0].Retryable {
+				t.Fatal("a database error must be retryable so the client keeps the edit")
+			}
 		})
 	}
 }

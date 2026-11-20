@@ -148,3 +148,26 @@ describe('queue limits', () => {
 		expect(q[0].attempts).toBe(1);
 	});
 });
+
+describe('sync retries', () => {
+	it('keeps a retryable failure queued without spending an attempt', async () => {
+		localStorage.setItem(
+			'offline_queue_w1',
+			JSON.stringify([
+				{ mutationId: 'm1', op: 'checkin', guestId: 'g1', clientUpdatedAt: '2026-01-01T00:00:00Z' },
+				{ mutationId: 'm2', op: 'update', guestId: 'g2', clientUpdatedAt: '2026-01-01T00:00:00Z' }
+			])
+		);
+		apiFetch.mockResolvedValue({
+			ok: true,
+			json: async () => ({ results: [
+				{ guestId: 'g1', status: 'failed', reason: 'load guest: timeout', retryable: true },
+				{ guestId: 'g2', status: 'failed', reason: 'invalid guest field' }
+			] })
+		});
+		const { syncQueue, getQueue } = await import('./queue');
+		for (let i = 0; i < 6; i++) await syncQueue('w1');
+
+		expect(getQueue('w1').map(m => [m.mutationId, m.attempts ?? 0])).toEqual([['m1', 0]]);
+	});
+});
