@@ -13,8 +13,12 @@ function isNetworkError(e: unknown) {
 	// Chrome/Firefox say "Failed to fetch"/"NetworkError"; Safari says "Load failed".
 	return e instanceof TypeError && /failed to fetch|networkerror|load failed/i.test((e as Error).message || '');
 }
+// genId makes a random 16-byte id in the server's base64url UUID form, so an
+// offline-created guest keeps the id SSE echoes back (no duplicate row).
+// getRandomValues also works outside HTTPS, unlike crypto.randomUUID.
 function genId(): string {
-	try { return crypto.randomUUID(); } catch { return `${Date.now()}-${Math.random().toString(36).slice(2)}`; }
+	const b = crypto.getRandomValues(new Uint8Array(16));
+	return btoa(String.fromCharCode(...b)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
 }
 // Capture once per user action and reuse for the queued op: a retry after a lost
 // response must not look newer than the original under server last-write-wins.

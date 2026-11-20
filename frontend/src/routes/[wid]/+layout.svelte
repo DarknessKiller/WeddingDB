@@ -96,6 +96,8 @@
 
   let destroyed = false;
   let activeWid = '';
+  // Set in onMount; the banner's "Sync now" runs the same sync-and-reseed path.
+  let syncNow: () => Promise<void> = async () => {};
   let cleanupListeners: (() => void) | undefined;
   onMount(async () => {
     if (!await validateToken() || destroyed) return;
@@ -113,6 +115,7 @@
       } catch {}
     }
 
+    syncNow = doSync;
     const onOnline = () => { offline = false; refreshQueued(); doSync(); };
     const onOffline = () => { offline = true; };
     const onVis = () => { if (document.visibilityState === 'visible' && navigator.onLine) doSync(); };
@@ -190,7 +193,7 @@
       {#if offline}
         <div class="offline-banner">Offline — changes queued{queued ? ` (${queued})` : ''}</div>
       {:else if queued}
-        <div class="offline-banner queued">{queued} queued — syncing on reconnect <button onclick={async () => { await syncQueue(wid); refreshQueued(); }}>Sync now</button></div>
+        <div class="offline-banner queued">{queued} queued — syncing on reconnect <button onclick={() => syncNow()}>Sync now</button></div>
       {/if}
       <Header />
       <main class="main-content">

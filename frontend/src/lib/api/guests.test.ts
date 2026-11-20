@@ -61,3 +61,15 @@ describe('updateGuest conflicts', () => {
 		expect(enqueue).not.toHaveBeenCalled();
 	});
 });
+
+describe('offline ids', () => {
+	it('gives an offline-created guest a base64url UUID id like the server uses', async () => {
+		Object.defineProperty(globalThis, 'navigator', { value: { onLine: false }, configurable: true });
+		apiFetch.mockRejectedValue(new TypeError('Failed to fetch'));
+		const { createGuest } = await import('./guests');
+
+		const g = await createGuest('w1', { name: 'A', pax: 1, rsvp: 'pending', isVip: false, notes: '', dietary: [] });
+		expect(g.id).toMatch(/^[A-Za-z0-9_-]{22}$/);
+		expect(enqueue.mock.calls[0][1].guestId).toBe(g.id);
+	});
+});
