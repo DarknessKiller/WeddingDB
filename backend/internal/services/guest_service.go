@@ -42,6 +42,20 @@ func guestCapError(current, delta int) error {
 		ErrGuestCapExceeded, current, current+delta, MaxGuestsPerWedding)
 }
 
+// MaxGuestPartySize caps one guest entry's pax. Without it a single row could
+// exceed the wedding cap or a table's whole seat range.
+const MaxGuestPartySize = 100
+
+// ErrInvalidPax is returned when a guest's pax is outside 1..MaxGuestPartySize.
+var ErrInvalidPax = errors.New("invalid pax")
+
+func validatePax(pax int) error {
+	if pax < 1 || pax > MaxGuestPartySize {
+		return fmt.Errorf("%w: pax must be between 1 and %d, got %d", ErrInvalidPax, MaxGuestPartySize, pax)
+	}
+	return nil
+}
+
 // guestCountLocked serializes guest additions for one wedding and returns the
 // current count. The row lock is Postgres-only; sqlite (tests) has one writer.
 func (s *GuestService) guestCountLocked(tx *gorm.DB, weddingID uuid.UUID) (int, error) {
@@ -63,6 +77,9 @@ func (s *GuestService) guestCountLocked(tx *gorm.DB, weddingID uuid.UUID) (int, 
 func (s *GuestService) createGuestTx(ctx context.Context, tx *gorm.DB, g *models.GuestRecord, syncWrite bool) error {
 	if g.Pax < 1 {
 		g.Pax = 1
+	}
+	if err := validatePax(g.Pax); err != nil {
+		return err
 	}
 	// Wedding row first, table row second: every write path locks in this
 	// order, so the two lock sets cannot deadlock.
@@ -86,6 +103,9 @@ func (s *GuestService) createGuestTx(ctx context.Context, tx *gorm.DB, g *models
 func (s *GuestService) updateGuestTx(ctx context.Context, tx *gorm.DB, g *models.GuestRecord, syncWrite bool) error {
 	if g.Pax < 1 {
 		g.Pax = 1
+	}
+	if err := validatePax(g.Pax); err != nil {
+		return err
 	}
 	total, err := s.guestCountLocked(tx, g.WeddingID)
 	if err != nil {
@@ -322,6 +342,9 @@ func (s *GuestService) BulkCreate(ctx context.Context, guests []models.GuestReco
 	for i := range guests {
 		if guests[i].Pax < 1 {
 			guests[i].Pax = 1
+		}
+		if err := validatePax(guests[i].Pax); err != nil {
+			return 0, err
 		}
 		incoming += guests[i].Pax
 	}

@@ -89,8 +89,8 @@ func (h *GuestHandler) Create(c fuego.ContextWithBody[GuestCreateRequest]) (any,
 	if body.Name == "" {
 		return nil, fuego.BadRequestError{Title: "Name is required"}
 	}
-	if body.Pax < 1 {
-		return nil, fuego.BadRequestError{Title: "Pax must be at least 1"}
+	if body.Pax < 1 || body.Pax > services.MaxGuestPartySize {
+		return nil, fuego.BadRequestError{Title: "Pax must be between 1 and " + strconv.Itoa(services.MaxGuestPartySize)}
 	}
 	validRSVP := map[string]bool{"confirmed": true, "pending": true, "declined": true, "no_response": true}
 	if body.RSVP != "" && !validRSVP[body.RSVP] {
@@ -111,7 +111,7 @@ func (h *GuestHandler) Create(c fuego.ContextWithBody[GuestCreateRequest]) (any,
 		Dietary:   body.Dietary,
 	}
 	if err := h.guestService.Create(ctx, guest); err != nil {
-		if errors.Is(err, services.ErrGuestCapExceeded) {
+		if errors.Is(err, services.ErrGuestCapExceeded) || errors.Is(err, services.ErrInvalidPax) {
 			return nil, fuego.BadRequestError{Title: err.Error()}
 		}
 		return nil, err
@@ -150,8 +150,8 @@ func (h *GuestHandler) Update(c fuego.ContextWithBody[GuestCreateRequest]) (any,
 	if body.Name == "" {
 		return nil, fuego.BadRequestError{Title: "Name is required"}
 	}
-	if body.Pax < 1 {
-		return nil, fuego.BadRequestError{Title: "Pax must be at least 1"}
+	if body.Pax < 1 || body.Pax > services.MaxGuestPartySize {
+		return nil, fuego.BadRequestError{Title: "Pax must be between 1 and " + strconv.Itoa(services.MaxGuestPartySize)}
 	}
 	validRSVP := map[string]bool{"confirmed": true, "pending": true, "declined": true, "no_response": true}
 	if body.RSVP != "" && !validRSVP[body.RSVP] {
@@ -199,7 +199,7 @@ func (h *GuestHandler) Update(c fuego.ContextWithBody[GuestCreateRequest]) (any,
 		}
 	}
 	if err := h.guestService.UpdateWithSeat(ctx, guest, tid, seatNum); err != nil {
-		if errors.Is(err, services.ErrGuestCapExceeded) {
+		if errors.Is(err, services.ErrGuestCapExceeded) || errors.Is(err, services.ErrInvalidPax) {
 			return nil, fuego.BadRequestError{Title: err.Error()}
 		}
 		return nil, err
@@ -336,6 +336,9 @@ func (h *GuestHandler) BulkImport(c fuego.ContextWithBody[BulkImportRequest]) (a
 		if g.Pax < 1 {
 			g.Pax = 1
 		}
+		if g.Pax > services.MaxGuestPartySize {
+			return nil, fuego.BadRequestError{Title: "Pax must be between 1 and " + strconv.Itoa(services.MaxGuestPartySize)}
+		}
 		validRSVP := map[string]bool{"confirmed": true, "pending": true, "declined": true, "no_response": true}
 		if g.RSVP != "" && !validRSVP[g.RSVP] {
 			g.RSVP = "no_response"
@@ -362,7 +365,7 @@ func (h *GuestHandler) BulkImport(c fuego.ContextWithBody[BulkImportRequest]) (a
 	}
 	count, err := h.guestService.BulkCreate(ctx, guests)
 	if err != nil {
-		if errors.Is(err, services.ErrGuestCapExceeded) {
+		if errors.Is(err, services.ErrGuestCapExceeded) || errors.Is(err, services.ErrInvalidPax) {
 			return nil, fuego.BadRequestError{Title: err.Error()}
 		}
 		return nil, fuego.BadRequestError{Title: "Bulk import failed"}
