@@ -85,5 +85,12 @@ func (r *TableRepo) Update(ctx context.Context, t *models.BanquetTable) error {
 }
 
 func (r *TableRepo) Delete(ctx context.Context, id, weddingID uuid.UUID) error {
-	return r.db.WithContext(ctx).Where("id = ? AND wedding_id = ?", id, weddingID).Delete(&models.BanquetTable{}).Error
+	res := r.db.WithContext(ctx).Where("id = ? AND wedding_id = ?", id, weddingID).Delete(&models.BanquetTable{})
+	if res.Error != nil {
+		return res.Error
+	}
+	if res.RowsAffected == 0 {
+		return gorm.ErrRecordNotFound
+	}
+	return nil
 }

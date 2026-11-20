@@ -280,6 +280,9 @@ func (h *GuestHandler) CheckOut(c fuego.ContextWithBody[any]) (any, error) {
 		return nil, fuego.BadRequestError{Title: "Invalid ID"}
 	}
 	if err := h.guestService.CheckOut(ctx, id, wid); err != nil {
+		if errors.Is(err, services.ErrGuestNotFound) {
+			return nil, fuego.NotFoundError{Title: "Guest not found"}
+		}
 		return nil, err
 	}
 	c.SetStatus(204)

@@ -440,6 +440,9 @@ func (s *GuestService) CheckIn(ctx context.Context, id, weddingID uuid.UUID, not
 
 func (s *GuestService) CheckOut(ctx context.Context, id, weddingID uuid.UUID) error {
 	if err := s.guestRepo.CheckOut(ctx, id, weddingID, time.Now()); err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return ErrGuestNotFound
+		}
 		return err
 	}
 	guest, err := s.guestRepo.FindByID(ctx, id, weddingID)

@@ -280,3 +280,15 @@ func TestUpdateWithSeat_RejectsStaleBase(t *testing.T) {
 	freshBase := fresh.UpdatedAt
 	testutil.NoErr(t, svc.UpdateWithSeat(t.Context(), fresh, nil, 0, &freshBase))
 }
+
+// Missing rows map to not-found sentinels, so handlers answer 404, not 500.
+func TestMissingRows_ReturnNotFound(t *testing.T) {
+	svc, _, wid := newGuestSyncService(t)
+	if err := svc.CheckOut(t.Context(), uuid.New(), wid); !errors.Is(err, ErrGuestNotFound) {
+		t.Fatalf("check-out of a missing guest: err = %v, want ErrGuestNotFound", err)
+	}
+	ts := NewTableService(svc.tableRepo, svc.guestRepo, nil, svc.db)
+	if err := ts.Delete(t.Context(), uuid.New(), wid); !errors.Is(err, ErrTableNotFound) {
+		t.Fatalf("delete of a missing table: err = %v, want ErrTableNotFound", err)
+	}
+}

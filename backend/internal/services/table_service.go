@@ -2,6 +2,7 @@ package services
 
 import (
 	"context"
+	"errors"
 
 	"weddingdb/internal/models"
 	"weddingdb/internal/repository"
@@ -71,6 +72,9 @@ func (s *TableService) Delete(ctx context.Context, id, weddingID uuid.UUID) erro
 		}
 		return repository.NewTableRepo(tx).Delete(ctx, id, weddingID)
 	})
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return ErrTableNotFound
+	}
 	if err != nil {
 		return err
 	}
