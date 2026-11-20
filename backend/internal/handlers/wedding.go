@@ -116,7 +116,7 @@ func (h *WeddingHandler) Update(c fuego.ContextWithBody[WeddingRequest]) (any, e
 		}
 		w.Date = d
 	}
-	if err := h.weddingService.Update(ctx, w); err != nil {
+	if err := h.weddingService.UpdateBasic(ctx, w); err != nil {
 		return nil, err
 	}
 	return w, nil
@@ -215,7 +215,7 @@ func (h *WeddingHandler) UpdateKioskSettings(c fuego.ContextWithBody[KioskSettin
 	if body.KioskIdleResetSeconds != nil {
 		w.KioskIdleResetSeconds = max(0, min(3600, *body.KioskIdleResetSeconds))
 	}
-	if err := h.weddingService.Update(ctx, w); err != nil {
+	if err := h.weddingService.UpdateKiosk(ctx, w, body.Name != nil); err != nil {
 		return nil, fuego.InternalServerError{Title: "Failed to update kiosk settings"}
 	}
 	return w, nil

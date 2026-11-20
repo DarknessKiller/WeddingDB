@@ -29,8 +29,12 @@ func (s *WeddingService) Create(ctx context.Context, w *models.WeddingEvent) err
 	return s.weddingRepo.Create(ctx, w)
 }
 
-func (s *WeddingService) Update(ctx context.Context, w *models.WeddingEvent) error {
-	return s.weddingRepo.Update(ctx, w)
+func (s *WeddingService) UpdateBasic(ctx context.Context, w *models.WeddingEvent) error {
+	return s.weddingRepo.UpdateBasic(ctx, w)
+}
+
+func (s *WeddingService) UpdateKiosk(ctx context.Context, w *models.WeddingEvent, includeName bool) error {
+	return s.weddingRepo.UpdateKiosk(ctx, w, includeName)
 }
 
 func (s *WeddingService) Delete(ctx context.Context, id uuid.UUID) error {

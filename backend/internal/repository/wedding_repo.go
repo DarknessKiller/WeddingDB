@@ -31,8 +31,27 @@ func (r *WeddingRepo) Create(ctx context.Context, w *models.WeddingEvent) error 
 	return r.db.WithContext(ctx).Create(w).Error
 }
 
-func (r *WeddingRepo) Update(ctx context.Context, w *models.WeddingEvent) error {
-	return r.db.WithContext(ctx).Save(w).Error
+// UpdateBasic writes only the fields the basic edit form owns. Replacing the
+// whole row would overwrite a kiosk-settings save made from a stale read.
+func (r *WeddingRepo) UpdateBasic(ctx context.Context, w *models.WeddingEvent) error {
+	return r.db.WithContext(ctx).Model(w).Select("name", "date").Updates(w).Error
+}
+
+// UpdateKiosk writes only the kiosk presentation columns. includeName is set
+// only when the payload carried a name, so an unrelated stale copy cannot
+// overwrite a basic edit.
+func (r *WeddingRepo) UpdateKiosk(ctx context.Context, w *models.WeddingEvent, includeName bool) error {
+	cols := []string{
+		"venue_name", "venue_address", "kiosk_description",
+		"kiosk_logo_url", "kiosk_background_url", "kiosk_background_blur",
+		"kiosk_background_size", "kiosk_background_pos_x", "kiosk_background_pos_y",
+		"kiosk_logo_size", "kiosk_logo_pos_x", "kiosk_logo_pos_y",
+		"show_seat_numbers", "kiosk_idle_reset_seconds",
+	}
+	if includeName {
+		cols = append(cols, "name")
+	}
+	return r.db.WithContext(ctx).Model(w).Select(cols).Updates(w).Error
 }
 
 func (r *WeddingRepo) Delete(ctx context.Context, id uuid.UUID) error {
