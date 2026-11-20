@@ -110,6 +110,10 @@ func Init(env config.Env, version string) *App {
 
 	// ponytail: FK lookup indexes
 	db.Exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_admin_users_email ON admin_users (email)")
+	// Fails if two existing accounts differ only by case; merge them, then restart.
+	if err := db.Exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_admin_users_email_lower ON admin_users (LOWER(email))").Error; err != nil {
+		log.Printf("WARN: case-insensitive email index not created: %v", err)
+	}
 	db.Exec("CREATE INDEX IF NOT EXISTS idx_banquet_tables_wedding_name ON banquet_tables (wedding_id, name)")
 	db.Exec("CREATE INDEX IF NOT EXISTS idx_refresh_tokens_wedding_id ON refresh_tokens (wedding_id)")
 	db.Exec("CREATE INDEX IF NOT EXISTS idx_refresh_tokens_expires_at ON refresh_tokens (expires_at)")

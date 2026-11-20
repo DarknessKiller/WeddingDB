@@ -71,6 +71,8 @@ type TokenResponse struct {
 
 type SelectWeddingRequest struct {
 	WeddingID string `json:"weddingId"`
+	// RefreshToken scopes the selection to this device's session.
+	RefreshToken string `json:"refreshToken"`
 }
 
 type SelectWeddingResponse struct {
@@ -135,12 +137,12 @@ func (h *AuthHandler) SelectWedding(c fuego.ContextWithBody[SelectWeddingRequest
 		return SelectWeddingResponse{}, fuego.BadRequestError{Title: "Invalid wedding ID"}
 	}
 	adminID := AdminIDFromContext(c.Context())
-	accessToken, err := h.authService.SelectWedding(c.Context(), adminID, weddingID)
+	accessToken, err := h.authService.SelectWedding(c.Context(), adminID, weddingID, body.RefreshToken)
 	if err != nil {
 		switch {
 		case errors.Is(err, services.ErrNoWeddingAccess):
 			return SelectWeddingResponse{}, fuego.ForbiddenError{Title: "No access to this wedding"}
-		case errors.Is(err, services.ErrAdminNotFound):
+		case errors.Is(err, services.ErrAdminNotFound), errors.Is(err, services.ErrSessionNotFound):
 			return SelectWeddingResponse{}, fuego.UnauthorizedError{Title: "Unauthorized"}
 		}
 		slog.Error("select wedding failed", "user", adminID, "err", err)

@@ -35,6 +35,9 @@ func (r *LayoutRepo) SaveLayout(
 			}
 		}
 		for _, t := range tables {
+			if err := NewTableRepo(tx).CheckCapacity(ctx, weddingID, t.ID, t.Capacity); err != nil {
+				return err
+			}
 			res := tx.Model(&models.BanquetTable{}).Where("id = ? AND wedding_id = ?", t.ID, weddingID).
 				Updates(map[string]any{
 					"x": t.X, "y": t.Y, "degree": t.Degree,

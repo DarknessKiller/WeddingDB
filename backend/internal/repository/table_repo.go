@@ -2,12 +2,46 @@ package repository
 
 import (
 	"context"
+	"errors"
+	"fmt"
 
 	"weddingdb/internal/models"
 
 	"github.com/google/uuid"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
+
+// ErrCapacityBelowSeats means a capacity cut would leave seated guests past the
+// table's last seat.
+var ErrCapacityBelowSeats = errors.New("capacity is below seats already assigned")
+
+// CheckCapacity rejects a capacity smaller than the highest seat in use at the
+// table. Call it inside the transaction that writes the capacity: it locks the
+// wedding row, then the table row, the same order as every guest seat write.
+func (r *TableRepo) CheckCapacity(ctx context.Context, weddingID, tableID uuid.UUID, capacity int) error {
+	db := r.db.WithContext(ctx)
+	if db.Name() == "postgres" {
+		if err := db.Clauses(clause.Locking{Strength: "UPDATE"}).Select("id").
+			Where("id = ?", weddingID).First(&models.WeddingEvent{}).Error; err != nil {
+			return err
+		}
+		if err := db.Clauses(clause.Locking{Strength: "UPDATE"}).Select("id").
+			Where("id = ? AND wedding_id = ?", tableID, weddingID).First(&models.BanquetTable{}).Error; err != nil {
+			return err
+		}
+	}
+	var lastSeat int
+	if err := db.Model(&models.GuestRecord{}).
+		Where("wedding_id = ? AND table_id = ? AND seat_num IS NOT NULL", weddingID, tableID).
+		Select("COALESCE(MAX(seat_num + pax - 1), 0)").Row().Scan(&lastSeat); err != nil {
+		return err
+	}
+	if lastSeat > capacity {
+		return fmt.Errorf("%w: seat %d is taken", ErrCapacityBelowSeats, lastSeat)
+	}
+	return nil
+}
 
 type TableRepo struct{ db *gorm.DB }
 

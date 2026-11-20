@@ -1,4 +1,5 @@
 import { apiFetch } from '#lib/api/client.ts';
+import { addToast } from '#lib/stores/index.ts';
 import { QUEUE_PREFIX, STAFF_CACHE_PREFIX, KIOSK_CACHE_PREFIX } from '#lib/offline/storage.ts';
 
 export type SyncOp = 'create' | 'update' | 'delete' | 'checkin' | 'checkout';
@@ -115,13 +116,12 @@ async function runSync(wid: string): Promise<SyncOutcome> {
 		else if (r.status === 'skipped') { skipped++; appliedIds.push(q[i].mutationId); }
 		else if (r.status === 'failed') failedIds.push(q[i].mutationId);
 	}
-	// drop processed (both applied and skipped) - skipped already reverted by caller via serverRecord
+	// drop processed (both applied and skipped); the server already holds the newer record
 	dequeueByIds(wid, appliedIds);
 	const dropped = bumpAttempts(wid, failedIds);
-	if (dropped) console.warn(`offline sync: dropped ${dropped} mutation(s) after ${MAX_ATTEMPTS} failed attempts`);
-	// ponytail: expose for support
-	if (typeof window !== 'undefined') (window as unknown as Record<string, unknown>).__syncLastResults = data.results;
-	console.log(`offline sync: ${applied} applied, ${skipped} skipped`);
+	// Staff must know when offline edits did not land, so they can re-enter them.
+	if (skipped) addToast(`${skipped} offline edit(s) were older than the server copy and were not applied`, 'error');
+	if (dropped) addToast(`${dropped} offline edit(s) failed ${MAX_ATTEMPTS} times and were discarded`, 'error');
 	return { applied, skipped, results: data.results };
 }
 
@@ -151,8 +151,4 @@ function bumpAttempts(wid: string, ids: string[]): number {
 function notifyChanged() {
 	if (typeof window === 'undefined') return;
 	window.dispatchEvent(new Event('offline-queue-changed'));
-}
-
-if (typeof window !== 'undefined') {
-	(window as unknown as Record<string, unknown>).__offlineQueue = { getQueue, enqueue, syncQueue, queuedCount, clearQueue, cacheGuests, loadCachedGuests };
 }

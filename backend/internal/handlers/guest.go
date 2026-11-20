@@ -92,10 +92,6 @@ func (h *GuestHandler) Create(c fuego.ContextWithBody[GuestCreateRequest]) (any,
 	if body.Pax < 1 || body.Pax > services.MaxGuestPartySize {
 		return nil, fuego.BadRequestError{Title: "Pax must be between 1 and " + strconv.Itoa(services.MaxGuestPartySize)}
 	}
-	validRSVP := map[string]bool{"confirmed": true, "pending": true, "declined": true, "no_response": true}
-	if body.RSVP != "" && !validRSVP[body.RSVP] {
-		return nil, fuego.BadRequestError{Title: "Invalid RSVP status"}
-	}
 	wid, err := DecodeWID(c)
 	if err != nil {
 		return nil, fuego.BadRequestError{Title: "Invalid wedding ID"}
@@ -152,10 +148,6 @@ func (h *GuestHandler) Update(c fuego.ContextWithBody[GuestCreateRequest]) (any,
 	}
 	if body.Pax < 1 || body.Pax > services.MaxGuestPartySize {
 		return nil, fuego.BadRequestError{Title: "Pax must be between 1 and " + strconv.Itoa(services.MaxGuestPartySize)}
-	}
-	validRSVP := map[string]bool{"confirmed": true, "pending": true, "declined": true, "no_response": true}
-	if body.RSVP != "" && !validRSVP[body.RSVP] {
-		return nil, fuego.BadRequestError{Title: "Invalid RSVP status"}
 	}
 	wid, err := DecodeWID(c)
 	if err != nil {
@@ -345,8 +337,7 @@ func (h *GuestHandler) BulkImport(c fuego.ContextWithBody[BulkImportRequest]) (a
 		if g.Pax > services.MaxGuestPartySize {
 			return nil, fuego.BadRequestError{Title: "Pax must be between 1 and " + strconv.Itoa(services.MaxGuestPartySize)}
 		}
-		validRSVP := map[string]bool{"confirmed": true, "pending": true, "declined": true, "no_response": true}
-		if g.RSVP != "" && !validRSVP[g.RSVP] {
+		if g.RSVP != "" && !services.ValidRSVP[g.RSVP] {
 			g.RSVP = "no_response"
 		}
 		gr := models.GuestRecord{

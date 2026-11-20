@@ -1,9 +1,11 @@
 package models
 
 import (
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
+	"gorm.io/gorm"
 )
 
 type AdminUser struct {
@@ -16,4 +18,10 @@ type AdminUser struct {
 	CreatedAt           time.Time      `json:"createdAt"`
 	UpdatedAt           time.Time      `json:"updatedAt"`
 	Weddings            []WeddingEvent `gorm:"many2many:user_weddings;" json:"weddings,omitempty"`
+}
+
+// BeforeSave stores emails in one case so login and uniqueness ignore case.
+func (a *AdminUser) BeforeSave(*gorm.DB) error {
+	a.Email = strings.ToLower(strings.TrimSpace(a.Email))
+	return nil
 }

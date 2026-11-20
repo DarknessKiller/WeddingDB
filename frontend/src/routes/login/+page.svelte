@@ -115,7 +115,7 @@ import ChevronRight from 'lucide-svelte/icons/chevron-right';
           'Content-Type': 'application/json',
           Authorization: `Bearer ${loginAccessToken}`
         },
-        body: JSON.stringify({ weddingId: weddingIdValue })
+        body: JSON.stringify({ weddingId: weddingIdValue, refreshToken: loginRefreshToken })
       });
       if (!res.ok) {
         const err = await res.json().catch(() => ({ title: 'Failed to select wedding' }));

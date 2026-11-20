@@ -3,6 +3,7 @@ package services
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"testing"
 	"time"
 
@@ -145,5 +146,37 @@ func TestTableDelete_RollsBackOnFailure(t *testing.T) {
 	}
 	if got.TableID == nil || *got.TableID != tableID {
 		t.Fatalf("failed delete left the guest unassigned, table = %v", got.TableID)
+	}
+}
+
+// Shrinking a table below seats already in use must fail on both write paths
+// (table form and layout editor) instead of stranding guests past the last seat.
+func TestTableCapacity_RejectsCutBelowSeatedGuests(t *testing.T) {
+	_, db, wid := newGuestSyncService(t)
+	ctx := context.Background()
+	tableID := uuid.New()
+	seat := 9
+	table := &models.BanquetTable{ID: tableID, WeddingID: wid, Name: "T1", Capacity: 10}
+	if err := db.Create(table).Error; err != nil {
+		t.Fatalf("seed table: %v", err)
+	}
+	if err := db.Create(&models.GuestRecord{ID: uuid.New(), WeddingID: wid, Name: "Pair", Pax: 2, TableID: &tableID, SeatNum: &seat}).Error; err != nil {
+		t.Fatalf("seed guest: %v", err)
+	}
+	svc := NewTableService(repository.NewTableRepo(db), repository.NewGuestRepo(db), nil, db)
+
+	table.Capacity = 9
+	if err := svc.Update(ctx, table); !errors.Is(err, repository.ErrCapacityBelowSeats) {
+		t.Fatalf("table update: want ErrCapacityBelowSeats, got %v", err)
+	}
+	err := repository.NewLayoutRepo(db).SaveLayout(ctx, wid, 0, 0,
+		[]models.TableUpdate{{ID: tableID, Capacity: 9}}, nil, nil, nil)
+	if !errors.Is(err, repository.ErrCapacityBelowSeats) {
+		t.Fatalf("layout save: want ErrCapacityBelowSeats, got %v", err)
+	}
+
+	table.Capacity = 10
+	if err := svc.Update(ctx, table); err != nil {
+		t.Fatalf("capacity equal to last seat must pass: %v", err)
 	}
 }

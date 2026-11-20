@@ -196,6 +196,32 @@ func TestSync_CheckInLWW(t *testing.T) {
 	}
 }
 
+// TestSync_OfflineCheckInSurvivesNewerEdit: a check-in queued offline must
+// apply even when an online edit bumped updated_at after it was recorded.
+func TestSync_OfflineCheckInSurvivesNewerEdit(t *testing.T) {
+	svc, db, wid := newGuestSyncService(t)
+	ctx := context.Background()
+	base := time.Now().Add(-time.Hour).UTC()
+	gid := uuid.New()
+	db.Create(&models.GuestRecord{ID: gid, WeddingID: wid, Name: "Late", Pax: 1, CreatedAt: base, UpdatedAt: base.Add(5 * time.Minute)})
+
+	amt := 88
+	m := SyncMutation{Op: SyncOpCheckIn, GuestID: gid.String(), ClientUpdatedAt: base, Payload: &SyncPayload{AngbaoAmt: &amt}}
+	res, err := svc.Sync(ctx, wid, []SyncMutation{m})
+	testutil.NoErr(t, err)
+	if res[0].Status != "applied" {
+		t.Fatalf("offline checkin should apply, got %s (%s)", res[0].Status, res[0].Reason)
+	}
+	g, err := svc.Get(ctx, gid, wid)
+	testutil.NoErr(t, err)
+	if g.CheckedInAt == nil || g.AngbaoAmt == nil || *g.AngbaoAmt != amt {
+		t.Fatalf("checkin or angbao lost: %+v", g)
+	}
+	if !g.UpdatedAt.Equal(base.Add(5 * time.Minute)) {
+		t.Fatalf("updated_at moved backwards: %v", g.UpdatedAt)
+	}
+}
+
 // TestSync_UnassignViaNullPointer covers the seat contract: an explicit JSON
 // null (or empty string) tableId clears the assignment, while an absent
 // tableId leaves the current seat untouched.
@@ -497,5 +523,17 @@ func TestBulkCreate_RollsBackOnError(t *testing.T) {
 	count, err = svc.BulkCreate(ctx, clean)
 	if err != nil || count != 2 {
 		t.Fatalf("clean batch should create 2, got %d err %v", count, err)
+	}
+}
+
+// Sync must apply the same RSVP whitelist as the HTTP handlers.
+func TestSync_RejectsUnknownRSVP(t *testing.T) {
+	svc, _, wid := newGuestSyncService(t)
+	name, rsvp := "Bad RSVP", "yes"
+	m := SyncMutation{Op: SyncOpCreate, GuestID: uuid.New().String(), ClientUpdatedAt: time.Now(), Payload: &SyncPayload{Name: &name, RSVP: &rsvp}}
+	res, err := svc.Sync(context.Background(), wid, []SyncMutation{m})
+	testutil.NoErr(t, err)
+	if res[0].Status != "failed" {
+		t.Fatalf("unknown RSVP must fail, got %s", res[0].Status)
 	}
 }

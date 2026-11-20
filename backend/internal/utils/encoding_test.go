@@ -42,3 +42,17 @@ func TestEncodeUUID_Length(t *testing.T) {
 		t.Errorf("expected 22 chars, got %d: %q", len(encoded), encoded)
 	}
 }
+
+func TestDecodeUUID_AcceptsAllForms(t *testing.T) {
+	orig := uuid.New()
+	padded := base64.URLEncoding.EncodeToString(orig[:])
+	for _, in := range []string{orig.String(), EncodeUUID(orig), padded} {
+		got, err := DecodeUUID(in)
+		if err != nil || got != orig {
+			t.Errorf("DecodeUUID(%q) = %v, %v", in, got, err)
+		}
+	}
+	if _, err := DecodeUUID("not-an-id"); err == nil {
+		t.Error("garbage must fail")
+	}
+}

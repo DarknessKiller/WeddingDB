@@ -2,6 +2,7 @@ package services
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 
@@ -340,7 +341,7 @@ func TestSelectWedding_PersistsWeddingScopeForUser(t *testing.T) {
 	seedUserWedding(t, db, adminID, wid)
 	seedRefreshToken(t, db, adminID, nil, refreshStr) // login mints nil wedding scope
 
-	if _, err := svc.SelectWedding(context.Background(), adminID, wid); err != nil {
+	if _, err := svc.SelectWedding(context.Background(), adminID, wid, refreshStr); err != nil {
 		t.Fatalf("SelectWedding failed: %v", err)
 	}
 
@@ -377,7 +378,7 @@ func TestSelectWedding_AdminKeepsUnscopedRefreshToken(t *testing.T) {
 	seedWedding(t, db, wid)
 	seedRefreshToken(t, db, adminID, nil, refreshStr)
 
-	if _, err := svc.SelectWedding(context.Background(), adminID, wid); err != nil {
+	if _, err := svc.SelectWedding(context.Background(), adminID, wid, refreshStr); err != nil {
 		t.Fatalf("SelectWedding failed: %v", err)
 	}
 
@@ -483,5 +484,51 @@ func TestRevokeUserTokens_DeleteBeforeIncrOrdering(t *testing.T) {
 	testutil.NoErr(t, err)
 	if tv != 1 {
 		t.Errorf("token version should be 1 after revoke, got %d", tv)
+	}
+}
+
+// Selecting a wedding on one device must not rescope the user's other devices.
+func TestSelectWedding_LeavesOtherDeviceScope(t *testing.T) {
+	svc, _, db := newIntegrationAuthService(t, "test-secret")
+	adminID := uuid.New()
+	widX, widY := uuid.New(), uuid.New()
+
+	seedAdmin(t, db, adminID, "user")
+	seedWedding(t, db, widX)
+	seedWedding(t, db, widY)
+	seedUserWedding(t, db, adminID, widX)
+	seedUserWedding(t, db, adminID, widY)
+	seedRefreshToken(t, db, adminID, &widX, "phone-token")
+	seedRefreshToken(t, db, adminID, nil, "laptop-token")
+
+	if _, err := svc.SelectWedding(context.Background(), adminID, widY, "laptop-token"); err != nil {
+		t.Fatalf("SelectWedding failed: %v", err)
+	}
+	var phone models.RefreshToken
+	if err := db.Where("token = ?", "phone-token").First(&phone).Error; err != nil {
+		t.Fatalf("load phone token: %v", err)
+	}
+	if phone.WeddingID == nil || *phone.WeddingID != widX {
+		t.Errorf("phone scope changed: want %s, got %v", widX, phone.WeddingID)
+	}
+
+	if _, err := svc.SelectWedding(context.Background(), adminID, widY, "unknown-token"); !errors.Is(err, ErrSessionNotFound) {
+		t.Errorf("unknown refresh token: want ErrSessionNotFound, got %v", err)
+	}
+}
+
+// Login email must ignore case and surrounding spaces, on write and on lookup.
+func TestFindByEmail_IgnoresCase(t *testing.T) {
+	_, _, db := newIntegrationAuthService(t, "test-secret")
+	admin := &models.AdminUser{ID: uuid.New(), Email: " Bob@X.com", Password: "h", Name: "Bob", Role: "user"}
+	if err := db.Create(admin).Error; err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+	if admin.Email != "bob@x.com" {
+		t.Errorf("stored email not normalized: %q", admin.Email)
+	}
+	got, err := repository.NewAdminRepo(db).FindByEmail(context.Background(), "BOB@x.com ")
+	if err != nil || got.ID != admin.ID {
+		t.Fatalf("lookup by other case failed: %v", err)
 	}
 }

@@ -2,8 +2,6 @@ package services
 
 import (
 	"context"
-	"log"
-	"time"
 
 	"weddingdb/internal/models"
 	"weddingdb/internal/repository"
@@ -37,7 +35,13 @@ func (s *TableService) Create(ctx context.Context, t *models.BanquetTable) error
 }
 
 func (s *TableService) Update(ctx context.Context, t *models.BanquetTable) error {
-	return s.tableRepo.Update(ctx, t)
+	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		repo := repository.NewTableRepo(tx)
+		if err := repo.CheckCapacity(ctx, t.WeddingID, t.ID, t.Capacity); err != nil {
+			return err
+		}
+		return repo.Update(ctx, t)
+	})
 }
 
 func (s *TableService) Delete(ctx context.Context, id, weddingID uuid.UUID) error {
@@ -74,29 +78,7 @@ func (s *TableService) Delete(ctx context.Context, id, weddingID uuid.UUID) erro
 		g := &affected[i]
 		g.TableID = nil
 		g.SeatNum = nil
-		s.publishGuestEvent("update", g, weddingID)
+		s.sseHub.publishGuest("update", g, weddingID)
 	}
 	return nil
-}
-
-// publishGuestEvent broadcasts a guest mutation to all connected SSE clients,
-// mirroring GuestService.publishEvent (same hub, envelope and payload shape).
-func (s *TableService) publishGuestEvent(eventType string, guest *models.GuestRecord, weddingID uuid.UUID) {
-	if s.sseHub == nil {
-		return
-	}
-
-	event := GuestEvent{
-		Type:      eventType,
-		GuestID:   guest.ID.String(),
-		WeddingID: weddingID.String(),
-		Guest:     guestToEventData(guest),
-		Timestamp: time.Now().UnixMilli(),
-	}
-
-	go func() {
-		if err := s.sseHub.Publish(context.Background(), weddingID, event); err != nil {
-			log.Printf("SSE: publish %s for guest %s in wedding %s: %v", eventType, guest.ID, weddingID, err)
-		}
-	}()
 }
