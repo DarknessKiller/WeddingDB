@@ -9,7 +9,7 @@
   import { weddingTitle } from '#lib/stores/weddingTitle.ts';
   import { validateToken } from '#lib/utils/auth.ts';
   import { fetchAllGuests } from '#lib/api/guests.ts';
-  import { syncQueue, loadCachedGuests } from '#lib/offline/queue.ts';
+  import { syncQueue, loadCachedGuests, queuedCount } from '#lib/offline/queue.ts';
   import { getWedding } from '#lib/api/weddings.ts';
   import { listTables } from '#lib/api/tables.ts';
   import { initializeSSE, refreshGuests, clearGuests, guestList } from '#lib/stores/guestEvents.ts';
@@ -29,7 +29,7 @@
 
   function refreshQueued() {
     if (typeof window === 'undefined' || !wid) return;
-    try { queued = JSON.parse(localStorage.getItem(`offline_queue_${wid}`) || '[]').length; } catch { queued = 0; }
+    queued = queuedCount(wid);
   }
 
   const toGuest = (g: any) => {

@@ -2,7 +2,7 @@ import { apiFetch } from './client';
 import { get } from 'svelte/store';
 import { weddingId } from '#lib/stores/weddingId.ts';
 import { applyGuestResponse } from '#lib/stores/guestEvents.ts';
-import { enqueue, syncQueue } from '#lib/offline/queue.ts';
+import { enqueue } from '#lib/offline/queue.ts';
 import { guestList } from '#lib/stores/guestEvents.ts';
 
 function isOffline() {
@@ -259,9 +259,6 @@ export async function unassignSeat(weddingId: string, guestId: string): Promise<
 		if (isNetworkError(e)) { doQueue(); return; }
 		throw e;
 	}
-}
-export async function syncOfflineQueue(weddingId: string): Promise<{ applied: number; skipped: number }> {
-	return syncQueue(weddingId);
 }
 
 export async function searchGuests(weddingId: string, query: string): Promise<GuestResponse[]> {

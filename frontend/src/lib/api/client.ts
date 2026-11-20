@@ -6,11 +6,6 @@ const BASE = '';
 // Serialize concurrent refresh attempts — only one refresh in flight at a time.
 let refreshPromise: Promise<boolean> | null = null;
 
-export function getAccessToken(): string {
-	const { accessToken } = getAuth();
-	return accessToken ?? '';
-}
-
 async function doRefresh(): Promise<boolean> {
 	const { refreshToken } = getAuth();
 	if (!refreshToken) return false;

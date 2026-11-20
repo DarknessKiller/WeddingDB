@@ -47,11 +47,6 @@ export function dequeueByIds(wid: string, ids: string[]) {
 	notifyChanged();
 }
 
-export function clearQueue(wid: string) {
-	localStorage.removeItem(qkey(wid));
-	notifyChanged();
-}
-
 export function queuedCount(wid: string): number {
 	return getQueue(wid).length;
 }

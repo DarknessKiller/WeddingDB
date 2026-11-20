@@ -29,14 +29,6 @@ export function mapGuest(raw: PublicGuest): Guest {
 	};
 }
 
-export async function publicSearchGuests(query: string): Promise<Guest[]> {
-	const wid = get(weddingId);
-	const res = await fetch(`/api/public/weddings/${wid}/guests/search?q=${encodeURIComponent(query)}`);
-	if (!res.ok) throw new Error('Search failed');
-	const data: PublicGuest[] = await res.json();
-	return data.map(mapGuest);
-}
-
 export async function publicListGuests(opts: { signal?: AbortSignal } = {}): Promise<Guest[]> {
 	const wid = get(weddingId);
 	const all: Guest[] = [];
