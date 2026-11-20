@@ -3,12 +3,16 @@ package services
 import (
 	"context"
 	"encoding/json"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/alicebob/miniredis/v2"
 	"github.com/google/uuid"
+	"github.com/redis/go-redis/v9"
 
+	"weddingdb/internal/models"
 	"weddingdb/internal/testutil"
 )
 
@@ -387,5 +391,33 @@ func TestSSEHub_RejectsPerWeddingCap(t *testing.T) {
 	// Other weddings are unaffected.
 	if _, ok := hub.Subscribe(uuid.New(), uuid.New()); !ok {
 		t.Fatal("another wedding should not be blocked by a full wedding")
+	}
+}
+
+// Events for one guest must reach subscribers in the order they were written.
+func TestPublishGuest_PreservesOrder(t *testing.T) {
+	mr := miniredis.RunT(t)
+	hub := NewSSEHub(redis.NewClient(&redis.Options{Addr: mr.Addr()}))
+	t.Cleanup(hub.Shutdown)
+	wid := uuid.New()
+	client, ok := hub.Subscribe(wid, uuid.New())
+	if !ok {
+		t.Fatal("subscribe rejected")
+	}
+	const n = 40
+	for i := range n {
+		hub.publishGuest("update", &models.GuestRecord{ID: uuid.New(), Name: strconv.Itoa(i)}, wid)
+	}
+	for i := range n {
+		select {
+		case raw := <-client.Chan:
+			var ev GuestEvent
+			testutil.NoErr(t, json.Unmarshal(raw, &ev))
+			if ev.Guest.Name != strconv.Itoa(i) {
+				t.Fatalf("event %d carried %q: events arrived out of order", i, ev.Guest.Name)
+			}
+		case <-time.After(2 * time.Second):
+			t.Fatalf("timed out waiting for event %d", i)
+		}
 	}
 }

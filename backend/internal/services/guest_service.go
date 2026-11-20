@@ -530,9 +530,10 @@ func (s *GuestService) Occupancy(ctx context.Context, weddingID uuid.UUID) ([]re
 }
 
 // publishGuest broadcasts a guest mutation to all connected SSE clients via Redis.
-// Uses context.Background() because the service layer does not yet propagate request
-// context. The goroutine ensures publishing never blocks the caller. A nil hub
-// (tests, SSE disabled) is a no-op.
+// It publishes inline, not in a goroutine: two events for one guest must reach
+// clients in the order they were written, or an older state lands last.
+// Uses context.Background() so a request cancelled after commit still
+// publishes. A nil hub (tests, SSE disabled) is a no-op.
 func (h *SSEHub) publishGuest(eventType string, guest *models.GuestRecord, weddingID uuid.UUID) {
 	if h == nil {
 		return
@@ -546,11 +547,9 @@ func (h *SSEHub) publishGuest(eventType string, guest *models.GuestRecord, weddi
 		Timestamp: time.Now().UnixMilli(),
 	}
 
-	go func() {
-		if err := h.Publish(context.Background(), weddingID, event); err != nil {
-			log.Printf("SSE: publish %s for guest %s in wedding %s: %v", eventType, guest.ID, weddingID, err)
-		}
-	}()
+	if err := h.Publish(context.Background(), weddingID, event); err != nil {
+		log.Printf("SSE: publish %s for guest %s in wedding %s: %v", eventType, guest.ID, weddingID, err)
+	}
 }
 
 // Sync types for offline queue
