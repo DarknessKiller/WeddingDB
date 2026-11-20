@@ -3,6 +3,7 @@ package middleware
 import (
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 )
 
@@ -66,5 +67,17 @@ func TestCORS_PreflightFromForeignOrigin(t *testing.T) {
 	}
 	if got := rec.Header().Get("Access-Control-Allow-Origin"); got != "" {
 		t.Errorf("Access-Control-Allow-Origin = %q, want empty", got)
+	}
+}
+
+// Every method the API routes use must pass the preflight: layout save is PATCH.
+func TestCORS_AllowsEveryRouteMethod(t *testing.T) {
+	t.Setenv("CORS_ORIGIN", "https://app.example")
+	rec := serveCORS(t, http.MethodOptions, "https://app.example")
+	allowed := rec.Header().Get("Access-Control-Allow-Methods")
+	for _, m := range []string{http.MethodGet, http.MethodPost, http.MethodPut, http.MethodPatch, http.MethodDelete} {
+		if !strings.Contains(allowed, m) {
+			t.Errorf("Access-Control-Allow-Methods = %q, missing %s", allowed, m)
+		}
 	}
 }
