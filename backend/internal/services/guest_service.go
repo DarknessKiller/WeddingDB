@@ -164,14 +164,18 @@ func (s *GuestService) Delete(ctx context.Context, id, weddingID uuid.UUID) erro
 	// Fetch guest before deletion so we can broadcast the event.
 	guest, err := s.guestRepo.FindByID(ctx, id, weddingID)
 	if err != nil {
-		log.Printf("guest lookup before delete failed: %v", err)
-	}
-	if err := s.guestRepo.Delete(ctx, id, weddingID); err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return ErrGuestNotFound
+		}
 		return err
 	}
-	if guest != nil {
-		s.publishEvent("delete", guest, weddingID)
+	if err := s.guestRepo.Delete(ctx, id, weddingID); err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return ErrGuestNotFound
+		}
+		return err
 	}
+	s.publishEvent("delete", guest, weddingID)
 	return nil
 }
 

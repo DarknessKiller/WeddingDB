@@ -112,7 +112,7 @@ func (r *GuestRepo) Create(ctx context.Context, g *models.GuestRecord) error {
 
 func (r *GuestRepo) Update(ctx context.Context, g *models.GuestRecord) error {
 	g.NamePinyin = models.GenerateNamePinyin(g.Name)
-	return r.db.WithContext(ctx).Model(g).Where("id = ? AND wedding_id = ?", g.ID, g.WeddingID).Updates(map[string]interface{}{
+	res := r.db.WithContext(ctx).Model(g).Where("id = ? AND wedding_id = ?", g.ID, g.WeddingID).Updates(map[string]interface{}{
 		"name":          g.Name,
 		"name_pinyin":   g.NamePinyin,
 		"email":         g.Email,
@@ -126,11 +126,26 @@ func (r *GuestRepo) Update(ctx context.Context, g *models.GuestRecord) error {
 		"is_vip":        g.IsVip,
 		"angbao_amt":    g.AngbaoAmt,
 		"gift_item":     g.GiftItem,
-	}).Error
+	})
+	return checkAffected(res)
+}
+
+// checkAffected turns a write that matched no row into ErrRecordNotFound: a
+// stale id or a row deleted mid-transaction must not report success and
+// broadcast a ghost event.
+func checkAffected(res *gorm.DB) error {
+	if res.Error != nil {
+		return res.Error
+	}
+	if res.RowsAffected == 0 {
+		return gorm.ErrRecordNotFound
+	}
+	return nil
 }
 
 func (r *GuestRepo) Delete(ctx context.Context, id, weddingID uuid.UUID) error {
-	return r.db.WithContext(ctx).Where("id = ? AND wedding_id = ?", id, weddingID).Delete(&models.GuestRecord{}).Error
+	res := r.db.WithContext(ctx).Where("id = ? AND wedding_id = ?", id, weddingID).Delete(&models.GuestRecord{})
+	return checkAffected(res)
 }
 
 // SyncCreate creates a guest with explicit CreatedAt/UpdatedAt for offline sync LWW.
@@ -142,7 +157,7 @@ func (r *GuestRepo) SyncCreate(ctx context.Context, g *models.GuestRecord) error
 // SyncUpdate updates a guest and forces UpdatedAt to the provided time for LWW.
 func (r *GuestRepo) SyncUpdate(ctx context.Context, g *models.GuestRecord) error {
 	g.NamePinyin = models.GenerateNamePinyin(g.Name)
-	return r.db.WithContext(ctx).Model(g).Where("id = ? AND wedding_id = ?", g.ID, g.WeddingID).Updates(map[string]interface{}{
+	res := r.db.WithContext(ctx).Model(g).Where("id = ? AND wedding_id = ?", g.ID, g.WeddingID).Updates(map[string]interface{}{
 		"name":          g.Name,
 		"name_pinyin":   g.NamePinyin,
 		"email":         g.Email,
@@ -157,7 +172,8 @@ func (r *GuestRepo) SyncUpdate(ctx context.Context, g *models.GuestRecord) error
 		"angbao_amt":    g.AngbaoAmt,
 		"gift_item":     g.GiftItem,
 		"updated_at":    g.UpdatedAt,
-	}).Error
+	})
+	return checkAffected(res)
 }
 
 // UnassignByTable clears table_id and seat_num for all guests at a given table.

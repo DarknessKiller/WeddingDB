@@ -7,6 +7,8 @@ import (
 	"testing"
 	"time"
 
+	"weddingdb/internal/models"
+
 	"github.com/google/uuid"
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
@@ -62,6 +64,36 @@ func TestEscapeLike(t *testing.T) {
 	for in, want := range cases {
 		if got := escapeLike(in); got != want {
 			t.Errorf("escapeLike(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
+
+// A write that matches no row must report ErrRecordNotFound instead of
+// returning success and letting the caller broadcast a ghost event.
+func TestWriteMissingGuestReturnsNotFound(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("sqlite open: %v", err)
+	}
+	if err := db.Exec(`CREATE TABLE guest_records (
+		id TEXT PRIMARY KEY, wedding_id TEXT, name TEXT, name_pinyin TEXT,
+		email TEXT, pax INTEGER, table_id TEXT, seat_num INTEGER, rsvp TEXT,
+		checked_in_at DATETIME, notes TEXT, dietary TEXT, is_vip NUMERIC,
+		angbao_amt INTEGER, gift_item TEXT, created_at DATETIME, updated_at DATETIME)`).Error; err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+	repo := NewGuestRepo(db)
+	ctx := context.Background()
+	g := &models.GuestRecord{ID: uuid.New(), WeddingID: uuid.New(), Name: "Ghost", Pax: 1}
+
+	calls := map[string]func() error{
+		"Update":     func() error { return repo.Update(ctx, g) },
+		"SyncUpdate": func() error { return repo.SyncUpdate(ctx, g) },
+		"Delete":     func() error { return repo.Delete(ctx, g.ID, g.WeddingID) },
+	}
+	for name, call := range calls {
+		if err := call(); !errors.Is(err, gorm.ErrRecordNotFound) {
+			t.Errorf("%s of a missing guest = %v, want gorm.ErrRecordNotFound", name, err)
 		}
 	}
 }
