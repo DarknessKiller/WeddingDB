@@ -65,7 +65,28 @@ export function loadCachedGuests<T>(wid: string): T[] | null { return readCache<
 export function cacheKioskGuests(wid: string, guests: unknown[]) { writeCache(localStorage, kkey(wid), guests); }
 export function loadCachedKioskGuests<T>(wid: string): T[] | null { return readCache<T>(localStorage, kkey(wid)); }
 
-export async function syncQueue(wid: string): Promise<{ applied: number; skipped: number; results: unknown[] }> {
+export interface SyncOutcome {
+	applied: number;
+	skipped: number;
+	results: unknown[];
+}
+
+// One sync per wedding at a time. The layout fires a sync from several places
+// (mount, online, visibility), and overlapping calls replayed the same queue,
+// duplicating append-only effects such as check-in notes.
+const inFlight = new Map<string, Promise<SyncOutcome>>();
+
+export function syncQueue(wid: string): Promise<SyncOutcome> {
+	const running = inFlight.get(wid);
+	if (running) return running;
+	const run = runSync(wid).finally(() => {
+		if (inFlight.get(wid) === run) inFlight.delete(wid);
+	});
+	inFlight.set(wid, run);
+	return run;
+}
+
+async function runSync(wid: string): Promise<SyncOutcome> {
 	const q = getQueue(wid);
 	if (!q.length) return { applied: 0, skipped: 0, results: [] };
 	const res = await apiFetch(`/api/weddings/${wid}/guests/sync`, {
