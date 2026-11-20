@@ -6,7 +6,8 @@
   import { weddingId } from '#lib/stores/weddingId.ts';
   import { guestList } from '#lib/stores/guestEvents.ts';
   import { goto } from '$app/navigation';
-  import { deleteGuest as apiDeleteGuest, searchGuests, assignSeat, unassignSeat, bulkImportGuests } from '#lib/api/guests.ts';
+  import { deleteGuest as apiDeleteGuest, searchGuests, assignSeat, unassignSeat, bulkImportGuests, isNetworkError } from '#lib/api/guests.ts';
+  import { rankGuests } from '#lib/utils/guestSearch.ts';
   import type { GuestResponse, GuestImportData } from '#lib/api/guests.ts';
   import { listTables } from '#lib/api/tables.ts';
   import type { BanquetTable } from '#lib/types/index.ts';
@@ -69,6 +70,14 @@ import Users from 'lucide-svelte/icons/users';
       currentPage = 0;
     } catch (cause) {
       if (seq !== searchSeq) return;
+      // Offline, the full roster is still on the phone: search it locally
+      // (name and pinyin), as the reception Search page does.
+      if (isNetworkError(cause)) {
+        searchResults = rankGuests(allGuests, q);
+        searchError = null;
+        currentPage = 0;
+        return;
+      }
       searchResults = [];
       searchError = cause instanceof Error ? cause.message : 'Failed to search guests';
     } finally {

@@ -8,7 +8,7 @@ import { guestList, cacheGuestList } from '#lib/stores/guestEvents.ts';
 function isOffline() {
 	return typeof navigator !== 'undefined' && !navigator.onLine;
 }
-function isNetworkError(e: unknown) {
+export function isNetworkError(e: unknown) {
 	if (isOffline()) return true;
 	// Chrome/Firefox say "Failed to fetch"/"NetworkError"; Safari says "Load failed".
 	return e instanceof TypeError && /failed to fetch|networkerror|load failed/i.test((e as Error).message || '');
