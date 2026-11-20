@@ -95,7 +95,7 @@ func TestGuestCap_SyncCreate(t *testing.T) {
 		Op:              SyncOpCreate,
 		GuestID:         uuid.New().String(),
 		ClientUpdatedAt: time.Now(),
-		Payload:         &SyncPayload{Name: "Late", Pax: 1},
+		Payload:         &SyncPayload{Name: syncStr("Late"), Pax: syncInt(1)},
 	}})
 	if err != nil {
 		t.Fatalf("sync: %v", err)

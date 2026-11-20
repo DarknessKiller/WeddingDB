@@ -61,7 +61,7 @@ func TestSyncCreate_RejectsSeatOverlap(t *testing.T) {
 
 	first := SyncMutation{
 		Op: SyncOpCreate, GuestID: uuid.New().String(), ClientUpdatedAt: now,
-		Payload: &SyncPayload{Name: "A", Pax: 1, TableID: tableIDPtr(tid), SeatNum: intPtr(3)},
+		Payload: &SyncPayload{Name: syncStr("A"), Pax: syncInt(1), TableID: syncTable(tid.String()), SeatNum: intPtr(3)},
 	}
 	firstRes, err := svc.Sync(context.Background(), wid, []SyncMutation{first})
 	if err != nil || firstRes[0].Status != "applied" {
@@ -70,7 +70,7 @@ func TestSyncCreate_RejectsSeatOverlap(t *testing.T) {
 
 	second := SyncMutation{
 		Op: SyncOpCreate, GuestID: uuid.New().String(), ClientUpdatedAt: now.Add(time.Second),
-		Payload: &SyncPayload{Name: "B", Pax: 1, TableID: tableIDPtr(tid), SeatNum: intPtr(3)},
+		Payload: &SyncPayload{Name: syncStr("B"), Pax: syncInt(1), TableID: syncTable(tid.String()), SeatNum: intPtr(3)},
 	}
 	res, err := svc.Sync(context.Background(), wid, []SyncMutation{second})
 	if err != nil {

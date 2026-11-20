@@ -3,6 +3,7 @@ package services
 import (
 	"context"
 	"encoding/base64"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log"
@@ -438,18 +439,43 @@ const (
 	SyncOpCheckOut SyncOp = "checkout"
 )
 
+// SyncPayload is a partial guest record from the offline queue. Pointer fields
+// distinguish "absent" from a zero value, so a seat-only or notes-only mutation
+// never erases the rest of the record.
 type SyncPayload struct {
-	Name      string   `json:"name"`
-	Email     string   `json:"email"`
-	Pax       int      `json:"pax"`
-	RSVP      string   `json:"rsvp"`
-	IsVip     bool     `json:"isVip"`
-	Notes     string   `json:"notes"`
-	Dietary   []string `json:"dietary"`
-	TableID   *string  `json:"tableId"`
-	SeatNum   *int     `json:"seatNum"`
-	AngbaoAmt *int     `json:"angbaoAmt"`
-	GiftItem  *string  `json:"giftItem"`
+	Name      *string              `json:"name"`
+	Email     *string              `json:"email"`
+	Pax       *int                 `json:"pax"`
+	RSVP      *string              `json:"rsvp"`
+	IsVip     *bool                `json:"isVip"`
+	Notes     *string              `json:"notes"`
+	Dietary   *[]string            `json:"dietary"`
+	TableID   NullableJSON[string] `json:"tableId"`
+	SeatNum   *int                 `json:"seatNum"`
+	AngbaoAmt *int                 `json:"angbaoAmt"`
+	GiftItem  *string              `json:"giftItem"`
+}
+
+// NullableJSON records whether a JSON field was present and whether it was null.
+// A plain *T cannot tell an absent field from an explicit null, and sync needs
+// that to tell "leave the seat alone" from "unassign".
+type NullableJSON[T any] struct {
+	Set   bool
+	Value *T
+}
+
+func (n *NullableJSON[T]) UnmarshalJSON(b []byte) error {
+	n.Set = true
+	if string(b) == "null" {
+		n.Value = nil
+		return nil
+	}
+	var v T
+	if err := json.Unmarshal(b, &v); err != nil {
+		return err
+	}
+	n.Value = &v
+	return nil
 }
 
 type SyncMutation struct {
@@ -518,11 +544,12 @@ func (s *GuestService) applySyncMutation(ctx context.Context, weddingID uuid.UUI
 			s.publishEvent("update", existing, weddingID)
 			return SyncResult{GuestID: m.GuestID, Status: "applied", ServerRecord: existing}
 		}
-		if m.Payload == nil || m.Payload.Name == "" {
+		if m.Payload == nil || m.Payload.Name == nil || *m.Payload.Name == "" {
 			return SyncResult{GuestID: m.GuestID, Status: "skipped", Reason: "name required"}
 		}
-		if m.Payload.Pax < 1 {
-			m.Payload.Pax = 1
+		pax := 1
+		if m.Payload.Pax != nil && *m.Payload.Pax >= 1 {
+			pax = *m.Payload.Pax
 		}
 		if err := s.validateSyncTableSeat(ctx, weddingID, m.Payload); err != nil {
 			return SyncResult{GuestID: m.GuestID, Status: "failed", Reason: err.Error()}
@@ -530,26 +557,35 @@ func (s *GuestService) applySyncMutation(ctx context.Context, weddingID uuid.UUI
 		g := &models.GuestRecord{
 			ID:        gid,
 			WeddingID: weddingID,
-			Name:      m.Payload.Name,
-			Email:     m.Payload.Email,
-			Pax:       m.Payload.Pax,
-			RSVP:      m.Payload.RSVP,
-			IsVip:     m.Payload.IsVip,
-			Notes:     m.Payload.Notes,
-			Dietary:   m.Payload.Dietary,
+			Name:      *m.Payload.Name,
+			Pax:       pax,
 			AngbaoAmt: m.Payload.AngbaoAmt,
 			GiftItem:  m.Payload.GiftItem,
 			CreatedAt: opTime,
 			UpdatedAt: opTime,
 		}
-		if m.Payload.TableID != nil && *m.Payload.TableID != "" {
-			if tid, err := parseSyncID(*m.Payload.TableID); err == nil {
+		if m.Payload.Email != nil {
+			g.Email = *m.Payload.Email
+		}
+		if m.Payload.RSVP != nil {
+			g.RSVP = *m.Payload.RSVP
+		}
+		if m.Payload.IsVip != nil {
+			g.IsVip = *m.Payload.IsVip
+		}
+		if m.Payload.Notes != nil {
+			g.Notes = *m.Payload.Notes
+		}
+		if m.Payload.Dietary != nil {
+			g.Dietary = *m.Payload.Dietary
+		}
+		if t := m.Payload.TableID; t.Set && t.Value != nil && *t.Value != "" {
+			if tid, err := parseSyncID(*t.Value); err == nil {
 				g.TableID = &tid
 			}
 		}
-		g.SeatNum = m.Payload.SeatNum
-		if g.TableID == nil {
-			g.SeatNum = nil // a seat without a table is not a valid assignment
+		if g.TableID != nil {
+			g.SeatNum = m.Payload.SeatNum
 		}
 		if err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 			return s.createGuestTx(ctx, tx, g, true)
@@ -615,7 +651,9 @@ func (s *GuestService) applySyncMutation(ctx context.Context, weddingID uuid.UUI
 			}
 			// A notes value in a checkin payload is appended to the guest's notes,
 			// never replacing them, so a queued note never wipes existing notes.
-			existing.Notes = appendNote(existing.Notes, strings.TrimSpace(m.Payload.Notes))
+			if m.Payload.Notes != nil {
+				existing.Notes = appendNote(existing.Notes, strings.TrimSpace(*m.Payload.Notes))
+			}
 		}
 		existing.UpdatedAt = opTime
 		if err := s.guestRepo.SyncUpdate(ctx, existing); err != nil {
@@ -648,16 +686,17 @@ func (s *GuestService) applySyncMutation(ctx context.Context, weddingID uuid.UUI
 // sync mutations: the table must exist in this wedding and the seat must fit
 // its capacity. A nil/empty tableId (unassign) needs no validation.
 func (s *GuestService) validateSyncTableSeat(ctx context.Context, weddingID uuid.UUID, p *SyncPayload) error {
-	if p.TableID == nil || *p.TableID == "" {
+	if !p.TableID.Set || p.TableID.Value == nil || *p.TableID.Value == "" {
 		return nil
 	}
-	tid, err := parseSyncID(*p.TableID)
+	raw := *p.TableID.Value
+	tid, err := parseSyncID(raw)
 	if err != nil {
-		return fmt.Errorf("invalid tableId %q", *p.TableID)
+		return fmt.Errorf("invalid tableId %q", raw)
 	}
 	table, err := s.tableRepo.FindByID(ctx, tid, weddingID)
 	if err != nil {
-		return fmt.Errorf("table %s not found", *p.TableID)
+		return fmt.Errorf("table %s not found", raw)
 	}
 	if p.SeatNum != nil && table.Capacity > 0 && *p.SeatNum > table.Capacity {
 		return fmt.Errorf("seat %d exceeds capacity %d of table %s", *p.SeatNum, table.Capacity, table.Name)
@@ -666,29 +705,40 @@ func (s *GuestService) validateSyncTableSeat(ctx context.Context, weddingID uuid
 }
 
 func applySyncPayload(g *models.GuestRecord, p *SyncPayload, gid *uuid.UUID) {
-	if p.Name != "" {
-		g.Name = p.Name
+	if p.Name != nil && *p.Name != "" {
+		g.Name = *p.Name
 	}
-	g.Email = p.Email
-	if p.Pax >= 1 {
-		g.Pax = p.Pax
+	if p.Email != nil {
+		g.Email = *p.Email
 	}
-	if p.RSVP != "" {
-		g.RSVP = p.RSVP
+	if p.Pax != nil && *p.Pax >= 1 {
+		g.Pax = *p.Pax
 	}
-	g.IsVip = p.IsVip
-	g.Notes = p.Notes
-	g.Dietary = p.Dietary
-	g.AngbaoAmt = p.AngbaoAmt
-	g.GiftItem = p.GiftItem
-	switch {
-	case p.TableID == nil || *p.TableID == "":
-		// JSON null and empty string both mean "unassign": clear the whole
-		// seat assignment. SeatNum must never survive with a nil TableID.
-		g.TableID = nil
-		g.SeatNum = nil
-	default:
-		if tid, err := parseSyncID(*p.TableID); err == nil {
+	if p.RSVP != nil && *p.RSVP != "" {
+		g.RSVP = *p.RSVP
+	}
+	if p.IsVip != nil {
+		g.IsVip = *p.IsVip
+	}
+	if p.Notes != nil {
+		g.Notes = *p.Notes
+	}
+	if p.Dietary != nil {
+		g.Dietary = *p.Dietary
+	}
+	if p.AngbaoAmt != nil {
+		g.AngbaoAmt = p.AngbaoAmt
+	}
+	if p.GiftItem != nil {
+		g.GiftItem = p.GiftItem
+	}
+	// Only an explicitly sent tableId touches the seat assignment: absent means
+	// "leave it alone", null or empty means unassign.
+	if p.TableID.Set {
+		if p.TableID.Value == nil || *p.TableID.Value == "" {
+			g.TableID = nil
+			g.SeatNum = nil
+		} else if tid, err := parseSyncID(*p.TableID.Value); err == nil {
 			g.TableID = &tid
 			g.SeatNum = p.SeatNum
 		}

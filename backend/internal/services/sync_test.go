@@ -59,6 +59,19 @@ func newGuestSyncService(t *testing.T) (*GuestService, *gorm.DB, uuid.UUID) {
 	return svc, db, wid
 }
 
+func syncStr(s string) *string { return &s }
+func syncInt(n int) *int       { return &n }
+
+// syncTable marks tableId as present in the payload; pass "" to unassign.
+func syncTable(id string) NullableJSON[string] {
+	return NullableJSON[string]{Set: true, Value: &id}
+}
+
+// syncTableNull marks an explicit JSON null tableId.
+func syncTableNull() NullableJSON[string] {
+	return NullableJSON[string]{Set: true}
+}
+
 func TestSync_NewestWins(t *testing.T) {
 	svc, db, wid := newGuestSyncService(t)
 	ctx := context.Background()
@@ -82,7 +95,7 @@ func TestSync_NewestWins(t *testing.T) {
 		Op:              SyncOpUpdate,
 		GuestID:         gid.String(),
 		ClientUpdatedAt: older,
-		Payload:         &SyncPayload{Name: "Alice-old", Pax: 1},
+		Payload:         &SyncPayload{Name: syncStr("Alice-old"), Pax: syncInt(1)},
 	}
 	res, err := svc.Sync(ctx, wid, []SyncMutation{m1})
 	testutil.NoErr(t, err)
@@ -102,7 +115,7 @@ func TestSync_NewestWins(t *testing.T) {
 		Op:              SyncOpUpdate,
 		GuestID:         gid.String(),
 		ClientUpdatedAt: newer,
-		Payload:         &SyncPayload{Name: "Alice-new", Pax: 2},
+		Payload:         &SyncPayload{Name: syncStr("Alice-new"), Pax: syncInt(2)},
 	}
 	res, err = svc.Sync(ctx, wid, []SyncMutation{m2})
 	testutil.NoErr(t, err)
@@ -125,7 +138,7 @@ func TestSync_Create(t *testing.T) {
 		Op:              SyncOpCreate,
 		GuestID:         gid.String(),
 		ClientUpdatedAt: now,
-		Payload:         &SyncPayload{Name: "Bob", Pax: 1},
+		Payload:         &SyncPayload{Name: syncStr("Bob"), Pax: syncInt(1)},
 	}
 	res, err := svc.Sync(ctx, wid, []SyncMutation{m})
 	testutil.NoErr(t, err)
@@ -183,46 +196,46 @@ func TestSync_CheckInLWW(t *testing.T) {
 	}
 }
 
-// TestSync_UnassignViaNullPointer covers fix 2: the app sends JSON null for
-// tableId/seatNum when unassigning, so nil pointer AND empty string must both
-// clear the assignment. SeatNum must never survive with a nil TableID.
+// TestSync_UnassignViaNullPointer covers the seat contract: an explicit JSON
+// null (or empty string) tableId clears the assignment, while an absent
+// tableId leaves the current seat untouched.
 func TestSync_UnassignViaNullPointer(t *testing.T) {
 	svc, db, wid := newGuestSyncService(t)
 	ctx := context.Background()
 	base := time.Now().Add(-10 * time.Minute)
 
-	seedUnassigned := func(name string) uuid.UUID {
+	seedSeated := func(name string) uuid.UUID {
 		gid := uuid.New()
 		tableID := uuid.New()
 		seat := 2
+		db.Create(&models.BanquetTable{ID: tableID, WeddingID: wid, Name: "T", Capacity: 10})
 		db.Create(&models.GuestRecord{ID: gid, WeddingID: wid, Name: name, Pax: 1, TableID: &tableID, SeatNum: &seat, CreatedAt: base, UpdatedAt: base})
 		return gid
 	}
 
-	// nil pointer clears both table and seat
-	gid := seedUnassigned("NullCase")
+	// explicit null clears both table and seat
+	gid := seedSeated("NullCase")
 	res, err := svc.Sync(ctx, wid, []SyncMutation{{
 		Op: SyncOpUpdate, GuestID: gid.String(),
 		ClientUpdatedAt: base.Add(time.Minute),
-		Payload:         &SyncPayload{Name: "NullCase", Pax: 1},
+		Payload:         &SyncPayload{Name: syncStr("NullCase"), Pax: syncInt(1), TableID: syncTableNull()},
 	}})
 	testutil.NoErr(t, err)
 	if res[0].Status != "applied" {
-		t.Fatalf("nil tableId update should apply, got %v", res[0])
+		t.Fatalf("null tableId update should apply, got %v", res[0])
 	}
 	g, err := svc.Get(ctx, gid, wid)
 	testutil.NoErr(t, err)
 	if g.TableID != nil || g.SeatNum != nil {
-		t.Fatalf("nil tableId should clear table and seat, got table=%v seat=%v", g.TableID, g.SeatNum)
+		t.Fatalf("null tableId should clear table and seat, got table=%v seat=%v", g.TableID, g.SeatNum)
 	}
 
 	// empty string clears both too
-	gid = seedUnassigned("EmptyCase")
-	empty := ""
+	gid = seedSeated("EmptyCase")
 	res, err = svc.Sync(ctx, wid, []SyncMutation{{
 		Op: SyncOpUpdate, GuestID: gid.String(),
 		ClientUpdatedAt: base.Add(time.Minute),
-		Payload:         &SyncPayload{Name: "EmptyCase", Pax: 1, TableID: &empty},
+		Payload:         &SyncPayload{Name: syncStr("EmptyCase"), Pax: syncInt(1), TableID: syncTable("")},
 	}})
 	testutil.NoErr(t, err)
 	if res[0].Status != "applied" {
@@ -234,22 +247,61 @@ func TestSync_UnassignViaNullPointer(t *testing.T) {
 		t.Fatalf("empty tableId should clear table and seat, got table=%v seat=%v", g.TableID, g.SeatNum)
 	}
 
-	// a stray seatNum must not survive an unassign
-	gid = seedUnassigned("StraySeat")
-	seat := 3
+	// an absent tableId leaves the existing seat alone
+	gid = seedSeated("KeepSeat")
 	res, err = svc.Sync(ctx, wid, []SyncMutation{{
 		Op: SyncOpUpdate, GuestID: gid.String(),
 		ClientUpdatedAt: base.Add(time.Minute),
-		Payload:         &SyncPayload{Name: "StraySeat", Pax: 1, SeatNum: &seat},
+		Payload:         &SyncPayload{Name: syncStr("KeepSeat"), Pax: syncInt(1)},
 	}})
 	testutil.NoErr(t, err)
 	if res[0].Status != "applied" {
-		t.Fatalf("unassign with stray seatNum should apply, got %v", res[0])
+		t.Fatalf("seat-preserving update should apply, got %v", res[0])
 	}
 	g, err = svc.Get(ctx, gid, wid)
 	testutil.NoErr(t, err)
-	if g.TableID != nil || g.SeatNum != nil {
-		t.Fatalf("seat must not survive unassign, got table=%v seat=%v", g.TableID, g.SeatNum)
+	if g.SeatNum == nil || *g.SeatNum != 2 {
+		t.Fatalf("absent tableId must keep seat 2, got seat=%v", g.SeatNum)
+	}
+}
+
+// TestSync_PartialUpdatePreservesFields covers the sync root cause: a mutation
+// that sends only the fields it changes (e.g. a check-in note) must not wipe
+// email, angbao, gift, or seat.
+func TestSync_PartialUpdatePreservesFields(t *testing.T) {
+	svc, db, wid := newGuestSyncService(t)
+	ctx := context.Background()
+	base := time.Now().Add(-10 * time.Minute)
+	tableID := uuid.New()
+	db.Create(&models.BanquetTable{ID: tableID, WeddingID: wid, Name: "T", Capacity: 10})
+	seat := 4
+	angbao := 888
+	gift := "Teapot"
+	gid := uuid.New()
+	db.Create(&models.GuestRecord{
+		ID: gid, WeddingID: wid, Name: "Full", Pax: 2, Email: "a@example.com",
+		AngbaoAmt: &angbao, GiftItem: &gift,
+		TableID: &tableID, SeatNum: &seat, CreatedAt: base, UpdatedAt: base,
+	})
+
+	res, err := svc.Sync(ctx, wid, []SyncMutation{{
+		Op: SyncOpUpdate, GuestID: gid.String(),
+		ClientUpdatedAt: base.Add(time.Minute),
+		Payload:         &SyncPayload{Notes: syncStr("no gift")},
+	}})
+	testutil.NoErr(t, err)
+	if res[0].Status != "applied" {
+		t.Fatalf("notes-only update should apply, got %v", res[0])
+	}
+	g, err := svc.Get(ctx, gid, wid)
+	testutil.NoErr(t, err)
+	if g.Name != "Full" || g.Pax != 2 || g.Email != "a@example.com" ||
+		g.AngbaoAmt == nil || *g.AngbaoAmt != 888 ||
+		g.GiftItem == nil || *g.GiftItem != "Teapot" ||
+		g.TableID == nil || *g.TableID != tableID ||
+		g.SeatNum == nil || *g.SeatNum != 4 ||
+		g.Notes != "no gift" {
+		t.Fatalf("partial update clobbered fields: %+v", g)
 	}
 }
 
@@ -300,7 +352,7 @@ func TestSync_FutureClockClamped(t *testing.T) {
 	res, err := svc.Sync(ctx, wid, []SyncMutation{{
 		Op: SyncOpUpdate, GuestID: gid.String(),
 		ClientUpdatedAt: time.Now().Add(time.Hour),
-		Payload:         &SyncPayload{Name: "Skewy-new", Pax: 1},
+		Payload:         &SyncPayload{Name: syncStr("Skewy-new"), Pax: syncInt(1)},
 	}})
 	testutil.NoErr(t, err)
 	if res[0].Status != "applied" {
@@ -329,7 +381,7 @@ func TestSync_WriteError_Failed(t *testing.T) {
 	res, err := svc.Sync(ctx, wid, []SyncMutation{{
 		Op: SyncOpCreate, GuestID: collideID.String(),
 		ClientUpdatedAt: base.Add(time.Minute),
-		Payload:         &SyncPayload{Name: "Collision", Pax: 1},
+		Payload:         &SyncPayload{Name: syncStr("Collision"), Pax: syncInt(1)},
 	}})
 	testutil.NoErr(t, err)
 	if res[0].Status != "failed" {
@@ -363,7 +415,7 @@ func TestSync_TableSeatValidation(t *testing.T) {
 	seat := 3
 	res, err := svc.Sync(ctx, wid, []SyncMutation{{
 		Op: SyncOpUpdate, GuestID: gid.String(), ClientUpdatedAt: base.Add(time.Minute),
-		Payload: &SyncPayload{Name: "ValidSeat", Pax: 1, TableID: &tID, SeatNum: &seat},
+		Payload: &SyncPayload{Name: syncStr("ValidSeat"), Pax: syncInt(1), TableID: syncTable(tID), SeatNum: &seat},
 	}})
 	testutil.NoErr(t, err)
 	if res[0].Status != "applied" {
@@ -379,7 +431,7 @@ func TestSync_TableSeatValidation(t *testing.T) {
 	gid = seed("GhostTable")
 	res, err = svc.Sync(ctx, wid, []SyncMutation{{
 		Op: SyncOpUpdate, GuestID: gid.String(), ClientUpdatedAt: base.Add(time.Minute),
-		Payload: &SyncPayload{Name: "GhostTable", Pax: 1, TableID: &missingID, SeatNum: &seat},
+		Payload: &SyncPayload{Name: syncStr("GhostTable"), Pax: syncInt(1), TableID: syncTable(missingID), SeatNum: &seat},
 	}})
 	testutil.NoErr(t, err)
 	if res[0].Status != "failed" {
@@ -391,7 +443,7 @@ func TestSync_TableSeatValidation(t *testing.T) {
 	bigSeat := 5
 	res, err = svc.Sync(ctx, wid, []SyncMutation{{
 		Op: SyncOpUpdate, GuestID: gid.String(), ClientUpdatedAt: base.Add(time.Minute),
-		Payload: &SyncPayload{Name: "TooDeep", Pax: 1, TableID: &tID, SeatNum: &bigSeat},
+		Payload: &SyncPayload{Name: syncStr("TooDeep"), Pax: syncInt(1), TableID: syncTable(tID), SeatNum: &bigSeat},
 	}})
 	testutil.NoErr(t, err)
 	if res[0].Status != "failed" {
@@ -401,7 +453,7 @@ func TestSync_TableSeatValidation(t *testing.T) {
 	// Create with unknown table -> failed too
 	res, err = svc.Sync(ctx, wid, []SyncMutation{{
 		Op: SyncOpCreate, GuestID: uuid.New().String(), ClientUpdatedAt: base.Add(time.Minute),
-		Payload: &SyncPayload{Name: "FreshGhost", Pax: 1, TableID: &missingID, SeatNum: &seat},
+		Payload: &SyncPayload{Name: syncStr("FreshGhost"), Pax: syncInt(1), TableID: syncTable(missingID), SeatNum: &seat},
 	}})
 	testutil.NoErr(t, err)
 	if res[0].Status != "failed" {
