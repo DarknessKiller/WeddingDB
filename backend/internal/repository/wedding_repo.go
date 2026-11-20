@@ -27,8 +27,15 @@ func (r *WeddingRepo) List(ctx context.Context) ([]models.WeddingEvent, error) {
 	return weddings, err
 }
 
+// Create stores a new wedding together with the default hall layout, so the
+// seating map has a stage and entrance from the start.
 func (r *WeddingRepo) Create(ctx context.Context, w *models.WeddingEvent) error {
-	return r.db.WithContext(ctx).Create(w).Error
+	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Create(w).Error; err != nil {
+			return err
+		}
+		return tx.Create(models.DefaultElements(w.ID)).Error
+	})
 }
 
 // UpdateBasic writes only the fields the basic edit form owns. Replacing the
