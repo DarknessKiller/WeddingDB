@@ -51,6 +51,13 @@ func (h *UploadHandler) Upload(c fuego.ContextWithBody[any]) (any, error) {
 	if RoleFromContext(c.Context()) != "admin" && WeddingIDFromContext(c.Context()) == nil {
 		return nil, fuego.ForbiddenError{Title: "Select a wedding before uploading"}
 	}
+	// Namespace the hash index per caller: a wedding-scoped upload may only
+	// reuse a file from its own wedding, never another tenant's. Admins share
+	// one global namespace.
+	scope := "global"
+	if wid := WeddingIDFromContext(c.Context()); RoleFromContext(c.Context()) != "admin" && wid != nil {
+		scope = wid.String()
+	}
 	r := c.Request()
 	r.Body = http.MaxBytesReader(c.Response(), r.Body, maxUploadBytes)
 	file, header, err := r.FormFile("file")
@@ -109,11 +116,18 @@ func (h *UploadHandler) Upload(c fuego.ContextWithBody[any]) (any, error) {
 	indexPath := filepath.Join(uploadDir, ".hash-index")
 	if idx, err := os.ReadFile(indexPath); err == nil {
 		for _, line := range strings.Split(string(idx), "\n") {
-			parts := strings.SplitN(line, " ", 2)
-			if len(parts) == 2 && parts[0] == hash {
+			parts := strings.SplitN(line, " ", 3)
+			// Old entries have two fields and belong to the global namespace.
+			entryScope, entryHash, entryName := "global", "", ""
+			if len(parts) == 3 {
+				entryScope, entryHash, entryName = parts[0], parts[1], parts[2]
+			} else if len(parts) == 2 {
+				entryHash, entryName = parts[0], parts[1]
+			}
+			if entryHash == hash && entryScope == scope {
 				return map[string]any{
-					"url":      "/uploads/" + parts[1],
-					"filename": parts[1],
+					"url":      "/uploads/" + entryName,
+					"filename": entryName,
 					"hash":     hash,
 				}, nil
 			}
@@ -156,7 +170,7 @@ func (h *UploadHandler) Upload(c fuego.ContextWithBody[any]) (any, error) {
 	if err != nil {
 		// ponytail: index write failure is non-critical — file is already saved
 	} else {
-		if _, err := fmt.Fprintf(f, "%s %s\n", hash, filename); err != nil {
+		if _, err := fmt.Fprintf(f, "%s %s %s\n", scope, hash, filename); err != nil {
 			slog.Warn("write upload index failed", "err", err)
 		}
 		closeLogged(f)
