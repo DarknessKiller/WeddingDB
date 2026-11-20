@@ -178,6 +178,11 @@ func (h *AuthHandler) Logout(c fuego.ContextWithBody[RefreshRequest]) (any, erro
 	if err != nil {
 		return nil, fuego.BadRequestError{Title: "Invalid request"}
 	}
+	// Public endpoint with no authentication: rate limit it so the refresh-token
+	// store cannot be churned by unauthenticated callers.
+	if err := h.authService.CheckAuthRate(c.Context(), clientIP(c.Request())); err != nil {
+		return nil, fuego.HTTPError{Status: http.StatusTooManyRequests, Title: err.Error()}
+	}
 
 	// Extract access token from Authorization header for blacklisting
 	accessToken := middleware.ExtractBearer(c.Request())
