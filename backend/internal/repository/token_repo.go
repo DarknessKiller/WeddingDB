@@ -3,11 +3,13 @@ package repository
 import (
 	"context"
 	"errors"
+	"fmt"
 	"time"
 	"weddingdb/internal/models"
 
 	"github.com/google/uuid"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 type TokenRepo struct{ db *gorm.DB }
@@ -23,12 +25,31 @@ func (r *TokenRepo) Save(ctx context.Context, token *models.RefreshToken) error 
 // ErrTokenClaimed reports that another caller rotated the token first.
 var ErrTokenClaimed = errors.New("refresh token already rotated")
 
+// lockAdmin takes a row lock on the token owner. Rotate holds it shared and
+// DeleteByAdminID exclusive, so a revoke waits for an in-flight rotation to
+// commit and then deletes its new token too. Without it, the DELETE's snapshot
+// misses the uncommitted replacement row and that token survives the revoke.
+func lockAdmin(tx *gorm.DB, adminID uuid.UUID, strength string) error {
+	if tx.Name() != "postgres" {
+		return nil
+	}
+	var ids []uuid.UUID
+	if err := tx.Model(&models.AdminUser{}).Clauses(clause.Locking{Strength: strength}).
+		Where("id = ?", adminID).Pluck("id", &ids).Error; err != nil {
+		return fmt.Errorf("lock admin: %w", err)
+	}
+	return nil
+}
+
 // Rotate consumes token and stores its replacement in one transaction. The
 // conditional update lets exactly one concurrent caller win; the loser gets
 // ErrTokenClaimed and falls back to the replay path. Any failure rolls back, so
 // a token is never consumed without its successor being stored.
 func (r *TokenRepo) Rotate(ctx context.Context, token string, replacement *models.RefreshToken) error {
 	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := lockAdmin(tx, replacement.AdminID, "SHARE"); err != nil {
+			return err
+		}
 		res := tx.Model(&models.RefreshToken{}).
 			Where("token = ? AND rotated_at IS NULL", token).
 			Updates(map[string]any{"rotated_at": time.Now(), "replaced_by": replacement.Token})
@@ -70,5 +91,10 @@ func (r *TokenRepo) DeleteExpired(ctx context.Context, cutoff time.Time) error {
 
 // DeleteByAdminID deletes all refresh tokens for the given admin user.
 func (r *TokenRepo) DeleteByAdminID(ctx context.Context, adminID uuid.UUID) error {
-	return r.db.WithContext(ctx).Where("admin_id = ?", adminID).Delete(&models.RefreshToken{}).Error
+	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := lockAdmin(tx, adminID, "UPDATE"); err != nil {
+			return err
+		}
+		return tx.Where("admin_id = ?", adminID).Delete(&models.RefreshToken{}).Error
+	})
 }

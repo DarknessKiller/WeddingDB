@@ -1,6 +1,8 @@
 package repository
 
 import (
+	"os"
+	"strings"
 	"testing"
 	"time"
 
@@ -8,6 +10,7 @@ import (
 	"weddingdb/internal/testutil"
 
 	"github.com/google/uuid"
+	"gorm.io/driver/postgres"
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 )
@@ -33,5 +36,58 @@ func TestTokenRepo_DeleteExpiredHonoursCutoff(t *testing.T) {
 	testutil.NoErr(t, db.Model(&models.RefreshToken{}).Order("token").Pluck("token", &left).Error)
 	if len(left) != 2 || left[0] != "live" || left[1] != "recent" {
 		t.Fatalf("tokens left = %v, want [live recent]", left)
+	}
+}
+
+// A revoke that lands while a rotation is mid-transaction must also delete the
+// successor token. The callback parks Rotate after it inserted the successor,
+// so DeleteByAdminID always starts inside that window.
+func TestTokenRepo_RevokeDuringRotateDeletesSuccessor(t *testing.T) {
+	dsn := os.Getenv("TEST_DATABASE_URL")
+	if dsn == "" {
+		t.Skip("set TEST_DATABASE_URL to run against Postgres")
+	}
+	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{})
+	testutil.NoErr(t, err)
+	var dbName string
+	testutil.NoErr(t, db.Raw("SELECT current_database()").Scan(&dbName).Error)
+	if !strings.HasSuffix(dbName, "_test") {
+		t.Fatalf("refusing to drop tables in %q; point TEST_DATABASE_URL at a *_test database", dbName)
+	}
+	drop := func() { db.Exec("DROP TABLE IF EXISTS admin_users, refresh_tokens CASCADE") }
+	drop()
+	t.Cleanup(drop)
+	testutil.NoErr(t, db.Exec(adminUsersDDL).Error)
+	testutil.NoErr(t, db.Exec(`CREATE TABLE refresh_tokens (id UUID PRIMARY KEY, admin_id TEXT NOT NULL, wedding_id UUID,
+		token TEXT NOT NULL UNIQUE, expires_at TIMESTAMPTZ, created_at TIMESTAMPTZ, rotated_at TIMESTAMPTZ, replaced_by TEXT)`).Error)
+	adminID := seedAdmins(t, db, 1)[0]
+
+	inserted, resume := make(chan struct{}), make(chan struct{})
+	testutil.NoErr(t, db.Callback().Create().After("gorm:create").Register("test:park", func(tx *gorm.DB) {
+		if tx.Statement.Table == "refresh_tokens" && tx.Statement.Dest.(*models.RefreshToken).Token == "t2" {
+			close(inserted)
+			<-resume
+		}
+	}))
+	repo := NewTokenRepo(db)
+	exp := time.Now().Add(time.Hour)
+	testutil.NoErr(t, repo.Save(t.Context(), &models.RefreshToken{ID: uuid.New(), AdminID: adminID, Token: "t1", ExpiresAt: exp}))
+
+	rotated := make(chan error, 1)
+	go func() {
+		rotated <- repo.Rotate(t.Context(), "t1", &models.RefreshToken{ID: uuid.New(), AdminID: adminID, Token: "t2", ExpiresAt: exp})
+	}()
+	<-inserted
+	revoked := make(chan error, 1)
+	go func() { revoked <- repo.DeleteByAdminID(t.Context(), adminID) }()
+	time.Sleep(100 * time.Millisecond) // let the DELETE start and block before the rotation commits
+	close(resume)
+	testutil.NoErr(t, <-rotated)
+	testutil.NoErr(t, <-revoked)
+
+	var left []string
+	testutil.NoErr(t, db.Model(&models.RefreshToken{}).Where("admin_id = ?", adminID).Pluck("token", &left).Error)
+	if len(left) != 0 {
+		t.Fatalf("tokens left after revoke = %v, want none", left)
 	}
 }
