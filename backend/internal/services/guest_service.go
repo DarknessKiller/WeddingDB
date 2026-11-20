@@ -9,6 +9,7 @@ import (
 	"log"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"weddingdb/internal/models"
 	"weddingdb/internal/repository"
@@ -56,6 +57,48 @@ func validatePax(pax int) error {
 	return nil
 }
 
+// Field caps keep one guest row from carrying unbounded text or a negative
+// gift amount into storage and the public kiosk payload.
+const (
+	MaxGuestNameLen        = 200
+	MaxGuestEmailLen       = 320
+	MaxGuestNotesLen       = 2000
+	MaxGuestGiftItemLen    = 200
+	MaxGuestDietaryItems   = 20
+	MaxGuestDietaryItemLen = 100
+)
+
+// ErrInvalidGuestField is returned when a guest text field is over its cap or
+// the angbao amount is negative.
+var ErrInvalidGuestField = errors.New("invalid guest field")
+
+func validateGuestFields(g *models.GuestRecord) error {
+	if n := utf8.RuneCountInString(g.Name); n > MaxGuestNameLen {
+		return fmt.Errorf("%w: name must be at most %d characters, got %d", ErrInvalidGuestField, MaxGuestNameLen, n)
+	}
+	if n := utf8.RuneCountInString(g.Email); n > MaxGuestEmailLen {
+		return fmt.Errorf("%w: email must be at most %d characters", ErrInvalidGuestField, MaxGuestEmailLen)
+	}
+	if n := utf8.RuneCountInString(g.Notes); n > MaxGuestNotesLen {
+		return fmt.Errorf("%w: notes must be at most %d characters, got %d", ErrInvalidGuestField, MaxGuestNotesLen, n)
+	}
+	if g.GiftItem != nil && utf8.RuneCountInString(*g.GiftItem) > MaxGuestGiftItemLen {
+		return fmt.Errorf("%w: gift item must be at most %d characters", ErrInvalidGuestField, MaxGuestGiftItemLen)
+	}
+	if len(g.Dietary) > MaxGuestDietaryItems {
+		return fmt.Errorf("%w: at most %d dietary entries", ErrInvalidGuestField, MaxGuestDietaryItems)
+	}
+	for _, d := range g.Dietary {
+		if utf8.RuneCountInString(d) > MaxGuestDietaryItemLen {
+			return fmt.Errorf("%w: each dietary entry must be at most %d characters", ErrInvalidGuestField, MaxGuestDietaryItemLen)
+		}
+	}
+	if g.AngbaoAmt != nil && *g.AngbaoAmt < 0 {
+		return fmt.Errorf("%w: angbao amount cannot be negative", ErrInvalidGuestField)
+	}
+	return nil
+}
+
 // guestCountLocked serializes guest additions for one wedding and returns the
 // current count. The row lock is Postgres-only; sqlite (tests) has one writer.
 func guestCountLocked(tx *gorm.DB, weddingID uuid.UUID) (int, error) {
@@ -75,6 +118,9 @@ func guestCountLocked(tx *gorm.DB, weddingID uuid.UUID) (int, error) {
 }
 
 func (s *GuestService) createGuestTx(ctx context.Context, tx *gorm.DB, g *models.GuestRecord, syncWrite bool) error {
+	if err := validateGuestFields(g); err != nil {
+		return err
+	}
 	if g.Pax < 1 {
 		g.Pax = 1
 	}
@@ -101,6 +147,9 @@ func (s *GuestService) createGuestTx(ctx context.Context, tx *gorm.DB, g *models
 }
 
 func (s *GuestService) updateGuestTx(ctx context.Context, tx *gorm.DB, g *models.GuestRecord, syncWrite bool) error {
+	if err := validateGuestFields(g); err != nil {
+		return err
+	}
 	if g.Pax < 1 {
 		g.Pax = 1
 	}
@@ -303,6 +352,9 @@ func (s *GuestService) CheckIn(ctx context.Context, id, weddingID uuid.UUID, not
 		}
 		updatedNotes = appendNote(existing.Notes, notes)
 	}
+	if utf8.RuneCountInString(updatedNotes) > MaxGuestNotesLen {
+		return fmt.Errorf("%w: notes must be at most %d characters", ErrInvalidGuestField, MaxGuestNotesLen)
+	}
 	// Atomic conditional update: only check in if not already checked in
 	if err := s.guestRepo.ConditionalCheckIn(ctx, id, weddingID, now, updatedNotes); err != nil {
 		if errors.Is(err, repository.ErrAlreadyCheckedIn) {
@@ -348,6 +400,9 @@ func (s *GuestService) BulkCreate(ctx context.Context, guests []models.GuestReco
 			guests[i].Pax = 1
 		}
 		if err := validatePax(guests[i].Pax); err != nil {
+			return 0, err
+		}
+		if err := validateGuestFields(&guests[i]); err != nil {
 			return 0, err
 		}
 		incoming += guests[i].Pax
@@ -681,6 +736,9 @@ func (s *GuestService) applySyncMutation(ctx context.Context, weddingID uuid.UUI
 			if m.Payload.Notes != nil {
 				existing.Notes = appendNote(existing.Notes, strings.TrimSpace(*m.Payload.Notes))
 			}
+		}
+		if err := validateGuestFields(existing); err != nil {
+			return SyncResult{GuestID: m.GuestID, Status: "failed", Reason: err.Error()}
 		}
 		existing.UpdatedAt = opTime
 		if err := s.guestRepo.SyncUpdate(ctx, existing); err != nil {

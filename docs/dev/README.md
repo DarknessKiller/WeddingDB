@@ -46,7 +46,7 @@ New here? The [root README](../../README.md) explains what the product does.
 
 ### Deployment
 - Docker Compose (`docker-compose.yml`; the `redis` service runs DragonflyDB), distroless image, timezone set.
-- The Release workflow publishes images to GitHub Container Registry (`ghcr.io/darknesskiller/weddingdb`) on `v*` tags (multi-arch: amd64 + arm64). The compose file pulls `ghcr.io/darknesskiller/weddingdb:latest`, so nothing builds locally.
+- The Release workflow publishes images to GitHub Container Registry (`ghcr.io/darknesskiller/weddingdb`) on `v*` tags (multi-arch: amd64 + arm64). The compose file pins `ghcr.io/darknesskiller/weddingdb:v0.14.6`, so nothing builds locally and a redeploy runs the version you tested.
 - CI (`ci.yml`) runs on push and PR to `master`: backend `golangci-lint`, `go test -race`, `govulncheck`; frontend `npm audit`, `npm run check`, tests, and build.
 
 ## Deployment (Docker Compose)
@@ -149,11 +149,13 @@ Store backups off-host and rehearse restores before relying on them.
 
 ### Updating
 
+The compose file pins an explicit app image tag. To upgrade, bump `image:` to the new release tag, then:
+
 ```sh
 docker compose pull app && docker compose up -d
 ```
 
-New releases are tagged `v*`, and `latest` tracks the newest tag. To pin a version for reproducibility, use `ghcr.io/darknesskiller/weddingdb:v0.1.0`.
+New releases are tagged `v*`. `latest` tracks the newest tag, but the compose file never uses it: a mutable tag makes every redeploy a different image.
 
 ## Local development
 

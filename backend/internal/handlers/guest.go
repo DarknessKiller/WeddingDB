@@ -111,7 +111,7 @@ func (h *GuestHandler) Create(c fuego.ContextWithBody[GuestCreateRequest]) (any,
 		Dietary:   body.Dietary,
 	}
 	if err := h.guestService.Create(ctx, guest); err != nil {
-		if errors.Is(err, services.ErrGuestCapExceeded) || errors.Is(err, services.ErrInvalidPax) {
+		if errors.Is(err, services.ErrGuestCapExceeded) || errors.Is(err, services.ErrInvalidPax) || errors.Is(err, services.ErrInvalidGuestField) {
 			return nil, fuego.BadRequestError{Title: err.Error()}
 		}
 		return nil, err
@@ -199,7 +199,7 @@ func (h *GuestHandler) Update(c fuego.ContextWithBody[GuestCreateRequest]) (any,
 		}
 	}
 	if err := h.guestService.UpdateWithSeat(ctx, guest, tid, seatNum); err != nil {
-		if errors.Is(err, services.ErrGuestCapExceeded) || errors.Is(err, services.ErrInvalidPax) {
+		if errors.Is(err, services.ErrGuestCapExceeded) || errors.Is(err, services.ErrInvalidPax) || errors.Is(err, services.ErrInvalidGuestField) {
 			return nil, fuego.BadRequestError{Title: err.Error()}
 		}
 		return nil, err
@@ -257,6 +257,9 @@ func (h *GuestHandler) CheckIn(c fuego.ContextWithBody[CheckInRequest]) (any, er
 		}
 		if errors.Is(err, services.ErrGuestNotFound) {
 			return nil, fuego.NotFoundError{Title: "Guest not found"}
+		}
+		if errors.Is(err, services.ErrInvalidGuestField) {
+			return nil, fuego.BadRequestError{Title: err.Error()}
 		}
 		return nil, err
 	}
@@ -370,7 +373,7 @@ func (h *GuestHandler) BulkImport(c fuego.ContextWithBody[BulkImportRequest]) (a
 	}
 	count, err := h.guestService.BulkCreate(ctx, guests)
 	if err != nil {
-		if errors.Is(err, services.ErrGuestCapExceeded) || errors.Is(err, services.ErrInvalidPax) {
+		if errors.Is(err, services.ErrGuestCapExceeded) || errors.Is(err, services.ErrInvalidPax) || errors.Is(err, services.ErrInvalidGuestField) {
 			return nil, fuego.BadRequestError{Title: err.Error()}
 		}
 		return nil, fuego.BadRequestError{Title: "Bulk import failed"}
