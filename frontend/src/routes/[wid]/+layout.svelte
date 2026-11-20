@@ -49,11 +49,13 @@
     try {
       const guests = (await fetchAllGuests(w)).map(toGuest);
       return guests;
-    } catch {
-      // Only a genuinely offline fetch may fall back to cached data. An HTTP
+    } catch (e) {
+      // Only an unreachable server may fall back to cached data. An HTTP
       // rejection (401/403/404) means the server denied access; serving a
-      // cached roster would leak a wedding the user can no longer open.
-      if (typeof navigator !== 'undefined' && !navigator.onLine) {
+      // cached roster would leak a wedding the user can no longer open. Venue
+      // wifi without internet still reports onLine, so a failed fetch
+      // (TypeError) counts as offline too.
+      if (e instanceof TypeError || (typeof navigator !== 'undefined' && !navigator.onLine)) {
         const cached = loadCachedGuests<any>(w);
         if (cached) return (cached as any[]).map(toGuest);
       }
