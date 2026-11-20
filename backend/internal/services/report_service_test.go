@@ -27,9 +27,9 @@ func TestBuildRows_FullData(t *testing.T) {
 
 	now := time.Now()
 	guests := []models.GuestRecord{
-		{Name: "Alice", TableID: &t1, SeatNum: intPtr(1), AngbaoAmt: intPtr(200), GiftItem: strPtr("Red Packet"), CheckedInAt: &now},
-		{Name: "Bob", TableID: &t2, SeatNum: intPtr(3), AngbaoAmt: intPtr(100), CheckedInAt: nil},
-		{Name: "Charlie", TableID: nil, SeatNum: nil, AngbaoAmt: nil, GiftItem: nil, CheckedInAt: nil},
+		{Name: "Alice", Pax: 2, TableID: &t1, SeatNum: intPtr(1), AngbaoAmt: intPtr(200), GiftItem: strPtr("Red Packet"), CheckedInAt: &now},
+		{Name: "Bob", Pax: 3, TableID: &t2, SeatNum: intPtr(3), AngbaoAmt: intPtr(100), CheckedInAt: nil},
+		{Name: "Charlie", Pax: 1, TableID: nil, SeatNum: nil, AngbaoAmt: nil, GiftItem: nil, CheckedInAt: nil},
 	}
 
 	rows, summary := svc.buildRows(guests, tableMap)
@@ -75,11 +75,12 @@ func TestBuildRows_FullData(t *testing.T) {
 	if summary.TotalAngbao != 300 {
 		t.Errorf("total angpao: got %d, want 300", summary.TotalAngbao)
 	}
-	if summary.TotalGuests != 3 {
-		t.Errorf("total guests: got %d, want 3", summary.TotalGuests)
+	// People, not entries: 3 entries hold 6 people, and Alice's party of 2 is in.
+	if summary.TotalGuests != 6 {
+		t.Errorf("total guests: got %d, want 6", summary.TotalGuests)
 	}
-	if summary.CheckedInGuests != 1 {
-		t.Errorf("checked in: got %d, want 1", summary.CheckedInGuests)
+	if summary.CheckedInGuests != 2 {
+		t.Errorf("checked in: got %d, want 2", summary.CheckedInGuests)
 	}
 	if want := []tableTotal{{"Table A", 200}, {"Table B", 100}}; !slices.Equal(summary.TotalByTable, want) {
 		t.Errorf("table totals: got %v, want %v", summary.TotalByTable, want)
@@ -127,10 +128,11 @@ func TestSanitizeFilename(t *testing.T) {
 	}{
 		{"Normal Name", "Normal Name"},
 		{"Has/Slash", "Has-Slash"},
-		{`Has\Backslash`, `Has\\Backslash`},
-		{`Has"Quote`, `Has\"Quote`},
+		{`Has\Backslash`, `HasBackslash`},
+		{`Has"Quote`, `HasQuote`},
 		{"  Trimmed  ", "Trimmed"},
 		{strings.Repeat("A", 60), strings.Repeat("A", 50)},
+		{strings.Repeat("婚", 60), strings.Repeat("婚", 50)},
 	}
 	for _, tt := range tests {
 		got := svc.sanitizeFilename(tt.in)
@@ -147,8 +149,8 @@ func TestCSVOutputStructure(t *testing.T) {
 	tableMap := map[uuid.UUID]string{t1: "VIP Table"}
 	now := time.Now()
 	guests := []models.GuestRecord{
-		{Name: "Alice", TableID: &t1, SeatNum: intPtr(1), AngbaoAmt: intPtr(500), GiftItem: strPtr("Gold"), CheckedInAt: &now},
-		{Name: "Bob", TableID: &t1, SeatNum: intPtr(2), AngbaoAmt: intPtr(200), CheckedInAt: nil},
+		{Name: "Alice", Pax: 1, TableID: &t1, SeatNum: intPtr(1), AngbaoAmt: intPtr(500), GiftItem: strPtr("Gold"), CheckedInAt: &now},
+		{Name: "Bob", Pax: 1, TableID: &t1, SeatNum: intPtr(2), AngbaoAmt: intPtr(200), CheckedInAt: nil},
 	}
 
 	rows, _ := svc.buildRows(guests, tableMap)
@@ -197,8 +199,8 @@ func TestXLSXOutputStructure(t *testing.T) {
 	tableMap := map[uuid.UUID]string{t1: "Table 1"}
 	now := time.Now()
 	guests := []models.GuestRecord{
-		{Name: "Alice", TableID: &t1, SeatNum: intPtr(1), AngbaoAmt: intPtr(300), GiftItem: strPtr("Bangle"), CheckedInAt: &now},
-		{Name: "Bob", TableID: &t1, SeatNum: intPtr(5), AngbaoAmt: intPtr(150), CheckedInAt: nil},
+		{Name: "Alice", Pax: 1, TableID: &t1, SeatNum: intPtr(1), AngbaoAmt: intPtr(300), GiftItem: strPtr("Bangle"), CheckedInAt: &now},
+		{Name: "Bob", Pax: 1, TableID: &t1, SeatNum: intPtr(5), AngbaoAmt: intPtr(150), CheckedInAt: nil},
 	}
 
 	rows, summary := svc.buildRows(guests, tableMap)

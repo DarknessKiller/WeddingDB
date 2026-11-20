@@ -55,8 +55,8 @@ type tableTotal struct {
 type angpaoSummary struct {
 	TotalAngbao     int
 	TotalByTable    []tableTotal // sorted by name; keyed by table ID so same-named tables stay apart
-	TotalGuests     int
-	CheckedInGuests int
+	TotalGuests     int          // people (sum of pax), as on the dashboard, not entries
+	CheckedInGuests int          // people in checked-in parties
 	GiftItems       []string
 }
 
@@ -336,8 +336,9 @@ func (s *ReportService) buildRows(guests []models.GuestRecord, tableMap map[uuid
 		checkedInStr := "No"
 		if g.CheckedInAt != nil {
 			checkedInStr = "Yes (" + g.CheckedInAt.Local().Format("2006-01-02 15:04") + ")"
-			summary.CheckedInGuests++
+			summary.CheckedInGuests += g.Pax
 		}
+		summary.TotalGuests += g.Pax
 
 		rows = append(rows, angpaoRow{
 			GuestName: g.Name,
@@ -360,18 +361,17 @@ func (s *ReportService) buildRows(guests []models.GuestRecord, tableMap map[uuid
 	}
 	slices.SortFunc(summary.TotalByTable, func(a, b tableTotal) int { return cmp.Compare(a.Name, b.Name) })
 
-	summary.TotalGuests = len(guests)
 	return rows, summary
 }
 
+// sanitizeFilename keeps a wedding name safe inside filename="...": quotes
+// and backslashes would end or escape the quoted value, so they are dropped.
+// It cuts by character, so a Chinese name never ends mid-character.
 func (s *ReportService) sanitizeFilename(name string) string {
-	name = strings.ReplaceAll(name, `\`, `\\`)
-	name = strings.ReplaceAll(name, `"`, `\"`)
-	name = strings.ReplaceAll(name, `/`, `-`)
-	name = strings.ReplaceAll(name, `\n`, `-`)
+	name = strings.NewReplacer(`\`, "", `"`, "", "/", "-").Replace(name)
 	name = strings.TrimSpace(name)
-	if len(name) > 50 {
-		name = name[:50]
+	if r := []rune(name); len(r) > 50 {
+		name = string(r[:50])
 	}
 	return name
 }

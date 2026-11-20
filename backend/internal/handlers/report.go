@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 
@@ -50,9 +51,10 @@ func (h *ReportHandler) ExportAngpao(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/octet-stream")
-	// Sanitize filename: strip control chars, use RFC 5987 encoding for non-ASCII
+	// Strip control chars and quotes; filename* (RFC 5987) carries a non-ASCII
+	// name in a form every browser decodes the same way.
 	safeFilename := sanitizeContentDisposition(filename)
-	w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="%s"`, safeFilename))
+	w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="%s"; filename*=UTF-8''%s`, safeFilename, url.PathEscape(safeFilename)))
 	w.Header().Set("Content-Length", strconv.Itoa(len(data)))
 	w.WriteHeader(http.StatusOK)
 	if _, err := w.Write(data); err != nil {
@@ -83,6 +85,7 @@ func sanitizeContentDisposition(name string) string {
 	// Replace path separators
 	name = strings.ReplaceAll(name, `/`, `-`)
 	name = strings.ReplaceAll(name, `\`, `-`)
+	name = strings.ReplaceAll(name, `"`, "")
 	name = strings.TrimSpace(name)
 	if name == "" {
 		name = "report"
