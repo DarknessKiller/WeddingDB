@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"weddingdb/internal/middleware"
+	"weddingdb/internal/repository"
 	"weddingdb/internal/services"
 )
 
@@ -18,11 +19,12 @@ const sseKeepaliveInterval = 20 * time.Second
 type SSEHandler struct {
 	sseHub      *services.SSEHub
 	authService *services.AuthService
+	adminRepo   *repository.AdminRepo
 	keepalive   time.Duration
 }
 
-func NewSSEHandler(sseHub *services.SSEHub, authService *services.AuthService) *SSEHandler {
-	return &SSEHandler{sseHub: sseHub, authService: authService, keepalive: sseKeepaliveInterval}
+func NewSSEHandler(sseHub *services.SSEHub, authService *services.AuthService, adminRepo *repository.AdminRepo) *SSEHandler {
+	return &SSEHandler{sseHub: sseHub, authService: authService, adminRepo: adminRepo, keepalive: sseKeepaliveInterval}
 }
 
 // StreamHandler returns an http.HandlerFunc for SSE streaming.
@@ -54,9 +56,20 @@ func (h *SSEHandler) StreamHandler() http.HandlerFunc {
 			return
 		}
 
-		// Verify wedding scope: non-admin users must have a JWT scoped to the requested wedding.
+		// Verify wedding scope: non-admin users must have a JWT scoped to the
+		// requested wedding and still be assigned to it in the DB.
 		if claims.Role != "admin" {
 			if claims.WeddingID == nil || *claims.WeddingID != wid {
+				http.Error(w, `{"error":"Access denied"}`, http.StatusForbidden)
+				return
+			}
+			allowed, err := h.adminRepo.HasWeddingAccess(r.Context(), claims.AdminID, wid)
+			if err != nil {
+				slog.Error("SSE: wedding access check failed", "user", claims.AdminID, "wedding", wid, "err", err)
+				http.Error(w, `{"error":"Access check failed"}`, http.StatusInternalServerError)
+				return
+			}
+			if !allowed {
 				http.Error(w, `{"error":"Access denied"}`, http.StatusForbidden)
 				return
 			}

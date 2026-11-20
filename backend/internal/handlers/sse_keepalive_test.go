@@ -44,7 +44,7 @@ func newTestSSEServer(t *testing.T) (*httptest.Server, *services.SSEHub, string,
 	}
 
 	auth := services.NewAuthService(nil, nil, nil, secret, rdb)
-	h := NewSSEHandler(hub, auth)
+	h := NewSSEHandler(hub, auth, nil)
 
 	testWID := uuid.New()
 	widStr := utils.EncodeUUID(testWID)

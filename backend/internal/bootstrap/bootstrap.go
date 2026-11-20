@@ -203,7 +203,7 @@ func Init(env config.Env, version string) *App {
 	handlers.RegisterRoutes(server, authService, guestService, tableService, weddingService, layoutService, reportService, adminRepo)
 
 	// SSE endpoint for real-time guest event streaming (raw handler, bypasses Fuego).
-	sseHandler := handlers.NewSSEHandler(sseHub, authService)
+	sseHandler := handlers.NewSSEHandler(sseHub, authService, adminRepo)
 	server.Mux.HandleFunc("GET /api/weddings/{wid}/events", sseHandler.StreamHandler())
 
 	// Serve static frontend (SPA fallback to index.html)

@@ -32,7 +32,7 @@ func newFastSSEServer(t *testing.T) (*httptest.Server, *services.AuthService) {
 	t.Cleanup(hub.Shutdown)
 
 	auth := services.NewAuthService(nil, nil, nil, sseTestSecret, rdb)
-	h := NewSSEHandler(hub, auth)
+	h := NewSSEHandler(hub, auth, nil)
 	h.keepalive = 20 * time.Millisecond
 
 	widStr := utils.EncodeUUID(uuid.New())

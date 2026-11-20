@@ -2,7 +2,11 @@ package handlers
 
 import (
 	"context"
+	"log/slog"
 	"weddingdb/internal/middleware"
+	"weddingdb/internal/repository"
+
+	"github.com/go-fuego/fuego"
 
 	"github.com/google/uuid"
 )
@@ -44,18 +48,27 @@ func requireAdmin(ctx context.Context) error {
 }
 
 // requireWeddingAccess returns nil if the caller has access to the given wedding.
-// admin has access to all weddings; user only to the one in their JWT.
-func requireWeddingAccess(ctx context.Context, weddingID uuid.UUID) error {
+// admin has access to all weddings; user only to the one in their JWT, and only
+// while still assigned to it in the DB (unassignment must not wait for token expiry).
+func requireWeddingAccess(ctx context.Context, adminRepo *repository.AdminRepo, weddingID uuid.UUID) error {
 	role := RoleFromContext(ctx)
 	if role == "admin" {
 		return nil
 	}
 	jwtWid := WeddingIDFromContext(ctx)
 	if jwtWid == nil {
-		return errForbidden("no wedding scope")
+		return fuego.ForbiddenError{Title: "no wedding scope"}
 	}
 	if *jwtWid != weddingID {
-		return errForbidden("access denied to this wedding")
+		return fuego.ForbiddenError{Title: "access denied to this wedding"}
+	}
+	allowed, err := adminRepo.HasWeddingAccess(ctx, AdminIDFromContext(ctx), weddingID)
+	if err != nil {
+		slog.Error("wedding access check failed", "wedding", weddingID, "err", err)
+		return fuego.InternalServerError{Title: "Access check failed"}
+	}
+	if !allowed {
+		return fuego.ForbiddenError{Title: "access denied to this wedding"}
 	}
 	return nil
 }
@@ -64,9 +77,4 @@ type unauthorizedError struct{ msg string }
 
 func (e unauthorizedError) Error() string { return e.msg }
 
-type forbiddenError struct{ msg string }
-
-func (e forbiddenError) Error() string { return e.msg }
-
 func errUnauthorized(msg string) error { return unauthorizedError{msg} }
-func errForbidden(msg string) error    { return forbiddenError{msg} }

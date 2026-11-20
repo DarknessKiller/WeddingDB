@@ -50,8 +50,8 @@ func (h *WeddingHandler) Get(c fuego.ContextNoBody) (any, error) {
 		return nil, fuego.BadRequestError{Title: "Invalid ID"}
 	}
 	ctx := c.Context()
-	if err := requireWeddingAccess(ctx, id); err != nil {
-		return nil, fuego.ForbiddenError{Title: err.Error()}
+	if err := requireWeddingAccess(ctx, h.adminRepo, id); err != nil {
+		return nil, err
 	}
 	return h.weddingService.Get(ctx, id)
 }
@@ -93,8 +93,8 @@ func (h *WeddingHandler) Update(c fuego.ContextWithBody[WeddingRequest]) (any, e
 		return nil, fuego.BadRequestError{Title: "Invalid ID"}
 	}
 	ctx := c.Context()
-	if err := requireWeddingAccess(ctx, id); err != nil {
-		return nil, fuego.ForbiddenError{Title: err.Error()}
+	if err := requireWeddingAccess(ctx, h.adminRepo, id); err != nil {
+		return nil, err
 	}
 	body, err := c.Body()
 	if err != nil {
@@ -147,8 +147,8 @@ func (h *WeddingHandler) UpdateKioskSettings(c fuego.ContextWithBody[KioskSettin
 		return nil, fuego.BadRequestError{Title: "Invalid ID"}
 	}
 	ctx := c.Context()
-	if err := requireWeddingAccess(ctx, id); err != nil {
-		return nil, fuego.ForbiddenError{Title: err.Error()}
+	if err := requireWeddingAccess(ctx, h.adminRepo, id); err != nil {
+		return nil, err
 	}
 	body, err := c.Body()
 	if err != nil {
