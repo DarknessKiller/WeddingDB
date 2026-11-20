@@ -124,31 +124,28 @@ docker compose up -d
 - `weddingdb_pgdata` volume: PostgreSQL data. Survives `down`, removed by `down -v`.
 - `weddingdb_uploads` volume: uploaded kiosk logos and backgrounds, mounted at `/app/uploads`.
 
-### Backup and restore
+### Backups
 
-Run from the repository root. Both scripts discover Postgres with `docker compose ps -q postgres`; `CONTAINER` is the fallback when Compose is unavailable. `DB_USER` defaults to `weddingdb`.
+There are no backup scripts. Dump the database with `pg_dump` through Compose:
 
 ```sh
-./backup-db.sh
-./restore-db.sh ./backups/weddingdb_<timestamp>.sql.gz weddingdb_restore
+mkdir -p backups
+(umask 077; docker compose exec -T postgres pg_dump -U weddingdb weddingdb | gzip > "backups/weddingdb_$(date +%Y%m%d_%H%M%S).sql.gz")
 ```
-
-Backups use private permissions and publish only after a nonempty, valid gzip dump completes. Override `BACKUP_DIR` or `DB_NAME` for backups if needed.
-
-Restore loads the dump into a scratch database (`<name>_restore`) first, in one transaction with errors fatal, then prints counts for `wedding_events`, `guest_records`, `banquet_tables`, and `admin_users`. Only a dump that loads completely is renamed into place; a failed import drops the scratch copy and leaves the target untouched.
 
 Uploads live in a volume, not the database. Back them up separately:
 
 ```sh
-mkdir -p backups
 (umask 077; docker run --rm -v weddingdb_uploads:/uploads:ro alpine:3.21 tar -C /uploads -czf - . > "backups/uploads_$(date +%Y%m%d_%H%M%S).tar.gz")
 ```
 
+Restore into an empty database with:
+
+```sh
+gunzip -c backups/weddingdb_<timestamp>.sql.gz | docker compose exec -T postgres psql -U weddingdb -d weddingdb
+```
+
 Store backups off-host and rehearse restores before relying on them.
-
-- Restore: `./restore-db.sh backups/<file>.sql.gz weddingdb --force`
-
-`--force` drops and recreates an existing target database. Leave it off and restore into a fresh name to keep the old data intact.
 
 ### Updating
 
