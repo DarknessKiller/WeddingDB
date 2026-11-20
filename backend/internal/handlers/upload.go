@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
@@ -24,8 +25,17 @@ var magicBytes = map[string][]byte{
 	".jpeg": {0xff, 0xd8, 0xff},
 	".png":  {0x89, 0x50, 0x4e, 0x47},
 	".gif":  {0x47, 0x49, 0x46, 0x38},
-	".webp": {0x52, 0x49, 0x46, 0x46},       // RIFF header
-	".svg":  {0x3c, 0x3f, 0x78, 0x6d, 0x6c}, // <?xml
+	".webp": {0x52, 0x49, 0x46, 0x46}, // RIFF header
+}
+
+// matchesMagic reports whether head (the file's first bytes) fits ext. An SVG
+// may open with an XML prolog or straight at <svg (Figma, most exporters).
+func matchesMagic(ext string, head []byte) bool {
+	if ext == ".svg" {
+		head = bytes.TrimLeft(bytes.TrimPrefix(head, []byte("\xef\xbb\xbf")), " \t\r\n")
+		return bytes.HasPrefix(head, []byte("<?xml")) || bytes.HasPrefix(head, []byte("<svg"))
+	}
+	return bytes.HasPrefix(head, magicBytes[ext])
 }
 
 // maxUploadFileBytes is the advertised per-file limit.
@@ -130,15 +140,8 @@ func (h *UploadHandler) Upload(c fuego.ContextWithBody[any]) (any, error) {
 	if _, err := file.Seek(0, 0); err != nil {
 		return nil, fuego.InternalServerError{Title: "Failed to read file"}
 	}
-	if n < len(magicBytes[ext]) {
+	if !matchesMagic(ext, headerBuf[:n]) {
 		return nil, fuego.BadRequestError{Title: "File content does not match extension"}
-	}
-	expected := magicBytes[ext]
-	actual := headerBuf[:len(expected)]
-	for i := range expected {
-		if actual[i] != expected[i] {
-			return nil, fuego.BadRequestError{Title: "File content does not match extension"}
-		}
 	}
 
 	// Create uploads directory

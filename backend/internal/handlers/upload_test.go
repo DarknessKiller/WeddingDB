@@ -249,3 +249,23 @@ func TestUpload_IndexWriteFailureRemovesFile(t *testing.T) {
 		t.Fatalf("unindexed upload left on disk: %v", matches)
 	}
 }
+
+// SVGs without an XML prolog are the common case; wrong content still fails.
+func TestUpload_SVGMagic(t *testing.T) {
+	for name, tc := range map[string]struct {
+		body string
+		ok   bool
+	}{
+		"prolog":      {`<?xml version="1.0"?><svg/>`, true},
+		"bare svg":    {`<svg xmlns="http://www.w3.org/2000/svg"/>`, true},
+		"bom + space": {"\xef\xbb\xbf\n  <svg/>", true},
+		"html":        {`<html><script>x</script>`, false},
+	} {
+		t.Run(name, func(t *testing.T) {
+			rec := runUpload(t, "logo.svg", []byte(tc.body))
+			if got := rec.Code == http.StatusCreated; got != tc.ok {
+				t.Fatalf("status = %d, want accepted=%v", rec.Code, tc.ok)
+			}
+		})
+	}
+}
