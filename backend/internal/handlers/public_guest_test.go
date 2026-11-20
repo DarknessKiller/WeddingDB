@@ -2,7 +2,9 @@ package handlers
 
 import (
 	"encoding/json"
+	"strings"
 	"testing"
+	"unicode/utf8"
 )
 
 func TestPublicGuestJSONOmitsPrivateFields(t *testing.T) {
@@ -43,5 +45,19 @@ func TestPublicGuestJSONExposesKioskFields(t *testing.T) {
 	}
 	if vip, ok := fields["isVip"].(bool); !ok || !vip {
 		t.Errorf("public guest JSON should expose isVip=true: %s", data)
+	}
+}
+
+// A byte-slice cap splits multibyte runes and hands Postgres invalid UTF-8.
+func TestLimitQuery_KeepsValidUTF8(t *testing.T) {
+	got := limitQuery(strings.Repeat("婚", 150), 100)
+	if !utf8.ValidString(got) {
+		t.Fatalf("truncated query is invalid UTF-8: %q", got)
+	}
+	if n := utf8.RuneCountInString(got); n != 100 {
+		t.Fatalf("rune count = %d, want 100", n)
+	}
+	if short := limitQuery("abc", 100); short != "abc" {
+		t.Fatalf("short query changed to %q", short)
 	}
 }

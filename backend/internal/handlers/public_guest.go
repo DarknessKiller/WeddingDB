@@ -118,9 +118,7 @@ func (h *PublicGuestHandler) Search(c fuego.ContextNoBody) (any, error) {
 		return nil, fuego.BadRequestError{Title: "Invalid wedding ID"}
 	}
 	query := c.QueryParam("q")
-	if len(query) > 100 {
-		query = query[:100]
-	}
+	query = limitQuery(query, 100)
 	guests, err := h.guestService.Search(ctx, wid, query)
 	if err != nil {
 		return nil, err
@@ -147,4 +145,14 @@ func (h *PublicGuestHandler) Search(c fuego.ContextNoBody) (any, error) {
 		})
 	}
 	return out, nil
+}
+
+// limitQuery caps a query string at max runes without splitting a multibyte
+// character; a byte-slice can leave invalid UTF-8 that Postgres rejects.
+func limitQuery(q string, max int) string {
+	runes := []rune(q)
+	if len(runes) <= max {
+		return q
+	}
+	return string(runes[:max])
 }
