@@ -111,8 +111,8 @@ import X from 'lucide-svelte/icons/x';
     // Apply the server value even when it's an empty string — only
     // undefined (field absent) means "keep the default".
     if (data.kioskDescription !== undefined) kioskDescription = data.kioskDescription;
-    if (data.kioskLogoUrl) kioskLogoUrl = data.kioskLogoUrl;
-    if (data.kioskBackgroundUrl) kioskBackgroundUrl = data.kioskBackgroundUrl;
+    if (data.kioskLogoUrl !== undefined) kioskLogoUrl = data.kioskLogoUrl;
+    if (data.kioskBackgroundUrl !== undefined) kioskBackgroundUrl = data.kioskBackgroundUrl;
     if (data.kioskBackgroundSize) kioskBackgroundSize = data.kioskBackgroundSize;
     if (data.kioskBackgroundPosX) kioskBackgroundPosX = data.kioskBackgroundPosX;
     if (data.kioskBackgroundPosY) kioskBackgroundPosY = data.kioskBackgroundPosY;
