@@ -1,6 +1,7 @@
 package services
 
 import (
+	"errors"
 	"strings"
 	"sync"
 	"testing"
@@ -13,6 +14,7 @@ import (
 	"github.com/google/uuid"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 // openGuestPG opens TEST_DATABASE_URL with fresh guest tables and a service.
@@ -60,5 +62,29 @@ func TestSyncCheckIn_PostgresConcurrentKeepsBothNotes(t *testing.T) {
 		if !strings.Contains(got.Notes, "desk A") || !strings.Contains(got.Notes, "desk B") {
 			t.Fatalf("round %d: notes = %q, want both desks' notes", round, got.Notes)
 		}
+	}
+}
+
+// A seat assignment waiting on the wedding lock must use the party size the
+// lock holder committed, not the one it read before waiting.
+func TestAssignSeat_PostgresUsesPaxCommittedWhileWaiting(t *testing.T) {
+	svc, db := openGuestPG(t)
+	wid, tid, gid := uuid.New(), uuid.New(), uuid.New()
+	testutil.NoErr(t, db.Create(&models.WeddingEvent{ID: wid, Name: "W"}).Error)
+	testutil.NoErr(t, db.Create(&models.BanquetTable{ID: tid, WeddingID: wid, Name: "T1", Capacity: 10}).Error)
+	testutil.NoErr(t, db.Create(&models.GuestRecord{ID: gid, WeddingID: wid, Name: "G", Pax: 2}).Error)
+
+	// Hold the wedding lock the way a guest edit does, while raising pax to 4.
+	tx := db.Begin()
+	testutil.NoErr(t, tx.Clauses(clause.Locking{Strength: "UPDATE"}).Select("id").Where("id = ?", wid).First(&models.WeddingEvent{}).Error)
+	testutil.NoErr(t, tx.Model(&models.GuestRecord{}).Where("id = ?", gid).Update("pax", 4).Error)
+	assigned := make(chan error, 1)
+	go func() { assigned <- svc.AssignSeat(t.Context(), gid, wid, tid, 9) }()
+	time.Sleep(100 * time.Millisecond) // let AssignSeat block on the lock
+	testutil.NoErr(t, tx.Commit().Error)
+
+	// Seats 9-12 do not fit a 10-seat table.
+	if err := <-assigned; !errors.Is(err, ErrSeatRange) {
+		t.Fatalf("AssignSeat err = %v, want ErrSeatRange", err)
 	}
 }

@@ -340,14 +340,16 @@ func (s *GuestService) AssignSeat(ctx context.Context, guestID, weddingID, table
 	var guest *models.GuestRecord
 	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		txGuestRepo := repository.NewGuestRepo(tx)
-		var err error
-		guest, err = txGuestRepo.FindByID(ctx, guestID, weddingID)
-		if err != nil {
-			return err
-		}
 		// Wedding row lock keeps the lock order identical to create/update, so
 		// a concurrent seat move and import cannot deadlock each other.
 		if _, err := guestCountLocked(tx, weddingID); err != nil {
+			return err
+		}
+		// Read the guest after the lock: a party-size edit committed while we
+		// waited must count, or the seat check uses the old pax and overbooks.
+		var err error
+		guest, err = txGuestRepo.FindByID(ctx, guestID, weddingID)
+		if err != nil {
 			return err
 		}
 		if err := checkSeatTx(ctx, tx, weddingID, tableID, guestID, guest.Pax, seatNum); err != nil {
