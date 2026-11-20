@@ -225,3 +225,27 @@ func TestUpload_ConcurrentSameContentDedupes(t *testing.T) {
 		t.Fatalf("stored %d files for identical content, want 1", files)
 	}
 }
+
+// The index is the quota ledger: if the entry cannot be written, the stored
+// file must not stay behind uncounted.
+func TestUpload_IndexWriteFailureRemovesFile(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("root ignores file permissions")
+	}
+	t.Chdir(t.TempDir())
+	if err := os.MkdirAll("uploads", 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join("uploads", ".hash-index"), nil, 0o444); err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.WithValue(context.Background(), middleware.RoleKey, "admin")
+	rec := doUpload(t, ctx, "a.png", []byte{0x89, 0x50, 0x4e, 0x47, 1, 2, 3})
+	if rec.Code != http.StatusInternalServerError {
+		t.Fatalf("status = %d, want 500", rec.Code)
+	}
+	matches, _ := filepath.Glob(filepath.Join("uploads", "*.png"))
+	if len(matches) != 0 {
+		t.Fatalf("unindexed upload left on disk: %v", matches)
+	}
+}

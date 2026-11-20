@@ -206,13 +206,24 @@ func (h *UploadHandler) Upload(c fuego.ContextWithBody[any]) (any, error) {
 	}
 
 	f, err := os.OpenFile(indexPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
-	if err != nil {
-		// Index write failure is non-critical: the file is already saved.
-	} else {
-		if _, err := fmt.Fprintf(f, "%s %s %s\n", scope, hash, filename); err != nil {
-			slog.Warn("write upload index failed", "err", err)
+	// The index is the quota ledger: a file missing from it is never counted,
+	// so an upload whose index entry cannot be written is removed, not kept.
+	unindexed := func(err error) error {
+		slog.Error("upload index write failed; removing unindexed file", "file", filename, "err", err)
+		if rmErr := os.Remove(filePath); rmErr != nil {
+			slog.Warn("remove unindexed upload failed", "file", filename, "err", rmErr)
 		}
+		return fuego.InternalServerError{Title: "Failed to save file"}
+	}
+	if err != nil {
+		return nil, unindexed(err)
+	}
+	if _, err := fmt.Fprintf(f, "%s %s %s\n", scope, hash, filename); err != nil {
 		closeLogged(f)
+		return nil, unindexed(err)
+	}
+	if err := f.Close(); err != nil {
+		return nil, unindexed(err)
 	}
 
 	c.SetStatus(201)
