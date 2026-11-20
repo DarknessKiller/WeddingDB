@@ -15,9 +15,10 @@ services:
       ALLOW_REGISTRATION: "${ALLOW_REGISTRATION:-}"
       # Rate limits key on the client IP from X-Forwarded-For. Without this the
       # proxy's own address is used for every request and one client can lock
-      # everyone out. Loopback for a host proxy, the Docker bridge range for a
-      # containerized one reaching the app through the published port.
-      TRUSTED_PROXIES: "127.0.0.1/32,::1/128,172.16.0.0/12"
+      # everyone out. A host proxy reaches the published port through this
+      # network's gateway (pinned below). Trust only that address: trusting a
+      # whole private range lets a client on a 172.16-31.x LAN spoof its IP.
+      TRUSTED_PROXIES: "127.0.0.1/32,::1/128,172.30.255.1/32"
       STATIC_DIR: "./static"
       # Opt-in tracing: uncomment + run `docker compose --profile tracing up` to enable.
       # OTEL_ENABLED: true
@@ -86,3 +87,11 @@ volumes:
     name: weddingdb_redisdata
   jgdata:
     name: weddingdb_jgdata
+
+networks:
+  default:
+    ipam:
+      # Pinned so TRUSTED_PROXIES can name the gateway (172.30.255.1). Change
+      # both together if this range clashes with a network on the host.
+      config:
+        - subnet: 172.30.255.0/24
