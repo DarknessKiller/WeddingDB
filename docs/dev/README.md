@@ -192,7 +192,7 @@ Server runs at `http://localhost:8080`.
 | `JWT_SECRET` | Secret for JWT signing (required) | none |
 | `PORT` | Server port | `8080` |
 | `PUBLIC_URL` | Public server URL (used in OpenAPI spec) | `http://localhost:{PORT}` |
-| `CORS_ORIGIN` | Allowed CORS origin (credentials allowed only for this origin; unset reflects request origin without credentials) | `http://localhost:5173` |
+| `CORS_ORIGIN` | Allowed CORS origin (credentials allowed only for this exact origin; unset blocks all cross-origin requests) | `http://localhost:5173` |
 | `TRUSTED_PROXIES` | Comma-separated IPs/CIDRs of reverse proxies whose `X-Forwarded-For` is trusted | unset (header ignored) |
 | `OTEL_ENABLED` | Enable OpenTelemetry tracing | `false` |
 | `OTEL_EXPORTER_OTLP_ENDPOINT` | OTLP HTTP endpoint | `http://localhost:4318/v1/traces` |
