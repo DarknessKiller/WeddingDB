@@ -1,4 +1,4 @@
-import { getAuth, setAuth, expireAuth } from '#lib/stores/index.ts';
+import { getAuth, setAuth, expireAuth, readStoredAuth } from '#lib/stores/index.ts';
 import { setWeddingId } from '#lib/stores/weddingId.ts';
 
 const BASE = '';
@@ -14,6 +14,13 @@ export function getAccessToken(): string {
 async function doRefresh(): Promise<boolean> {
 	const { refreshToken } = getAuth();
 	if (!refreshToken) return false;
+	// Another tab already rotated the token. Reusing our stale one would make the
+	// server revoke the whole token family and log out every tab.
+	const stored = readStoredAuth();
+	if (stored && stored.refreshToken !== refreshToken) {
+		setAuth(stored.accessToken, stored.refreshToken, stored.role, stored.name);
+		return true;
+	}
 	let refreshRes: Response;
 	try {
 		refreshRes = await fetch(`${BASE}/api/auth/refresh`, {

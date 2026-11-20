@@ -91,4 +91,21 @@ describe('apiFetch refresh recovery', () => {
 		expect(getAuth().accessToken).toBeNull();
 		expect(localStorage.getItem('weddingdb_auth')).toBeNull();
 	});
+
+	it('adopts a token another tab already rotated instead of reusing the stale one', async () => {
+		localStorage.setItem('weddingdb_auth', JSON.stringify({ accessToken: 'tab2-access', refreshToken: 'refresh-2', role: 'admin', name: 'A' }));
+		fetchMock
+			.mockResolvedValueOnce(res({}, 401))
+			.mockResolvedValueOnce(res({ guests: [] }));
+
+		const { apiFetch } = await import('./client');
+		const { getAuth } = await import('#lib/stores/index.ts');
+		const result = await apiFetch('/api/guests');
+
+		expect(result.status).toBe(200);
+		expect(fetchMock).toHaveBeenCalledTimes(2);
+		expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/auth/refresh'))).toBe(false);
+		expect(fetchMock.mock.calls[1][1].headers.Authorization).toBe('Bearer tab2-access');
+		expect(getAuth().refreshToken).toBe('refresh-2');
+	});
 });

@@ -1,9 +1,11 @@
 import { goto } from '$app/navigation';
-import { getAuth, setAuth, clearAuth } from '#lib/stores/index.ts';
+import { getAuth, expireAuth } from '#lib/stores/index.ts';
 import { setWeddingId } from '#lib/stores/weddingId.ts';
+import { refreshAccessToken } from '#lib/api/client.ts';
 
+// Session expiry, not logout: keep the offline queue so queued check-ins sync after login.
 function toLogin() {
-  clearAuth();
+  expireAuth();
   setWeddingId('');
   goto('/login', { replaceState: true });
 }
@@ -33,26 +35,12 @@ export async function validateToken(): Promise<boolean> {
   if (res.ok) return true;
 
   // Only a rejected access token can be recovered with the refresh token.
-  if (res.status === 401 && refreshToken) {
-    let refreshRes: Response;
-    try {
-      refreshRes = await fetch('/api/auth/refresh', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ refreshToken })
-      });
-    } catch {
-      // Network failure — the refresh token was never seen by the server, so keep it.
-      return true;
-    }
-    if (refreshRes.ok) {
-      const data = await refreshRes.json();
-      setAuth(data.accessToken, data.refreshToken, data.role ?? getAuth().role ?? '', data.name ?? getAuth().name ?? '');
-      return true;
-    }
-    if (refreshRes.status !== 400 && refreshRes.status !== 401) return true;
-  } else if (res.status !== 401) {
-    return true;
+  if (res.status !== 401) return true;
+  if (refreshToken) {
+    if (await refreshAccessToken()) return true;
+    // The shared refresh ends the session (expireAuth + redirect) only on a definite
+    // rejection; network and server failures keep the refresh token.
+    return getAuth().refreshToken !== null;
   }
 
   toLogin();

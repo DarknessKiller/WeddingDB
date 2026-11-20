@@ -38,7 +38,7 @@ interface StoredAuth {
   name: string;
 }
 
-function readStoredAuth(): StoredAuth | null {
+export function readStoredAuth(): StoredAuth | null {
   if (typeof window === 'undefined') return null;
   try {
     const raw = localStorage.getItem(AUTH_KEY);
