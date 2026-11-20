@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"log/slog"
+	"net/mail"
 	"weddingdb/internal/models"
 	"weddingdb/internal/repository"
 	"weddingdb/internal/services"
@@ -45,8 +46,18 @@ func (h *AdminHandler) Create(c fuego.ContextWithBody[AdminRequest]) (any, error
 	if err != nil {
 		return nil, fuego.BadRequestError{Title: "Invalid request"}
 	}
+	if body.Email == "" || body.Name == "" {
+		return nil, fuego.BadRequestError{Title: "Name and email are required"}
+	}
+	if _, err := mail.ParseAddress(body.Email); err != nil {
+		return nil, fuego.BadRequestError{Title: "Invalid email format"}
+	}
 	if err := validatePassword(body.Password); err != nil {
 		return nil, err
+	}
+	// The unique index would otherwise surface as an opaque 500.
+	if _, err := h.adminRepo.FindByEmail(ctx, body.Email); err == nil {
+		return nil, fuego.ConflictError{Title: "Email already registered"}
 	}
 	// Validate role field
 	if body.Role != "admin" && body.Role != "user" {
