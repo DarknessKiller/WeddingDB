@@ -326,14 +326,23 @@ func lockTableTx(ctx context.Context, tx *gorm.DB, weddingID, tableID uuid.UUID)
 	if tx.Name() == "postgres" {
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Select("id").
 			Where("id = ? AND wedding_id = ?", tableID, weddingID).First(&models.BanquetTable{}).Error; err != nil {
-			return nil, ErrTableNotFound
+			return nil, tableLookupErr(err)
 		}
 	}
 	table, err := repository.NewTableRepo(tx).FindByID(ctx, tableID, weddingID)
 	if err != nil {
-		return nil, ErrTableNotFound
+		return nil, tableLookupErr(err)
 	}
 	return table, nil
+}
+
+// tableLookupErr reports a missing row as ErrTableNotFound and passes any other
+// error through: a dropped connection is retryable, not a missing table.
+func tableLookupErr(err error) error {
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return ErrTableNotFound
+	}
+	return fmt.Errorf("lock table: %w", err)
 }
 
 func (s *GuestService) AssignSeat(ctx context.Context, guestID, weddingID, tableID uuid.UUID, seatNum int) error {
