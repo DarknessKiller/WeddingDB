@@ -1,13 +1,16 @@
 package handlers
 
 import (
+	"cmp"
 	"errors"
+	"fmt"
 	"log/slog"
 	"net"
 	"net/http"
 	"net/mail"
 	"os"
 	"unicode"
+	"unicode/utf8"
 	"weddingdb/internal/middleware"
 	"weddingdb/internal/models"
 	"weddingdb/internal/repository"
@@ -18,6 +21,15 @@ import (
 	"github.com/google/uuid"
 	"golang.org/x/crypto/bcrypt"
 )
+
+// maxLen answers 400 when value has more than limit characters, before the
+// column's varchar limit turns it into an opaque 500.
+func maxLen(field, value string, limit int) error {
+	if utf8.RuneCountInString(value) > limit {
+		return fuego.BadRequestError{Title: fmt.Sprintf("%s must be at most %d characters", field, limit)}
+	}
+	return nil
+}
 
 func validatePassword(password string) error {
 	if len(password) < 8 {
@@ -271,7 +283,7 @@ func (h *AuthHandler) Register(c fuego.ContextWithBody[RegisterRequest]) (any, e
 	// "Bob <bob@x.com>" parses too; keep only the address, or logging in
 	// with bob@x.com would never match the stored value.
 	body.Email = addr.Address
-	if err := validatePassword(body.Password); err != nil {
+	if err := cmp.Or(maxLen("Name", body.Name, 255), maxLen("Email", body.Email, 255), validatePassword(body.Password)); err != nil {
 		return nil, err
 	}
 	ctx := c.Context()

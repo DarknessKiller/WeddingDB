@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"cmp"
 	"strconv"
 	"strings"
 	"time"
@@ -73,6 +74,9 @@ func (h *WeddingHandler) Create(c fuego.ContextWithBody[WeddingRequest]) (any, e
 	if w.Name == "" {
 		return nil, fuego.BadRequestError{Title: "Name is required"}
 	}
+	if err := maxLen("Name", w.Name, 255); err != nil {
+		return nil, err
+	}
 	if err := h.weddingService.Create(ctx, w); err != nil {
 		return nil, err
 	}
@@ -107,6 +111,9 @@ func (h *WeddingHandler) Update(c fuego.ContextWithBody[WeddingRequest]) (any, e
 	name := strings.TrimSpace(body.Name)
 	if name == "" {
 		return nil, fuego.BadRequestError{Title: "Name is required"}
+	}
+	if err := maxLen("Name", name, 255); err != nil {
+		return nil, err
 	}
 	w.Name = name
 	if body.Date != "" {
@@ -170,6 +177,9 @@ func (h *WeddingHandler) UpdateKioskSettings(c fuego.ContextWithBody[KioskSettin
 	}
 	if body.VenueAddress != nil {
 		w.VenueAddress = strings.TrimSpace(*body.VenueAddress)
+	}
+	if err := cmp.Or(maxLen("Name", w.Name, 255), maxLen("Venue name", w.VenueName, 255), maxLen("Venue address", w.VenueAddress, 500)); err != nil {
+		return nil, err
 	}
 	if body.KioskDescription != nil {
 		w.KioskDescription = strings.TrimSpace(*body.KioskDescription)

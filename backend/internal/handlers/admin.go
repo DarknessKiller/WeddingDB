@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"cmp"
 	"errors"
 	"log/slog"
 	"net/mail"
@@ -57,7 +58,7 @@ func (h *AdminHandler) Create(c fuego.ContextWithBody[AdminRequest]) (any, error
 	// "Bob <bob@x.com>" parses too; keep only the address, or logging in
 	// with bob@x.com would never match the stored value.
 	body.Email = addr.Address
-	if err := validatePassword(body.Password); err != nil {
+	if err := cmp.Or(maxLen("Name", body.Name, 255), maxLen("Email", body.Email, 255), validatePassword(body.Password)); err != nil {
 		return nil, err
 	}
 	// The unique index would otherwise surface as an opaque 500.
