@@ -1,0 +1,64 @@
+package services
+
+import (
+	"strings"
+	"sync"
+	"testing"
+	"time"
+
+	"weddingdb/internal/models"
+	"weddingdb/internal/repository"
+	"weddingdb/internal/testutil"
+
+	"github.com/google/uuid"
+	"gorm.io/driver/postgres"
+	"gorm.io/gorm"
+)
+
+// openGuestPG opens TEST_DATABASE_URL with fresh guest tables and a service.
+func openGuestPG(t *testing.T) (*GuestService, *gorm.DB) {
+	t.Helper()
+	db, err := gorm.Open(postgres.Open(pgDSN(t)), &gorm.Config{})
+	testutil.NoErr(t, err)
+	var dbName string
+	testutil.NoErr(t, db.Raw("SELECT current_database()").Scan(&dbName).Error)
+	if !strings.HasSuffix(dbName, "_test") {
+		t.Fatalf("refusing to drop tables in %q", dbName)
+	}
+	drop := func() { db.Exec("DROP TABLE IF EXISTS guest_records, banquet_tables, wedding_events CASCADE") }
+	drop()
+	t.Cleanup(drop)
+	testutil.NoErr(t, db.AutoMigrate(&models.WeddingEvent{}, &models.BanquetTable{}, &models.GuestRecord{}))
+	return NewGuestService(repository.NewGuestRepo(db), repository.NewTableRepo(db), nil, db), db
+}
+
+// Two phones syncing the same offline check-in at once: each note must land,
+// so neither write was built on a copy that missed the other.
+func TestSyncCheckIn_PostgresConcurrentKeepsBothNotes(t *testing.T) {
+	svc, db := openGuestPG(t)
+	wid := uuid.New()
+	testutil.NoErr(t, db.Create(&models.WeddingEvent{ID: wid, Name: "W"}).Error)
+	for round := range 30 {
+		gid := uuid.New()
+		testutil.NoErr(t, db.Create(&models.GuestRecord{ID: gid, WeddingID: wid, Name: "G", Pax: 1}).Error)
+		// One arrival time for both, so neither counts as older than the other.
+		at := time.Now()
+		var wg sync.WaitGroup
+		for _, note := range []string{"desk A", "desk B"} {
+			wg.Go(func() {
+				res, err := svc.Sync(t.Context(), wid, []SyncMutation{{
+					Op: SyncOpCheckIn, GuestID: gid.String(), ClientUpdatedAt: at, Payload: &SyncPayload{Notes: syncStr(note)},
+				}})
+				if err != nil || res[0].Status != "applied" {
+					t.Errorf("sync %s: %v %+v", note, err, res)
+				}
+			})
+		}
+		wg.Wait()
+		var got models.GuestRecord
+		testutil.NoErr(t, db.First(&got, "id = ?", gid).Error)
+		if !strings.Contains(got.Notes, "desk A") || !strings.Contains(got.Notes, "desk B") {
+			t.Fatalf("round %d: notes = %q, want both desks' notes", round, got.Notes)
+		}
+	}
+}

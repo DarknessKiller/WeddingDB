@@ -788,49 +788,28 @@ func (s *GuestService) applySyncMutation(ctx context.Context, weddingID uuid.UUI
 		if !found {
 			return SyncResult{GuestID: m.GuestID, Status: "skipped", Reason: "not found"}
 		}
-		// An arrival recorded offline wins over unrelated newer edits (table
-		// moves, notes): skipping it would lose the check-in and angbao.
-		if existing.CheckedInAt != nil && opTime.Before(existing.UpdatedAt) {
-			return SyncResult{GuestID: m.GuestID, Status: "skipped", Reason: "older than server", ServerRecord: existing}
-		}
-		wasCheckedIn := existing.CheckedInAt != nil
-		// A second check-in (another receptionist got there first) keeps the
-		// first arrival time and any angbao/gift already keyed, like the online
-		// path's 409: only fill what is still empty and append the note.
-		if !wasCheckedIn {
-			existing.CheckedInAt = &opTime
-		}
-		existing.RSVP = "confirmed"
-		if m.Payload != nil {
-			if v := m.Payload.AngbaoAmt.Value; v != nil && (!wasCheckedIn || existing.AngbaoAmt == nil) {
-				existing.AngbaoAmt = v
+		var res SyncResult
+		if err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+			// Reload under a row lock: two phones syncing the same arrival at
+			// once must each see the other's write, or the last one overwrites
+			// the first angbao and note.
+			q := tx.Where("id = ? AND wedding_id = ?", gid, weddingID)
+			if tx.Name() == "postgres" {
+				q = q.Clauses(clause.Locking{Strength: "UPDATE"})
 			}
-			if v := m.Payload.GiftItem.Value; v != nil && (!wasCheckedIn || existing.GiftItem == nil) {
-				existing.GiftItem = v
+			if err := q.First(existing).Error; err != nil {
+				return err
 			}
-			// A notes value in a checkin payload is appended to the guest's notes,
-			// never replacing them, so a queued note never wipes existing notes.
-			if m.Payload.Notes != nil {
-				// A retried checkin whose response was lost finds the guest checked
-				// in with its note already present: skip it, don't duplicate it.
-				note := strings.TrimSpace(*m.Payload.Notes)
-				if !wasCheckedIn || !slices.Contains(strings.Split(existing.Notes, "\n"), note) {
-					existing.Notes = appendNote(existing.Notes, note)
-				}
-			}
-		}
-		if err := validateGuestFields(existing); err != nil {
+			var err error
+			res, err = syncCheckIn(ctx, tx, existing, m, opTime)
+			return err
+		}); err != nil {
 			return syncFailed(m, err)
 		}
-		// Never move updated_at backwards, or a stale queued edit could win next.
-		if opTime.After(existing.UpdatedAt) {
-			existing.UpdatedAt = opTime
+		if res.Status == "applied" {
+			s.sseHub.publishGuest("checkin", existing, weddingID)
 		}
-		if err := s.guestRepo.SyncCheckIn(ctx, existing); err != nil {
-			return syncFailed(m, err)
-		}
-		s.sseHub.publishGuest("checkin", existing, weddingID)
-		return SyncResult{GuestID: m.GuestID, Status: "applied", ServerRecord: existing}
+		return res
 
 	case SyncOpCheckOut:
 		if !found {
@@ -870,6 +849,53 @@ func (s *GuestService) syncUpdate(ctx context.Context, g *models.GuestRecord, m 
 		return errGuestChangedDuringSync
 	}
 	return err
+}
+
+// syncCheckIn applies a queued check-in to g, which the caller loaded under a
+// row lock inside tx. A skip returns a result and no error; an error rolls back.
+func syncCheckIn(ctx context.Context, tx *gorm.DB, g *models.GuestRecord, m SyncMutation, opTime time.Time) (SyncResult, error) {
+	// An arrival recorded offline wins over unrelated newer edits (table
+	// moves, notes): skipping it would lose the check-in and angbao.
+	if g.CheckedInAt != nil && opTime.Before(g.UpdatedAt) {
+		return SyncResult{GuestID: m.GuestID, Status: "skipped", Reason: "older than server", ServerRecord: g}, nil
+	}
+	wasCheckedIn := g.CheckedInAt != nil
+	// A second check-in (another receptionist got there first) keeps the
+	// first arrival time and any angbao/gift already keyed, like the online
+	// path's 409: only fill what is still empty and append the note.
+	if !wasCheckedIn {
+		g.CheckedInAt = &opTime
+	}
+	g.RSVP = "confirmed"
+	if m.Payload != nil {
+		if v := m.Payload.AngbaoAmt.Value; v != nil && (!wasCheckedIn || g.AngbaoAmt == nil) {
+			g.AngbaoAmt = v
+		}
+		if v := m.Payload.GiftItem.Value; v != nil && (!wasCheckedIn || g.GiftItem == nil) {
+			g.GiftItem = v
+		}
+		// A notes value in a checkin payload is appended to the guest's notes,
+		// never replacing them, so a queued note never wipes existing notes.
+		if m.Payload.Notes != nil {
+			// A retried checkin whose response was lost finds the guest checked
+			// in with its note already present: skip it, don't duplicate it.
+			note := strings.TrimSpace(*m.Payload.Notes)
+			if !wasCheckedIn || !slices.Contains(strings.Split(g.Notes, "\n"), note) {
+				g.Notes = appendNote(g.Notes, note)
+			}
+		}
+	}
+	if err := validateGuestFields(g); err != nil {
+		return SyncResult{}, err
+	}
+	// Never move updated_at backwards, or a stale queued edit could win next.
+	if opTime.After(g.UpdatedAt) {
+		g.UpdatedAt = opTime
+	}
+	if err := repository.NewGuestRepo(tx).SyncCheckIn(ctx, g); err != nil {
+		return SyncResult{}, err
+	}
+	return SyncResult{GuestID: m.GuestID, Status: "applied", ServerRecord: g}, nil
 }
 
 func applySyncPayload(g *models.GuestRecord, p *SyncPayload, gid *uuid.UUID) error {
