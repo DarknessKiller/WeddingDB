@@ -2,7 +2,7 @@
   import { goto } from '$app/navigation';
   import { setAuth, addToast } from '#lib/stores/index.ts';
   import { weddingId, setWeddingId } from '#lib/stores/weddingId.ts';
-  import { clearStaffOfflineData } from '#lib/offline/storage.ts';
+  import { claimStaffOfflineData } from '#lib/offline/storage.ts';
   import { get } from 'svelte/store';
   import Eye from 'lucide-svelte/icons/eye';
 import EyeOff from 'lucide-svelte/icons/eye-off';
@@ -69,9 +69,9 @@ import ChevronRight from 'lucide-svelte/icons/chevron-right';
         return;
       }
       const data = await res.json();
-      // A previous session on this device may have left cached guest rosters
-      // and unsynced edits in localStorage keyed by wedding, not by user.
-      clearStaffOfflineData();
+      // Unsynced edits are keyed by wedding, not user: keep them for the same
+      // user (they sync on load), drop them if someone else logs in.
+      claimStaffOfflineData(email);
       loginAccessToken = data.accessToken;
       loginRefreshToken = data.refreshToken;
       loginRole = data.role ?? '';

@@ -47,6 +47,7 @@ func newAdminTestServer(t *testing.T, adminID uuid.UUID) *adminClient {
 	s := fuego.NewServer(fuego.WithoutStartupMessages())
 	fuego.Delete(s, "/users/{id}", h.Delete)
 	fuego.Post(s, "/users/{id}/reset-password", h.ResetPassword)
+	fuego.Post(s, "/users", h.Create)
 
 	// Same identity injection as AuthMiddleware.
 	adminCtx := context.WithValue(context.Background(), middleware.AdminIDKey, adminID)
@@ -90,6 +91,37 @@ func TestResetPassword_FlagsForceChange(t *testing.T) {
 	testutil.NoErr(t, c.db.Raw(`SELECT force_password_change FROM admin_users WHERE id = ?`, user).Scan(&flagged).Error)
 	if flagged != 1 {
 		t.Error("reset password did not set force_password_change")
+	}
+}
+
+// An admin-created account starts with a password the admin knows, so the
+// server must force the user to replace it.
+func TestCreateUser_FlagsForceChange(t *testing.T) {
+	c := newAdminTestServer(t, uuid.New())
+
+	if got := c.do(http.MethodPost, "/users", `{"email":"new@x.test","name":"New","role":"user","password":"TempPassw0rd!x"}`); got != http.StatusCreated {
+		t.Fatalf("status = %d, want 201", got)
+	}
+
+	var flagged int
+	testutil.NoErr(t, c.db.Raw(`SELECT force_password_change FROM admin_users WHERE email = ?`, "new@x.test").Scan(&flagged).Error)
+	if flagged != 1 {
+		t.Error("create user did not set force_password_change")
+	}
+}
+
+// Self-registration is off unless the operator opts in.
+func TestRegister_DisabledByDefault(t *testing.T) {
+	t.Setenv("ALLOW_REGISTRATION", "")
+	s := fuego.NewServer(fuego.WithoutStartupMessages())
+	fuego.Post(s, "/register", NewAuthHandler(nil, nil).Register)
+
+	req := httptest.NewRequest(http.MethodPost, "/register", strings.NewReader(`{"email":"a@x.test","name":"A","password":"Passw0rd!x"}`))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	s.Mux.ServeHTTP(rec, req)
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("status = %d, want 403", rec.Code)
 	}
 }
 

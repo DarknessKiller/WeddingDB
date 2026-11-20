@@ -14,13 +14,16 @@ function memoryStorage() {
 }
 
 let storage: ReturnType<typeof memoryStorage>;
+let session: ReturnType<typeof memoryStorage>;
 let events: string[];
 
 beforeEach(() => {
 	vi.resetModules();
 	storage = memoryStorage();
+	session = memoryStorage();
 	events = [];
 	Object.defineProperty(globalThis, 'localStorage', { value: storage, configurable: true });
+	Object.defineProperty(globalThis, 'sessionStorage', { value: session, configurable: true });
 	Object.defineProperty(globalThis, 'window', {
 		value: {
 			addEventListener: () => {},
@@ -33,6 +36,7 @@ beforeEach(() => {
 afterEach(() => {
 	delete (globalThis as any).window;
 	delete (globalThis as any).localStorage;
+	delete (globalThis as any).sessionStorage;
 });
 
 const staffGuest = { id: 'g1', name: 'Alice', email: 'a@x.com', angbaoAmount: 200, checkedIn: true };
@@ -47,16 +51,51 @@ describe('offline data on logout', () => {
 		cacheGuests('w2', [staffGuest]);
 		cacheKioskGuests('w1', [kioskGuest]);
 		enqueue('w1', { method: 'DELETE', path: '/api/weddings/w1/guests/g1' } as any);
+		storage.setItem('offline_cache_w3', '[]'); // left by an older build
 		storage.setItem('theme', 'dark');
 
 		clearAuth();
 
-		expect(storage.getItem('offline_cache_w1')).toBeNull();
-		expect(storage.getItem('offline_cache_w2')).toBeNull();
+		expect(session.getItem('offline_cache_w1')).toBeNull();
+		expect(session.getItem('offline_cache_w2')).toBeNull();
+		expect(storage.getItem('offline_cache_w3')).toBeNull();
 		expect(storage.getItem('offline_queue_w1')).toBeNull();
 		expect(JSON.parse(storage.getItem('kiosk_cache_w1')!)).toEqual([kioskGuest]);
 		expect(storage.getItem('theme')).toBe('dark');
 		expect(events).toContain('offline-queue-changed');
+	});
+});
+
+describe('staff data across reloads and logins', () => {
+	const edit = { mutationId: 'm1', op: 'checkin', guestId: 'g1', clientUpdatedAt: '' } as const;
+
+	it('keeps the staff roster out of localStorage so a closed tab leaves none behind', async () => {
+		const { cacheGuests } = await import('#lib/offline/queue.ts');
+		cacheGuests('w1', [staffGuest]);
+		expect(storage.getItem('offline_cache_w1')).toBeNull();
+		expect(JSON.parse(session.getItem('offline_cache_w1')!)).toEqual([staffGuest]);
+	});
+
+	it('same user logging back in keeps unsynced edits', async () => {
+		const { enqueue, getQueue } = await import('#lib/offline/queue.ts');
+		const { claimStaffOfflineData } = await import('#lib/offline/storage.ts');
+		claimStaffOfflineData('Staff@x.test');
+		enqueue('w1', edit);
+
+		claimStaffOfflineData(' staff@x.test ');
+
+		expect(getQueue('w1')).toEqual([edit]);
+	});
+
+	it('a different user logging in drops the previous user edits', async () => {
+		const { enqueue, getQueue } = await import('#lib/offline/queue.ts');
+		const { claimStaffOfflineData } = await import('#lib/offline/storage.ts');
+		claimStaffOfflineData('staff@x.test');
+		enqueue('w1', edit);
+
+		claimStaffOfflineData('other@x.test');
+
+		expect(getQueue('w1')).toEqual([]);
 	});
 });
 

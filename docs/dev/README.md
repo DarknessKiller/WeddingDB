@@ -254,7 +254,7 @@ Jaeger UI at `http://localhost:16686`. Request spans record the route pattern, t
 | Method | Path | Description |
 |--------|------|-------------|
 | POST | `/api/auth/login` | Login, returns access + refresh tokens |
-| POST | `/api/auth/register` | Register new user account |
+| POST | `/api/auth/register` | Register new user account (403 unless `ALLOW_REGISTRATION=true`) |
 | POST | `/api/auth/refresh` | Refresh access token |
 | POST | `/api/auth/logout` | Revoke refresh + blacklist access token |
 | POST | `/api/auth/select-wedding` | Select wedding context |
@@ -329,8 +329,8 @@ Guest limit: 1,000 guests per wedding, counted per person. A guest entry for a c
 
 ### Offline and kiosk behavior
 
-- Guest mutations, including check-in with an optional note, queue in `localStorage` (`offline_queue_{wid}`) and replay through `/guests/sync`. Notes append, they do not replace.
-- Staff and kiosk guest lists cache in `localStorage` (`offline_cache_{wid}`). A failed fetch falls back to the cache; the kiosk labels it "Offline copy".
+- Guest mutations, including check-in with an optional note, queue in `localStorage` (`offline_queue_{wid}`) and replay through `/guests/sync`. A login by a different user (by email, `offline_owner`) drops the previous queue; the same user keeps it. Notes append, they do not replace.
+- The staff guest list caches in `sessionStorage` (`offline_cache_{wid}`), the kiosk list in `localStorage` (`kiosk_cache_{wid}`). A failed fetch falls back to the cache; the kiosk labels it "Offline copy".
 - Kiosk and staff search run in the browser over the synced guest list. Public guest JSON includes `pinyin` so Chinese names match romanized input. No request is made while typing.
 - `kioskIdleResetSeconds` is opt-in per wedding and defaults to 0 (off). Set it through `PUT /api/weddings/{id}/kiosk`; the kiosk clears the query and selected guest after that much inactivity.
 - Cold offline start is not supported yet: there is no service worker, so the SPA shell must be loaded once before the network drops.
