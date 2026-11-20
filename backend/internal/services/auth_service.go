@@ -78,12 +78,15 @@ var dummyHash = sync.OnceValue(func() []byte {
 
 func (s *AuthService) Login(ctx context.Context, email, password string) (*LoginResult, error) {
 	admin, err := s.adminRepo.FindByEmail(ctx, email)
-	if err != nil {
+	if errors.Is(err, gorm.ErrRecordNotFound) {
 		compareHash(dummyHash(), []byte(password)) //nolint:errcheck // timing equalizer only; result is always a mismatch
-		return nil, errors.New("invalid credentials")
+		return nil, ErrInvalidCredentials
+	}
+	if err != nil {
+		return nil, fmt.Errorf("find admin: %w", err)
 	}
 	if err := compareHash([]byte(admin.Password), []byte(password)); err != nil {
-		return nil, errors.New("invalid credentials")
+		return nil, ErrInvalidCredentials
 	}
 	accessToken, err := s.generateAccessToken(ctx, admin, nil)
 	if err != nil {
@@ -177,16 +180,22 @@ func (s *AuthService) Refresh(ctx context.Context, refreshTokenStr string, oldAc
 	}
 
 	token, err := s.tokenRepo.FindByToken(ctx, refreshTokenStr)
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, ErrInvalidRefreshToken
+	}
 	if err != nil {
-		return nil, errors.New("invalid refresh token")
+		return nil, fmt.Errorf("find refresh token: %w", err)
 	}
 	if token.RotatedAt != nil {
 		return s.resumeRotation(ctx, token)
 	}
 
 	admin, err := s.adminRepo.FindByID(ctx, token.AdminID)
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, ErrAdminNotFound
+	}
 	if err != nil {
-		return nil, errors.New("admin not found")
+		return nil, fmt.Errorf("find admin: %w", err)
 	}
 
 	// Mint before consuming: if Redis or the token generator fails here, the
@@ -216,7 +225,7 @@ func (s *AuthService) Refresh(ctx context.Context, refreshTokenStr string, oldAc
 	// successor instead of failing one of the two.
 	current, findErr := s.tokenRepo.FindByToken(ctx, refreshTokenStr)
 	if findErr != nil || current.RotatedAt == nil {
-		return nil, errors.New("invalid refresh token")
+		return nil, ErrInvalidRefreshToken
 	}
 	return s.resumeRotation(ctx, current)
 }
@@ -225,7 +234,7 @@ func (s *AuthService) Refresh(ctx context.Context, refreshTokenStr string, oldAc
 // successor, inside the grace window. Outside it the token counts as replayed.
 func (s *AuthService) resumeRotation(ctx context.Context, consumed *models.RefreshToken) (*LoginResult, error) {
 	if consumed.RotatedAt == nil || consumed.ReplacedBy == nil {
-		return nil, errors.New("invalid refresh token")
+		return nil, ErrInvalidRefreshToken
 	}
 	if time.Since(*consumed.RotatedAt) > refreshGraceWindow {
 		// Reuse past the grace window means the token leaked: the legitimate
@@ -234,18 +243,24 @@ func (s *AuthService) resumeRotation(ctx context.Context, consumed *models.Refre
 		if err := s.RevokeUserTokens(ctx, consumed.AdminID); err != nil {
 			return nil, fmt.Errorf("revoke replayed refresh token family: %w", err)
 		}
-		return nil, errors.New("invalid refresh token")
+		return nil, ErrInvalidRefreshToken
 	}
 	// A replay inside the window is indistinguishable from a lost response or a
 	// second tab, so it is answered; log it so a repeated pattern is visible.
 	slog.Warn("refresh token reused inside grace window", "user", consumed.AdminID, "rotatedAt", consumed.RotatedAt)
 	replacement, err := s.tokenRepo.FindByToken(ctx, *consumed.ReplacedBy)
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, ErrInvalidRefreshToken
+	}
 	if err != nil {
-		return nil, errors.New("invalid refresh token")
+		return nil, fmt.Errorf("find successor refresh token: %w", err)
 	}
 	admin, err := s.adminRepo.FindByID(ctx, replacement.AdminID)
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, ErrAdminNotFound
+	}
 	if err != nil {
-		return nil, errors.New("admin not found")
+		return nil, fmt.Errorf("find admin: %w", err)
 	}
 	weddingID, err := s.activeWeddingScope(ctx, admin.ID, replacement.WeddingID)
 	if err != nil {

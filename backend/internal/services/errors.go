@@ -19,3 +19,9 @@ var (
 	ErrNoWeddingAccess = errors.New("no access to this wedding")
 	ErrSessionNotFound = errors.New("refresh token not found or expired")
 )
+
+// Login/Refresh sentinels; handlers map them to 401 and anything else to 500.
+var (
+	ErrInvalidCredentials  = errors.New("invalid credentials")
+	ErrInvalidRefreshToken = errors.New("invalid refresh token")
+)

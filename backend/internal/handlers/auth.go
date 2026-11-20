@@ -113,9 +113,13 @@ func (h *AuthHandler) Login(c fuego.ContextWithBody[LoginRequest]) (TokenRespons
 		return TokenResponse{}, fuego.HTTPError{Status: http.StatusTooManyRequests, Title: err.Error()}
 	}
 	result, err := h.authService.Login(c.Context(), body.Email, body.Password)
-	if err != nil {
+	if errors.Is(err, services.ErrInvalidCredentials) {
 		h.authService.RecordLoginFailure(c.Context(), body.Email, ip)
-		return TokenResponse{}, fuego.UnauthorizedError{Title: err.Error()}
+		return TokenResponse{}, fuego.UnauthorizedError{Title: "invalid credentials"}
+	}
+	if err != nil {
+		slog.Error("login failed", "err", err)
+		return TokenResponse{}, fuego.InternalServerError{Title: "Login failed"}
 	}
 	return TokenResponse{
 		AccessToken:         result.AccessToken,
@@ -162,8 +166,12 @@ func (h *AuthHandler) Refresh(c fuego.ContextWithBody[RefreshRequest]) (TokenRes
 		return TokenResponse{}, fuego.HTTPError{Status: http.StatusTooManyRequests, Title: err.Error()}
 	}
 	result, err := h.authService.Refresh(c.Context(), body.RefreshToken, oldAccessToken)
+	if errors.Is(err, services.ErrInvalidRefreshToken) || errors.Is(err, services.ErrAdminNotFound) {
+		return TokenResponse{}, fuego.UnauthorizedError{Title: "invalid refresh token"}
+	}
 	if err != nil {
-		return TokenResponse{}, fuego.UnauthorizedError{Title: err.Error()}
+		slog.Error("refresh failed", "err", err)
+		return TokenResponse{}, fuego.InternalServerError{Title: "Refresh failed"}
 	}
 	return TokenResponse{
 		AccessToken:         result.AccessToken,
@@ -216,8 +224,15 @@ func (h *AuthHandler) ChangePassword(c fuego.ContextWithBody[ChangePasswordReque
 		return nil, fuego.NotFoundError{Title: "User not found"}
 	}
 	// A forced change follows an admin reset, so the old password is not known.
+	// Same per-account lockout as Login, so a stolen access token cannot
+	// brute-force the current password.
 	if !admin.ForcePasswordChange {
+		ip := clientIP(c.Request())
+		if err := h.authService.CheckLoginAccountRate(ctx, admin.Email, ip); err != nil {
+			return nil, fuego.HTTPError{Status: http.StatusTooManyRequests, Title: err.Error()}
+		}
 		if err := bcrypt.CompareHashAndPassword([]byte(admin.Password), []byte(body.CurrentPassword)); err != nil {
+			h.authService.RecordLoginFailure(ctx, admin.Email, ip)
 			return nil, fuego.UnauthorizedError{Title: "Current password is incorrect"}
 		}
 	}
