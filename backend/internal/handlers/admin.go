@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"errors"
 	"log/slog"
 	"net/mail"
 	"weddingdb/internal/models"
@@ -113,6 +114,8 @@ func (h *AdminHandler) Delete(c fuego.ContextWithBody[any]) (any, error) {
 	if err != nil {
 		return nil, fuego.NotFoundError{Title: "User not found"}
 	}
+	// Early check so the last admin's sessions are not revoked for a refused
+	// delete; adminRepo.Delete re-checks under lock to close the race.
 	if target.Role == "admin" {
 		adminCount, err := h.adminRepo.CountByRole(ctx, "admin")
 		if err != nil {
@@ -129,6 +132,9 @@ func (h *AdminHandler) Delete(c fuego.ContextWithBody[any]) (any, error) {
 		return nil, fuego.InternalServerError{Title: "Failed to revoke user sessions"}
 	}
 	if err := h.adminRepo.Delete(ctx, id); err != nil {
+		if errors.Is(err, repository.ErrLastAdmin) {
+			return nil, fuego.BadRequestError{Title: "Cannot delete the last admin"}
+		}
 		return nil, err
 	}
 	c.SetStatus(204)
@@ -170,18 +176,23 @@ func (h *AdminHandler) AssignWeddings(c fuego.ContextWithBody[AssignWeddingsRequ
 	if err := h.adminRepo.SetUserWeddings(ctx, admin.ID, ids); err != nil {
 		return nil, fuego.InternalServerError{Title: "Failed to assign weddings"}
 	}
+	// Unknown old grants: revoke anyway rather than risk a lingering scoped token.
+	revoke := err != nil
 	kept := make(map[uuid.UUID]bool, len(ids))
 	for _, wid := range ids {
 		kept[wid] = true
 	}
 	for _, w := range oldWeddings {
 		if !kept[w.ID] {
-			// Refresh also re-checks access, so a Redis failure only leaves
-			// the old scoped token valid until its next refresh — log, don't fail.
-			if err := h.authService.RevokeUserTokens(ctx, admin.ID); err != nil {
-				slog.Warn("revoke tokens after wedding unassign failed", "user", admin.ID, "err", err)
-			}
+			revoke = true
 			break
+		}
+	}
+	if revoke {
+		// Refresh also re-checks access, so a Redis failure only leaves the
+		// old scoped token valid until its next refresh; log, don't fail.
+		if err := h.authService.RevokeUserTokens(ctx, admin.ID); err != nil {
+			slog.Warn("revoke tokens after wedding unassign failed", "user", admin.ID, "err", err)
 		}
 	}
 	return admin, nil
@@ -281,20 +292,13 @@ func (h *AdminHandler) UpdateRole(c fuego.ContextWithBody[UpdateRoleRequest]) (a
 	if err != nil {
 		return nil, fuego.NotFoundError{Title: "User not found"}
 	}
-	// Prevent demoting the last admin
-	if admin.Role == "admin" && body.Role == "user" {
-		adminCount, err := h.adminRepo.CountByRole(ctx, "admin")
-		if err != nil {
-			return nil, fuego.InternalServerError{Title: "Failed to check admin count"}
-		}
-		if adminCount <= 1 {
+	if err := h.adminRepo.UpdateRole(ctx, id, body.Role); err != nil {
+		if errors.Is(err, repository.ErrLastAdmin) {
 			return nil, fuego.BadRequestError{Title: "Cannot demote the last admin"}
 		}
-	}
-	admin.Role = body.Role
-	if err := h.adminRepo.Update(ctx, admin); err != nil {
 		return nil, fuego.InternalServerError{Title: "Failed to update role"}
 	}
+	admin.Role = body.Role
 	// Force re-login so role claims in live tokens update. Role is already
 	// updated — log a revoke failure, don't fail the request.
 	if err := h.authService.RevokeUserTokens(ctx, id); err != nil {

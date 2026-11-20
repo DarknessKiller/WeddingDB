@@ -2,12 +2,16 @@ package repository
 
 import (
 	"context"
+	"errors"
+	"fmt"
+	"slices"
 	"strings"
 
 	"weddingdb/internal/models"
 
 	"github.com/google/uuid"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 type AdminRepo struct{ db *gorm.DB }
@@ -49,8 +53,41 @@ func (r *AdminRepo) CountByRole(ctx context.Context, role string) (int64, error)
 	return count, err
 }
 
+// ErrLastAdmin is returned when a write would leave no admin.
+var ErrLastAdmin = errors.New("last admin")
+
+// Delete removes a user, refusing with ErrLastAdmin to remove the last admin.
 func (r *AdminRepo) Delete(ctx context.Context, id uuid.UUID) error {
-	return r.db.WithContext(ctx).Delete(&models.AdminUser{}, id).Error
+	return r.keepOneAdmin(ctx, id, func(tx *gorm.DB) error {
+		return tx.Delete(&models.AdminUser{}, id).Error
+	})
+}
+
+// UpdateRole sets a user's role, refusing with ErrLastAdmin to demote the last admin.
+func (r *AdminRepo) UpdateRole(ctx context.Context, id uuid.UUID, role string) error {
+	if role == "admin" {
+		return r.db.WithContext(ctx).Model(&models.AdminUser{}).Where("id = ?", id).Update("role", role).Error
+	}
+	return r.keepOneAdmin(ctx, id, func(tx *gorm.DB) error {
+		return tx.Model(&models.AdminUser{}).Where("id = ?", id).Update("role", role).Error
+	})
+}
+
+// keepOneAdmin runs write after locking every admin row. A plain count (or a
+// count subquery in the write) reads a snapshot, so two admins removing each
+// other at once would both see two admins; the row locks serialise them.
+func (r *AdminRepo) keepOneAdmin(ctx context.Context, id uuid.UUID, write func(*gorm.DB) error) error {
+	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var admins []uuid.UUID
+		if err := tx.Model(&models.AdminUser{}).Clauses(clause.Locking{Strength: "UPDATE"}).
+			Where("role = ?", "admin").Pluck("id", &admins).Error; err != nil {
+			return fmt.Errorf("lock admins: %w", err)
+		}
+		if len(admins) <= 1 && slices.Contains(admins, id) {
+			return ErrLastAdmin
+		}
+		return write(tx)
+	})
 }
 
 // GetUserWeddings returns all weddings a user has access to.
