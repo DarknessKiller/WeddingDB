@@ -227,3 +227,29 @@ func TestSeatAndCheckOut_KeepConcurrentEdits(t *testing.T) {
 		t.Fatalf("checkout must clear only checked_in_at: %+v", got)
 	}
 }
+
+// Seatless guests at a table count toward its capacity on every path: a seat
+// assignment and a capacity cut must not ignore them.
+func TestCapacity_CountsSeatlessGuests(t *testing.T) {
+	svc, _, wid := newGuestSyncService(t)
+	tid := seedTable(t, svc, wid, "T1", 10)
+	party := seedGuest(t, svc, wid, "Party of 8")
+	party.Pax = 8
+	party.TableID = &tid
+	testutil.NoErr(t, svc.db.Save(party).Error)
+
+	five := seedGuest(t, svc, wid, "Party of 5")
+	five.Pax = 5
+	testutil.NoErr(t, svc.db.Save(five).Error)
+	if err := svc.AssignSeat(t.Context(), five.ID, wid, tid, 1); err == nil {
+		t.Fatal("seating 5 at a table of 10 that already holds 8 should fail")
+	}
+
+	ts := NewTableService(svc.tableRepo, svc.guestRepo, nil, svc.db)
+	table, err := ts.Get(t.Context(), tid, wid)
+	testutil.NoErr(t, err)
+	table.Capacity = 2
+	if err := ts.Update(t.Context(), table); !errors.Is(err, repository.ErrCapacityBelowSeats) {
+		t.Fatalf("capacity cut below 8 seatless guests: err = %v, want ErrCapacityBelowSeats", err)
+	}
+}

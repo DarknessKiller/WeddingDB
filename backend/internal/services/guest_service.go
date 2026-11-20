@@ -260,14 +260,24 @@ func checkSeatTx(ctx context.Context, tx *gorm.DB, weddingID, tableID uuid.UUID,
 		return err
 	}
 	guestEnd := seatNum + pax - 1
+	// Seatless guests at the table take room too: count every party, so the
+	// seat path and the table-only path in checkSeatNotTaken share one limit.
+	atTable := pax
 	for _, e := range existing {
-		if e.ID == guestID || e.SeatNum == nil {
+		if e.ID == guestID {
+			continue
+		}
+		atTable += e.Pax
+		if e.SeatNum == nil {
 			continue
 		}
 		eEnd := *e.SeatNum + e.Pax - 1
 		if seatNum <= eEnd && *e.SeatNum <= guestEnd {
 			return fmt.Errorf("%w: \"%s\" (seats %d-%d)", ErrSeatOverlap, e.Name, *e.SeatNum, eEnd)
 		}
+	}
+	if atTable > table.Capacity {
+		return errors.New("table capacity exceeded")
 	}
 	return nil
 }

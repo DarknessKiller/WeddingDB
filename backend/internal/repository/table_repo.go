@@ -13,11 +13,12 @@ import (
 )
 
 // ErrCapacityBelowSeats means a capacity cut would leave seated guests past the
-// table's last seat.
+// table's last seat, or more guests at the table than it holds.
 var ErrCapacityBelowSeats = errors.New("capacity is below seats already assigned")
 
 // CheckCapacity rejects a capacity smaller than the highest seat in use at the
-// table. Call it inside the transaction that writes the capacity: it locks the
+// table or smaller than the party sizes of every guest at it, seated or not.
+// Call it inside the transaction that writes the capacity: it locks the
 // wedding row, then the table row, the same order as every guest seat write.
 func (r *TableRepo) CheckCapacity(ctx context.Context, weddingID, tableID uuid.UUID, capacity int) error {
 	db := r.db.WithContext(ctx)
@@ -31,14 +32,18 @@ func (r *TableRepo) CheckCapacity(ctx context.Context, weddingID, tableID uuid.U
 			return err
 		}
 	}
-	var lastSeat int
+	var lastSeat, totalPax int
+	// seat_num + pax is NULL for seatless guests, so MAX skips them; SUM counts everyone.
 	if err := db.Model(&models.GuestRecord{}).
-		Where("wedding_id = ? AND table_id = ? AND seat_num IS NOT NULL", weddingID, tableID).
-		Select("COALESCE(MAX(seat_num + pax - 1), 0)").Row().Scan(&lastSeat); err != nil {
+		Where("wedding_id = ? AND table_id = ?", weddingID, tableID).
+		Select("COALESCE(MAX(seat_num + pax - 1), 0), COALESCE(SUM(pax), 0)").Row().Scan(&lastSeat, &totalPax); err != nil {
 		return err
 	}
 	if lastSeat > capacity {
 		return fmt.Errorf("%w: seat %d is taken", ErrCapacityBelowSeats, lastSeat)
+	}
+	if totalPax > capacity {
+		return fmt.Errorf("%w: %d guests are at this table", ErrCapacityBelowSeats, totalPax)
 	}
 	return nil
 }
