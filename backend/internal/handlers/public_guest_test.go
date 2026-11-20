@@ -20,7 +20,7 @@ func TestPublicGuestJSONOmitsPrivateFields(t *testing.T) {
 	if err := json.Unmarshal(data, &fields); err != nil {
 		t.Fatalf("unmarshal: %v", err)
 	}
-	for _, field := range []string{"phone", "email", "checkedInAt"} {
+	for _, field := range []string{"phone", "email", "checkedInAt", "rsvp"} {
 		if _, present := fields[field]; present {
 			t.Errorf("public guest JSON contains %q: %s", field, data)
 		}

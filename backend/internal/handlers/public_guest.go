@@ -13,7 +13,6 @@ import (
 type publicGuest struct {
 	ID      string  `json:"id"`
 	Name    string  `json:"name"`
-	Rsvp    string  `json:"rsvp"`
 	TableID *string `json:"tableId"`
 	SeatNum *int    `json:"seatNum"`
 	Pax     int     `json:"pax"`
@@ -67,7 +66,6 @@ func (h *PublicGuestHandler) List(c fuego.ContextNoBody) (any, error) {
 		out = append(out, publicGuest{
 			ID:      utils.EncodeUUID(g.ID),
 			Name:    g.Name,
-			Rsvp:    g.RSVP,
 			TableID: tid,
 			SeatNum: g.SeatNum,
 			Pax:     g.Pax,
@@ -141,7 +139,6 @@ func (h *PublicGuestHandler) Search(c fuego.ContextNoBody) (any, error) {
 		out = append(out, publicGuest{
 			ID:      utils.EncodeUUID(g.ID),
 			Name:    g.Name,
-			Rsvp:    g.RSVP,
 			TableID: tid,
 			SeatNum: g.SeatNum,
 			Pax:     g.Pax,

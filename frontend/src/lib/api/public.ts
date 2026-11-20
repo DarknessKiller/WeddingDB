@@ -5,7 +5,6 @@ import { get } from 'svelte/store';
 interface PublicGuest {
 	id: string;
 	name: string;
-	rsvp?: string;
 	tableId: string | null;
 	seatNum: number | null;
 	pax: number;
@@ -18,7 +17,7 @@ export function mapGuest(raw: PublicGuest): Guest {
 		id: raw.id,
 		name: raw.name ?? '',
 		pinyin: raw.pinyin,
-		rsvp: (raw.rsvp as Guest['rsvp']) ?? 'no_response',
+		rsvp: 'no_response', // RSVP is private to staff; the public API does not send it
 		pax: raw.pax ?? 1,
 		tableId: raw.tableId ?? null,
 		seatNumber: raw.seatNum ?? null,
