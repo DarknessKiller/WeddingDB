@@ -49,3 +49,19 @@ func TestSearchByWeddingMatchesNamesOnly(t *testing.T) {
 		})
 	}
 }
+
+func TestEscapeLike(t *testing.T) {
+	cases := map[string]string{
+		`plain`:   `plain`,
+		`100%`:    `100\%`,
+		`a_b`:     `a\_b`,
+		`\`:       `\\`,
+		`\%`:      `\\\%`,
+		`50%_off`: `50\%\_off`,
+	}
+	for in, want := range cases {
+		if got := escapeLike(in); got != want {
+			t.Errorf("escapeLike(%q) = %q, want %q", in, got, want)
+		}
+	}
+}

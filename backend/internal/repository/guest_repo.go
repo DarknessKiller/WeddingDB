@@ -27,6 +27,12 @@ func NewGuestRepo(db *gorm.DB) *GuestRepo {
 	return &GuestRepo{db: db}
 }
 
+var likeEscaper = strings.NewReplacer(`\`, `\\`, "%", `\%`, "_", `\_`)
+
+func escapeLike(s string) string {
+	return likeEscaper.Replace(s)
+}
+
 func parseCursorID(s string) (uuid.UUID, error) {
 	if id, err := uuid.Parse(s); err == nil {
 		return id, nil
@@ -73,10 +79,13 @@ func (r *GuestRepo) FindByTable(ctx context.Context, weddingID, tableID uuid.UUI
 
 func (r *GuestRepo) SearchByWedding(ctx context.Context, weddingID uuid.UUID, query string) ([]models.GuestRecord, error) {
 	guests := make([]models.GuestRecord, 0)
-	escaped := strings.ReplaceAll(query, "%", "\\%")
-	escaped = strings.ReplaceAll(escaped, "_", "\\_")
+	// Escape LIKE metacharacters including backslash: a stray backslash would
+	// otherwise pair with the wildcard we append and change the pattern (or
+	// error). The pinyin pattern needs the same treatment because the
+	// generator keeps non-Han characters verbatim.
+	escaped := escapeLike(query)
 	q := fmt.Sprintf("%%%s%%", escaped)
-	pinyinQ := fmt.Sprintf("%%%s%%", strings.ToLower(models.GenerateNamePinyin(query)))
+	pinyinQ := fmt.Sprintf("%%%s%%", escapeLike(models.GenerateNamePinyin(query)))
 	lowerQ := strings.ToLower(query)
 	prefix := fmt.Sprintf("%s%%", lowerQ)
 	err := r.db.WithContext(ctx).Raw(`
