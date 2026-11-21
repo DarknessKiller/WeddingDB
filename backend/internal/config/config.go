@@ -26,6 +26,9 @@ func LoadEnv() Env {
 	if secret == "change-me-in-production" || secret == "change-me-to-a-random-secret" {
 		log.Fatal("JWT_SECRET must not be a value shipped in .env.example; generate one with: openssl rand -hex 32")
 	}
+	if len(secret) < 32 {
+		log.Fatal("JWT_SECRET must be at least 32 characters; generate one with: openssl rand -hex 32")
+	}
 	port := getEnv("PORT", "8080")
 	publicURL := getEnv("PUBLIC_URL", "http://localhost:"+port)
 	return Env{
