@@ -27,7 +27,10 @@ function setQueue(wid: string, q: QueuedMutation[]) {
 
 export function enqueue(wid: string, m: QueuedMutation) {
 	const q = getQueue(wid);
-	if (q.length >= 500) q.shift();
+	if (q.length >= 500) {
+		q.shift();
+		addToast('Offline queue is full (500 changes): the oldest unsynced change was dropped. Reconnect to sync.', 'error');
+	}
 	q.push(m);
 	setQueue(wid, q);
 	notifyChanged();
@@ -85,8 +88,9 @@ async function runSync(wid: string): Promise<SyncSummary> {
 		const t = await res.text().catch(() => '');
 		throw new Error(`sync failed ${res.status} ${t}`);
 	}
-	const data = await res.json() as { results: { guestId: string; status: string; serverRecord?: unknown; reason?: string }[] };
+	const data = await res.json() as { results: { guestId: string; status: string; serverRecord?: unknown; reason?: string; retryable?: boolean }[] };
 	const appliedIds: string[] = [];
+	const dropped: string[] = [], retrying: string[] = [];
 	let applied = 0, skipped = 0;
 	for (let i = 0; i < q.length && i < data.results.length; i++) {
 		const r = data.results[i];
@@ -99,11 +103,24 @@ async function runSync(wid: string): Promise<SyncSummary> {
 			// The server kept a newer value: undo the optimistic local edit.
 			if (r.serverRecord) applyGuestResponse(r.serverRecord as GuestResponse);
 			else removeGuest(q[i].guestId);
+		} else if (r.status === 'failed' && r.retryable === false) {
+			// Retrying cannot succeed (e.g. validation): drop it and show the server's value.
+			dropped.push(r.reason || 'rejected');
+			appliedIds.push(q[i].mutationId);
+			if (r.serverRecord) applyGuestResponse(r.serverRecord as GuestResponse);
+		} else if (r.status === 'failed') {
+			retrying.push(r.reason || 'unknown error');
 		}
 	}
 	dequeueByIds(wid, appliedIds);
 	if (skipped > 0) {
 		addToast(`${skipped} offline change${skipped === 1 ? '' : 's'} rejected: the server had a newer version`, 'error');
+	}
+	if (dropped.length) {
+		addToast(`${dropped.length} offline change${dropped.length === 1 ? '' : 's'} discarded by the server: ${dropped[0]}`, 'error');
+	}
+	if (retrying.length) {
+		addToast(`${retrying.length} offline change${retrying.length === 1 ? '' : 's'} could not sync and will retry: ${retrying[0]}`, 'error');
 	}
 	return { applied, skipped, results: data.results };
 }

@@ -1,9 +1,10 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 const apiFetch = vi.hoisted(() => vi.fn());
+const addToast = vi.hoisted(() => vi.fn());
 vi.mock('#lib/api/client.ts', () => ({ apiFetch }));
 vi.mock('#lib/stores/guestEvents.ts', () => ({ applyGuestResponse: vi.fn(), removeGuest: vi.fn() }));
-vi.mock('#lib/stores/index.ts', () => ({ addToast: vi.fn() }));
+vi.mock('#lib/stores/index.ts', () => ({ addToast }));
 
 function memoryStorage() {
 	const map = new Map<string, string>();
@@ -26,6 +27,7 @@ function mutation(id: string) {
 beforeEach(() => {
 	vi.resetModules();
 	apiFetch.mockReset();
+	addToast.mockReset();
 	Object.defineProperty(globalThis, 'localStorage', { value: memoryStorage(), configurable: true });
 	Object.defineProperty(globalThis, 'window', { value: { dispatchEvent: () => true }, configurable: true });
 });
@@ -61,5 +63,34 @@ describe('syncQueue', () => {
 
 		const ids = apiFetch.mock.calls.map((c) => JSON.parse(c[1].body).mutations[0].mutationId);
 		expect(ids).toEqual(['m1', 'm1']);
+	});
+
+	it('drops a non-retryable failure, keeps a retryable one, and tells the user both', async () => {
+		const { enqueue, syncQueue, getQueue } = await import('./queue');
+		enqueue('w1', mutation('bad'));
+		enqueue('w1', mutation('later'));
+		apiFetch.mockResolvedValue(res({ results: [
+			{ guestId: 'g-bad', status: 'failed', reason: 'name too long', retryable: false },
+			{ guestId: 'g-later', status: 'failed', reason: 'older than server' }
+		] }));
+
+		await syncQueue('w1');
+
+		expect(getQueue('w1').map((m) => m.mutationId)).toEqual(['later']);
+		const messages = addToast.mock.calls.map((c) => c[0]);
+		expect(messages).toContain('1 offline change discarded by the server: name too long');
+		expect(messages).toContain('1 offline change could not sync and will retry: older than server');
+	});
+
+	it('warns when the full queue drops its oldest change', async () => {
+		const { enqueue, getQueue } = await import('./queue');
+		for (let i = 0; i < 500; i++) enqueue('w1', mutation(`m${i}`));
+		expect(addToast).not.toHaveBeenCalled();
+
+		enqueue('w1', mutation('m500'));
+
+		expect(getQueue('w1')).toHaveLength(500);
+		expect(getQueue('w1')[0].mutationId).toBe('m1');
+		expect(addToast).toHaveBeenCalledWith(expect.stringContaining('oldest unsynced change was dropped'), 'error');
 	});
 });
