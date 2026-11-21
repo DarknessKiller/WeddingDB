@@ -24,6 +24,10 @@ export interface GuestEvent {
 }
 
 type EventHandler = (event: GuestEvent) => void;
+
+// The server pings every 20s. Silence past this means the connection died
+// without closing (e.g. the phone switched WiFi access point).
+const IDLE_TIMEOUT_MS = 45_000;
 type StatusHandler = (status: 'connected' | 'reconnecting', reconnect: boolean) => void;
 
 class SSEClient {
@@ -49,6 +53,16 @@ class SSEClient {
 	}
 
 	private async stream(weddingId: string, accessToken: string, controller: AbortController) {
+		let idle = false;
+		let idleTimer: ReturnType<typeof setTimeout> | undefined;
+		const resetIdle = () => {
+			clearTimeout(idleTimer);
+			idleTimer = setTimeout(() => {
+				idle = true;
+				controller.abort();
+			}, IDLE_TIMEOUT_MS);
+		};
+		resetIdle();
 		try {
 			const response = await fetch(`/api/weddings/${weddingId}/events`, {
 				headers: { Authorization: `Bearer ${accessToken}` },
@@ -69,6 +83,7 @@ class SSEClient {
 			let buffer = '';
 			while (true) {
 				const { value, done } = await reader.read();
+				resetIdle();
 				buffer += decoder.decode(value, { stream: !done });
 				const messages = buffer.split(/\r?\n\r?\n/);
 				buffer = messages.pop() ?? '';
@@ -85,9 +100,11 @@ class SSEClient {
 				if (done) break;
 			}
 		} catch {
-			if (controller.signal.aborted) return;
+			// A deliberate abort (disconnect or a new connect) is not a drop; an idle timeout is.
+			if (controller.signal.aborted && !idle) return;
 			this.statusHandlers.forEach((handler) => handler('reconnecting', false));
 		} finally {
+			clearTimeout(idleTimer);
 			if (this.controller === controller) {
 				this.controller = null;
 				this.scheduleReconnect();
