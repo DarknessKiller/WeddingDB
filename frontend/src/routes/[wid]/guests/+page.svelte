@@ -479,7 +479,9 @@ import Users from 'lucide-svelte/icons/users';
   function getNextBulkSeatNum(): number {
     if (!bulkMoveTableId) return 1;
     const cap = getBulkTableCapacity();
-    const occ = filtered.filter(g => g.tableId === bulkMoveTableId && !selectedIds.has(g.id) && g.seatNumber != null)
+    // Occupancy comes from the full list; a search/RSVP filter must not make
+    // already-seated guests look absent.
+    const occ = allGuests.filter(g => g.tableId === bulkMoveTableId && !selectedIds.has(g.id) && g.seatNumber != null)
       .flatMap(g => Array.from({ length: g.pax }, (_, i) => g.seatNumber! + i));
     for (let s = 1; s <= cap; s++) {
       if (!occ.includes(s)) return s;
@@ -490,7 +492,7 @@ import Users from 'lucide-svelte/icons/users';
   let bulkOccupiedSeats = $derived.by((): Set<number> => {
     if (!bulkMoveTableId) return new Set();
     return new Set(
-      filtered
+      allGuests
         .filter(g => g.tableId === bulkMoveTableId && !selectedIds.has(g.id) && g.seatNumber != null)
         .flatMap(g => {
           const start = g.seatNumber!;
@@ -510,7 +512,7 @@ import Users from 'lucide-svelte/icons/users';
     const capacity = getBulkTableCapacity();
     const ids = [...selectedIds];
     const seatsNeeded = ids.reduce((sum, id) => {
-      const g = filtered.find(g => g.id === id);
+      const g = allGuests.find(g => g.id === id);
       return sum + (g?.pax ?? 1);
     }, 0);
     // reject unless every pax fits after the starting seat
@@ -529,7 +531,7 @@ import Users from 'lucide-svelte/icons/users';
     try {
       let seat = bulkMoveSeatStart;
       for (const id of ids) {
-        const g = filtered.find(gg => gg.id === id);
+        const g = allGuests.find(gg => gg.id === id);
         if (!g) continue;
         await assignSeat(wid, id, bulkMoveTableId, seat);
         // Push through the store so off-page rows and the next loop
@@ -794,7 +796,7 @@ import Users from 'lucide-svelte/icons/users';
   <MoveGuestDrawer
     guest={g}
     tables={moveTables}
-    guests={filtered}
+    guests={allGuests}
     currentTableName={tables.find(t => t.id === g.tableId)?.name ?? '—'}
     onSave={confirmMoveTable}
     onClose={() => { showMoveModal = false; moveGuest = null; }}
