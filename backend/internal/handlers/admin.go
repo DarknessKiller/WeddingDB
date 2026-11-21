@@ -224,6 +224,7 @@ func (h *AdminHandler) ResetPassword(c fuego.ContextWithBody[ResetPasswordReques
 		return nil, fuego.InternalServerError{Title: "Failed to hash password"}
 	}
 	admin.Password = string(hash)
+	admin.ForcePasswordChange = true
 	if err := h.adminRepo.Update(ctx, admin); err != nil {
 		return nil, fuego.InternalServerError{Title: "Failed to update password"}
 	}
