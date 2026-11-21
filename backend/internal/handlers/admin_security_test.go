@@ -27,6 +27,7 @@ type adminClient struct {
 	do   func(method, path, body string) int
 	db   *gorm.DB
 	auth *services.AuthService
+	mr   *miniredis.Miniredis
 }
 
 func newAdminTestServer(t *testing.T, adminID uuid.UUID) *adminClient {
@@ -48,6 +49,7 @@ func newAdminTestServer(t *testing.T, adminID uuid.UUID) *adminClient {
 	fuego.Delete(s, "/users/{id}", h.Delete)
 	fuego.Post(s, "/users/{id}/reset-password", h.ResetPassword)
 	fuego.Post(s, "/users", h.Create)
+	fuego.Put(s, "/users/{id}/role", h.UpdateRole)
 
 	// Same identity injection as AuthMiddleware.
 	adminCtx := context.WithValue(context.Background(), middleware.AdminIDKey, adminID)
@@ -56,6 +58,7 @@ func newAdminTestServer(t *testing.T, adminID uuid.UUID) *adminClient {
 	return &adminClient{
 		db:   db,
 		auth: authSvc,
+		mr:   mr,
 		do: func(method, path, body string) int {
 			req := httptest.NewRequest(method, path, strings.NewReader(body))
 			req.Header.Set("Content-Type", "application/json")
@@ -202,5 +205,24 @@ func TestCreateUser_WeddingGrantsAreAllOrNothing(t *testing.T) {
 	testutil.NoErr(t, c.db.Raw(`SELECT COUNT(*) FROM admin_users WHERE email = 'g@x.test'`).Scan(&n).Error)
 	if n != 0 {
 		t.Fatalf("%d half-made users left behind", n)
+	}
+}
+
+// A demotion whose session revoke fails must not change the role: the
+// target's live tokens still say admin, so the change would not take effect.
+func TestUpdateRole_RevokeFailureKeepsRole(t *testing.T) {
+	db := newAdminTestServer(t, uuid.New())
+	seedUser(t, db.db, "admin")
+	target := seedUser(t, db.db, "admin")
+	db.mr.Close() // Redis down: RevokeUserTokens cannot bump the token version
+
+	code := db.do(http.MethodPut, "/users/"+target.String()+"/role", `{"role":"user"}`)
+	if code != http.StatusInternalServerError {
+		t.Fatalf("status = %d, want 500", code)
+	}
+	var role string
+	testutil.NoErr(t, db.db.Raw(`SELECT role FROM admin_users WHERE id = ?`, target).Scan(&role).Error)
+	if role != "admin" {
+		t.Errorf("role = %q, want admin (unchanged)", role)
 	}
 }

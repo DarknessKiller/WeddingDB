@@ -283,6 +283,24 @@ func (h *AdminHandler) UpdateRole(c fuego.ContextWithBody[UpdateRoleRequest]) (a
 	if err != nil {
 		return nil, fuego.NotFoundError{Title: "User not found"}
 	}
+	// Early check so the last admin's sessions are not revoked for a refused
+	// demotion; adminRepo.UpdateRole re-checks under lock to close the race.
+	if admin.Role == "admin" && body.Role != "admin" {
+		adminCount, err := h.adminRepo.CountByRole(ctx, "admin")
+		if err != nil {
+			return nil, fuego.InternalServerError{Title: "Failed to check admin count"}
+		}
+		if adminCount <= 1 {
+			return nil, fuego.BadRequestError{Title: "Cannot demote the last admin"}
+		}
+	}
+	// Revoke first, like Delete: live tokens carry the role claim, so a revoke
+	// that failed after the change would leave a demoted admin with admin
+	// tokens until they expire.
+	if err := h.authService.RevokeUserTokens(ctx, id); err != nil {
+		slog.Error("revoke tokens before role change failed", "user", id, "err", err)
+		return nil, fuego.InternalServerError{Title: "Failed to revoke user sessions"}
+	}
 	if err := h.adminRepo.UpdateRole(ctx, id, body.Role); err != nil {
 		if errors.Is(err, repository.ErrLastAdmin) {
 			return nil, fuego.BadRequestError{Title: "Cannot demote the last admin"}
@@ -290,11 +308,6 @@ func (h *AdminHandler) UpdateRole(c fuego.ContextWithBody[UpdateRoleRequest]) (a
 		return nil, fuego.InternalServerError{Title: "Failed to update role"}
 	}
 	admin.Role = body.Role
-	// Force re-login so role claims in live tokens update. Role is already
-	// updated — log a revoke failure, don't fail the request.
-	if err := h.authService.RevokeUserTokens(ctx, id); err != nil {
-		slog.Warn("revoke tokens after role change failed", "user", id, "err", err)
-	}
 	return admin, nil
 }
 
