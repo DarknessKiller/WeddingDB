@@ -3,6 +3,7 @@ package handlers
 import (
 	"encoding/json"
 	"net/mail"
+	"strings"
 	"testing"
 )
 
@@ -216,5 +217,22 @@ func TestBackgroundSizeValidation(t *testing.T) {
 		if validBackgroundSizes[size] {
 			t.Errorf("size %q accepted, want rejected", size)
 		}
+	}
+}
+
+func TestValidatePassword_Bounds(t *testing.T) {
+	// Exactly the bcrypt ceiling is fine; one more byte is not.
+	atMax := strings.Repeat("a1!", 24) // 72 ASCII bytes
+	if len(atMax) != 72 {
+		t.Fatalf("test setup: len = %d", len(atMax))
+	}
+	if err := validatePassword(atMax); err != nil {
+		t.Errorf("72-byte password rejected: %v", err)
+	}
+	if err := validatePassword(atMax + "a"); err == nil {
+		t.Error("73-byte password accepted")
+	}
+	if err := validatePassword("café123!"); err == nil {
+		t.Error("non-ASCII password accepted")
 	}
 }

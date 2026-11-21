@@ -65,11 +65,11 @@ cd backend && CGO_ENABLED=1 go test -run 'Sync' ./internal/services/
 
 ## Frontend input limits
 
-Files: `frontend/src/lib/utils/limits.ts`, every `<input>`/`<textarea>` whose value the API validates, `backend/internal/services/guest_service.go` (`Max*` constants), `backend/internal/handlers/*.go` (`maxLen`).
+Files: `frontend/src/lib/utils/limits.ts` (`LIMITS`), every `<input>`/`<textarea>` whose value the API validates, `backend/internal/services/limits.go` (`Max*Len`, `Validate*Text`).
 
 - Every backend character cap has a matching `maxlength` on the input that feeds it, and both read the same number from `#lib/utils/limits.ts`. Never type the number into a template.
 - A field the API rejects is not a field the form may accept: online the whole submit fails, offline the edit retries until the queue drops it.
-- HTML `maxlength` counts UTF-16 units and Go counts runes, so HTML is stricter for emoji, never looser. Passwords are ASCII only, 8 to 72 characters: `validatePassword` rejects every byte outside `!` to `~` (letters, digits, ASCII punctuation; no space, no Unicode), so bytes and characters stay the same number and bcrypt's 72-byte ceiling equals `PASSWORD_MAXLEN`. The form refuses the same set; a non-ASCII password never reaches the API.
+- HTML `maxlength` counts UTF-16 units and Go counts runes, so HTML is stricter for emoji, never looser. Passwords are ASCII only, 8 to 72 characters: `validatePassword` rejects every byte outside `!` to `~` (letters, digits, ASCII punctuation; no space, no Unicode), so bytes and characters stay the same number and bcrypt's 72-byte ceiling equals `MaxPasswordLen`. The form refuses the same set (`PASSWORD_PATTERN`); a non-ASCII password never reaches the API.
 
 ### Verify
 

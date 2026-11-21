@@ -72,6 +72,9 @@ func (s *GuestService) createGuestTx(ctx context.Context, tx *gorm.DB, g *models
 	if g.Pax > MaxGuestPartySize {
 		return fmt.Errorf("party size must be at most %d", MaxGuestPartySize)
 	}
+	if err := ValidateGuestText(g); err != nil {
+		return err
+	}
 	// Wedding row first, table row second: every write path locks in this
 	// order, so the two lock sets cannot deadlock.
 	total, err := s.guestCountLocked(tx, g.WeddingID)
@@ -97,6 +100,9 @@ func (s *GuestService) updateGuestTx(ctx context.Context, tx *gorm.DB, g *models
 	}
 	if g.Pax > MaxGuestPartySize {
 		return fmt.Errorf("party size must be at most %d", MaxGuestPartySize)
+	}
+	if err := ValidateGuestText(g); err != nil {
+		return err
 	}
 	total, err := s.guestCountLocked(tx, g.WeddingID)
 	if err != nil {
@@ -334,6 +340,9 @@ func (s *GuestService) BulkCreate(ctx context.Context, guests []models.GuestReco
 		}
 		if guests[i].Pax > MaxGuestPartySize {
 			return 0, fmt.Errorf("party size must be at most %d", MaxGuestPartySize)
+		}
+		if err := ValidateGuestText(&guests[i]); err != nil {
+			return 0, err
 		}
 		incoming += guests[i].Pax
 	}
@@ -660,7 +669,14 @@ func (s *GuestService) applySyncMutation(ctx context.Context, weddingID uuid.UUI
 			}
 			// A notes value in a checkin payload is appended to the guest's notes,
 			// never replacing them, so a queued note never wipes existing notes.
-			existing.Notes = appendNote(existing.Notes, strings.TrimSpace(m.Payload.Notes))
+			note := strings.TrimSpace(m.Payload.Notes)
+			if err := checkLen("Check-in notes", note, MaxCheckInNoteLen); err != nil {
+				return SyncResult{GuestID: m.GuestID, Status: "failed", Reason: err.Error()}
+			}
+			existing.Notes = appendNote(existing.Notes, note)
+			if err := ValidateGuestText(existing); err != nil {
+				return SyncResult{GuestID: m.GuestID, Status: "failed", Reason: err.Error()}
+			}
 		}
 		existing.UpdatedAt = opTime
 		if err := s.guestRepo.SyncUpdate(ctx, existing); err != nil {

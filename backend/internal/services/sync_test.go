@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"math"
+	"strings"
 	"testing"
 	"time"
 
@@ -515,5 +516,25 @@ func TestAssignSeat_RejectsHugeSeat(t *testing.T) {
 	db.Create(&models.GuestRecord{ID: gid, WeddingID: wid, Name: "A", Pax: 2})
 	if err := svc.AssignSeat(context.Background(), gid, wid, tableID, math.MaxInt); err == nil {
 		t.Fatal("expected a near-MaxInt seat to be rejected")
+	}
+}
+
+func TestSync_RejectsOverlongGuestText(t *testing.T) {
+	svc, db, wid := newGuestSyncService(t)
+	ctx := context.Background()
+	gid := uuid.New()
+	base := time.Now().Add(-time.Minute)
+	db.Create(&models.GuestRecord{ID: gid, WeddingID: wid, Name: "A", Pax: 1, CreatedAt: base, UpdatedAt: base})
+
+	results, err := svc.Sync(ctx, wid, []SyncMutation{{
+		MutationID:      "m1",
+		Op:              SyncOpUpdate,
+		GuestID:         gid.String(),
+		ClientUpdatedAt: base.Add(time.Second),
+		Payload:         &SyncPayload{Name: strings.Repeat("x", MaxNameLen+1)},
+	}})
+	testutil.NoErr(t, err)
+	if results[0].Status != "failed" {
+		t.Fatalf("overlong name should fail the mutation, got %+v", results[0])
 	}
 }

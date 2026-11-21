@@ -77,6 +77,9 @@ func (h *WeddingHandler) Create(c fuego.ContextWithBody[WeddingRequest]) (any, e
 	if w.Name == "" {
 		return nil, fuego.BadRequestError{Title: "Name is required"}
 	}
+	if err := services.ValidateWeddingText(w); err != nil {
+		return nil, fuego.BadRequestError{Title: err.Error()}
+	}
 	if err := h.weddingService.Create(ctx, w); err != nil {
 		return nil, err
 	}
@@ -122,6 +125,9 @@ func (h *WeddingHandler) Update(c fuego.ContextWithBody[WeddingRequest]) (any, e
 		w.Date = d
 		columns = append(columns, "Date")
 	}
+	if err := services.ValidateWeddingText(w); err != nil {
+		return nil, fuego.BadRequestError{Title: err.Error()}
+	}
 	if err := h.weddingService.UpdateFields(ctx, w, columns...); err != nil {
 		return nil, err
 	}
@@ -162,92 +168,95 @@ func (h *WeddingHandler) UpdateKioskSettings(c fuego.ContextWithBody[KioskSettin
 	}
 	w, err := h.weddingService.Get(ctx, id)
 	if err != nil {
-	columns := []string{}
-	if body.Name != nil {
-		name := strings.TrimSpace(*body.Name)
-		if name == "" {
-			return nil, fuego.BadRequestError{Title: "Name is required"}
+		columns := []string{}
+		if body.Name != nil {
+			name := strings.TrimSpace(*body.Name)
+			if name == "" {
+				return nil, fuego.BadRequestError{Title: "Name is required"}
+			}
+			w.Name = name
+			columns = append(columns, "Name")
 		}
-		w.Name = name
-		columns = append(columns, "Name")
-	}
-	if body.VenueName != nil {
-		w.VenueName = strings.TrimSpace(*body.VenueName)
-		columns = append(columns, "VenueName")
-	}
-	if body.VenueAddress != nil {
-		w.VenueAddress = strings.TrimSpace(*body.VenueAddress)
-		columns = append(columns, "VenueAddress")
-	}
-	if body.KioskDescription != nil {
-		w.KioskDescription = strings.TrimSpace(*body.KioskDescription)
-		columns = append(columns, "KioskDescription")
-	}
-	if body.KioskLogoUrl != nil {
-		w.KioskLogoUrl = sanitizeURL(*body.KioskLogoUrl)
-		columns = append(columns, "KioskLogoUrl")
-	}
-	if body.KioskBackgroundUrl != nil {
-		w.KioskBackgroundUrl = sanitizeURL(*body.KioskBackgroundUrl)
-		columns = append(columns, "KioskBackgroundUrl")
-	}
-	if body.KioskBackgroundBlur != nil {
-		w.KioskBackgroundBlur = max(0, min(20, *body.KioskBackgroundBlur))
-		columns = append(columns, "KioskBackgroundBlur")
-	}
-	if body.KioskBackgroundSize != nil {
-		size := strings.TrimSpace(*body.KioskBackgroundSize)
-		if !validBackgroundSizes[size] {
-			return nil, fuego.BadRequestError{Title: "kioskBackgroundSize must be cover, contain, or auto"}
+		if body.VenueName != nil {
+			w.VenueName = strings.TrimSpace(*body.VenueName)
+			columns = append(columns, "VenueName")
 		}
-		w.KioskBackgroundSize = size
-		columns = append(columns, "KioskBackgroundSize")
-	}
-	if body.KioskLogoSize != nil {
-		size := strings.TrimSpace(*body.KioskLogoSize)
-		if !validBackgroundSizes[size] {
-			return nil, fuego.BadRequestError{Title: "kioskLogoSize must be cover, contain, or auto"}
+		if body.VenueAddress != nil {
+			w.VenueAddress = strings.TrimSpace(*body.VenueAddress)
+			columns = append(columns, "VenueAddress")
 		}
-		w.KioskLogoSize = size
-		columns = append(columns, "KioskLogoSize")
+		if body.KioskDescription != nil {
+			w.KioskDescription = strings.TrimSpace(*body.KioskDescription)
+			columns = append(columns, "KioskDescription")
+		}
+		if body.KioskLogoUrl != nil {
+			w.KioskLogoUrl = sanitizeURL(*body.KioskLogoUrl)
+			columns = append(columns, "KioskLogoUrl")
+		}
+		if body.KioskBackgroundUrl != nil {
+			w.KioskBackgroundUrl = sanitizeURL(*body.KioskBackgroundUrl)
+			columns = append(columns, "KioskBackgroundUrl")
+		}
+		if body.KioskBackgroundBlur != nil {
+			w.KioskBackgroundBlur = max(0, min(20, *body.KioskBackgroundBlur))
+			columns = append(columns, "KioskBackgroundBlur")
+		}
+		if body.KioskBackgroundSize != nil {
+			size := strings.TrimSpace(*body.KioskBackgroundSize)
+			if !validBackgroundSizes[size] {
+				return nil, fuego.BadRequestError{Title: "kioskBackgroundSize must be cover, contain, or auto"}
+			}
+			w.KioskBackgroundSize = size
+			columns = append(columns, "KioskBackgroundSize")
+		}
+		if body.KioskLogoSize != nil {
+			size := strings.TrimSpace(*body.KioskLogoSize)
+			if !validBackgroundSizes[size] {
+				return nil, fuego.BadRequestError{Title: "kioskLogoSize must be cover, contain, or auto"}
+			}
+			w.KioskLogoSize = size
+			columns = append(columns, "KioskLogoSize")
+		}
+		if err := applyPosition(&w.KioskBackgroundPosX, body.KioskBackgroundPosX, validPositionsX, "kioskBackgroundPosX", "left, center, right"); err != nil {
+			return nil, err
+		}
+		if body.KioskBackgroundPosX != nil {
+			columns = append(columns, "KioskBackgroundPosX")
+		}
+		if err := applyPosition(&w.KioskBackgroundPosY, body.KioskBackgroundPosY, validPositionsY, "kioskBackgroundPosY", "top, center, bottom"); err != nil {
+			return nil, err
+		}
+		if body.KioskBackgroundPosY != nil {
+			columns = append(columns, "KioskBackgroundPosY")
+		}
+		if err := applyPosition(&w.KioskLogoPosX, body.KioskLogoPosX, validPositionsX, "kioskLogoPosX", "left, center, right"); err != nil {
+			return nil, err
+		}
+		if body.KioskLogoPosX != nil {
+			columns = append(columns, "KioskLogoPosX")
+		}
+		if err := applyPosition(&w.KioskLogoPosY, body.KioskLogoPosY, validPositionsY, "kioskLogoPosY", "top, center, bottom"); err != nil {
+			return nil, err
+		}
+		if body.KioskLogoPosY != nil {
+			columns = append(columns, "KioskLogoPosY")
+		}
+		if body.ShowSeatNumbers != nil {
+			w.ShowSeatNumbers = *body.ShowSeatNumbers
+			columns = append(columns, "ShowSeatNumbers")
+		}
+		if body.KioskIdleResetSeconds != nil {
+			w.KioskIdleResetSeconds = max(0, min(3600, *body.KioskIdleResetSeconds))
+			columns = append(columns, "KioskIdleResetSeconds")
+		}
+		if err := services.ValidateWeddingText(w); err != nil {
+			return nil, fuego.BadRequestError{Title: err.Error()}
+		}
+		if err := h.weddingService.UpdateFields(ctx, w, columns...); err != nil {
+			return nil, fuego.InternalServerError{Title: "Failed to update kiosk settings"}
+		}
+		return w, nil
 	}
-	if err := applyPosition(&w.KioskBackgroundPosX, body.KioskBackgroundPosX, validPositionsX, "kioskBackgroundPosX", "left, center, right"); err != nil {
-		return nil, err
-	}
-	if body.KioskBackgroundPosX != nil {
-		columns = append(columns, "KioskBackgroundPosX")
-	}
-	if err := applyPosition(&w.KioskBackgroundPosY, body.KioskBackgroundPosY, validPositionsY, "kioskBackgroundPosY", "top, center, bottom"); err != nil {
-		return nil, err
-	}
-	if body.KioskBackgroundPosY != nil {
-		columns = append(columns, "KioskBackgroundPosY")
-	}
-	if err := applyPosition(&w.KioskLogoPosX, body.KioskLogoPosX, validPositionsX, "kioskLogoPosX", "left, center, right"); err != nil {
-		return nil, err
-	}
-	if body.KioskLogoPosX != nil {
-		columns = append(columns, "KioskLogoPosX")
-	}
-	if err := applyPosition(&w.KioskLogoPosY, body.KioskLogoPosY, validPositionsY, "kioskLogoPosY", "top, center, bottom"); err != nil {
-		return nil, err
-	}
-	if body.KioskLogoPosY != nil {
-		columns = append(columns, "KioskLogoPosY")
-	}
-	if body.ShowSeatNumbers != nil {
-		w.ShowSeatNumbers = *body.ShowSeatNumbers
-		columns = append(columns, "ShowSeatNumbers")
-	}
-	if body.KioskIdleResetSeconds != nil {
-		w.KioskIdleResetSeconds = max(0, min(3600, *body.KioskIdleResetSeconds))
-		columns = append(columns, "KioskIdleResetSeconds")
-	}
-	if err := h.weddingService.UpdateFields(ctx, w, columns...); err != nil {
-		return nil, fuego.InternalServerError{Title: "Failed to update kiosk settings"}
-	}
-	return w, nil
-}
 	return w, nil
 }
 

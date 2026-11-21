@@ -131,6 +131,9 @@ func (h *LayoutHandler) Save(c fuego.ContextWithBody[LayoutRequest]) (any, error
 			Color: e.Color, TextColor: e.TextColor, StrokeColor: e.StrokeColor,
 			Opacity: e.Opacity, ZIndex: e.ZIndex,
 		}
+		if err := services.ValidateElementText(&el); err != nil {
+			return nil, fuego.BadRequestError{Title: err.Error()}
+		}
 		if e.ID != "" {
 			id, err := middleware.DecodeWIDString(e.ID)
 			if err != nil {

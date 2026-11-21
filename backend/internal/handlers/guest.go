@@ -110,6 +110,9 @@ func (h *GuestHandler) Create(c fuego.ContextWithBody[GuestCreateRequest]) (any,
 		Notes:     body.Notes,
 		Dietary:   body.Dietary,
 	}
+	if err := services.ValidateGuestText(guest); err != nil {
+		return nil, fuego.BadRequestError{Title: err.Error()}
+	}
 	if err := h.guestService.Create(ctx, guest); err != nil {
 		if errors.Is(err, services.ErrGuestCapExceeded) {
 			return nil, fuego.BadRequestError{Title: err.Error()}
@@ -178,6 +181,9 @@ func (h *GuestHandler) Update(c fuego.ContextWithBody[GuestCreateRequest]) (any,
 	guest.Dietary = body.Dietary
 	guest.AngbaoAmt = body.AngbaoAmt
 	guest.GiftItem = body.GiftItem
+	if err := services.ValidateGuestText(guest); err != nil {
+		return nil, fuego.BadRequestError{Title: err.Error()}
+	}
 	// tableId not provided — preserve the existing seat assignment.
 	var tid *uuid.UUID
 	seatNum := 0
@@ -247,6 +253,9 @@ func (h *GuestHandler) CheckIn(c fuego.ContextWithBody[CheckInRequest]) (any, er
 	body, err := c.Body()
 	if err != nil {
 		slog.Warn("check-in body decode failed, continuing without notes", "guest", id, "err", err)
+	}
+	if len([]rune(body.Notes)) > services.MaxCheckInNoteLen {
+		return nil, fuego.BadRequestError{Title: "Check-in notes must be at most " + strconv.Itoa(services.MaxCheckInNoteLen) + " characters"}
 	}
 	if err := h.guestService.CheckIn(ctx, id, wid, body.Notes); err != nil {
 		if errors.Is(err, services.ErrAlreadyCheckedIn) {

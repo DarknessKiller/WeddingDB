@@ -16,7 +16,7 @@ func NewFuegoServer(env Env, version string) *fuego.Server {
 		fuego.WithAddr(":"+env.Port),
 		// fuego only caps JSON request bodies when this option is set; without
 		// it an unauthenticated client can stream an unbounded body into memory.
-		fuego.WithMaxBodySize(1024 * 1024),
+		fuego.WithMaxBodySize(1024*1024),
 		fuego.WithEngineOptions(
 			fuego.WithOpenAPIConfig(fuego.OpenAPIConfig{
 				Info: &openapi3.Info{
