@@ -4,11 +4,15 @@ vi.mock('#lib/stores/index.ts', () => ({
 	getAuth: () => ({ accessToken: 'test-token-123' })
 }));
 
+const refreshSession = vi.hoisted(() => vi.fn());
+vi.mock('#lib/api/client.ts', () => ({ refreshSession }));
+
 const fetchMock = vi.fn();
 
 beforeEach(() => {
 	vi.resetModules();
 	fetchMock.mockReset();
+	refreshSession.mockReset();
 	fetchMock.mockResolvedValue({
 		ok: true,
 		status: 200,
@@ -49,5 +53,34 @@ describe('SSEClient', () => {
 
 		await vi.waitFor(() => expect(handler).toHaveBeenCalledWith(event));
 		client.disconnect();
+	});
+
+	it('refreshes the token on 401 before reconnecting', async () => {
+		vi.useFakeTimers();
+		refreshSession.mockResolvedValue('refreshed');
+		fetchMock.mockResolvedValueOnce({ ok: false, status: 401, body: null });
+		const { getSSIClient } = await import('./sse');
+		const client = getSSIClient();
+		client.connect('wedding-123');
+
+		await vi.waitFor(() => expect(refreshSession).toHaveBeenCalledOnce());
+		await vi.advanceTimersByTimeAsync(1000);
+		expect(fetchMock).toHaveBeenCalledTimes(2);
+		client.disconnect();
+		vi.useRealTimers();
+	});
+
+	it('stops reconnecting when the refresh ends the session', async () => {
+		vi.useFakeTimers();
+		refreshSession.mockResolvedValue('ended');
+		fetchMock.mockResolvedValueOnce({ ok: false, status: 401, body: null });
+		const { getSSIClient } = await import('./sse');
+		const client = getSSIClient();
+		client.connect('wedding-123');
+
+		await vi.waitFor(() => expect(refreshSession).toHaveBeenCalledOnce());
+		await vi.advanceTimersByTimeAsync(60000);
+		expect(fetchMock).toHaveBeenCalledTimes(1);
+		vi.useRealTimers();
 	});
 });

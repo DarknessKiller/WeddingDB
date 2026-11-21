@@ -1,4 +1,5 @@
 import { getAuth } from '#lib/stores/index.ts';
+import { refreshSession } from '#lib/api/client.ts';
 
 export interface GuestEvent {
 	type: 'create' | 'update' | 'delete' | 'checkin' | 'checkout' | 'seat_assign';
@@ -53,6 +54,14 @@ class SSEClient {
 				headers: { Authorization: `Bearer ${accessToken}` },
 				signal: controller.signal
 			});
+			if (response.status === 401) {
+				// Expired token: refresh so the backoff reconnect sends a new one.
+				const result = await refreshSession();
+				if (result === 'ended' || result === 'forced') {
+					if (this.controller === controller) this.controller = null;
+					return;
+				}
+			}
 			if (!response.ok || !response.body) throw new Error(`SSE request failed: ${response.status}`);
 
 			const reconnect = this.reconnectDelay > 1000;
