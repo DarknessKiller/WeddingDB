@@ -67,15 +67,20 @@ func (h *LayoutHandler) Get(c fuego.ContextNoBody) (any, error) {
 	if err != nil {
 		return nil, fuego.BadRequestError{Title: "Invalid wedding ID"}
 	}
+	// The public kiosk route has no wedding-scope middleware, so a missing
+	// wedding is answered here, before the table and element queries.
+	wedding, err := h.weddingService.Get(ctx, wid)
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, fuego.NotFoundError{Title: "Wedding not found"}
+	}
+	if err != nil {
+		return nil, err
+	}
 	tables, err := h.tableService.List(ctx, wid)
 	if err != nil {
 		return nil, err
 	}
 	elements, err := h.layoutService.Elements(ctx, wid)
-	if err != nil {
-		return nil, err
-	}
-	wedding, err := h.weddingService.Get(ctx, wid)
 	if err != nil {
 		return nil, err
 	}
