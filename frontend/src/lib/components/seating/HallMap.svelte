@@ -253,6 +253,9 @@ import RotateCcw from 'lucide-svelte/icons/rotate-ccw';
   onMount(() => {
     let ro: ResizeObserver | null = null;
     const canvasListeners: Array<[string, EventListener, any]> = [];
+    // Set on destroy: the import and the wait for the canvas below must stop
+    // there, or leaving mid-load spins a frame loop until the tab reloads.
+    let destroyed = false;
 
     if (containerEl) {
       ro = new ResizeObserver((entries) => {
@@ -266,6 +269,7 @@ import RotateCcw from 'lucide-svelte/icons/rotate-ccw';
 
     (async () => {
       const mod = await import('svelte-konva');
+      if (destroyed) return;
       // A finger wobbles a few pixels during a tap: land it as a tap, not a 3px drag.
       if ('ontouchstart' in window) (await import('konva')).default.dragDistance = 12;
       KonvaStage = mod.Stage;
@@ -278,6 +282,7 @@ import RotateCcw from 'lucide-svelte/icons/rotate-ccw';
 
       const attachHandlers = () => {
         const canvas = containerEl?.querySelector('canvas');
+        if (destroyed) return;
         if (!canvas) { requestAnimationFrame(attachHandlers); return; }
 
         // ponytail: store listeners for cleanup on destroy
@@ -331,6 +336,7 @@ import RotateCcw from 'lucide-svelte/icons/rotate-ccw';
     })();
 
       return () => {
+      destroyed = true;
       ro?.disconnect();
       // Clean up canvas event listeners
       const canvas = containerEl?.querySelector('canvas');
