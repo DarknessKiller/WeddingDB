@@ -198,6 +198,10 @@ func (h *WeddingHandler) UpdateKioskSettings(c fuego.ContextWithBody[KioskSettin
 		}
 		w.KioskBackgroundUrl = bg
 	}
+	// Both columns are varchar(500): longer values would fail in Postgres as a 500.
+	if err := cmp.Or(maxLen("Kiosk logo URL", w.KioskLogoUrl, 500), maxLen("Kiosk background URL", w.KioskBackgroundUrl, 500)); err != nil {
+		return nil, err
+	}
 	if body.KioskBackgroundBlur != nil {
 		w.KioskBackgroundBlur = max(0, min(20, *body.KioskBackgroundBlur))
 	}
