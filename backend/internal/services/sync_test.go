@@ -622,7 +622,6 @@ func TestSync_RetryableOnlyForTransientFailures(t *testing.T) {
 	}{
 		{"seat on unknown table", SyncMutation{Op: SyncOpUpdate, GuestID: gid.String(), ClientUpdatedAt: base.Add(time.Minute), Payload: &SyncPayload{TableID: &missingTable}}},
 		{"party too large", SyncMutation{Op: SyncOpUpdate, GuestID: gid.String(), ClientUpdatedAt: base.Add(time.Minute), Payload: &SyncPayload{Pax: MaxGuestPartySize + 1}}},
-		{"delete older than server", SyncMutation{Op: SyncOpDelete, GuestID: gid.String(), ClientUpdatedAt: base.Add(-time.Minute)}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -634,9 +633,16 @@ func TestSync_RetryableOnlyForTransientFailures(t *testing.T) {
 		})
 	}
 
+	// Spec invariant 3: an older delete fails but stays queued.
+	results, err := svc.Sync(ctx, wid, []SyncMutation{{Op: SyncOpDelete, GuestID: gid.String(), ClientUpdatedAt: base.Add(-time.Minute)}})
+	testutil.NoErr(t, err)
+	if results[0].Status != "failed" || !results[0].Retryable {
+		t.Fatalf("older delete: got %+v, want failed and retryable", results[0])
+	}
+
 	// A database failure is transient.
 	testutil.NoErr(t, db.Exec(`DROP TABLE applied_mutations`).Error)
-	results, err := svc.Sync(ctx, wid, []SyncMutation{{MutationID: uuid.NewString(), Op: SyncOpCheckIn, GuestID: gid.String(), ClientUpdatedAt: base.Add(time.Minute)}})
+	results, err = svc.Sync(ctx, wid, []SyncMutation{{MutationID: uuid.NewString(), Op: SyncOpCheckIn, GuestID: gid.String(), ClientUpdatedAt: base.Add(time.Minute)}})
 	testutil.NoErr(t, err)
 	if results[0].Status != "failed" || !results[0].Retryable {
 		t.Fatalf("db failure: got %+v, want failed and retryable", results[0])

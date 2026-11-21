@@ -749,7 +749,7 @@ func (s *GuestService) applySyncMutation(ctx context.Context, weddingID uuid.UUI
 			// Report "failed", not "skipped": the client keeps failed items
 			// queued instead of dequeuing and losing the delete intent.
 			// Not retryable: the server copy only gets newer, so a retry loses again.
-			return SyncResult{GuestID: m.GuestID, Status: "failed", Reason: "older than server", ServerRecord: existing}
+			return SyncResult{GuestID: m.GuestID, Status: "failed", Reason: "older than server", ServerRecord: existing, Retryable: true} // spec invariant 3: an older delete stays queued
 		}
 		if err := s.guestRepo.Delete(ctx, gid, weddingID); err != nil {
 			return syncFailed(m, err)
