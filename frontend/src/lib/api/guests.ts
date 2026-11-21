@@ -9,6 +9,17 @@ import { guestList, cacheGuestList } from '#lib/stores/guestEvents.ts';
 function isOffline() {
 	return typeof navigator !== 'undefined' && !navigator.onLine;
 }
+// Matches the server's MaxGuestNotesLen (characters), so a note is never
+// refused after the form was filled in.
+export const MAX_GUEST_NOTES_LEN = 2000;
+
+// noteRoom is how many characters a check-in note can add to existing notes
+// (joined with a newline) without passing MAX_GUEST_NOTES_LEN.
+export function noteRoom(existing: string): number {
+	const used = [...existing].length + (existing ? 1 : 0);
+	return Math.max(0, MAX_GUEST_NOTES_LEN - used);
+}
+
 export function isNetworkError(e: unknown) {
 	if (isOffline()) return true;
 	// Chrome/Firefox say "Failed to fetch"/"NetworkError"; Safari says "Load failed".

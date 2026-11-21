@@ -5,6 +5,7 @@ import Loader2 from 'lucide-svelte/icons/loader-2';
   import { fade } from 'svelte/transition';
   import { onMount } from 'svelte';
   import { slideOut as sheetSlideOut } from '#lib/utils/motion.ts';
+  import { noteRoom } from '#lib/api/guests.ts';
 
   function outfade(node: HTMLElement) {
     return { duration: sheetSlideOut(node, { dir: 'y', duration: 300 }) };
@@ -12,17 +13,21 @@ import Loader2 from 'lucide-svelte/icons/loader-2';
 
   let {
     guestName,
+    existingNotes = '',
     onConfirm,
     onClose,
     loading = false,
   }: {
     guestName: string;
+    existingNotes?: string;
     onConfirm: (notes: string) => void;
     onClose: () => void;
     loading?: boolean;
   } = $props();
 
   let notes = $state('');
+  // The note is appended to the guest's notes: cap it to the room left.
+  const room = $derived(noteRoom(existingNotes));
   // A check-in in flight must finish against the guest it started for.
   const close = () => { if (!loading) onClose(); };
   let confirmBtn: HTMLButtonElement;
@@ -103,10 +108,16 @@ import Loader2 from 'lucide-svelte/icons/loader-2';
           id="checkin-notes"
           type="text"
           bind:value={notes}
+          maxlength={room}
+          disabled={room === 0}
+          aria-describedby={room < 100 ? 'checkin-notes-room' : undefined}
           onkeydown={onNotesKeydown}
           placeholder="e.g. arrived with 2 kids"
           class="w-full px-4 py-3 rounded-xl border border-black/[0.08] bg-white text-sm text-gray-900 placeholder:text-gray-500 focus:outline-none focus:ring-2 focus:ring-red/20 focus:border-red transition-shadow"
         />
+        {#if room < 100}
+          <p id="checkin-notes-room" class="text-xs text-gray-600 mt-1">{room === 0 ? 'Guest notes are full. Edit the guest to add more.' : `${room - [...notes].length} characters left in guest notes`}</p>
+        {/if}
       </div>
     </div>
     <div class="flex gap-3 p-5 pt-0">

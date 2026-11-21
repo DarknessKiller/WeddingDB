@@ -147,3 +147,13 @@ describe('withQueuedEdits', () => {
 		expect(g).toMatchObject({ checkedIn: true, checkedInAt: at, notes: 'vegan\ngift at door', angbaoAmount: 100, giftItem: 'vase' });
 	});
 });
+
+describe('noteRoom', () => {
+	it('leaves room for the joining newline and counts characters, not UTF-16 units', async () => {
+		const { noteRoom, MAX_GUEST_NOTES_LEN } = await import('./guests');
+		expect(noteRoom('')).toBe(MAX_GUEST_NOTES_LEN);
+		expect(noteRoom('x'.repeat(1990))).toBe(9);
+		expect(noteRoom('😀'.repeat(10))).toBe(MAX_GUEST_NOTES_LEN - 11);
+		expect(noteRoom('x'.repeat(MAX_GUEST_NOTES_LEN))).toBe(0);
+	});
+});

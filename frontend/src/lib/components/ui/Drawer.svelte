@@ -20,7 +20,7 @@ import ArrowUpDown from 'lucide-svelte/icons/arrow-up-down';
   import { addToast } from '#lib/stores/index.ts';
   import { weddingId } from '#lib/stores/weddingId.ts';
   import { guestList } from '#lib/stores/guestEvents.ts';
-  import { updateGuest, createGuest, checkInGuest, checkOutGuest, unassignSeat, getGuest, ConflictError, type GuestResponse } from '#lib/api/guests.ts';
+  import { updateGuest, createGuest, checkInGuest, checkOutGuest, unassignSeat, getGuest, ConflictError, MAX_GUEST_NOTES_LEN, type GuestResponse } from '#lib/api/guests.ts';
   import { untrack } from 'svelte';
   import { get } from 'svelte/store';
   import { fade } from 'svelte/transition';
@@ -443,7 +443,7 @@ import ArrowUpDown from 'lucide-svelte/icons/arrow-up-down';
           </div>
           <div class="form-field">
             <label for="guest-notes" class="form-label">Notes</label>
-            <textarea id="guest-notes" bind:value={form.notes} rows="2" class="form-input form-textarea"></textarea>
+            <textarea id="guest-notes" bind:value={form.notes} maxlength={MAX_GUEST_NOTES_LEN} rows="2" class="form-input form-textarea"></textarea>
           </div>
           <div class="form-field">
             <div class="form-label">Dietary</div>
@@ -613,6 +613,7 @@ import ArrowUpDown from 'lucide-svelte/icons/arrow-up-down';
 {#if showCheckInModal && guest}
   <CheckInModal
     guestName={guest.name}
+    existingNotes={guest.notes}
     onConfirm={handleCheckIn}
     loading={checkingIn}
     onClose={() => showCheckInModal = false}
