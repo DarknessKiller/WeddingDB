@@ -914,8 +914,12 @@ func syncCheckIn(ctx context.Context, tx *gorm.DB, g *models.GuestRecord, m Sync
 		return SyncResult{}, err
 	}
 	// Never move updated_at backwards, or a stale queued edit could win next.
+	// Always move it forward, though: an editor holding the old updated_at
+	// must get a 409, not silently overwrite this check-in's angbao and note.
 	if opTime.After(g.UpdatedAt) {
 		g.UpdatedAt = opTime
+	} else {
+		g.UpdatedAt = g.UpdatedAt.Add(time.Microsecond)
 	}
 	if err := repository.NewGuestRepo(tx).SyncCheckIn(ctx, g); err != nil {
 		return SyncResult{}, err

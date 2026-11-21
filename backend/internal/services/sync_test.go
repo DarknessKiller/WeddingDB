@@ -219,8 +219,10 @@ func TestSync_OfflineCheckInSurvivesNewerEdit(t *testing.T) {
 	if g.CheckedInAt == nil || g.AngbaoAmt == nil || *g.AngbaoAmt != amt {
 		t.Fatalf("checkin or angbao lost: %+v", g)
 	}
-	if !g.UpdatedAt.Equal(base.Add(5 * time.Minute)) {
-		t.Fatalf("updated_at moved backwards: %v", g.UpdatedAt)
+	// Forward, never backwards: an editor holding the 5-minute version must
+	// now get a 409 instead of writing over this angbao.
+	if !g.UpdatedAt.After(base.Add(5 * time.Minute)) {
+		t.Fatalf("updated_at = %v, want after %v", g.UpdatedAt, base.Add(5*time.Minute))
 	}
 }
 
