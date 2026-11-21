@@ -124,7 +124,7 @@ func seedRefreshToken(t *testing.T, db *gorm.DB, adminID uuid.UUID, weddingID *u
 		ID:        uuid.New(),
 		AdminID:   adminID,
 		WeddingID: weddingID,
-		Token:     tokenStr,
+		Token:     repository.HashToken(tokenStr),
 		ExpiresAt: time.Now().Add(7 * 24 * time.Hour),
 	}
 	if err := db.Create(rt).Error; err != nil {
@@ -346,7 +346,7 @@ func TestSelectWedding_PersistsWeddingScopeForUser(t *testing.T) {
 
 	// The refresh token row must now carry the selected wedding.
 	var rt models.RefreshToken
-	if err := db.Where("token = ?", refreshStr).First(&rt).Error; err != nil {
+	if err := db.Where("token = ?", repository.HashToken(refreshStr)).First(&rt).Error; err != nil {
 		t.Fatalf("failed to load refresh token: %v", err)
 	}
 	if rt.WeddingID == nil || *rt.WeddingID != wid {
@@ -382,7 +382,7 @@ func TestSelectWedding_AdminKeepsUnscopedRefreshToken(t *testing.T) {
 	}
 
 	var rt models.RefreshToken
-	if err := db.Where("token = ?", refreshStr).First(&rt).Error; err != nil {
+	if err := db.Where("token = ?", repository.HashToken(refreshStr)).First(&rt).Error; err != nil {
 		t.Fatalf("failed to load refresh token: %v", err)
 	}
 	if rt.WeddingID != nil {
@@ -511,7 +511,7 @@ func TestDiscardIfRevoked_RemovesSuccessorMintedUnderOldVersion(t *testing.T) {
 		t.Fatal("expected successor minted under the old version to be rejected")
 	}
 	var count int64
-	db.Model(&models.RefreshToken{}).Where("token = ?", "successor").Count(&count)
+	db.Model(&models.RefreshToken{}).Where("token = ?", repository.HashToken("successor")).Count(&count)
 	if count != 0 {
 		t.Fatalf("revoked successor should be deleted, got %d rows", count)
 	}

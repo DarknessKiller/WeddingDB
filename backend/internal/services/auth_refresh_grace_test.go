@@ -9,6 +9,7 @@ import (
 
 	"weddingdb/internal/models"
 	"weddingdb/internal/repository"
+	"weddingdb/internal/testutil"
 
 	"github.com/alicebob/miniredis/v2"
 	"github.com/google/uuid"
@@ -33,7 +34,7 @@ func TestRefresh_MintFailureKeepsTokenUsable(t *testing.T) {
 	}
 
 	var live int64
-	db.Model(&models.RefreshToken{}).Where("token = ? AND rotated_at IS NULL", refreshStr).Count(&live)
+	db.Model(&models.RefreshToken{}).Where("token = ? AND rotated_at IS NULL", repository.HashToken(refreshStr)).Count(&live)
 	if live != 1 {
 		t.Fatalf("failed Refresh consumed the token: %d unrotated rows left", live)
 	}
@@ -102,7 +103,7 @@ func TestRefresh_ReplayAfterGraceRejected(t *testing.T) {
 		t.Fatalf("first Refresh failed: %v", err)
 	}
 
-	db.Model(&models.RefreshToken{}).Where("token = ?", refreshStr).
+	db.Model(&models.RefreshToken{}).Where("token = ?", repository.HashToken(refreshStr)).
 		Update("rotated_at", time.Now().Add(-refreshGraceWindow-time.Minute))
 
 	if _, err := svc.Refresh(context.Background(), refreshStr, ""); err == nil {
@@ -128,13 +129,39 @@ func TestTokenRotate_SecondClaimRejected(t *testing.T) {
 	}
 
 	var stored int64
-	db.Model(&models.RefreshToken{}).Where("token = ?", "claim-loser").Count(&stored)
+	db.Model(&models.RefreshToken{}).Where("token = ?", repository.HashToken("claim-loser")).Count(&stored)
 	if stored != 0 {
 		t.Errorf("loser's replacement was stored: %d rows", stored)
 	}
 	var live int64
-	db.Model(&models.RefreshToken{}).Where("token = ? AND rotated_at IS NULL", "claim-successor").Count(&live)
+	db.Model(&models.RefreshToken{}).Where("token = ? AND rotated_at IS NULL", repository.HashToken("claim-successor")).Count(&live)
 	if live != 1 {
 		t.Errorf("winner's replacement missing: %d rows", live)
+	}
+}
+
+// Refresh tokens rest as hashes: the plaintext never reaches the table, and
+// rotation and lookup still work through the hash.
+func TestRefreshToken_StoredHashed(t *testing.T) {
+	svc, _, db := newIntegrationAuthService(t, "test-secret")
+	adminID := uuid.New()
+	seedAdmin(t, db, adminID, "admin")
+
+	issued, err := svc.generateRefreshToken(t.Context(), adminID, nil)
+	testutil.NoErr(t, err)
+	res, err := svc.Refresh(t.Context(), issued, "")
+	testutil.NoErr(t, err)
+
+	for _, plain := range []string{issued, res.RefreshToken} {
+		var n int64
+		testutil.NoErr(t, db.Model(&models.RefreshToken{}).Where("token = ? OR replaced_by = ?", plain, plain).Count(&n).Error)
+		if n != 0 {
+			t.Fatalf("plaintext token %q found in refresh_tokens", plain)
+		}
+	}
+	var hashedRows int64
+	testutil.NoErr(t, db.Model(&models.RefreshToken{}).Where("token IN ?", []string{repository.HashToken(issued), repository.HashToken(res.RefreshToken)}).Count(&hashedRows).Error)
+	if hashedRows != 2 {
+		t.Fatalf("hashed rows = %d, want 2", hashedRows)
 	}
 }

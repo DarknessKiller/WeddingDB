@@ -2,7 +2,9 @@ package services
 
 import (
 	"context"
+	"crypto/hmac"
 	"crypto/rand"
+	"crypto/sha256"
 	"encoding/hex"
 	"errors"
 	"fmt"
@@ -173,7 +175,7 @@ func (s *AuthService) Refresh(ctx context.Context, refreshTokenStr string, oldAc
 		return nil, errors.New("invalid refresh token")
 	}
 	if token.RotatedAt != nil {
-		return s.resumeRotation(ctx, token)
+		return s.resumeRotation(ctx, refreshTokenStr, token)
 	}
 
 	admin, err := s.adminRepo.FindByID(ctx, token.AdminID)
@@ -196,6 +198,7 @@ func (s *AuthService) Refresh(ctx context.Context, refreshTokenStr string, oldAc
 	if err != nil {
 		return nil, err
 	}
+	replacement.Token = s.successorToken(refreshTokenStr)
 
 	err = s.tokenRepo.Rotate(ctx, refreshTokenStr, replacement)
 	if err == nil {
@@ -213,16 +216,26 @@ func (s *AuthService) Refresh(ctx context.Context, refreshTokenStr string, oldAc
 	if findErr != nil || current.RotatedAt == nil {
 		return nil, errors.New("invalid refresh token")
 	}
-	return s.resumeRotation(ctx, current)
+	return s.resumeRotation(ctx, refreshTokenStr, current)
+}
+
+// successorToken derives the token a refresh token rotates into. Only hashes
+// are stored, so a grace-window retry re-derives the successor it must return
+// from the presented token; without the secret nobody else can.
+func (s *AuthService) successorToken(presented string) string {
+	mac := hmac.New(sha256.New, s.secret)
+	mac.Write([]byte(presented)) //nolint:errcheck // hash.Hash.Write never returns an error
+	return hex.EncodeToString(mac.Sum(nil))
 }
 
 // resumeRotation answers a retry of an already-rotated token with the same
 // successor, inside the grace window. Outside it the token counts as replayed.
-func (s *AuthService) resumeRotation(ctx context.Context, consumed *models.RefreshToken) (*LoginResult, error) {
+func (s *AuthService) resumeRotation(ctx context.Context, presented string, consumed *models.RefreshToken) (*LoginResult, error) {
 	if consumed.RotatedAt == nil || consumed.ReplacedBy == nil || time.Since(*consumed.RotatedAt) > refreshGraceWindow {
 		return nil, errors.New("invalid refresh token")
 	}
-	replacement, err := s.tokenRepo.FindByToken(ctx, *consumed.ReplacedBy)
+	successor := s.successorToken(presented)
+	replacement, err := s.tokenRepo.FindByToken(ctx, successor)
 	if err != nil {
 		return nil, errors.New("invalid refresh token")
 	}
@@ -238,7 +251,7 @@ func (s *AuthService) resumeRotation(ctx context.Context, consumed *models.Refre
 	if err != nil {
 		return nil, err
 	}
-	return s.sessionResult(ctx, admin, accessToken, replacement.Token)
+	return s.sessionResult(ctx, admin, accessToken, successor)
 }
 
 // activeWeddingScope returns weddingID only while the user still has access to
