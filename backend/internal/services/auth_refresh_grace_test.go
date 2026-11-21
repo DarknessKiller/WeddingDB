@@ -99,7 +99,8 @@ func TestRefresh_ReplayAfterGraceRejected(t *testing.T) {
 	seedAdmin(t, db, adminID, "admin")
 	seedRefreshToken(t, db, adminID, nil, refreshStr)
 
-	if _, err := svc.Refresh(context.Background(), refreshStr, ""); err != nil {
+	first, err := svc.Refresh(context.Background(), refreshStr, "")
+	if err != nil {
 		t.Fatalf("first Refresh failed: %v", err)
 	}
 
@@ -108,6 +109,13 @@ func TestRefresh_ReplayAfterGraceRejected(t *testing.T) {
 
 	if _, err := svc.Refresh(context.Background(), refreshStr, ""); err == nil {
 		t.Fatal("expected a replay outside the grace window to be rejected")
+	}
+	// Reuse detection ends every session: the successor and access tokens die.
+	if _, err := svc.Refresh(context.Background(), first.RefreshToken, ""); err == nil {
+		t.Fatal("successor still usable after reuse was detected")
+	}
+	if _, err := svc.ValidateToken(context.Background(), first.AccessToken); err == nil {
+		t.Fatal("access token still valid after reuse was detected")
 	}
 }
 

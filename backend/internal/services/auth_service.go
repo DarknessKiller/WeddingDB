@@ -231,7 +231,15 @@ func (s *AuthService) successorToken(presented string) string {
 // resumeRotation answers a retry of an already-rotated token with the same
 // successor, inside the grace window. Outside it the token counts as replayed.
 func (s *AuthService) resumeRotation(ctx context.Context, presented string, consumed *models.RefreshToken) (*LoginResult, error) {
-	if consumed.RotatedAt == nil || consumed.ReplacedBy == nil || time.Since(*consumed.RotatedAt) > refreshGraceWindow {
+	if consumed.RotatedAt == nil || consumed.ReplacedBy == nil {
+		return nil, errors.New("invalid refresh token")
+	}
+	if time.Since(*consumed.RotatedAt) > refreshGraceWindow {
+		// A consumed token reused after the grace window means it leaked: end
+		// every session of the user so the thief's successor dies too.
+		if err := s.RevokeUserTokens(ctx, consumed.AdminID); err != nil {
+			slog.Error("revoke sessions after refresh token reuse", "admin", consumed.AdminID, "err", err)
+		}
 		return nil, errors.New("invalid refresh token")
 	}
 	successor := s.successorToken(presented)
