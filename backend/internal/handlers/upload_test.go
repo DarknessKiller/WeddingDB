@@ -300,3 +300,21 @@ func TestUpload_SVGMagic(t *testing.T) {
 		})
 	}
 }
+
+func TestUpload_WebPMagic(t *testing.T) {
+	for name, tc := range map[string]struct {
+		body string
+		ok   bool
+	}{
+		"webp":      {"RIFF\x10\x00\x00\x00WEBPVP8 ", true},
+		"wav":       {"RIFF\x10\x00\x00\x00WAVEfmt ", false},
+		"bare riff": {"RIFF", false},
+	} {
+		t.Run(name, func(t *testing.T) {
+			rec := runUpload(t, "bg.webp", []byte(tc.body))
+			if got := rec.Code == http.StatusCreated; got != tc.ok {
+				t.Fatalf("status = %d, want accepted=%v", rec.Code, tc.ok)
+			}
+		})
+	}
+}

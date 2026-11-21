@@ -35,6 +35,10 @@ func matchesMagic(ext string, head []byte) bool {
 		head = bytes.TrimLeft(bytes.TrimPrefix(head, []byte("\xef\xbb\xbf")), " \t\r\n")
 		return bytes.HasPrefix(head, []byte("<?xml")) || bytes.HasPrefix(head, []byte("<svg"))
 	}
+	if ext == ".webp" {
+		// RIFF is a generic container (WAV, AVI); WebP adds "WEBP" after the size.
+		return len(head) >= 12 && bytes.HasPrefix(head, magicBytes[ext]) && string(head[8:12]) == "WEBP"
+	}
 	return bytes.HasPrefix(head, magicBytes[ext])
 }
 
