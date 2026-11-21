@@ -345,3 +345,19 @@ func TestXLSXOutputStructure(t *testing.T) {
 		t.Errorf("Summary B8 (table total): %q, want 450", cell)
 	}
 }
+
+func TestCSVSafe(t *testing.T) {
+	cases := map[string]string{
+		"Alice":                           "Alice",
+		"=HYPERLINK(\"https://x\",\"y\")": "'=HYPERLINK(\"https://x\",\"y\")",
+		"+1234":                           "'+1234",
+		"-1+1":                            "'-1+1",
+		"@SUM(A1)":                        "'@SUM(A1)",
+		"":                                "",
+	}
+	for in, want := range cases {
+		if got := csvSafe(in); got != want {
+			t.Errorf("csvSafe(%q) = %q, want %q", in, got, want)
+		}
+	}
+}

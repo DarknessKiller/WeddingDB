@@ -85,7 +85,7 @@ func (s *ReportService) GenerateCSV(ctx context.Context, weddingID uuid.UUID) ([
 
 	// Data rows
 	for _, r := range rows {
-		w.Write([]string{r.GuestName, r.TableName, r.SeatStr, r.AngbaoStr, r.GiftItem, r.CheckedIn})
+		w.Write([]string{csvSafe(r.GuestName), csvSafe(r.TableName), r.SeatStr, r.AngbaoStr, csvSafe(r.GiftItem), r.CheckedIn})
 	}
 
 	// Blank row separator
@@ -102,7 +102,7 @@ func (s *ReportService) GenerateCSV(ctx context.Context, weddingID uuid.UUID) ([
 	w.Write([]string{"TABLE TOTALS", "Angbao (RM)", "", "", "", ""})
 	sortedTableNames := s.sortedTableKeys(summary.TotalByTable)
 	for _, tName := range sortedTableNames {
-		w.Write([]string{tName, fmt.Sprintf("RM %d", summary.TotalByTable[tName]), "", "", "", ""})
+		w.Write([]string{csvSafe(tName), fmt.Sprintf("RM %d", summary.TotalByTable[tName]), "", "", "", ""})
 	}
 
 	// Gift items
@@ -110,7 +110,7 @@ func (s *ReportService) GenerateCSV(ctx context.Context, weddingID uuid.UUID) ([
 		w.Write([]string{})
 		w.Write([]string{"GIFT ITEMS", "", "", "", "", ""})
 		for _, g := range summary.GiftItems {
-			w.Write([]string{g, "", "", "", "", ""})
+			w.Write([]string{csvSafe(g), "", "", "", "", ""})
 		}
 	}
 
@@ -367,4 +367,18 @@ func cellName(col, row int) string {
 		panic(fmt.Sprintf("cellName(%d, %d): %v", col, row, err))
 	}
 	return name
+}
+
+// csvSafe neutralizes spreadsheet formulas in user-supplied cells. A name or
+// gift starting with one of these characters executes when the export is
+// opened in Excel or LibreOffice (CSV injection).
+func csvSafe(s string) string {
+	if s == "" {
+		return s
+	}
+	switch s[0] {
+	case '=', '+', '-', '@', '\t', '\r':
+		return "'" + s
+	}
+	return s
 }
