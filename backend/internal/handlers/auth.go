@@ -36,6 +36,10 @@ func validatePassword(password string) error {
 	if len(password) < 8 {
 		return fuego.BadRequestError{Title: "Password must be at least 8 characters"}
 	}
+	// bcrypt rejects more than 72 bytes; say so instead of answering 500.
+	if len(password) > 72 {
+		return fuego.BadRequestError{Title: "Password must be at most 72 bytes"}
+	}
 	var hasLetter, hasDigit, hasSymbol bool
 	for _, c := range password {
 		switch {

@@ -3,6 +3,7 @@ package handlers
 import (
 	"encoding/json"
 	"net/mail"
+	"strings"
 	"testing"
 )
 
@@ -118,6 +119,12 @@ func TestValidatePassword(t *testing.T) {
 	}
 	if err := validatePassword("alllower1!"); err != nil {
 		t.Errorf("lowercase-only valid password rejected: %v", err)
+	}
+	if err := validatePassword("Aa1!" + strings.Repeat("x", 68)); err != nil {
+		t.Errorf("72-byte password rejected: %v", err)
+	}
+	if err := validatePassword("Aa1!" + strings.Repeat("x", 69)); err == nil {
+		t.Error("73-byte password should fail (bcrypt limit)")
 	}
 }
 
