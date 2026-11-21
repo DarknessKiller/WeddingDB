@@ -2,8 +2,8 @@ import { apiFetch } from './client';
 import { get } from 'svelte/store';
 import { weddingId } from '#lib/stores/weddingId.ts';
 import { applyGuestResponse } from '#lib/stores/guestEvents.ts';
-import { enqueue, syncQueue } from '#lib/offline/queue.ts';
-import { guestList, guestMap } from '#lib/stores/guestEvents.ts';
+import { enqueue } from '#lib/offline/queue.ts';
+import { guestList } from '#lib/stores/guestEvents.ts';
 
 function isOffline() {
 	return typeof navigator !== 'undefined' && !navigator.onLine;
@@ -22,7 +22,7 @@ function optimisticPatch(op: string, guestId: string, data?: Record<string, unkn
 		if (op === 'create' && data) {
 			const now = new Date();
 			const g = { id: guestId, name: (data.name as string) || '', email: (data.email as string) || '', pax: (data.pax as number) || 1, rsvp: (data.rsvp as string) || 'no_response', isVip: !!data.isVip, notes: (data.notes as string) || '', dietaryRequirements: (data.dietary as string[]) || [], tableId: (data.tableId as string | null) || null, seatNumber: (data.seatNum as number | null) ?? null, checkedIn: false, createdAt: now, updatedAt: now } as unknown as import('#lib/types/index.ts').Guest;
-			guestList.update(l => [...l, g]); guestMap.update(m => { const n = new Map(m); n.set(guestId, g); return n; });
+			guestList.update(l => [...l, g]);
 		} else if (op === 'update' && data) {
 			// Explicit null (or "") in the patch overrides/clears the old value;
 			// undefined keeps the old value (partial payloads like seat assign).
@@ -42,7 +42,7 @@ function optimisticPatch(op: string, guestId: string, data?: Record<string, unkn
 				updatedAt: new Date()
 			} as unknown as import('#lib/types/index.ts').Guest : x));
 		} else if (op === 'delete') {
-			guestList.update(l => l.filter(x => x.id !== guestId)); guestMap.update(m => { const n = new Map(m); n.delete(guestId); return n; });
+			guestList.update(l => l.filter(x => x.id !== guestId));
 		} else if (op === 'checkin') {
 			const now = new Date();
 			const addedNotes = typeof data?.notes === 'string' ? data.notes.trim() : '';
@@ -242,9 +242,6 @@ export async function unassignSeat(weddingId: string, guestId: string): Promise<
 		if (isNetworkError(e)) { doQueue(); return; }
 		throw e;
 	}
-}
-export async function syncOfflineQueue(weddingId: string): Promise<{ applied: number; skipped: number }> {
-	return syncQueue(weddingId);
 }
 
 export async function searchGuests(weddingId: string, query: string): Promise<GuestResponse[]> {

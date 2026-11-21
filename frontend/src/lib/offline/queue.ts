@@ -47,10 +47,6 @@ export function clearQueue(wid: string) {
 	notifyChanged();
 }
 
-export function queuedCount(wid: string): number {
-	return getQueue(wid).length;
-}
-
 export function cacheGuests(wid: string, guests: unknown[]) {
 	try { localStorage.setItem(ckey(wid), JSON.stringify(guests)); } catch {}
 }

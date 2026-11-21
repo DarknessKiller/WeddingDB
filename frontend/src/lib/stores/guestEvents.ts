@@ -8,9 +8,6 @@ import type { GuestResponse } from '#lib/api/guests.ts';
 // All guests for the current wedding, kept in sync via SSE.
 export const guestList = writable<Guest[]>([]);
 
-// Quick lookup by guest ID.
-export const guestMap = writable<Map<string, Guest>>(new Map());
-
 // Table occupancy: tableId -> total pax seated. Derived so every guestList
 // write (seed, SSE, optimistic offline patch) keeps it current.
 export const tableOccupancy = derived(guestList, (guests) => {
@@ -98,11 +95,6 @@ export async function refreshGuests(fetchFn: () => Promise<Guest[]>): Promise<Gu
  */
 export function seedGuests(guests: Guest[]) {
 	guestList.set(guests);
-	const map = new Map<string, Guest>();
-	for (const g of guests) {
-		map.set(g.id, g);
-	}
-	guestMap.set(map);
 	if (syncing) {
 		syncing = false;
 		const pending = queuedEvents;
@@ -136,15 +128,6 @@ function handleGuestEvent(event: GuestEvent) {
 		return [...list, guest];
 	});
 
-	guestMap.update((map) => {
-		const newMap = new Map(map);
-		if (type === 'delete') {
-			newMap.delete(guest.id);
-		} else {
-			newMap.set(guest.id, guest);
-		}
-		return newMap;
-	});
 
 	// If the drawer is showing this guest, update it live.
 	const current = get(selectedGuest);
@@ -188,7 +171,6 @@ export function applyGuestResponse(resp: GuestResponse) {
 		newList[idx] = guest;
 		return newList;
 	});
-	guestMap.update((map) => new Map(map).set(guest.id, guest));
 
 	const current = get(selectedGuest);
 	if (current?.id === guest.id) selectedGuest.set(guest);
@@ -219,10 +201,5 @@ function eventGuestToGuest(d: NonNullable<GuestEvent['guest']>, eventTimestamp: 
 /** Drop a guest the server no longer has (deleted on another device). */
 export function removeGuest(id: string) {
 	guestList.update((list) => list.filter((g) => g.id !== id));
-	guestMap.update((map) => {
-		const next = new Map(map);
-		next.delete(id);
-		return next;
-	});
 	if (get(selectedGuest)?.id === id) selectedGuest.set(null);
 }

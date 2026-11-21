@@ -12,7 +12,7 @@
   import { syncQueue, cacheGuests, loadCachedGuests } from '#lib/offline/queue.ts';
   import { getWedding } from '#lib/api/weddings.ts';
   import { listTables } from '#lib/api/tables.ts';
-  import { initializeSSE, refreshGuests, guestList, guestMap } from '#lib/stores/guestEvents.ts';
+  import { initializeSSE, refreshGuests, guestList } from '#lib/stores/guestEvents.ts';
   import type { BanquetTable } from '#lib/types/index.ts';
 
   let { children } = $props();
@@ -70,7 +70,6 @@
     // These stores outlive the layout. Clear them before children render so
     // the previous wedding's guests can never flash in this one.
     guestList.set([]);
-    guestMap.set(new Map());
     selectedGuest.set(null);
     weddingTitle.set('');
     authChecked = true;

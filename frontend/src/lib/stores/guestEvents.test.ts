@@ -49,13 +49,12 @@ async function freshModule() {
 	vi.resetModules();
 	const mod = await import('./guestEvents');
 	mod.guestList.set([]);
-	mod.guestMap.set(new Map());
 	return mod;
 }
 
 describe('guestEvents store', () => {
-	it('seedGuests populates guestList and guestMap', async () => {
-		const { seedGuests, guestList, guestMap } = await freshModule();
+	it('seedGuests populates guestList', async () => {
+		const { seedGuests, guestList } = await freshModule();
 		const guests = [
 			makeGuest({ id: 'g1', name: 'Alice' }),
 			makeGuest({ id: 'g2', name: 'Bob', tableId: 't2' })
@@ -66,11 +65,6 @@ describe('guestEvents store', () => {
 		const list = get(guestList);
 		expect(list).toHaveLength(2);
 		expect(list[0].name).toBe('Alice');
-
-		const map = get(guestMap);
-		expect(map.size).toBe(2);
-		expect(map.get('g1')?.name).toBe('Alice');
-		expect(map.get('g2')?.name).toBe('Bob');
 	});
 
 	it('seedGuests calculates occupancy', async () => {
