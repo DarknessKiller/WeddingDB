@@ -233,3 +233,15 @@ function eventGuestToGuest(d: NonNullable<GuestEvent['guest']>, eventTimestamp: 
 		updatedAt
 	};
 }
+
+/** Drop a guest the server no longer has (deleted on another device). */
+export function removeGuest(id: string) {
+	guestList.update((list) => list.filter((g) => g.id !== id));
+	guestMap.update((map) => {
+		const next = new Map(map);
+		next.delete(id);
+		return next;
+	});
+	if (get(selectedGuest)?.id === id) selectedGuest.set(null);
+	recalculateOccupancy();
+}

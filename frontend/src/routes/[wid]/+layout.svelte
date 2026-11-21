@@ -4,7 +4,7 @@
   import Sidebar from '#lib/components/layout/Sidebar.svelte';
   import Header from '#lib/components/layout/Header.svelte';
   import Drawer from '#lib/components/ui/Drawer.svelte';
-  import { selectedGuest, isDrawerOpen, drawerStartEditing, drawerCreateMode, sidebarCollapsed, showSeatNumbers, setShowSeatNumbers } from '#lib/stores/index.ts';
+  import { selectedGuest, isDrawerOpen, drawerStartEditing, drawerCreateMode, sidebarCollapsed, showSeatNumbers, setShowSeatNumbers, addToast } from '#lib/stores/index.ts';
   import { weddingId, setWeddingId } from '#lib/stores/weddingId.ts';
   import { weddingTitle } from '#lib/stores/weddingTitle.ts';
   import { validateToken } from '#lib/utils/auth.ts';
@@ -155,7 +155,7 @@
       {#if offline}
         <div class="offline-banner">Offline — changes queued{queued ? ` (${queued})` : ''}</div>
       {:else if queued}
-        <div class="offline-banner queued">{queued} queued — syncing on reconnect <button onclick={async () => { await syncQueue(wid); refreshQueued(); }}>Sync now</button></div>
+        <div class="offline-banner queued">{queued} queued — syncing on reconnect <button onclick={async () => { try { await syncQueue(wid); } catch { addToast('Could not sync yet; changes stay queued', 'error'); } refreshQueued(); refreshGuests(loadGuests).catch(() => {}); }}>Sync now</button></div>
       {/if}
       <Header />
       <main class="main-content">

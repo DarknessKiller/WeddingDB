@@ -1,4 +1,7 @@
 import { apiFetch } from '#lib/api/client.ts';
+import { applyGuestResponse, removeGuest } from '#lib/stores/guestEvents.ts';
+import { addToast } from '#lib/stores/index.ts';
+import type { GuestResponse } from '#lib/api/guests.ts';
 
 export type SyncOp = 'create' | 'update' | 'delete' | 'checkin' | 'checkout';
 
@@ -71,11 +74,21 @@ export async function syncQueue(wid: string): Promise<{ applied: number; skipped
 	let applied = 0, skipped = 0;
 	for (let i = 0; i < q.length && i < data.results.length; i++) {
 		const r = data.results[i];
-		if (r.status === 'applied') { applied++; appliedIds.push(q[i].mutationId); }
-		else if (r.status === 'skipped') { skipped++; appliedIds.push(q[i].mutationId); }
+		if (r.status === 'applied') {
+			applied++;
+			appliedIds.push(q[i].mutationId);
+		} else if (r.status === 'skipped') {
+			skipped++;
+			appliedIds.push(q[i].mutationId);
+			// The server kept a newer value: undo the optimistic local edit.
+			if (r.serverRecord) applyGuestResponse(r.serverRecord as GuestResponse);
+			else removeGuest(q[i].guestId);
+		}
 	}
-	// drop processed (both applied and skipped) - skipped already reverted by caller via serverRecord
 	dequeueByIds(wid, appliedIds);
+	if (skipped > 0) {
+		addToast(`${skipped} offline change${skipped === 1 ? '' : 's'} rejected: the server had a newer version`, 'error');
+	}
 	// ponytail: expose for support
 	if (typeof window !== 'undefined') (window as unknown as Record<string, unknown>).__syncLastResults = data.results;
 	console.log(`offline sync: ${applied} applied, ${skipped} skipped`);
