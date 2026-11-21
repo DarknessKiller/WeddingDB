@@ -27,7 +27,7 @@ beforeEach(async () => {
 	fetchMock = vi.fn();
 	Object.defineProperty(globalThis, 'fetch', { value: fetchMock, configurable: true });
 	const { setAuth } = await import('#lib/stores/index.ts');
-	setAuth('old-access', 'refresh-1', 'admin', 'A');
+	setAuth('old-access', 'refresh-1', 'admin', 'A', 'a@x.com');
 });
 
 afterEach(() => {
@@ -106,7 +106,7 @@ describe('apiFetch refresh recovery', () => {
 	});
 
 	it('adopts a token another tab already rotated instead of reusing the stale one', async () => {
-		localStorage.setItem('weddingdb_auth', JSON.stringify({ accessToken: 'tab2-access', refreshToken: 'refresh-2', role: 'admin', name: 'A' }));
+		localStorage.setItem('weddingdb_auth', JSON.stringify({ accessToken: 'tab2-access', refreshToken: 'refresh-2', role: 'admin', name: 'A', user: 'a@x.com' }));
 		fetchMock
 			.mockResolvedValueOnce(res({}, 401))
 			.mockResolvedValueOnce(res({ guests: [] }));
@@ -120,6 +120,22 @@ describe('apiFetch refresh recovery', () => {
 		expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/auth/refresh'))).toBe(false);
 		expect(fetchMock.mock.calls[1][1].headers.Authorization).toBe('Bearer tab2-access');
 		expect(getAuth().refreshToken).toBe('refresh-2');
+	});
+
+	it('never adopts tokens of another user who logged in from another tab', async () => {
+		const other = JSON.stringify({ accessToken: 'b-access', refreshToken: 'refresh-b', role: 'staff', name: 'B', user: 'b@x.com' });
+		localStorage.setItem('weddingdb_auth', other);
+		fetchMock.mockResolvedValueOnce(res({}, 401));
+
+		const { apiFetch } = await import('./client');
+		const { getAuth } = await import('#lib/stores/index.ts');
+		const result = await apiFetch('/api/guests');
+
+		expect(result.status).toBe(401);
+		expect(fetchMock).toHaveBeenCalledTimes(1);
+		expect(getAuth()).toMatchObject({ accessToken: null, refreshToken: null });
+		expect(location.href).toBe('/login');
+		expect(localStorage.getItem('weddingdb_auth')).toBe(other);
 	});
 
 	it('re-picks the URL wedding when another tab rescoped the shared token', async () => {

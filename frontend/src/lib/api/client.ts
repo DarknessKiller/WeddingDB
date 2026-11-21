@@ -1,4 +1,4 @@
-import { getAuth, setAuth, expireAuth, readStoredAuth } from '#lib/stores/index.ts';
+import { getAuth, setAuth, expireAuth, readStoredAuth, isSameUser, dropForeignSession } from '#lib/stores/index.ts';
 import { setWeddingId } from '#lib/stores/weddingId.ts';
 import { withTimeout } from '#lib/utils/index.ts';
 
@@ -21,6 +21,12 @@ async function doRefresh(): Promise<boolean> {
 		return false;
 	}
 	if (stored.refreshToken !== refreshToken) {
+		// Another user logged in from another tab: never become them.
+		if (!isSameUser(stored)) {
+			dropForeignSession();
+			if (typeof window !== 'undefined') window.location.href = '/login';
+			return false;
+		}
 		setAuth(stored.accessToken, stored.refreshToken, stored.role, stored.name);
 		return true;
 	}
