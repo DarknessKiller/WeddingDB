@@ -44,7 +44,10 @@ type GuestEventData struct {
 const maxClientsPerWedding = 100
 
 // maxClientsPerUser stops one account from taking every slot in a wedding.
-const maxClientsPerUser = 5
+// It is sized for one shared door login on every phone and tablet at the
+// reception: below the device count, each reconnect evicts another device and
+// the streams evict each other forever.
+const maxClientsPerUser = 20
 
 // SSEClient represents a connected SSE client.
 type SSEClient struct {
