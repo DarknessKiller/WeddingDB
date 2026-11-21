@@ -203,96 +203,123 @@ func (s *ReportService) GenerateXLSX(ctx context.Context, weddingID uuid.UUID) (
 		return nil, "", fmt.Errorf("summary header style: %w", err)
 	}
 
+	// The first write error sticks and later writes are skipped, so the sheet
+	// code reads straight through and one check below reports it.
+	var werr error
+	set := func(sheet, cell string, v any) {
+		if werr == nil {
+			werr = f.SetCellValue(sheet, cell, v)
+		}
+	}
+	style := func(sheet, from, to string, id int) {
+		if werr == nil {
+			werr = f.SetCellStyle(sheet, from, to, id)
+		}
+	}
+	width := func(sheet, from, to string, w float64) {
+		if werr == nil {
+			werr = f.SetColWidth(sheet, from, to, w)
+		}
+	}
+
 	// ── Sheet 1: Guest Details ──
 	detailSheet := "Guest Details"
-	f.SetSheetName("Sheet1", detailSheet)
+	if err := f.SetSheetName("Sheet1", detailSheet); err != nil {
+		return nil, "", fmt.Errorf("name detail sheet: %w", err)
+	}
 
 	detailHeaders := []string{"Guest Name", "Table", "Seat", "Angbao (RM)", "Gift Item", "Checked In"}
 	for i, h := range detailHeaders {
-		f.SetCellValue(detailSheet, cellName(i+1, 1), h)
+		set(detailSheet, cellName(i+1, 1), h)
 	}
 	for i := range detailHeaders {
 		cell := cellName(i+1, 1)
-		f.SetCellStyle(detailSheet, cell, cell, headerStyle)
+		style(detailSheet, cell, cell, headerStyle)
 	}
 
 	for ri, r := range rows {
 		rowNum := ri + 2
-		f.SetCellValue(detailSheet, cellName(1, rowNum), r.GuestName)
-		f.SetCellValue(detailSheet, cellName(2, rowNum), r.TableName)
+		set(detailSheet, cellName(1, rowNum), r.GuestName)
+		set(detailSheet, cellName(2, rowNum), r.TableName)
 		if r.SeatNum > 0 {
-			f.SetCellValue(detailSheet, cellName(3, rowNum), r.SeatNum)
+			set(detailSheet, cellName(3, rowNum), r.SeatNum)
 		} else {
-			f.SetCellValue(detailSheet, cellName(3, rowNum), "-")
+			set(detailSheet, cellName(3, rowNum), "-")
 		}
 		if r.AngbaoAmt > 0 {
-			f.SetCellValue(detailSheet, cellName(4, rowNum), r.AngbaoAmt)
-			f.SetCellStyle(detailSheet, cellName(4, rowNum), cellName(4, rowNum), currencyStyle)
+			set(detailSheet, cellName(4, rowNum), r.AngbaoAmt)
+			style(detailSheet, cellName(4, rowNum), cellName(4, rowNum), currencyStyle)
 		} else {
-			f.SetCellValue(detailSheet, cellName(4, rowNum), "-")
+			set(detailSheet, cellName(4, rowNum), "-")
 		}
-		f.SetCellValue(detailSheet, cellName(5, rowNum), r.GiftItem)
-		f.SetCellValue(detailSheet, cellName(6, rowNum), r.CheckedIn)
+		set(detailSheet, cellName(5, rowNum), r.GiftItem)
+		set(detailSheet, cellName(6, rowNum), r.CheckedIn)
 	}
 
-	f.SetColWidth(detailSheet, "A", "A", 30)
-	f.SetColWidth(detailSheet, "B", "B", 15)
-	f.SetColWidth(detailSheet, "C", "C", 8)
-	f.SetColWidth(detailSheet, "D", "D", 15)
-	f.SetColWidth(detailSheet, "E", "E", 30)
-	f.SetColWidth(detailSheet, "F", "F", 22)
+	width(detailSheet, "A", "A", 30)
+	width(detailSheet, "B", "B", 15)
+	width(detailSheet, "C", "C", 8)
+	width(detailSheet, "D", "D", 15)
+	width(detailSheet, "E", "E", 30)
+	width(detailSheet, "F", "F", 22)
 
 	// ── Sheet 2: Summary ──
 	summarySheet := "Summary"
-	f.NewSheet(summarySheet)
+	if _, err := f.NewSheet(summarySheet); err != nil {
+		return nil, "", fmt.Errorf("add summary sheet: %w", err)
+	}
 
-	f.SetCellValue(summarySheet, "A1", "Angpao Report Summary")
-	f.SetCellStyle(summarySheet, "A1", "A1", summaryBold)
+	set(summarySheet, "A1", "Angpao Report Summary")
+	style(summarySheet, "A1", "A1", summaryBold)
 
-	f.SetCellValue(summarySheet, "A3", "Total Angbao (RM)")
-	f.SetCellValue(summarySheet, "B3", summary.TotalAngbao)
-	f.SetCellStyle(summarySheet, "A3", "A3", summaryBold)
-	f.SetCellStyle(summarySheet, "B3", "B3", currencyStyle)
+	set(summarySheet, "A3", "Total Angbao (RM)")
+	set(summarySheet, "B3", summary.TotalAngbao)
+	style(summarySheet, "A3", "A3", summaryBold)
+	style(summarySheet, "B3", "B3", currencyStyle)
 
-	f.SetCellValue(summarySheet, "A4", "Total Guests")
-	f.SetCellValue(summarySheet, "B4", summary.TotalGuests)
-	f.SetCellStyle(summarySheet, "A4", "A4", summaryBold)
+	set(summarySheet, "A4", "Total Guests")
+	set(summarySheet, "B4", summary.TotalGuests)
+	style(summarySheet, "A4", "A4", summaryBold)
 
-	f.SetCellValue(summarySheet, "A5", "Checked In")
-	f.SetCellValue(summarySheet, "B5", summary.CheckedInGuests)
-	f.SetCellStyle(summarySheet, "A5", "A5", summaryBold)
+	set(summarySheet, "A5", "Checked In")
+	set(summarySheet, "B5", summary.CheckedInGuests)
+	style(summarySheet, "A5", "A5", summaryBold)
 
 	// Per-table totals
-	f.SetCellValue(summarySheet, "A7", "Table")
-	f.SetCellValue(summarySheet, "B7", "Angbao (RM)")
-	f.SetCellStyle(summarySheet, "A7", "B7", summaryHeader)
+	set(summarySheet, "A7", "Table")
+	set(summarySheet, "B7", "Angbao (RM)")
+	style(summarySheet, "A7", "B7", summaryHeader)
 
 	rowNum := 8
 	for _, t := range summary.TotalByTable {
-		f.SetCellValue(summarySheet, cellName(1, rowNum), t.Name)
-		f.SetCellValue(summarySheet, cellName(2, rowNum), t.Amount)
-		f.SetCellStyle(summarySheet, cellName(2, rowNum), cellName(2, rowNum), currencyStyle)
+		set(summarySheet, cellName(1, rowNum), t.Name)
+		set(summarySheet, cellName(2, rowNum), t.Amount)
+		style(summarySheet, cellName(2, rowNum), cellName(2, rowNum), currencyStyle)
 		rowNum++
 	}
 
 	// Gift items
 	if len(summary.GiftItems) > 0 {
 		rowNum++
-		f.SetCellValue(summarySheet, cellName(1, rowNum), "Gift Items")
-		f.SetCellStyle(summarySheet, cellName(1, rowNum), cellName(1, rowNum), summaryHeader)
+		set(summarySheet, cellName(1, rowNum), "Gift Items")
+		style(summarySheet, cellName(1, rowNum), cellName(1, rowNum), summaryHeader)
 		rowNum++
 		for _, g := range summary.GiftItems {
-			f.SetCellValue(summarySheet, cellName(1, rowNum), g)
+			set(summarySheet, cellName(1, rowNum), g)
 			rowNum++
 		}
 	}
 
-	f.SetColWidth(summarySheet, "A", "A", 30)
-	f.SetColWidth(summarySheet, "B", "B", 15)
+	width(summarySheet, "A", "A", 30)
+	width(summarySheet, "B", "B", 15)
+
+	if werr != nil {
+		return nil, "", fmt.Errorf("write xlsx cells: %w", werr)
+	}
 
 	var buf bytes.Buffer
 	if err := f.Write(&buf); err != nil {
-		return nil, "", err
+		return nil, "", fmt.Errorf("write xlsx: %w", err)
 	}
 
 	filename := fmt.Sprintf("report-%s-%s.xlsx",
