@@ -90,34 +90,34 @@ func Init(env config.Env, version string) *App {
 
 	// Backfill name_pinyin only for rows missing it. A full scan here reads every
 	// guest ever added on each boot, so it grows with total history forever.
-	db.Exec("CREATE INDEX IF NOT EXISTS idx_guest_records_missing_pinyin ON guest_records (id) WHERE name_pinyin IS NULL OR name_pinyin = ''")
+	execBoot(db, "CREATE INDEX IF NOT EXISTS idx_guest_records_missing_pinyin ON guest_records (id) WHERE name_pinyin IS NULL OR name_pinyin = ''")
 	var missing []models.GuestRecord
-	db.Select("id", "name", "name_pinyin").
+	warnBoot("load guests missing pinyin", db.Select("id", "name", "name_pinyin").
 		Where("(name_pinyin IS NULL OR name_pinyin = '') AND name <> ''").
-		Find(&missing)
+		Find(&missing).Error)
 	for _, g := range missing {
 		py := models.GenerateNamePinyin(g.Name)
 		if py != g.NamePinyin {
-			db.Model(&models.GuestRecord{}).Where("id = ?", g.ID).Update("name_pinyin", py)
+			warnBoot("backfill pinyin for guest "+g.ID.String(), db.Model(&models.GuestRecord{}).Where("id = ?", g.ID).Update("name_pinyin", py).Error)
 		}
 	}
 
 	// ponytail: GIN indexes for trigram search (ILIKE '%..%')
-	db.Exec("CREATE EXTENSION IF NOT EXISTS pg_trgm")
-	db.Exec("CREATE INDEX IF NOT EXISTS idx_guest_records_name_trgm ON guest_records USING gin (name gin_trgm_ops)")
-	db.Exec("CREATE INDEX IF NOT EXISTS idx_guest_records_name_pinyin_trgm ON guest_records USING gin (name_pinyin gin_trgm_ops)")
-	db.Exec("CREATE INDEX IF NOT EXISTS idx_guest_records_wedding_id ON guest_records (wedding_id, id)")
-	db.Exec("CREATE INDEX IF NOT EXISTS idx_guest_records_wedding_name ON guest_records (wedding_id, name)")
+	execBoot(db, "CREATE EXTENSION IF NOT EXISTS pg_trgm")
+	execBoot(db, "CREATE INDEX IF NOT EXISTS idx_guest_records_name_trgm ON guest_records USING gin (name gin_trgm_ops)")
+	execBoot(db, "CREATE INDEX IF NOT EXISTS idx_guest_records_name_pinyin_trgm ON guest_records USING gin (name_pinyin gin_trgm_ops)")
+	execBoot(db, "CREATE INDEX IF NOT EXISTS idx_guest_records_wedding_id ON guest_records (wedding_id, id)")
+	execBoot(db, "CREATE INDEX IF NOT EXISTS idx_guest_records_wedding_name ON guest_records (wedding_id, name)")
 
 	// ponytail: FK lookup indexes
-	db.Exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_admin_users_email ON admin_users (email)")
-	db.Exec("CREATE INDEX IF NOT EXISTS idx_banquet_tables_wedding_name ON banquet_tables (wedding_id, name)")
-	db.Exec("CREATE INDEX IF NOT EXISTS idx_refresh_tokens_wedding_id ON refresh_tokens (wedding_id)")
-	db.Exec("CREATE INDEX IF NOT EXISTS idx_refresh_tokens_expires_at ON refresh_tokens (expires_at)")
+	execBoot(db, "CREATE UNIQUE INDEX IF NOT EXISTS idx_admin_users_email ON admin_users (email)")
+	execBoot(db, "CREATE INDEX IF NOT EXISTS idx_banquet_tables_wedding_name ON banquet_tables (wedding_id, name)")
+	execBoot(db, "CREATE INDEX IF NOT EXISTS idx_refresh_tokens_wedding_id ON refresh_tokens (wedding_id)")
+	execBoot(db, "CREATE INDEX IF NOT EXISTS idx_refresh_tokens_expires_at ON refresh_tokens (expires_at)")
 
 	// Expired refresh tokens are unusable; drop them so the table does not grow
 	// forever. Keep a week for debugging.
-	db.Where("expires_at < ?", time.Now().AddDate(0, 0, -7)).Delete(&models.RefreshToken{})
+	warnBoot("delete expired refresh tokens", db.Where("expires_at < ?", time.Now().AddDate(0, 0, -7)).Delete(&models.RefreshToken{}).Error)
 
 	if db.Migrator().HasColumn(&models.HallElement{}, "label") {
 		if err := db.Migrator().DropColumn(&models.HallElement{}, "label"); err != nil {
@@ -259,6 +259,19 @@ func Init(env config.Env, version string) *App {
 		SSEHub:          sseHub,
 		ShutdownTracing: traceShutdown,
 	}
+}
+
+// warnBoot logs a failed best-effort boot step (index, backfill, cleanup):
+// the server still starts, slower or with stale data, rather than not at all.
+func warnBoot(step string, err error) {
+	if err != nil {
+		log.Printf("warning: boot step %s: %v", step, err)
+	}
+}
+
+// execBoot runs a best-effort boot statement and logs a failure.
+func execBoot(db *gorm.DB, stmt string) {
+	warnBoot(stmt, db.Exec(stmt).Error)
 }
 
 func getEnv(key, fallback string) string {
