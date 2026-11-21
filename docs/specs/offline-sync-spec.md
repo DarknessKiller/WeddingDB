@@ -1,6 +1,6 @@
 # Offline Sync — Implementation Spec
 
-Guest-only offline with newer-time-wins, a local guest cache, and device-local
+Guest-only offline with per-field last-write-wins, a local guest cache, and device-local
 search. Queued mutations replay when the network returns.
 
 ## Glossary
@@ -11,7 +11,7 @@ search. Queued mutations replay when the network returns.
 | Mutation | One offline intent: `create`, `update`, `delete`, `checkin`, `checkout`. Stored in a `localStorage` queue per wedding. |
 | Queue | `localStorage` key `offline_queue_{wid}`: FIFO array of `QueuedMutation`. |
 | Cache | `sessionStorage` key `offline_cache_{wid}`: last complete guest list for the wedding. Tab-scoped so a closed tab leaves no roster. |
-| LWW | Last-write-wins on the guest's `UpdatedAt`, with the client timestamp as the candidate. |
+| LWW | Last-write-wins per guest field: each field keeps the value of its newest write, by the write's client timestamp. See [Invariants](#invariants). |
 
 ## Domain model
 
@@ -32,9 +32,8 @@ input without a server round trip.
 ## Decisions
 
 - Guest-only offline. Tables and layout edits need a connection.
-- Whole-record LWW on `GuestRecord.UpdatedAt`. One timestamp per guest.
-- The client sends `clientUpdatedAt` and `baseUpdatedAt`; the server applies the
-  mutation when the client timestamp is not older. A future client clock is
+- Per-field LWW. The merge rules are the [Invariants](#invariants) below.
+- The client sends `clientUpdatedAt` and `baseUpdatedAt`. A future client clock is
   clamped to server time.
 - Queue is FIFO, capped at 500, with an optimistic UI update and a header badge.
 - Check-in notes are appended to the guest's existing notes during sync. A
@@ -44,6 +43,47 @@ input without a server round trip.
   before the guest list is reseeded.
 - The kiosk is read-only. Check-in stays on the staff seating screen.
 
+## Invariants
+
+The rules sync code keeps. Reviews and audits of sync code judge against this
+list. A change to a rule updates this list and the rule's test in the same diff.
+
+1. **Per-field last write wins.** Each guest field holds the value of its newest
+   write, timed by `clientUpdatedAt` (server time for online writes). A mutation
+   writes only the fields it carries; every other field keeps its value and its
+   time. `TestSync_NewestWins`, `TestSync_PartialUpdatePreservesFields`
+2. **Undo is neutral.** Check-in writes `checkedInAt`, `rsvp` and the payload
+   fields it carries. Check-out writes `checkedInAt = null`. Both win or lose on
+   time per field, like any edit. `TestSync_CheckOutBeatsUnrelatedNewerEdit`,
+   `TestSyncCheckOut_PostgresLosesToCheckInCommittedWhileWaiting`
+3. **Notes append at check-in.** A check-in note is appended to existing notes,
+   never replacing them. Exception to rule 1 for the `notes` field only.
+   `TestSyncCheckIn_PostgresConcurrentKeepsBothNotes`
+4. **Delete is a row write.** A delete applies when newer than every field write
+   on the row; an older delete fails and stays queued. `TestSync_DeleteLosesLWW_Failed`
+5. **Replay is a no-op.** A mutation already applied reports `applied` and changes
+   nothing, including notes. `TestSync_ReplayOfAppliedBatchIsApplied`,
+   `TestSync_CheckInReplayDoesNotDuplicateNotes`, `TestSync_CheckOutReplayIsApplied`
+6. **Clocks never run ahead.** A future `clientUpdatedAt` is clamped to server
+   time; a missing one fails. `TestSync_FutureClockClamped`, `TestSync_ZeroClientTimeFails`
+7. **Offline validates like online.** A field the online API refuses fails the
+   mutation without retry. `TestSync_UpdateValidatesLikeOnline`
+
+### Gaps
+
+Code and tests that break the rules above. Delete each line when fixed.
+
+- One `updated_at` per guest row. Rule 1 needs a time per field, so the code
+  gates whole mutations on the row time (`applySyncMutation`, `syncCheckIn` in
+  `guest_service.go`). Effect: phone A's offline check-in with angpao loses the
+  angpao when phone B checks the guest in later without one.
+- `TestSyncCheckIn_AlreadyCheckedInKeepsAngbaoAndArrival` asserts first write
+  wins for angpao and arrival. Rule 1 says the newest write wins.
+- `TestSync_StaleBaseKeepsOtherDesksAngbao` refuses a whole edit on a stale
+  `baseUpdatedAt`. Rule 1 applies each field on its own time.
+- `TestSync_CheckInLWW` and `TestSync_CheckOutBeatsUnrelatedNewerEdit` are named
+  after the old rules. Rename them after the invariant they guard.
+
 ## Files
 
 ### Backend
@@ -51,11 +91,8 @@ input without a server round trip.
 **`backend/internal/services/guest_service.go`** — `Sync(ctx, weddingID,
 mutations)` applies each mutation in order. A missing guest is created by
 `create` and skipped by `update`, `checkin` and `checkout`; `delete` of a
-missing guest reports applied, since the guest is already gone. Older mutations
-are skipped and return the server record; an older `delete` fails and stays
-queued. An `update` or `delete` whose `baseUpdatedAt` no longer matches the row
-fails without retry. An `update` the row already reflects reports applied, so a
-replay from a fast-clocked device is not refused as stale.
+missing guest reports applied, since the guest is already gone. Merge and
+conflict rules are the [Invariants](#invariants).
 Applied check-in/check-out mutations publish SSE events. Check-in notes are
 appended with `appendNote`.
 
@@ -136,8 +173,7 @@ timer fires -> clear query and selected guest, re-arm
 
 ## Edge cases
 
-- Clock skew: `baseUpdatedAt` detects a stale read; future client clocks are
-  clamped.
+- Clock skew: future client clocks are clamped (invariant 6).
 - Refresh fails offline: the queue is kept and the header shows the queued
   count; access tokens are still required to sync.
 - Queue full (500): drop the oldest mutation with a toast.

@@ -49,6 +49,20 @@ Files: `backend/internal/{handlers,services,repository,models,utils}`.
 - Helpers in `internal/utils` stay pure: no db, no http, no shared state (see `encoding.go`). Model methods stay pure too: JSON marshaling and derivation.
 - Tests: stdlib `testing` in `internal/<pkg>/*_test.go`, table-driven with `t.Run` when cases repeat, request/response tests for handler behaviour. No new test dependency.
 
+## Offline sync
+
+Files: `backend/internal/services/guest_service.go` (`Sync*`, `syncCheckIn`), `backend/internal/repository/guest_repo.go` (`Sync*`), `frontend/src/lib/offline/**`, `frontend/src/lib/stores/guestEvents.ts`.
+
+- Rules: [`docs/specs/offline-sync-spec.md#invariants`](docs/specs/offline-sync-spec.md#invariants). A change keeps every invariant, or updates the invariant, its test and the spec in the same diff.
+- Review and audit sync changes against that list. A behavior the list does not cover is a question for the owner, not a bug to fix.
+- A test asserting a rule carries the rule's name. A test that disagrees with an invariant is a bug in the test.
+
+### Verify
+
+```sh
+cd backend && CGO_ENABLED=1 go test -run 'Sync' ./internal/services/
+```
+
 ## Frontend pagination
 
 Files: `frontend/src/lib/api/*.ts`, `frontend/src/routes/[wid]/**/+page.svelte`.

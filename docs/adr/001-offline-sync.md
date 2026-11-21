@@ -1,7 +1,7 @@
 # ADR 001: Local-first door operations
 
 Date: 2026-08-27
-Amended: 2026-10-31
+Amended: 2026-10-31, 2026-11-21
 
 ## Context
 
@@ -53,8 +53,9 @@ using it.
   kiosk labels a cache fallback as "Offline copy".
 - Local search is only as good as the synced pinyin. Guests created offline are
   searchable by name until the sync response returns their pinyin.
-- Whole-record last-write-wins remains the merge rule. Per-field merge is still
-  deferred until clobbering is observed in real use.
+- Per-field last-write-wins is the merge rule, and undo (check-out) is neutral
+  (amended 2026-11-21, replacing whole-record LWW). The rules and their gaps
+  live in `docs/specs/offline-sync-spec.md#invariants`.
 
 ## Alternatives considered
 
@@ -64,8 +65,7 @@ using it.
   than 1,000 guests; `localStorage` is enough for one night.
 - **Client-side pinyin library:** duplicates the server dictionary and adds a
   large dependency; the server already computes the canonical value.
-- **CRDT or per-field merge:** overkill for a one-night event with a small door
-  team.
+- **CRDT:** overkill for a one-night event with a small door team.
 
 ## Status
 
