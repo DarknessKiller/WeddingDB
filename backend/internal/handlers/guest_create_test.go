@@ -113,3 +113,11 @@ func TestGuestSeatErrors_MapTo400And404(t *testing.T) {
 		t.Fatalf("assign a missing guest: status = %d, want 404", rec.Code)
 	}
 }
+
+// A name of only spaces is no name: create and update must refuse it.
+func TestGuestWrites_RejectWhitespaceName(t *testing.T) {
+	s, _, path, _ := newGuestCreateServer(t, 10)
+	if rec := serveGuest(t, s, http.MethodPost, path, `{"name":"   ","pax":1}`); rec.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400", rec.Code)
+	}
+}

@@ -5,6 +5,7 @@ import (
 	"log/slog"
 	"slices"
 	"strconv"
+	"strings"
 	"time"
 	"weddingdb/internal/models"
 	"weddingdb/internal/repository"
@@ -92,7 +93,7 @@ func (h *GuestHandler) Create(c fuego.ContextWithBody[GuestCreateRequest]) (any,
 	if err != nil {
 		return nil, fuego.BadRequestError{Title: "Invalid request"}
 	}
-	if body.Name == "" {
+	if strings.TrimSpace(body.Name) == "" {
 		return nil, fuego.BadRequestError{Title: "Name is required"}
 	}
 	if body.Pax < 1 || body.Pax > services.MaxGuestPartySize {
@@ -152,7 +153,7 @@ func (h *GuestHandler) Update(c fuego.ContextWithBody[GuestCreateRequest]) (any,
 	if err != nil {
 		return nil, fuego.BadRequestError{Title: "Invalid request"}
 	}
-	if body.Name == "" {
+	if strings.TrimSpace(body.Name) == "" {
 		return nil, fuego.BadRequestError{Title: "Name is required"}
 	}
 	if body.Pax < 1 || body.Pax > services.MaxGuestPartySize {
@@ -349,7 +350,7 @@ func (h *GuestHandler) BulkImport(c fuego.ContextWithBody[BulkImportRequest]) (a
 	var guests []models.GuestRecord
 	var rows []int
 	for _, g := range body.Guests {
-		if g.Name == "" {
+		if strings.TrimSpace(g.Name) == "" {
 			continue
 		}
 		if g.Pax < 1 {

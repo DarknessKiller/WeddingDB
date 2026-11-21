@@ -744,7 +744,7 @@ func (s *GuestService) applySyncMutation(ctx context.Context, weddingID uuid.UUI
 			s.sseHub.publishGuest("update", existing, weddingID)
 			return SyncResult{GuestID: m.GuestID, Status: "applied", ServerRecord: existing}
 		}
-		if m.Payload == nil || m.Payload.Name == nil || *m.Payload.Name == "" {
+		if m.Payload == nil || m.Payload.Name == nil || strings.TrimSpace(*m.Payload.Name) == "" {
 			return SyncResult{GuestID: m.GuestID, Status: "skipped", Reason: "name required"}
 		}
 		pax := 1
@@ -1008,7 +1008,7 @@ func syncCheckIn(ctx context.Context, tx *gorm.DB, g *models.GuestRecord, m Sync
 }
 
 func applySyncPayload(g *models.GuestRecord, p *SyncPayload, gid *uuid.UUID) error {
-	if p.Name != nil && *p.Name != "" {
+	if p.Name != nil && strings.TrimSpace(*p.Name) != "" {
 		g.Name = *p.Name
 	}
 	if p.Email != nil {
