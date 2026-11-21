@@ -77,7 +77,8 @@ export async function refreshAccessToken(): Promise<boolean> {
 // Tabs share one refresh token. When another tab picks a different wedding,
 // our next refresh comes back scoped to that one and every call here gets 403.
 // Re-pick the wedding in the URL once; admins are not wedding-scoped.
-async function reselectWedding(wid: string): Promise<boolean> {
+// Shared with the SSE client, whose stream gets the same 403.
+export async function reselectWedding(wid: string): Promise<boolean> {
 	const { accessToken, refreshToken, role, name } = getAuth();
 	if (!refreshToken || role === 'admin') return false;
 	try {

@@ -65,6 +65,20 @@ describe('SSEClient', () => {
 		vi.doUnmock('#lib/api/client');
 	});
 
+	it('re-selects the wedding when the stream is rejected with 403', async () => {
+		const reselectWedding = vi.fn(async () => true);
+		vi.doMock('#lib/api/client', () => ({ refreshAccessToken: vi.fn(), reselectWedding }));
+		fetchMock.mockResolvedValueOnce({ ok: false, status: 403, body: null });
+
+		const { getSSIClient } = await import('./sse');
+		const client = getSSIClient();
+		client.connect('wedding-123');
+
+		await vi.waitFor(() => expect(reselectWedding).toHaveBeenCalledWith('wedding-123'));
+		client.disconnect();
+		vi.doUnmock('#lib/api/client');
+	});
+
 	it('reconnects when the stream goes silent past the idle timeout', async () => {
 		vi.useFakeTimers();
 		try {

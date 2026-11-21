@@ -1,5 +1,5 @@
 import { getAuth } from '#lib/stores/index.ts';
-import { refreshAccessToken } from '#lib/api/client.ts';
+import { refreshAccessToken, reselectWedding } from '#lib/api/client.ts';
 
 export interface GuestEvent {
 	type: 'create' | 'update' | 'delete' | 'checkin' | 'checkout' | 'seat_assign';
@@ -73,6 +73,11 @@ class SSEClient {
 				// Refresh once, then let the reconnect path retry with the new token.
 				await refreshAccessToken();
 				throw new Error('SSE unauthorized');
+			}
+			if (response.status === 403) {
+				// Another tab rescoped the shared token to its wedding: re-pick ours, then reconnect.
+				await reselectWedding(weddingId);
+				throw new Error('SSE forbidden');
 			}
 			if (!response.ok || !response.body) throw new Error(`SSE request failed: ${response.status}`);
 
