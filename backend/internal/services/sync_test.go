@@ -226,6 +226,34 @@ func TestSync_OfflineCheckInSurvivesNewerEdit(t *testing.T) {
 	}
 }
 
+// An edit queued without a base after an edit of the same guest that was
+// refused as stale was built on the refused edit: it must not apply and undo
+// the change that made the first one stale.
+func TestSync_BaselessEditAfterStaleRefusalFails(t *testing.T) {
+	svc, db, wid := newGuestSyncService(t)
+	ctx := context.Background()
+	t1 := time.Now().Add(-time.Hour).UTC().Truncate(time.Millisecond)
+	gid := uuid.New()
+	amt := 200
+	// Another device keyed the angbao online at t1+5m.
+	db.Create(&models.GuestRecord{ID: gid, WeddingID: wid, Name: "X", Pax: 1, AngbaoAmt: &amt, CreatedAt: t1, UpdatedAt: t1.Add(5 * time.Minute)})
+
+	cleared := NullableJSON[int]{Set: true}
+	res, err := svc.Sync(ctx, wid, []SyncMutation{
+		{Op: SyncOpUpdate, GuestID: gid.String(), ClientUpdatedAt: t1.Add(2 * time.Minute), BaseUpdatedAt: &t1, Payload: &SyncPayload{Name: syncStr("X1"), AngbaoAmt: cleared}},
+		{Op: SyncOpUpdate, GuestID: gid.String(), ClientUpdatedAt: t1.Add(6 * time.Minute), Payload: &SyncPayload{Name: syncStr("X2"), AngbaoAmt: cleared}},
+	})
+	testutil.NoErr(t, err)
+	if res[0].Status == "applied" || res[1].Status != "failed" {
+		t.Fatalf("statuses = %s, %s; want not applied, failed", res[0].Status, res[1].Status)
+	}
+	g, err := svc.Get(ctx, gid, wid)
+	testutil.NoErr(t, err)
+	if g.AngbaoAmt == nil || *g.AngbaoAmt != amt {
+		t.Fatalf("angbao = %v, want %d kept", g.AngbaoAmt, amt)
+	}
+}
+
 // A sync whose response was lost is sent again: every edit in it already
 // applied, so the replay must report applied, not a stale failure.
 func TestSync_ReplayOfAppliedBatchIsApplied(t *testing.T) {

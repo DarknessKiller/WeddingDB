@@ -679,8 +679,21 @@ func syncFailed(m SyncMutation, err error) SyncResult {
 // Mutations are processed in order received, FIFO.
 func (s *GuestService) Sync(ctx context.Context, weddingID uuid.UUID, mutations []SyncMutation) ([]SyncResult, error) {
 	results := make([]SyncResult, 0, len(mutations))
+	// Guests with a queued edit that did not apply. The client sends a later
+	// edit of the same guest without a base: it was built on the refused edit,
+	// so applying it would undo whatever newer change refused the first one.
+	refused := make(map[string]bool)
 	for _, m := range mutations {
-		res := s.applySyncMutation(ctx, weddingID, m)
+		edit := m.Op == SyncOpUpdate || m.Op == SyncOpCreate
+		var res SyncResult
+		if edit && m.BaseUpdatedAt == nil && refused[m.GuestID] {
+			res = syncFailed(m, ErrStaleGuest)
+		} else {
+			res = s.applySyncMutation(ctx, weddingID, m)
+		}
+		if edit && res.Status != "applied" {
+			refused[m.GuestID] = true
+		}
 		results = append(results, res)
 	}
 	return results, nil
