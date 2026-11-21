@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"weddingdb/internal/models"
 	"weddingdb/internal/utils"
@@ -98,7 +99,7 @@ func (r *GuestRepo) SearchByWedding(ctx context.Context, weddingID uuid.UUID, qu
 			END, name
 		LIMIT 101`,
 		weddingID, q, pinyinQ,
-		lowerQ, len(lowerQ), prefix, len(lowerQ), strings.ToLower(models.GenerateNamePinyin(query))).
+		lowerQ, utf8.RuneCountInString(lowerQ), prefix, utf8.RuneCountInString(lowerQ), strings.ToLower(models.GenerateNamePinyin(query))).
 		Scan(&guests).Error
 	return guests, err
 }
