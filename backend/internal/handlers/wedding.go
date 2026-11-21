@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"cmp"
+	"fmt"
 	"net/url"
 	"regexp"
 	"strconv"
@@ -35,9 +36,16 @@ func (h *WeddingHandler) List(c fuego.ContextNoBody) (any, error) {
 	if role == "admin" {
 		return h.weddingService.List(ctx)
 	}
-	// user: only return their own wedding from JWT
+	// user: only their own wedding from the JWT, while still assigned to it.
 	wid := WeddingIDFromContext(ctx)
 	if wid == nil {
+		return []models.WeddingEvent{}, nil
+	}
+	allowed, err := h.adminRepo.HasWeddingAccess(ctx, AdminIDFromContext(ctx), *wid)
+	if err != nil {
+		return nil, fmt.Errorf("wedding access check: %w", err)
+	}
+	if !allowed {
 		return []models.WeddingEvent{}, nil
 	}
 	w, err := h.weddingService.Get(ctx, *wid)

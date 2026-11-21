@@ -124,6 +124,15 @@ func (h *SSEHandler) StreamHandler() http.HandlerFunc {
 					slog.Info("SSE: closing revoked stream", "user", claims.AdminID, "wedding", wid, "err", err)
 					return
 				}
+				// An unassign whose revoke failed leaves the token valid; the
+				// DB assignment is the truth, so re-check it on every tick.
+				if claims.Role != "admin" {
+					allowed, err := h.adminRepo.HasWeddingAccess(ctx, claims.AdminID, wid)
+					if err != nil || !allowed {
+						slog.Info("SSE: closing stream without wedding access", "user", claims.AdminID, "wedding", wid, "err", err)
+						return
+					}
+				}
 				if _, err := fmt.Fprintf(w, ": ping\n\n"); err != nil {
 					return
 				}

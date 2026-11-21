@@ -26,7 +26,7 @@ func RegisterRoutes(
 	tableHandler := NewTableHandler(tableService)
 	weddingHandler := NewWeddingHandler(weddingService, adminRepo)
 	layoutHandler := NewLayoutHandler(layoutService, tableService, weddingService)
-	uploadHandler := NewUploadHandler()
+	uploadHandler := NewUploadHandler(adminRepo.HasWeddingAccess)
 
 	// ── Public (no middleware) ──
 	pub := fuego.Group(s, "/api/auth")

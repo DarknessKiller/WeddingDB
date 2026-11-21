@@ -55,7 +55,7 @@ func doUpload(t *testing.T, ctx context.Context, filename string, content []byte
 	req.Header.Set("Content-Type", mw.FormDataContentType())
 	rec := httptest.NewRecorder()
 
-	handler := fuego.HTTPHandler[any, any, any](s, NewUploadHandler().Upload, fuego.BaseRoute{Path: "/upload", Method: http.MethodPost})
+	handler := fuego.HTTPHandler[any, any, any](s, NewUploadHandler(allowAllWeddings).Upload, fuego.BaseRoute{Path: "/upload", Method: http.MethodPost})
 	handler(rec, req)
 	return rec
 }
@@ -202,7 +202,7 @@ func TestUpload_AdminInWeddingUsesWeddingQuota(t *testing.T) {
 }
 
 func TestUpload_RateLimitedPerScope(t *testing.T) {
-	h := NewUploadHandler()
+	h := NewUploadHandler(allowAllWeddings)
 	for range uploadRateLimit {
 		if !h.allow("w1") {
 			t.Fatal("upload within the limit was rejected")
@@ -316,5 +316,24 @@ func TestUpload_WebPMagic(t *testing.T) {
 				t.Fatalf("status = %d, want accepted=%v", rec.Code, tc.ok)
 			}
 		})
+	}
+}
+
+func allowAllWeddings(context.Context, uuid.UUID, uuid.UUID) (bool, error) { return true, nil }
+
+// A user unassigned from a wedding still holds a token naming it until it
+// expires; upload must re-check the assignment, not trust the claim.
+func TestUpload_UnassignedUserRefused(t *testing.T) {
+	s := fuego.NewServer(fuego.WithoutStartupMessages())
+	deny := func(context.Context, uuid.UUID, uuid.UUID) (bool, error) { return false, nil }
+	handler := fuego.HTTPHandler[any, any, any](s, NewUploadHandler(deny).Upload, fuego.BaseRoute{Path: "/upload", Method: http.MethodPost})
+	wid := uuid.New()
+	ctx := context.WithValue(context.Background(), middleware.RoleKey, "user")
+	ctx = context.WithValue(ctx, middleware.WeddingIDKey, &wid)
+	req := httptest.NewRequest(http.MethodPost, "/upload", strings.NewReader("")).WithContext(ctx)
+	rec := httptest.NewRecorder()
+	handler(rec, req)
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("got %d, want 403", rec.Code)
 	}
 }

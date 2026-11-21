@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"bytes"
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
@@ -61,8 +62,9 @@ const (
 )
 
 type UploadHandler struct {
-	mu      sync.Mutex
-	windows map[string]*uploadWindow
+	mu        sync.Mutex
+	windows   map[string]*uploadWindow
+	hasAccess func(ctx context.Context, userID, weddingID uuid.UUID) (bool, error)
 }
 
 type uploadWindow struct {
@@ -70,8 +72,9 @@ type uploadWindow struct {
 	count int
 }
 
-func NewUploadHandler() *UploadHandler {
-	return &UploadHandler{windows: make(map[string]*uploadWindow)}
+// NewUploadHandler takes the DB wedding-assignment check (AdminRepo.HasWeddingAccess).
+func NewUploadHandler(hasAccess func(ctx context.Context, userID, weddingID uuid.UUID) (bool, error)) *UploadHandler {
+	return &UploadHandler{windows: make(map[string]*uploadWindow), hasAccess: hasAccess}
 }
 
 // allow applies a fixed-window rate limit per scope so one wedding cannot
@@ -100,9 +103,22 @@ func closeLogged(c io.Closer) {
 }
 
 func (h *UploadHandler) Upload(c fuego.ContextWithBody[any]) (any, error) {
-	// Uploads feed kiosk settings, so only admins or users scoped to a wedding may upload.
-	if RoleFromContext(c.Context()) != "admin" && WeddingIDFromContext(c.Context()) == nil {
-		return nil, fuego.ForbiddenError{Title: "Select a wedding before uploading"}
+	ctx := c.Context()
+	// Uploads feed kiosk settings, so only admins or users scoped to a wedding
+	// may upload, and the user must still be assigned to it: the token's
+	// wedding claim outlives an unassign until it expires.
+	if RoleFromContext(ctx) != "admin" {
+		wid := WeddingIDFromContext(ctx)
+		if wid == nil {
+			return nil, fuego.ForbiddenError{Title: "Select a wedding before uploading"}
+		}
+		allowed, err := h.hasAccess(ctx, AdminIDFromContext(ctx), *wid)
+		if err != nil {
+			return nil, fmt.Errorf("upload access check: %w", err)
+		}
+		if !allowed {
+			return nil, fuego.ForbiddenError{Title: "access denied to this wedding"}
+		}
 	}
 	// Namespace the hash index, quota and rate limit per wedding: an upload may
 	// only reuse a file from its own wedding, never another tenant's. Only an
