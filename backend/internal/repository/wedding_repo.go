@@ -31,8 +31,16 @@ func (r *WeddingRepo) Create(ctx context.Context, w *models.WeddingEvent) error 
 	return r.db.WithContext(ctx).Create(w).Error
 }
 
-func (r *WeddingRepo) Update(ctx context.Context, w *models.WeddingEvent) error {
-	return r.db.WithContext(ctx).Save(w).Error
+// UpdateFields writes only the named columns, so a save of one form does not
+// revert edits another device made to columns it did not load.
+func (r *WeddingRepo) UpdateFields(ctx context.Context, w *models.WeddingEvent, columns ...string) error {
+	if len(columns) == 0 {
+		return nil
+	}
+	return r.db.WithContext(ctx).Model(&models.WeddingEvent{}).
+		Where("id = ?", w.ID).
+		Select(columns).
+		Updates(w).Error
 }
 
 func (r *WeddingRepo) Delete(ctx context.Context, id uuid.UUID) error {
