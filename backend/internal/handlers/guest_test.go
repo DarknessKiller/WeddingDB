@@ -133,3 +133,36 @@ func TestGuestCheckOut_OnlyClearsCheckIn(t *testing.T) {
 		t.Fatalf("checkout: %+v", got)
 	}
 }
+
+func TestGuestCreate_SeatInSameTransaction(t *testing.T) {
+	db := newGuestTestDB(t)
+	wid, tid := uuid.New(), uuid.New()
+	seat := 3
+	testutil.NoErr(t, db.Create(&models.BanquetTable{ID: tid, WeddingID: wid, Name: "T1", Capacity: 4}).Error)
+	testutil.NoErr(t, db.Create(&models.GuestRecord{ID: uuid.New(), WeddingID: wid, Name: "Seated", Pax: 1, TableID: &tid, SeatNum: &seat}).Error)
+	s := newGuestTestServer(db)
+	path := "/api/weddings/" + wid.String() + "/guests"
+
+	tests := []struct {
+		name, body string
+		want       int
+	}{
+		{"seat taken", `{"name":"A","pax":1,"tableId":"` + tid.String() + `","seatNum":3}`, http.StatusBadRequest},
+		{"over capacity", `{"name":"B","pax":2,"tableId":"` + tid.String() + `","seatNum":4}`, http.StatusBadRequest},
+		{"bad table id", `{"name":"C","pax":1,"tableId":"nope"}`, http.StatusBadRequest},
+		{"free seat", `{"name":"D","pax":1,"tableId":"` + tid.String() + `","seatNum":1}`, http.StatusCreated},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			rec := serveJSON(s, http.MethodPost, path, tt.body)
+			if rec.Code != tt.want {
+				t.Fatalf("status = %d, want %d; body %s", rec.Code, tt.want, rec.Body)
+			}
+		})
+	}
+	var names []string
+	testutil.NoErr(t, db.Model(&models.GuestRecord{}).Order("name").Pluck("name", &names).Error)
+	if strings.Join(names, ",") != "D,Seated" {
+		t.Fatalf("guests = %v, want only D and Seated", names)
+	}
+}

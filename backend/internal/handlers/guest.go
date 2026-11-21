@@ -113,34 +113,28 @@ func (h *GuestHandler) Create(c fuego.ContextWithBody[GuestCreateRequest]) (any,
 	if err := services.ValidateGuestText(guest); err != nil {
 		return nil, fuego.BadRequestError{Title: err.Error()}
 	}
-	if err := h.guestService.Create(ctx, guest); err != nil {
-		if errors.Is(err, services.ErrGuestCapExceeded) {
-			return nil, fuego.BadRequestError{Title: err.Error()}
-		}
-		return nil, err
-	}
-	c.SetStatus(201)
-	if body.TableID != nil && *body.TableID != "" {
+	// The seat is part of the create transaction: createGuestTx runs the same
+	// locked capacity and overlap check as AssignSeat, so a bad seat leaves no row.
+	seated := body.TableID != nil && *body.TableID != ""
+	if seated {
 		tid, err := DecodeID(*body.TableID)
 		if err != nil {
-			if err := h.guestService.Delete(ctx, guest.ID, wid); err != nil {
-				slog.Warn("rollback guest after invalid table failed", "guest", guest.ID, "err", err)
-			}
 			return nil, fuego.BadRequestError{Title: "Invalid table ID"}
 		}
 		seatNum := 1
 		if body.SeatNum != nil {
 			seatNum = *body.SeatNum
 		}
-		if err := h.guestService.AssignSeat(ctx, guest.ID, wid, tid, seatNum); err != nil {
-			if err := h.guestService.Delete(ctx, guest.ID, wid); err != nil {
-				slog.Warn("rollback guest after seat assignment failed", "guest", guest.ID, "err", err)
-			}
-			return nil, fuego.BadRequestError{Title: err.Error()}
-		}
 		guest.TableID = &tid
 		guest.SeatNum = &seatNum
 	}
+	if err := h.guestService.Create(ctx, guest); err != nil {
+		if errors.Is(err, services.ErrGuestCapExceeded) || seated {
+			return nil, fuego.BadRequestError{Title: err.Error()}
+		}
+		return nil, err
+	}
+	c.SetStatus(201)
 	return guest, nil
 }
 
