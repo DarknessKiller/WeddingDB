@@ -89,9 +89,6 @@ export async function syncQueue(wid: string): Promise<{ applied: number; skipped
 	if (skipped > 0) {
 		addToast(`${skipped} offline change${skipped === 1 ? '' : 's'} rejected: the server had a newer version`, 'error');
 	}
-	// ponytail: expose for support
-	if (typeof window !== 'undefined') (window as unknown as Record<string, unknown>).__syncLastResults = data.results;
-	console.log(`offline sync: ${applied} applied, ${skipped} skipped`);
 	return { applied, skipped, results: data.results };
 }
 
@@ -100,8 +97,4 @@ export async function syncQueue(wid: string): Promise<{ applied: number; skipped
 function notifyChanged() {
 	if (typeof window === 'undefined') return;
 	window.dispatchEvent(new Event('offline-queue-changed'));
-}
-
-if (typeof window !== 'undefined') {
-	(window as unknown as Record<string, unknown>).__offlineQueue = { getQueue, enqueue, syncQueue, queuedCount, clearQueue, cacheGuests, loadCachedGuests };
 }
