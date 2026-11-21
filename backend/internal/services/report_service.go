@@ -107,7 +107,11 @@ func (s *ReportService) writeCSV(rows []angpaoRow, summary angpaoSummary) ([]byt
 
 	// Data rows
 	for _, r := range rows {
-		w.Write([]string{csvText(r.GuestName), csvText(r.TableName), r.SeatStr, r.AngbaoStr, csvText(r.GiftItem), r.CheckedIn})
+		gift := r.GiftItem
+		if gift != noGift {
+			gift = csvText(gift)
+		}
+		w.Write([]string{csvText(r.GuestName), csvText(r.TableName), r.SeatStr, r.AngbaoStr, gift, r.CheckedIn})
 	}
 
 	// Blank row separator
@@ -298,6 +302,10 @@ func (s *ReportService) GenerateXLSX(ctx context.Context, weddingID uuid.UUID) (
 	return buf.Bytes(), filename, nil
 }
 
+// noGift is the gift cell of a guest with no gift. It is ours, not user text,
+// so CSV export leaves it as is instead of escaping it like a formula.
+const noGift = "-"
+
 func (s *ReportService) buildRows(guests []models.GuestRecord, tableMap map[uuid.UUID]string) ([]angpaoRow, angpaoSummary) {
 	rows := make([]angpaoRow, 0, len(guests))
 	summary := angpaoSummary{}
@@ -327,7 +335,7 @@ func (s *ReportService) buildRows(guests []models.GuestRecord, tableMap map[uuid
 			byTable[tableID] += *g.AngbaoAmt
 		}
 
-		giftStr := "-"
+		giftStr := noGift
 		if g.GiftItem != nil && *g.GiftItem != "" {
 			giftStr = *g.GiftItem
 			summary.GiftItems = append(summary.GiftItems, fmt.Sprintf("%s: %s", g.Name, giftStr))
