@@ -112,6 +112,12 @@ func (h *AdminHandler) Delete(c fuego.ContextWithBody[any]) (any, error) {
 	if err := h.adminRepo.Delete(ctx, id); err != nil {
 		return nil, err
 	}
+
+	// Deleting the account must end its live session and wedding access now,
+	// not when the access token expires.
+	if err := h.authService.RevokeUserTokens(ctx, id); err != nil {
+		slog.Warn("revoke tokens after delete failed", "user", id, "err", err)
+	}
 	c.SetStatus(204)
 	return nil, nil
 }

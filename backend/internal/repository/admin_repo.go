@@ -48,8 +48,14 @@ func (r *AdminRepo) CountByRole(ctx context.Context, role string) (int64, error)
 	return count, err
 }
 
+// Delete removes the account and its wedding grants in one transaction.
 func (r *AdminRepo) Delete(ctx context.Context, id uuid.UUID) error {
-	return r.db.WithContext(ctx).Delete(&models.AdminUser{}, id).Error
+	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Where("user_id = ?", id).Delete(&models.UserWedding{}).Error; err != nil {
+			return err
+		}
+		return tx.Delete(&models.AdminUser{}, id).Error
+	})
 }
 
 // GetUserWeddings returns all weddings a user has access to.
