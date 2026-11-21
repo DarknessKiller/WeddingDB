@@ -1,6 +1,4 @@
 import type { Guest } from '#lib/types/index.ts';
-import { weddingId } from '#lib/stores/weddingId.ts';
-import { get } from 'svelte/store';
 import { withTimeout } from '#lib/utils/index.ts';
 
 interface PublicGuest {
@@ -30,8 +28,8 @@ export function mapGuest(raw: PublicGuest): Guest {
 	};
 }
 
-export async function publicListGuests(opts: { signal?: AbortSignal } = {}): Promise<Guest[]> {
-	const wid = get(weddingId);
+// wid comes from the kiosk URL: the public kiosk never touches the staff wedding id.
+export async function publicListGuests(wid: string, opts: { signal?: AbortSignal } = {}): Promise<Guest[]> {
 	const all: Guest[] = [];
 	let cursor: string | undefined;
 	do {

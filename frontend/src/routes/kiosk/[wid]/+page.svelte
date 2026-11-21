@@ -18,7 +18,6 @@ import X from 'lucide-svelte/icons/x';
   import { onMount, onDestroy, tick } from 'svelte';
   import { fade, fly } from 'svelte/transition';
   import { page } from '$app/state';
-  import { setWeddingId } from '#lib/stores/weddingId.ts';
   import { showSeatNumbers, setShowSeatNumbers } from '#lib/stores/index.ts';
   import type { Guest, BanquetTable, HallElement } from '#lib/types/index.ts';
 
@@ -59,6 +58,7 @@ import X from 'lucide-svelte/icons/x';
   let hallHeight = $state(1000);
   let selectedGuest = $state<Guest | null>(null);
   let isFullscreen = $state(false);
+  let fullscreenSupported = $state(false);
   let currentTime = $state(new Date());
   let timer: ReturnType<typeof setInterval>;
   // AbortController tied to the page lifecycle: aborted on destroy so slow
@@ -78,7 +78,7 @@ import X from 'lucide-svelte/icons/x';
     const req = ++guestsRequest;
     const wid = page.params.wid ?? '';
     try {
-      allGuests = await publicListGuests({ signal });
+      allGuests = await publicListGuests(wid, { signal });
       if (req !== guestsRequest) return;
       cacheKioskGuests(wid, allGuests);
       showingCachedGuests = false;
@@ -203,8 +203,6 @@ import X from 'lucide-svelte/icons/x';
     mqHandler = (e: MediaQueryListEvent) => prefersReducedMotion = e.matches;
     mq.addEventListener('change', mqHandler);
 
-    const wid = page.params.wid ?? '';
-    if (wid) setWeddingId(wid);
     // formatTime renders minute granularity, so ticking once per minute is enough.
     timer = setInterval(() => currentTime = new Date(), 60_000);
     loadGuests(pageAbort.signal);
@@ -214,6 +212,8 @@ import X from 'lucide-svelte/icons/x';
     document.addEventListener('pointerdown', onKioskActivity, { passive: true });
     document.addEventListener('keydown', onKioskActivity);
     document.addEventListener('visibilitychange', onKioskVisible);
+    fullscreenSupported = !!document.documentElement.requestFullscreen;
+    document.addEventListener('fullscreenchange', syncFullscreen);
   });
 
   onDestroy(() => {
@@ -226,20 +226,18 @@ import X from 'lucide-svelte/icons/x';
     pageAbort.abort(); // cancel any in-flight initial fetches
     pageAbort = new AbortController(); // fresh controller if component remounts
     document.removeEventListener('visibilitychange', onKioskVisible);
+    document.removeEventListener('fullscreenchange', syncFullscreen);
     if (mqHandler) {
       const mq = window.matchMedia('(prefers-reduced-motion: reduce)');
       mq.removeEventListener('change', mqHandler);
     }
   });
 
+  // Fullscreen can be refused (iOS Safari, no user gesture); the event reports what really happened.
+  function syncFullscreen() { isFullscreen = !!document.fullscreenElement; }
   function toggleFullscreen() {
-    if (!document.fullscreenElement) {
-      document.documentElement.requestFullscreen();
-      isFullscreen = true;
-    } else {
-      document.exitFullscreen();
-      isFullscreen = false;
-    }
+    const req = document.fullscreenElement ? document.exitFullscreen?.() : document.documentElement.requestFullscreen?.();
+    req?.catch(() => {});
   }
 
   function selectGuest(guest: Guest) {
@@ -431,13 +429,15 @@ import X from 'lucide-svelte/icons/x';
           <span class="offline-chip" title="Showing the last saved guest list">Stale data</span>
           <button class="retry-btn" onclick={retry}>Retry</button>
         {/if}
-        <button class="icon-btn" onclick={toggleFullscreen} aria-label="Toggle fullscreen">
-          {#if isFullscreen}
-            <Minimize class="icon-sm" />
-          {:else}
-            <Maximize class="icon-sm" />
-          {/if}
-        </button>
+        {#if fullscreenSupported}
+          <button class="icon-btn" onclick={toggleFullscreen} aria-label="Toggle fullscreen">
+            {#if isFullscreen}
+              <Minimize class="icon-sm" />
+            {:else}
+              <Maximize class="icon-sm" />
+            {/if}
+          </button>
+        {/if}
       </div>
     </div>
   </header>
@@ -556,7 +556,7 @@ import X from 'lucide-svelte/icons/x';
     <!-- Search View -->
     <div class="search-view" in:fade={{ duration: 250 }}>
       {#if kioskBackgroundUrl}
-        <div class="search-bg" style={`background-image: url(${kioskBackgroundUrl}); background-size: ${kioskBackgroundSize}; background-position: ${kioskBackgroundPosX} ${kioskBackgroundPosY}; filter: blur(${kioskBackgroundBlur}px); transform: scale(${kioskBackgroundBlur > 0 ? 1.1 : 1.05});`}></div>
+        <div class="search-bg" style={`background-image: url("${kioskBackgroundUrl.replace(/["\\\n\r]/g, encodeURIComponent)}"); background-size: ${kioskBackgroundSize}; background-position: ${kioskBackgroundPosX} ${kioskBackgroundPosY}; filter: blur(${kioskBackgroundBlur}px); transform: scale(${kioskBackgroundBlur > 0 ? 1.1 : 1.05});`}></div>
         <div class="search-bg-overlay"></div>
       {/if}
 
