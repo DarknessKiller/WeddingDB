@@ -124,17 +124,6 @@ func Init(env config.Env, version string) *App {
 			log.Printf("warning: could not drop legacy hall_elements.label: %v", err)
 		}
 	}
-	// Seed default elements for weddings that have none — one query, not one
-	// COUNT per wedding on every boot.
-	var missingHall []uuid.UUID
-	db.Model(&models.WeddingEvent{}).
-		Where("NOT EXISTS (SELECT 1 FROM hall_elements WHERE hall_elements.wedding_id = wedding_events.id)").
-		Pluck("id", &missingHall)
-	for _, wid := range missingHall {
-		if err := db.Create(models.DefaultElements(wid)).Error; err != nil {
-			log.Println("Warning: seed default elements for wedding", wid, ":", err)
-		}
-	}
 
 	redisURL := env.RedisURL
 	if redisURL == "" {

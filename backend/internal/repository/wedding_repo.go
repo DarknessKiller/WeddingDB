@@ -27,8 +27,15 @@ func (r *WeddingRepo) List(ctx context.Context) ([]models.WeddingEvent, error) {
 	return weddings, err
 }
 
-func (r *WeddingRepo) Create(ctx context.Context, w *models.WeddingEvent) error {
-	return r.db.WithContext(ctx).Create(w).Error
+// Create inserts the wedding and the hall elements elements(w.ID) returns, in
+// one transaction; the ID exists only after the insert.
+func (r *WeddingRepo) Create(ctx context.Context, w *models.WeddingEvent, elements func(uuid.UUID) []models.HallElement) error {
+	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Create(w).Error; err != nil {
+			return err
+		}
+		return tx.Create(elements(w.ID)).Error
+	})
 }
 
 // UpdateFields writes only the named columns, so a save of one form does not
