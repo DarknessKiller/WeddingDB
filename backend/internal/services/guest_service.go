@@ -544,10 +544,57 @@ type SyncResult struct {
 func (s *GuestService) Sync(ctx context.Context, weddingID uuid.UUID, mutations []SyncMutation) ([]SyncResult, error) {
 	results := make([]SyncResult, 0, len(mutations))
 	for _, m := range mutations {
-		res := s.applySyncMutation(ctx, weddingID, m)
-		results = append(results, res)
+		results = append(results, s.applySyncOnce(ctx, weddingID, m))
 	}
 	return results, nil
+}
+
+// maxMutationIDLen bounds the client-sent mutationId (a UUID in practice).
+const maxMutationIDLen = 64
+
+// errSyncNotApplied rolls back the marker of a skipped or failed mutation, so
+// its retry is evaluated again.
+var errSyncNotApplied = errors.New("sync mutation not applied")
+
+// applySyncOnce applies m at most once per mutationId (offline-sync invariant
+// 4): the marker row and the guest write commit in one transaction, and a
+// replay reports applied without writing. An empty mutationId (older clients)
+// skips the dedupe.
+// shortcut: markers are kept until the wedding is deleted; prune by age if the table grows large.
+func (s *GuestService) applySyncOnce(ctx context.Context, weddingID uuid.UUID, m SyncMutation) SyncResult {
+	if m.MutationID == "" {
+		return s.applySyncMutation(ctx, weddingID, m)
+	}
+	if len(m.MutationID) > maxMutationIDLen {
+		return SyncResult{GuestID: m.GuestID, Status: "failed", Reason: "invalid mutationId"}
+	}
+	var res SyncResult
+	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		mark := tx.Clauses(clause.OnConflict{DoNothing: true}).
+			Create(&models.AppliedMutation{WeddingID: weddingID, MutationID: m.MutationID})
+		if mark.Error != nil {
+			return fmt.Errorf("record mutation: %w", mark.Error)
+		}
+		if mark.RowsAffected == 0 {
+			res = SyncResult{GuestID: m.GuestID, Status: "applied"}
+			if gid, err := parseSyncID(m.GuestID); err == nil {
+				if g, err := repository.NewGuestRepo(tx).FindByID(ctx, gid, weddingID); err == nil {
+					res.ServerRecord = g
+				}
+			}
+			return nil
+		}
+		txSvc := &GuestService{guestRepo: repository.NewGuestRepo(tx), tableRepo: repository.NewTableRepo(tx), sseHub: s.sseHub, db: tx}
+		res = txSvc.applySyncMutation(ctx, weddingID, m)
+		if res.Status != "applied" {
+			return errSyncNotApplied
+		}
+		return nil
+	})
+	if err != nil && !errors.Is(err, errSyncNotApplied) {
+		return SyncResult{GuestID: m.GuestID, Status: "failed", Reason: err.Error()}
+	}
+	return res
 }
 
 func (s *GuestService) applySyncMutation(ctx context.Context, weddingID uuid.UUID, m SyncMutation) SyncResult {

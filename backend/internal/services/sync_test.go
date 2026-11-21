@@ -55,6 +55,12 @@ func newGuestSyncService(t *testing.T) (*GuestService, *gorm.DB, uuid.UUID) {
 		created_at DATETIME,
 		updated_at DATETIME
 	)`)
+	db.Exec(`CREATE TABLE applied_mutations (
+		wedding_id TEXT NOT NULL,
+		mutation_id TEXT NOT NULL,
+		created_at DATETIME,
+		PRIMARY KEY (wedding_id, mutation_id)
+	)`)
 	guestRepo := repository.NewGuestRepo(db)
 	tableRepo := repository.NewTableRepo(db)
 	svc := NewGuestService(guestRepo, tableRepo, nil, db)
@@ -536,5 +542,68 @@ func TestSync_RejectsOverlongGuestText(t *testing.T) {
 	testutil.NoErr(t, err)
 	if results[0].Status != "failed" {
 		t.Fatalf("overlong name should fail the mutation, got %+v", results[0])
+	}
+}
+
+func TestSync_CheckInReplayDoesNotDuplicateNotes(t *testing.T) {
+	svc, db, wid := newGuestSyncService(t)
+	ctx := t.Context()
+	gid := uuid.New()
+	base := time.Now().Add(-10 * time.Minute)
+	testutil.NoErr(t, db.Create(&models.GuestRecord{ID: gid, WeddingID: wid, Name: "Alice", Pax: 1, Notes: "allergy", CreatedAt: base, UpdatedAt: base}).Error)
+	m := SyncMutation{
+		MutationID:      uuid.NewString(),
+		Op:              SyncOpCheckIn,
+		GuestID:         gid.String(),
+		ClientUpdatedAt: base.Add(time.Minute),
+		Payload:         &SyncPayload{Notes: "late"},
+	}
+	for i := range 2 {
+		results, err := svc.Sync(ctx, wid, []SyncMutation{m})
+		testutil.NoErr(t, err)
+		if len(results) != 1 || results[0].Status != "applied" {
+			t.Fatalf("run %d: got %+v, want applied", i, results)
+		}
+	}
+	var got models.GuestRecord
+	testutil.NoErr(t, db.First(&got, "id = ?", gid).Error)
+	if got.Notes != "allergy\nlate" {
+		t.Fatalf("notes = %q, want one appended note", got.Notes)
+	}
+}
+
+func TestSync_ReplayOfAppliedBatchIsApplied(t *testing.T) {
+	svc, db, wid := newGuestSyncService(t)
+	ctx := t.Context()
+	gid := uuid.New()
+	base := time.Now().Add(-10 * time.Minute)
+	create := SyncMutation{MutationID: uuid.NewString(), Op: SyncOpCreate, GuestID: gid.String(), ClientUpdatedAt: base, Payload: &SyncPayload{Name: "Bob", Pax: 1}}
+	rename := SyncMutation{MutationID: uuid.NewString(), Op: SyncOpUpdate, GuestID: gid.String(), ClientUpdatedAt: base.Add(time.Minute), Payload: &SyncPayload{Name: "Bobby"}}
+	_, err := svc.Sync(ctx, wid, []SyncMutation{create, rename})
+	testutil.NoErr(t, err)
+
+	// A newer online edit lands; replaying the old batch must not revert it.
+	testutil.NoErr(t, db.Model(&models.GuestRecord{}).Where("id = ?", gid).Updates(map[string]any{"name": "Robert", "updated_at": base.Add(2 * time.Minute)}).Error)
+	results, err := svc.Sync(ctx, wid, []SyncMutation{create, rename})
+	testutil.NoErr(t, err)
+	for _, r := range results {
+		if r.Status != "applied" {
+			t.Fatalf("replay: got %+v, want applied", results)
+		}
+	}
+	var got models.GuestRecord
+	testutil.NoErr(t, db.First(&got, "id = ?", gid).Error)
+	if got.Name != "Robert" {
+		t.Fatalf("replay rewrote name to %q", got.Name)
+	}
+
+	// A skipped mutation leaves no marker, so its retry is evaluated again.
+	stale := SyncMutation{MutationID: uuid.NewString(), Op: SyncOpUpdate, GuestID: gid.String(), ClientUpdatedAt: base, Payload: &SyncPayload{Name: "Old"}}
+	for i := range 2 {
+		results, err = svc.Sync(ctx, wid, []SyncMutation{stale})
+		testutil.NoErr(t, err)
+		if results[0].Status != "skipped" {
+			t.Fatalf("run %d: stale got %+v, want skipped", i, results[0])
+		}
 	}
 }

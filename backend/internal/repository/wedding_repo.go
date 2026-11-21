@@ -58,6 +58,9 @@ func (r *WeddingRepo) Delete(ctx context.Context, id uuid.UUID) error {
 		if err := tx.Where("wedding_id = ?", id).Delete(&models.UserWedding{}).Error; err != nil {
 			return err
 		}
+		if err := tx.Where("wedding_id = ?", id).Delete(&models.AppliedMutation{}).Error; err != nil {
+			return err
+		}
 		return tx.Delete(&models.WeddingEvent{}, id).Error
 	})
 }

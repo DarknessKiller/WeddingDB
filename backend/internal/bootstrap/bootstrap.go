@@ -75,6 +75,7 @@ func Init(env config.Env, version string) *App {
 		&models.RefreshToken{},
 		&models.UserWedding{},
 		&models.HallElement{},
+		&models.AppliedMutation{},
 	); err != nil {
 		log.Fatal("Failed to migrate database:", err)
 
