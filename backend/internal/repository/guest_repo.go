@@ -125,9 +125,12 @@ func (r *GuestRepo) SetSeat(ctx context.Context, id, weddingID uuid.UUID, tableI
 }
 
 // CheckOut clears checked_in_at only; checked_in_at is owned by the check-in
-// and check-out writes, never by the full-row Update/SyncUpdate.
+// and check-out writes, never by the full-row Update/SyncUpdate. A guest who
+// is not checked in matches no row (gorm.ErrRecordNotFound), so a double tap
+// does not bump updated_at.
 func (r *GuestRepo) CheckOut(ctx context.Context, id, weddingID uuid.UUID, at time.Time) error {
-	res := r.db.WithContext(ctx).Model(&models.GuestRecord{}).Where("id = ? AND wedding_id = ?", id, weddingID).
+	res := r.db.WithContext(ctx).Model(&models.GuestRecord{}).
+		Where("id = ? AND wedding_id = ? AND checked_in_at IS NOT NULL", id, weddingID).
 		Updates(map[string]any{"checked_in_at": nil, "updated_at": at})
 	return checkAffected(res)
 }

@@ -770,3 +770,75 @@ func TestSync_ReplayFromFastClockIsApplied(t *testing.T) {
 		}
 	}
 }
+
+// A checkout replayed after its response was lost (or sent by a second
+// device) finds the guest already checked out: intent holds, so "applied",
+// not a non-retryable failure that drops it after N attempts.
+func TestSync_CheckOutReplayIsApplied(t *testing.T) {
+	svc, db, wid := newGuestSyncService(t)
+	ctx := context.Background()
+	t1 := time.Now().Add(-time.Hour).UTC().Truncate(time.Millisecond)
+	gid := uuid.New()
+	testutil.NoErr(t, db.Create(&models.GuestRecord{ID: gid, WeddingID: wid, Name: "X", Pax: 1, CheckedInAt: &t1, CreatedAt: t1, UpdatedAt: t1}).Error)
+
+	batch := []SyncMutation{{Op: SyncOpCheckOut, GuestID: gid.String(), ClientUpdatedAt: t1.Add(time.Minute)}}
+	for round := range 2 {
+		res, err := svc.Sync(ctx, wid, batch)
+		testutil.NoErr(t, err)
+		if res[0].Status != "applied" {
+			t.Fatalf("round %d: %s (%s), want applied", round, res[0].Status, res[0].Reason)
+		}
+	}
+	var got models.GuestRecord
+	testutil.NoErr(t, db.First(&got, "id = ?", gid).Error)
+	if got.CheckedInAt != nil {
+		t.Fatal("guest still checked in")
+	}
+}
+
+// Offline edits follow the online PUT rules: a blank name or out-of-range
+// pax fails (not retryable) instead of being dropped and reported applied,
+// and an empty RSVP clears it as online does.
+func TestSync_UpdateValidatesLikeOnline(t *testing.T) {
+	svc, db, wid := newGuestSyncService(t)
+	ctx := context.Background()
+	t1 := time.Now().Add(-time.Hour).UTC().Truncate(time.Millisecond)
+	gid := uuid.New()
+	testutil.NoErr(t, db.Create(&models.GuestRecord{ID: gid, WeddingID: wid, Name: "X", Pax: 2, RSVP: "confirmed", CreatedAt: t1, UpdatedAt: t1}).Error)
+
+	for name, p := range map[string]*SyncPayload{
+		"blank name": {Name: syncStr("  ")},
+		"zero pax":   {Pax: syncInt(0)},
+	} {
+		res, err := svc.Sync(ctx, wid, []SyncMutation{{Op: SyncOpUpdate, GuestID: gid.String(), ClientUpdatedAt: t1.Add(time.Minute), Payload: p}})
+		testutil.NoErr(t, err)
+		if res[0].Status != "failed" || res[0].Retryable {
+			t.Fatalf("%s: got %s retryable=%v (%s), want non-retryable failed", name, res[0].Status, res[0].Retryable, res[0].Reason)
+		}
+	}
+	res, err := svc.Sync(ctx, wid, []SyncMutation{{Op: SyncOpUpdate, GuestID: gid.String(), ClientUpdatedAt: t1.Add(time.Minute), Payload: &SyncPayload{RSVP: syncStr("")}}})
+	testutil.NoErr(t, err)
+	var got models.GuestRecord
+	testutil.NoErr(t, db.First(&got, "id = ?", gid).Error)
+	if res[0].Status != "applied" || got.RSVP != "" {
+		t.Fatalf("clear RSVP: got %s, rsvp %q; want applied and cleared", res[0].Status, got.RSVP)
+	}
+}
+
+// A mutation without clientUpdatedAt would stamp a check-in as year 1.
+func TestSync_ZeroClientTimeFails(t *testing.T) {
+	svc, db, wid := newGuestSyncService(t)
+	t1 := time.Now().Add(-time.Hour).UTC().Truncate(time.Millisecond)
+	gid := uuid.New()
+	testutil.NoErr(t, db.Create(&models.GuestRecord{ID: gid, WeddingID: wid, Name: "X", Pax: 1, CreatedAt: t1, UpdatedAt: t1}).Error)
+	res, err := svc.Sync(context.Background(), wid, []SyncMutation{{Op: SyncOpCheckIn, GuestID: gid.String()}})
+	testutil.NoErr(t, err)
+	if res[0].Status != "failed" || res[0].Retryable {
+		t.Fatalf("got %s retryable=%v, want non-retryable failed", res[0].Status, res[0].Retryable)
+	}
+	var got models.GuestRecord
+	testutil.NoErr(t, db.First(&got, "id = ?", gid).Error)
+	if got.CheckedInAt != nil {
+		t.Fatalf("checked in at %v", got.CheckedInAt)
+	}
+}

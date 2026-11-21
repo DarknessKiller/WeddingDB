@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"log/slog"
 	"reflect"
 	"slices"
 	"strings"
@@ -477,11 +478,31 @@ func (s *GuestService) CheckIn(ctx context.Context, id, weddingID uuid.UUID, not
 }
 
 func (s *GuestService) CheckOut(ctx context.Context, id, weddingID uuid.UUID) error {
-	if err := s.guestRepo.CheckOut(ctx, id, weddingID, time.Now()); err != nil {
+	for attempt := 0; ; attempt++ {
+		err := s.guestRepo.CheckOut(ctx, id, weddingID, time.Now())
+		if err == nil {
+			break
+		}
+		if !errors.Is(err, gorm.ErrRecordNotFound) {
+			return err
+		}
+		// Either no such guest, or one who is not checked in: the latter is
+		// already in the wanted state, so succeed without a write or event.
+		g, err := s.guestRepo.FindByID(ctx, id, weddingID)
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return ErrGuestNotFound
 		}
-		return err
+		if err != nil {
+			return err
+		}
+		if g.CheckedInAt == nil {
+			return nil
+		}
+		// A check-in committed between the update and the re-read: retry, so
+		// success is never reported while the guest is still checked in.
+		if attempt == 2 {
+			return errGuestChangedDuringSync
+		}
 	}
 	guest, err := s.guestRepo.FindByID(ctx, id, weddingID)
 	if err != nil {
@@ -694,7 +715,13 @@ var syncRuleErrors = []error{
 // violation as retryable.
 func syncFailed(m SyncMutation, err error) SyncResult {
 	rule := slices.ContainsFunc(syncRuleErrors, func(target error) bool { return errors.Is(err, target) })
-	return SyncResult{GuestID: m.GuestID, Status: "failed", Reason: err.Error(), Retryable: !rule}
+	if rule {
+		return SyncResult{GuestID: m.GuestID, Status: "failed", Reason: err.Error()}
+	}
+	// Infrastructure errors carry hostnames, SQL and driver detail: log them
+	// and send the client a generic reason, like internalErrorHandler does.
+	slog.Error("sync mutation failed", "guest", m.GuestID, "op", m.Op, "err", err)
+	return SyncResult{GuestID: m.GuestID, Status: "failed", Reason: "server error, will retry", Retryable: true}
 }
 
 // Sync applies a batch of mutations with newer-time-wins.
@@ -729,6 +756,11 @@ func (s *GuestService) applySyncMutation(ctx context.Context, weddingID uuid.UUI
 
 	// Skew clamp: never trust a client clock in the future, or a skewed device
 	// would win every LWW comparison from then on.
+	// A missing clientUpdatedAt would stamp check-ins as year 1 and make
+	// every edit lose to the server: refuse it as a rule error.
+	if m.ClientUpdatedAt.IsZero() {
+		return syncFailed(m, fmt.Errorf("%w: clientUpdatedAt is required", ErrInvalidGuestField))
+	}
 	opTime := m.ClientUpdatedAt
 	if opTime.After(time.Now()) {
 		opTime = time.Now()
@@ -753,10 +785,17 @@ func (s *GuestService) applySyncMutation(ctx context.Context, weddingID uuid.UUI
 				// Replay of a write whose response was lost: it is already applied.
 				return SyncResult{GuestID: m.GuestID, Status: "applied", ServerRecord: existing}
 			}
+			before := *existing
 			if m.Payload != nil {
 				if err := applySyncPayload(existing, m.Payload, &gid); err != nil {
 					return syncFailed(m, err)
 				}
+			}
+			// Nothing to change: a replay whose clock ran ahead, so the Equal
+			// check above missed it. Re-saving would bump updated_at and 409
+			// every open editor.
+			if reflect.DeepEqual(before, *existing) {
+				return SyncResult{GuestID: m.GuestID, Status: "applied", ServerRecord: existing}
 			}
 			if err := s.syncUpdate(ctx, existing, m, opTime); err != nil {
 				return syncFailed(m, err)
@@ -923,6 +962,12 @@ func (s *GuestService) applySyncMutation(ctx context.Context, weddingID uuid.UUI
 				res = SyncResult{GuestID: m.GuestID, Status: "skipped", Reason: "older than server", ServerRecord: existing}
 				return nil
 			}
+			// Already checked out (replay whose response was lost, or
+			// another device got there first): intent holds, nothing to write.
+			if existing.CheckedInAt == nil {
+				res = SyncResult{GuestID: m.GuestID, Status: "applied", ServerRecord: existing}
+				return nil
+			}
 			// opTime is not before the locked row's updated_at, so this never
 			// moves it backwards.
 			existing.CheckedInAt = nil
@@ -1028,16 +1073,25 @@ func syncCheckIn(ctx context.Context, tx *gorm.DB, g *models.GuestRecord, m Sync
 }
 
 func applySyncPayload(g *models.GuestRecord, p *SyncPayload, gid *uuid.UUID) error {
-	if p.Name != nil && strings.TrimSpace(*p.Name) != "" {
+	// Same rules as online PUT: a blank name or out-of-range pax is
+	// refused, not silently dropped and reported as applied.
+	if p.Name != nil {
+		if strings.TrimSpace(*p.Name) == "" {
+			return fmt.Errorf("%w: name is required", ErrInvalidGuestField)
+		}
 		g.Name = *p.Name
 	}
 	if p.Email != nil {
 		g.Email = *p.Email
 	}
-	if p.Pax != nil && *p.Pax >= 1 {
+	if p.Pax != nil {
+		if err := validatePax(*p.Pax); err != nil {
+			return err
+		}
 		g.Pax = *p.Pax
 	}
-	if p.RSVP != nil && *p.RSVP != "" {
+	// Empty RSVP means "not set", as online; validateGuestFields checks the rest.
+	if p.RSVP != nil {
 		g.RSVP = *p.RSVP
 	}
 	if p.IsVip != nil {
