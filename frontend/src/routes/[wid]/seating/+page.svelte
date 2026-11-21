@@ -515,7 +515,8 @@ import Pencil from 'lucide-svelte/icons/pencil';
             {@const seatNum = seatIdx + 1}
             {@const guest = selectedTableGuests.find(g => g.seatNumber !== null && seatNum >= g.seatNumber && seatNum < g.seatNumber + g.pax)}
             <button
-              class="flex items-center gap-2 p-2 rounded-lg text-left {guest ? 'bg-gray-50' : 'bg-white border border-gray-100'}"
+              disabled={!guest}
+              class="flex items-center gap-2 p-2 rounded-lg text-left {guest ? 'bg-gray-50' : 'bg-white border border-gray-100 cursor-default'}"
               onclick={() => { if (guest) { $selectedGuest = guest; $isDrawerOpen = true; } }}
             >
               <div class={cn(
