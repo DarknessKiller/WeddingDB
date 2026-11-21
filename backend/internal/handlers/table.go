@@ -8,6 +8,7 @@ import (
 	"weddingdb/internal/services"
 
 	"github.com/go-fuego/fuego"
+	"gorm.io/gorm"
 )
 
 type TableHandler struct{ tableService *services.TableService }
@@ -109,6 +110,10 @@ func (h *TableHandler) Update(c fuego.ContextWithBody[TableRequest]) (any, error
 	if err := h.tableService.Update(ctx, table); err != nil {
 		if errors.Is(err, repository.ErrCapacityBelowSeats) {
 			return nil, fuego.ConflictError{Title: "Capacity is below seats already assigned; move those guests first"}
+		}
+		// Deleted after the Get above.
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, fuego.NotFoundError{Title: "Table not found"}
 		}
 		return nil, err
 	}

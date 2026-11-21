@@ -92,14 +92,15 @@ func lockWedding(tx *gorm.DB, weddingID uuid.UUID) error {
 }
 
 func (r *TableRepo) Update(ctx context.Context, t *models.BanquetTable) error {
-	return r.db.WithContext(ctx).Model(t).Where("id = ? AND wedding_id = ?", t.ID, t.WeddingID).Updates(map[string]interface{}{
+	res := r.db.WithContext(ctx).Model(t).Where("id = ? AND wedding_id = ?", t.ID, t.WeddingID).Updates(map[string]interface{}{
 		"name":     t.Name,
 		"capacity": t.Capacity,
 		"x":        t.X,
 		"y":        t.Y,
 		"degree":   t.Degree,
 		"is_vip":   t.IsVip,
-	}).Error
+	})
+	return checkAffected(res)
 }
 
 func (r *TableRepo) Delete(ctx context.Context, id, weddingID uuid.UUID) error {
