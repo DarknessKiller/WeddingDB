@@ -248,3 +248,34 @@ func TestSyncCreate_PostgresTakenIDIsNotRetryable(t *testing.T) {
 		t.Fatalf("status = %q retryable=%v (%s), want a non-retryable failure", res[0].Status, res[0].Retryable, res[0].Reason)
 	}
 }
+
+// A layout save waiting on the wedding lock must diff against the elements
+// the lock holder committed: full replace removes them too.
+func TestLayoutSave_PostgresReplacesElementsCommittedWhileWaiting(t *testing.T) {
+	_, db := openGuestPG(t)
+	drop := func() { db.Exec("DROP TABLE IF EXISTS hall_elements CASCADE") }
+	drop()
+	t.Cleanup(drop)
+	testutil.NoErr(t, db.AutoMigrate(&models.HallElement{}))
+	wid := uuid.New()
+	testutil.NoErr(t, db.Create(&models.WeddingEvent{ID: wid, Name: "W"}).Error)
+
+	// Another save holds the wedding lock while adding an element.
+	tx := db.Begin()
+	_, err := guestCountLocked(tx, wid)
+	testutil.NoErr(t, err)
+	testutil.NoErr(t, tx.Create(&models.HallElement{WeddingID: wid, Type: "stage", Width: 1, Height: 1}).Error)
+	saved := make(chan error, 1)
+	go func() {
+		saved <- NewLayoutService(repository.NewLayoutRepo(db)).Save(t.Context(), wid, 0, 0, nil, nil)
+	}()
+	time.Sleep(100 * time.Millisecond) // let Save block on the wedding lock
+	testutil.NoErr(t, tx.Commit().Error)
+	testutil.NoErr(t, <-saved)
+
+	var n int64
+	testutil.NoErr(t, db.Model(&models.HallElement{}).Where("wedding_id = ?", wid).Count(&n).Error)
+	if n != 0 {
+		t.Fatalf("%d elements survived a save that replaced them with none", n)
+	}
+}

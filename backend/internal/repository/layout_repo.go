@@ -2,6 +2,7 @@ package repository
 
 import (
 	"context"
+	"fmt"
 
 	"weddingdb/internal/models"
 
@@ -24,8 +25,8 @@ func (r *LayoutRepo) SaveLayout(
 	weddingID uuid.UUID,
 	hallWidth, hallHeight int,
 	tables []models.TableUpdate,
-	toCreate, toUpdate []models.HallElement,
-	toDelete []uuid.UUID,
+	incoming []models.HallElement,
+	reconcile func(existing, incoming []models.HallElement) (toCreate, toUpdate []models.HallElement, toDelete []uuid.UUID),
 ) error {
 	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		// A layout saved while its wedding is being deleted must not leave
@@ -55,6 +56,13 @@ func (r *LayoutRepo) SaveLayout(
 				return gorm.ErrRecordNotFound
 			}
 		}
+		// Read the stored elements under the wedding lock: read before it, a
+		// concurrent save's elements would be missed and survive this one.
+		existing, err := NewLayoutRepo(tx).ElementsByWedding(ctx, weddingID)
+		if err != nil {
+			return fmt.Errorf("load elements: %w", err)
+		}
+		toCreate, toUpdate, toDelete := reconcile(existing, incoming)
 		for i := range toCreate {
 			toCreate[i].WeddingID = weddingID
 			if err := tx.Create(&toCreate[i]).Error; err != nil {

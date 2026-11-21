@@ -170,7 +170,7 @@ func TestTableCapacity_RejectsCutBelowSeatedGuests(t *testing.T) {
 		t.Fatalf("table update: want ErrCapacityBelowSeats, got %v", err)
 	}
 	err := repository.NewLayoutRepo(db).SaveLayout(ctx, wid, 0, 0,
-		[]models.TableUpdate{{ID: tableID, Capacity: 9}}, nil, nil, nil)
+		[]models.TableUpdate{{ID: tableID, Capacity: 9}}, nil, ReconcileElements)
 	if !errors.Is(err, repository.ErrCapacityBelowSeats) {
 		t.Fatalf("layout save: want ErrCapacityBelowSeats, got %v", err)
 	}
