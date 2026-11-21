@@ -455,7 +455,8 @@ import Users from 'lucide-svelte/icons/users';
   function getNextBulkSeatNum(): number {
     if (!bulkMoveTableId) return 1;
     const cap = getBulkTableCapacity();
-    const occ = filtered.filter(g => g.tableId === bulkMoveTableId && !selectedIds.has(g.id) && g.seatNumber != null)
+    // The whole roster, not the filtered view: hidden guests still hold seats.
+    const occ = allGuests.filter(g => g.tableId === bulkMoveTableId && !selectedIds.has(g.id) && g.seatNumber != null)
       .flatMap(g => Array.from({ length: g.pax }, (_, i) => g.seatNumber! + i));
     for (let s = 1; s <= cap; s++) {
       if (!occ.includes(s)) return s;
@@ -466,7 +467,7 @@ import Users from 'lucide-svelte/icons/users';
   let bulkOccupiedSeats = $derived.by((): Set<number> => {
     if (!bulkMoveTableId) return new Set();
     return new Set(
-      filtered
+      allGuests
         .filter(g => g.tableId === bulkMoveTableId && !selectedIds.has(g.id) && g.seatNumber != null)
         .flatMap(g => {
           const start = g.seatNumber!;
@@ -486,7 +487,7 @@ import Users from 'lucide-svelte/icons/users';
     const capacity = getBulkTableCapacity();
     const ids = [...selectedIds];
     const seatsNeeded = ids.reduce((sum, id) => {
-      const g = filtered.find(g => g.id === id);
+      const g = allGuests.find(g => g.id === id);
       return sum + (g?.pax ?? 1);
     }, 0);
     // reject unless every pax fits after the starting seat
@@ -504,16 +505,19 @@ import Users from 'lucide-svelte/icons/users';
     bulkMoveSaving = true;
     try {
       let seat = bulkMoveSeatStart;
+      let moved = 0;
       for (const id of ids) {
-        const g = filtered.find(gg => gg.id === id);
-        if (!g) continue;
+        // Selected guests stay selected when a filter hides them; move them too.
+        const g = allGuests.find(gg => gg.id === id);
+        if (!g) continue; // deleted on another device meanwhile
         await assignSeat(wid, id, bulkMoveTableId, seat);
         // Push through the store so off-page rows and the next loop
         // iterations see the new seat even if the SSE echo is slow.
         guestList.update(list => list.map(gg => gg.id === id ? { ...gg, tableId: bulkMoveTableId, seatNumber: seat } : gg));
         seat += g.pax;
+        moved++;
       }
-      addToast(`Moved ${ids.length} guests to table`, 'success');
+      addToast(`Moved ${moved} guests to table`, 'success');
       selectedIds = new Set();
       showBulkMoveModal = false;
     } catch (e: any) {
