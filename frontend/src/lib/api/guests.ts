@@ -14,7 +14,12 @@ function isNetworkError(e: unknown) {
 	return e instanceof TypeError && /failed to fetch|networkerror|load failed/i.test((e as Error).message || '');
 }
 function genId(): string {
-	try { return crypto.randomUUID(); } catch { return `${Date.now()}-${Math.random().toString(36).slice(2)}`; }
+	// randomUUID needs a secure context; getRandomValues does not, and the server requires a UUID.
+	if (typeof crypto.randomUUID === 'function') return crypto.randomUUID();
+	const b = crypto.getRandomValues(new Uint8Array(16));
+	b[6] = (b[6] & 0x0f) | 0x40; b[8] = (b[8] & 0x3f) | 0x80;
+	const h = Array.from(b, (x) => x.toString(16).padStart(2, '0')).join('');
+	return `${h.slice(0, 8)}-${h.slice(8, 12)}-${h.slice(12, 16)}-${h.slice(16, 20)}-${h.slice(20)}`;
 }
 function nowIso() { return new Date().toISOString(); }
 function optimisticPatch(op: string, guestId: string, data?: Record<string, unknown>) {
@@ -145,15 +150,16 @@ export async function createGuest(weddingId: string, data: GuestCreateData): Pro
 	const doQueue = (id: string) => {
 		enqueue(weddingId, { mutationId: genId(), op: 'create', guestId: id, clientUpdatedAt: nowIso(), payload: data as unknown as Record<string, unknown> });
 	};
+	// One id for the POST and any queued retry, so a lost response cannot create a duplicate.
+	const id = genId();
 	try {
-		const res = await apiFetch(`/api/weddings/${weddingId}/guests`, { method: 'POST', body: JSON.stringify(data) });
+		const res = await apiFetch(`/api/weddings/${weddingId}/guests`, { method: 'POST', body: JSON.stringify({ ...data, id }) });
 		if (!res.ok) throw new Error(`Failed to create guest: ${res.status}`);
 		const resp: GuestResponse = await res.json();
 		applyGuestResponse(resp);
 		return resp;
 	} catch (e) {
 		if (isNetworkError(e)) {
-			const id = genId();
 			doQueue(id); optimisticPatch('create', id, data as unknown as Record<string, unknown>);
 			const now = nowIso();
 			return { id, weddingId, name: data.name, email: data.email || '', pax: data.pax, rsvp: data.rsvp, isVip: data.isVip, notes: data.notes, dietary: data.dietary, tableId: (data.tableId as string | null) ?? null, seatNum: data.seatNum ?? null, checkedInAt: null, angbaoAmt: data.angbaoAmt ?? null, giftItem: data.giftItem ?? null, createdAt: now, updatedAt: now };
