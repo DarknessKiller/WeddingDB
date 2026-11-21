@@ -4,11 +4,17 @@
   import { weddingId, setWeddingId } from '#lib/stores/weddingId.ts';
   import { get } from 'svelte/store';
   import { LIMITS } from '#lib/utils/limits.ts';
+  import { pendingChangeCount } from '#lib/offline/queue.ts';
+  import { onMount } from 'svelte';
   import Eye from 'lucide-svelte/icons/eye';
 import EyeOff from 'lucide-svelte/icons/eye-off';
 import LogIn from 'lucide-svelte/icons/log-in';
 import Calendar from 'lucide-svelte/icons/calendar';
 import ChevronRight from 'lucide-svelte/icons/chevron-right';
+
+  // Tokens live in memory, so a reload lands here with the offline queue still saved.
+  let pendingChanges = $state(0);
+  onMount(() => { pendingChanges = pendingChangeCount(); });
 
   let email = $state('');
   let password = $state('');
@@ -141,6 +147,11 @@ import ChevronRight from 'lucide-svelte/icons/chevron-right';
       <div class="auth-logo">囍</div>
       <h1 class="auth-title">WeddingDB</h1>
       <p class="auth-subtitle">Sign in to manage your wedding</p>
+      {#if pendingChanges > 0}
+        <p class="pending-notice" role="status">
+          {pendingChanges} offline change{pendingChanges === 1 ? ' is' : 's are'} saved on this device and will sync after you log in and open the wedding.
+        </p>
+      {/if}
     </div>
 
     {#if step === 'login'}
@@ -259,6 +270,7 @@ import ChevronRight from 'lucide-svelte/icons/chevron-right';
 </main>
 
 <style>
+  .pending-notice { margin-top: 0.75rem; font-size: 0.8125rem; color: #7a2b00; }
   .section-title {
     font-size: 0.875rem;
     font-weight: 600;
