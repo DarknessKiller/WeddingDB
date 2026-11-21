@@ -185,8 +185,13 @@ import ArrowUpDown from 'lucide-svelte/icons/arrow-up-down';
     giftItem: '',
   });
 
+  // An SSE update replaces the guest prop; refill only for a different guest
+  // or outside edit mode so unsaved edits survive it.
+  let filledId: string | undefined;
   $effect(() => {
     if (!guest) return;
+    if (editing && guest.id === filledId) return;
+    filledId = guest.id;
     form.name = guest.name;
     form.email = guest.email ?? '';
     form.pax = guest.pax;
