@@ -12,7 +12,7 @@
   import { syncQueue } from '#lib/offline/queue.ts';
   import { getWedding } from '#lib/api/weddings.ts';
   import { listTables } from '#lib/api/tables.ts';
-  import { initializeSSE, refreshGuests } from '#lib/stores/guestEvents.ts';
+  import { initializeSSE, refreshGuests, guestList, guestMap, tableOccupancy } from '#lib/stores/guestEvents.ts';
   import type { BanquetTable } from '#lib/types/index.ts';
 
   let { children } = $props();
@@ -38,6 +38,13 @@
     if (wid) {
       setWeddingId(wid);
     }
+    // These stores outlive the layout. Clear them before children render so
+    // the previous wedding's guests can never flash in this one.
+    guestList.set([]);
+    guestMap.set(new Map());
+    tableOccupancy.set(new Map());
+    selectedGuest.set(null);
+    weddingTitle.set('');
     authChecked = true;
 
     const toGuest = (g: any) => {
