@@ -3,6 +3,7 @@ package services
 import (
 	"context"
 	"encoding/base64"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log"
@@ -448,6 +449,38 @@ type SyncPayload struct {
 	SeatNum   *int     `json:"seatNum"`
 	AngbaoAmt *int     `json:"angbaoAmt"`
 	GiftItem  *string  `json:"giftItem"`
+
+	// present holds the JSON keys the client actually sent. A nil map means
+	// the payload was built in code, where every field counts as carried.
+	// Offline clients send partial payloads, so an absent key must leave the
+	// stored value untouched (offline-sync invariant 1).
+	present map[string]struct{}
+}
+
+func (p *SyncPayload) UnmarshalJSON(data []byte) error {
+	type plain SyncPayload
+	var v plain
+	if err := json.Unmarshal(data, &v); err != nil {
+		return err
+	}
+	var keys map[string]json.RawMessage
+	if err := json.Unmarshal(data, &keys); err != nil {
+		return err
+	}
+	*p = SyncPayload(v)
+	p.present = make(map[string]struct{}, len(keys))
+	for k := range keys {
+		p.present[k] = struct{}{}
+	}
+	return nil
+}
+
+func (p *SyncPayload) has(key string) bool {
+	if p.present == nil {
+		return true
+	}
+	_, ok := p.present[key]
+	return ok
 }
 
 type SyncMutation struct {
@@ -667,28 +700,41 @@ func applySyncPayload(g *models.GuestRecord, p *SyncPayload, gid *uuid.UUID) {
 	if p.Name != "" {
 		g.Name = p.Name
 	}
-	g.Email = p.Email
+	if p.has("email") {
+		g.Email = p.Email
+	}
 	if p.Pax >= 1 {
 		g.Pax = p.Pax
 	}
 	if p.RSVP != "" {
 		g.RSVP = p.RSVP
 	}
-	g.IsVip = p.IsVip
-	g.Notes = p.Notes
-	g.Dietary = p.Dietary
-	g.AngbaoAmt = p.AngbaoAmt
-	g.GiftItem = p.GiftItem
-	switch {
-	case p.TableID == nil || *p.TableID == "":
-		// JSON null and empty string both mean "unassign": clear the whole
-		// seat assignment. SeatNum must never survive with a nil TableID.
-		g.TableID = nil
-		g.SeatNum = nil
-	default:
-		if tid, err := parseSyncID(*p.TableID); err == nil {
+	if p.has("isVip") {
+		g.IsVip = p.IsVip
+	}
+	if p.has("notes") {
+		g.Notes = p.Notes
+	}
+	if p.has("dietary") {
+		g.Dietary = p.Dietary
+	}
+	if p.has("angbaoAmt") {
+		g.AngbaoAmt = p.AngbaoAmt
+	}
+	if p.has("giftItem") {
+		g.GiftItem = p.GiftItem
+	}
+	if p.has("tableId") {
+		if p.TableID == nil || *p.TableID == "" {
+			// JSON null and empty string both mean "unassign": clear the whole
+			// seat assignment. SeatNum must never survive with a nil TableID.
+			g.TableID = nil
+			g.SeatNum = nil
+		} else if tid, err := parseSyncID(*p.TableID); err == nil {
 			g.TableID = &tid
-			g.SeatNum = p.SeatNum
+			if p.has("seatNum") {
+				g.SeatNum = p.SeatNum
+			}
 		}
 	}
 	if gid != nil {

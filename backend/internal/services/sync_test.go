@@ -2,6 +2,7 @@ package services
 
 import (
 	"context"
+	"encoding/json"
 	"testing"
 	"time"
 
@@ -445,5 +446,52 @@ func TestBulkCreate_RollsBackOnError(t *testing.T) {
 	count, err = svc.BulkCreate(ctx, clean)
 	if err != nil || count != 2 {
 		t.Fatalf("clean batch should create 2, got %d err %v", count, err)
+	}
+}
+
+// TestSync_PartialPayloadPreservesFields covers offline-sync invariant 1 over
+// the wire: a seat-only payload must leave every other field untouched.
+func TestSync_PartialPayloadPreservesFields(t *testing.T) {
+	svc, db, wid := newGuestSyncService(t)
+	ctx := context.Background()
+	gid := uuid.New()
+	tableID := uuid.New()
+	base := time.Now().Add(-10 * time.Minute)
+	db.Create(&models.BanquetTable{ID: tableID, WeddingID: wid, Name: "T1", Capacity: 10})
+	amt := 888
+	gift := "silk"
+	db.Create(&models.GuestRecord{
+		ID: gid, WeddingID: wid, Name: "Alice", Pax: 2,
+		Email: "alice@example.com", IsVip: true, Notes: "allergy",
+		Dietary: models.StringSlice{"veg"}, AngbaoAmt: &amt, GiftItem: &gift,
+		CreatedAt: base, UpdatedAt: base,
+	})
+
+	var payload SyncPayload
+	if err := json.Unmarshal([]byte(`{"tableId":"`+tableID.String()+`","seatNum":3}`), &payload); err != nil {
+		t.Fatalf("decode payload: %v", err)
+	}
+	results, err := svc.Sync(ctx, wid, []SyncMutation{{
+		MutationID:      "m1",
+		Op:              SyncOpUpdate,
+		GuestID:         gid.String(),
+		ClientUpdatedAt: base.Add(time.Minute),
+		Payload:         &payload,
+	}})
+	testutil.NoErr(t, err)
+	if len(results) != 1 || results[0].Status != "applied" {
+		t.Fatalf("expected applied, got %+v", results)
+	}
+
+	var got models.GuestRecord
+	testutil.NoErr(t, db.Where("id = ?", gid).First(&got).Error)
+	if got.Email != "alice@example.com" || !got.IsVip || got.Notes != "allergy" ||
+		len(got.Dietary) != 1 || got.Dietary[0] != "veg" ||
+		got.AngbaoAmt == nil || *got.AngbaoAmt != 888 ||
+		got.GiftItem == nil || *got.GiftItem != "silk" {
+		t.Fatalf("seat-only payload wiped fields: %+v", got)
+	}
+	if got.TableID == nil || *got.TableID != tableID || got.SeatNum == nil || *got.SeatNum != 3 {
+		t.Fatalf("seat not applied: table=%v seat=%v", got.TableID, got.SeatNum)
 	}
 }
