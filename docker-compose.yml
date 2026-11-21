@@ -1,7 +1,7 @@
 services:
   app:
     # Pinned tag, not :latest: a redeploy must run the version you tested.
-    image: ghcr.io/darknesskiller/weddingdb:v0.14.6
+    image: ghcr.io/darknesskiller/weddingdb:0.14.6
     ports:
       # Terminate TLS at a reverse proxy on this host.
       - "127.0.0.1:8080:8080"
