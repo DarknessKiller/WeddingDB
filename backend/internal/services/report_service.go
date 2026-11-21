@@ -5,7 +5,9 @@ import (
 	"cmp"
 	"context"
 	"encoding/csv"
+	"errors"
 	"fmt"
+	"log/slog"
 	"maps"
 	"slices"
 	"strconv"
@@ -49,7 +51,7 @@ type angpaoRow struct {
 }
 
 type angpaoSummary struct {
-	TotalAngbao     int
+	TotalAngbao int
 	// TotalByTable is keyed by table ID: two tables may share a name.
 	TotalByTable    map[uuid.UUID]int
 	TotalGuests     int
@@ -152,7 +154,14 @@ func (s *ReportService) GenerateXLSX(ctx context.Context, weddingID uuid.UUID) (
 	rows, summary := s.buildRows(guests, tableMap)
 
 	f := excelize.NewFile()
-	defer f.Close()
+	defer func() {
+		if err := f.Close(); err != nil {
+			slog.Warn("close xlsx report", "err", err)
+		}
+	}()
+	// Cell writes only fail on a bad sheet name or coordinate; collect them and
+	// fail once before writing instead of checking forty calls one by one.
+	var errs []error
 
 	// Styles
 	headerStyle, err := f.NewStyle(&excelize.Style{
@@ -187,91 +196,96 @@ func (s *ReportService) GenerateXLSX(ctx context.Context, weddingID uuid.UUID) (
 
 	// ── Sheet 1: Guest Details ──
 	detailSheet := "Guest Details"
-	f.SetSheetName("Sheet1", detailSheet)
+	errs = append(errs, f.SetSheetName("Sheet1", detailSheet))
 
 	detailHeaders := []string{"Guest Name", "Table", "Seat", "Angbao (RM)", "Gift Item", "Checked In"}
 	for i, h := range detailHeaders {
-		f.SetCellValue(detailSheet, cellName(i+1, 1), h)
+		errs = append(errs, f.SetCellValue(detailSheet, cellName(i+1, 1), h))
 	}
 	for i := range detailHeaders {
 		cell := cellName(i+1, 1)
-		f.SetCellStyle(detailSheet, cell, cell, headerStyle)
+		errs = append(errs, f.SetCellStyle(detailSheet, cell, cell, headerStyle))
 	}
 
 	for ri, r := range rows {
 		rowNum := ri + 2
-		f.SetCellValue(detailSheet, cellName(1, rowNum), r.GuestName)
-		f.SetCellValue(detailSheet, cellName(2, rowNum), r.TableName)
+		errs = append(errs, f.SetCellValue(detailSheet, cellName(1, rowNum), r.GuestName))
+		errs = append(errs, f.SetCellValue(detailSheet, cellName(2, rowNum), r.TableName))
 		if r.SeatNum > 0 {
-			f.SetCellValue(detailSheet, cellName(3, rowNum), r.SeatNum)
+			errs = append(errs, f.SetCellValue(detailSheet, cellName(3, rowNum), r.SeatNum))
 		} else {
-			f.SetCellValue(detailSheet, cellName(3, rowNum), "-")
+			errs = append(errs, f.SetCellValue(detailSheet, cellName(3, rowNum), "-"))
 		}
 		if r.AngbaoAmt > 0 {
-			f.SetCellValue(detailSheet, cellName(4, rowNum), r.AngbaoAmt)
-			f.SetCellStyle(detailSheet, cellName(4, rowNum), cellName(4, rowNum), currencyStyle)
+			errs = append(errs, f.SetCellValue(detailSheet, cellName(4, rowNum), r.AngbaoAmt))
+			errs = append(errs, f.SetCellStyle(detailSheet, cellName(4, rowNum), cellName(4, rowNum), currencyStyle))
 		} else {
-			f.SetCellValue(detailSheet, cellName(4, rowNum), "-")
+			errs = append(errs, f.SetCellValue(detailSheet, cellName(4, rowNum), "-"))
 		}
-		f.SetCellValue(detailSheet, cellName(5, rowNum), r.GiftItem)
-		f.SetCellValue(detailSheet, cellName(6, rowNum), r.CheckedIn)
+		errs = append(errs, f.SetCellValue(detailSheet, cellName(5, rowNum), r.GiftItem))
+		errs = append(errs, f.SetCellValue(detailSheet, cellName(6, rowNum), r.CheckedIn))
 	}
 
-	f.SetColWidth(detailSheet, "A", "A", 30)
-	f.SetColWidth(detailSheet, "B", "B", 15)
-	f.SetColWidth(detailSheet, "C", "C", 8)
-	f.SetColWidth(detailSheet, "D", "D", 15)
-	f.SetColWidth(detailSheet, "E", "E", 30)
-	f.SetColWidth(detailSheet, "F", "F", 22)
+	errs = append(errs, f.SetColWidth(detailSheet, "A", "A", 30))
+	errs = append(errs, f.SetColWidth(detailSheet, "B", "B", 15))
+	errs = append(errs, f.SetColWidth(detailSheet, "C", "C", 8))
+	errs = append(errs, f.SetColWidth(detailSheet, "D", "D", 15))
+	errs = append(errs, f.SetColWidth(detailSheet, "E", "E", 30))
+	errs = append(errs, f.SetColWidth(detailSheet, "F", "F", 22))
 
 	// ── Sheet 2: Summary ──
 	summarySheet := "Summary"
-	f.NewSheet(summarySheet)
+	if _, err := f.NewSheet(summarySheet); err != nil {
+		return nil, "", fmt.Errorf("summary sheet: %w", err)
+	}
 
-	f.SetCellValue(summarySheet, "A1", "Angpao Report Summary")
-	f.SetCellStyle(summarySheet, "A1", "A1", summaryBold)
+	errs = append(errs, f.SetCellValue(summarySheet, "A1", "Angpao Report Summary"))
+	errs = append(errs, f.SetCellStyle(summarySheet, "A1", "A1", summaryBold))
 
-	f.SetCellValue(summarySheet, "A3", "Total Angbao (RM)")
-	f.SetCellValue(summarySheet, "B3", summary.TotalAngbao)
-	f.SetCellStyle(summarySheet, "A3", "A3", summaryBold)
-	f.SetCellStyle(summarySheet, "B3", "B3", currencyStyle)
+	errs = append(errs, f.SetCellValue(summarySheet, "A3", "Total Angbao (RM)"))
+	errs = append(errs, f.SetCellValue(summarySheet, "B3", summary.TotalAngbao))
+	errs = append(errs, f.SetCellStyle(summarySheet, "A3", "A3", summaryBold))
+	errs = append(errs, f.SetCellStyle(summarySheet, "B3", "B3", currencyStyle))
 
-	f.SetCellValue(summarySheet, "A4", "Total Guests")
-	f.SetCellValue(summarySheet, "B4", summary.TotalGuests)
-	f.SetCellStyle(summarySheet, "A4", "A4", summaryBold)
+	errs = append(errs, f.SetCellValue(summarySheet, "A4", "Total Guests"))
+	errs = append(errs, f.SetCellValue(summarySheet, "B4", summary.TotalGuests))
+	errs = append(errs, f.SetCellStyle(summarySheet, "A4", "A4", summaryBold))
 
-	f.SetCellValue(summarySheet, "A5", "Checked In")
-	f.SetCellValue(summarySheet, "B5", summary.CheckedInGuests)
-	f.SetCellStyle(summarySheet, "A5", "A5", summaryBold)
+	errs = append(errs, f.SetCellValue(summarySheet, "A5", "Checked In"))
+	errs = append(errs, f.SetCellValue(summarySheet, "B5", summary.CheckedInGuests))
+	errs = append(errs, f.SetCellStyle(summarySheet, "A5", "A5", summaryBold))
 
 	// Per-table totals
-	f.SetCellValue(summarySheet, "A7", "Table")
-	f.SetCellValue(summarySheet, "B7", "Angbao (RM)")
-	f.SetCellStyle(summarySheet, "A7", "B7", summaryHeader)
+	errs = append(errs, f.SetCellValue(summarySheet, "A7", "Table"))
+	errs = append(errs, f.SetCellValue(summarySheet, "B7", "Angbao (RM)"))
+	errs = append(errs, f.SetCellStyle(summarySheet, "A7", "B7", summaryHeader))
 
 	rowNum := 8
 	for _, tid := range s.sortedTableKeys(summary.TotalByTable, tableMap) {
-		f.SetCellValue(summarySheet, cellName(1, rowNum), tableMap[tid])
-		f.SetCellValue(summarySheet, cellName(2, rowNum), summary.TotalByTable[tid])
-		f.SetCellStyle(summarySheet, cellName(2, rowNum), cellName(2, rowNum), currencyStyle)
+		errs = append(errs, f.SetCellValue(summarySheet, cellName(1, rowNum), tableMap[tid]))
+		errs = append(errs, f.SetCellValue(summarySheet, cellName(2, rowNum), summary.TotalByTable[tid]))
+		errs = append(errs, f.SetCellStyle(summarySheet, cellName(2, rowNum), cellName(2, rowNum), currencyStyle))
 		rowNum++
 	}
 
 	// Gift items
 	if len(summary.GiftItems) > 0 {
 		rowNum++
-		f.SetCellValue(summarySheet, cellName(1, rowNum), "Gift Items")
-		f.SetCellStyle(summarySheet, cellName(1, rowNum), cellName(1, rowNum), summaryHeader)
+		errs = append(errs, f.SetCellValue(summarySheet, cellName(1, rowNum), "Gift Items"))
+		errs = append(errs, f.SetCellStyle(summarySheet, cellName(1, rowNum), cellName(1, rowNum), summaryHeader))
 		rowNum++
 		for _, g := range summary.GiftItems {
-			f.SetCellValue(summarySheet, cellName(1, rowNum), g)
+			errs = append(errs, f.SetCellValue(summarySheet, cellName(1, rowNum), g))
 			rowNum++
 		}
 	}
 
-	f.SetColWidth(summarySheet, "A", "A", 30)
-	f.SetColWidth(summarySheet, "B", "B", 15)
+	errs = append(errs, f.SetColWidth(summarySheet, "A", "A", 30))
+	errs = append(errs, f.SetColWidth(summarySheet, "B", "B", 15))
 
+	if err := errors.Join(errs...); err != nil {
+		return nil, "", fmt.Errorf("build xlsx: %w", err)
+	}
 	var buf bytes.Buffer
 	if err := f.Write(&buf); err != nil {
 		return nil, "", err
