@@ -504,7 +504,7 @@ func TestBulkCreate_RollsBackOnError(t *testing.T) {
 		{ID: uuid.New(), WeddingID: wid, Name: "Ok", Pax: 1},
 		{ID: uuid.New(), WeddingID: wid, Name: "Bad", Pax: 1, TableID: &missing, SeatNum: &seat},
 	}
-	count, err := svc.BulkCreate(ctx, batch)
+	count, err := svc.BulkCreate(ctx, batch, nil)
 	if err == nil {
 		t.Fatal("expected error from batch with missing table")
 	}
@@ -522,7 +522,7 @@ func TestBulkCreate_RollsBackOnError(t *testing.T) {
 		{ID: uuid.New(), WeddingID: wid, Name: "A", Pax: 1},
 		{ID: uuid.New(), WeddingID: wid, Name: "B", Pax: 1},
 	}
-	count, err = svc.BulkCreate(ctx, clean)
+	count, err = svc.BulkCreate(ctx, clean, nil)
 	if err != nil || count != 2 {
 		t.Fatalf("clean batch should create 2, got %d err %v", count, err)
 	}

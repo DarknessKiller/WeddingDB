@@ -47,7 +47,7 @@ func TestBulkCreate_RejectsPaxOverLimit(t *testing.T) {
 	_, err := svc.BulkCreate(context.Background(), []models.GuestRecord{
 		{WeddingID: wid, Name: "Fine", Pax: 2},
 		{WeddingID: wid, Name: "Too Big", Pax: MaxGuestPartySize + 1},
-	})
+	}, nil)
 	if !errors.Is(err, ErrInvalidPax) {
 		t.Fatalf("BulkCreate over-limit pax error = %v, want ErrInvalidPax", err)
 	}

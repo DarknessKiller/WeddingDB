@@ -423,6 +423,7 @@ import Users from 'lucide-svelte/icons/users';
         dietary: g.dietary,
         tableId: g.tableId,
         seatNum: g.seat,
+        row: g.row,
       })));
       if (missing.size > 0) {
         addToast(`No table named ${[...missing].map(n => `"${n}"`).join(', ')}; those guests were imported without a table`, 'error');

@@ -77,10 +77,10 @@ func TestGuestCap_BulkImport(t *testing.T) {
 		}
 		return out
 	}
-	if _, err := svc.BulkCreate(ctx, batch(50)); err != nil {
+	if _, err := svc.BulkCreate(ctx, batch(50), nil); err != nil {
 		t.Fatalf("import to exactly 1000 should fit: %v", err)
 	}
-	if _, err := svc.BulkCreate(ctx, batch(1)); !errors.Is(err, ErrGuestCapExceeded) {
+	if _, err := svc.BulkCreate(ctx, batch(1), nil); !errors.Is(err, ErrGuestCapExceeded) {
 		t.Fatalf("import past the cap should be rejected, got %v", err)
 	}
 }

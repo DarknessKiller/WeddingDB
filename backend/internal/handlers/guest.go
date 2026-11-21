@@ -331,7 +331,14 @@ func (h *GuestHandler) Occupancy(c fuego.ContextNoBody) (any, error) {
 }
 
 type BulkImportRequest struct {
-	Guests []GuestCreateRequest `json:"guests"`
+	Guests []BulkImportGuest `json:"guests"`
+}
+
+// BulkImportGuest is one CSV line. Row is its spreadsheet row number, so an
+// error names the line to fix even after blank and nameless rows are skipped.
+type BulkImportGuest struct {
+	GuestCreateRequest
+	Row int `json:"row"`
 }
 
 func (h *GuestHandler) BulkImport(c fuego.ContextWithBody[BulkImportRequest]) (any, error) {
@@ -348,15 +355,13 @@ func (h *GuestHandler) BulkImport(c fuego.ContextWithBody[BulkImportRequest]) (a
 		return nil, fuego.BadRequestError{Title: "Invalid wedding ID"}
 	}
 	var guests []models.GuestRecord
+	var rows []int
 	for _, g := range body.Guests {
 		if g.Name == "" {
 			continue
 		}
 		if g.Pax < 1 {
 			g.Pax = 1
-		}
-		if g.Pax > services.MaxGuestPartySize {
-			return nil, fuego.BadRequestError{Title: "Pax must be between 1 and " + strconv.Itoa(services.MaxGuestPartySize)}
 		}
 		if g.RSVP != "" && !services.ValidRSVP[g.RSVP] {
 			g.RSVP = "no_response"
@@ -381,8 +386,9 @@ func (h *GuestHandler) BulkImport(c fuego.ContextWithBody[BulkImportRequest]) (a
 			gr.SeatNum = g.SeatNum
 		}
 		guests = append(guests, gr)
+		rows = append(rows, g.Row)
 	}
-	count, err := h.guestService.BulkCreate(ctx, guests)
+	count, err := h.guestService.BulkCreate(ctx, guests, rows)
 	if err != nil {
 		if isGuestRuleError(err) {
 			return nil, fuego.BadRequestError{Title: err.Error()}

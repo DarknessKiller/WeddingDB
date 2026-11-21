@@ -9,6 +9,10 @@ describe('parseCSVRows', () => {
 		]);
 	});
 
+	it('keeps blank rows so indexes match spreadsheet rows', () => {
+		expect(parseCSVRows('a\n\nb')).toEqual([['a'], [''], ['b']]);
+	});
+
 	it('drops the Excel UTF-8 BOM', () => {
 		expect(parseCSVRows('\uFEFFname\n陈大文')).toEqual([['name'], ['陈大文']]);
 	});
@@ -24,6 +28,11 @@ describe('parseGuestCSV', () => {
 		expect(got[0]).toMatchObject({ name: 'Tan, Mr & Mrs', table: 'T1', seat: 3, pax: 2, rsvp: 'confirmed', isVip: true, notes: 'line one\nline two' });
 		expect(got[1].name).toBe('=Eve');
 		expect(got[1].table).toBeUndefined();
+	});
+
+	it('numbers guests by spreadsheet row, counting blank and nameless rows', () => {
+		const got = parseGuestCSV('\nname,pax\nAnn,1\n\n,2\n"Bo\nTan",3\nCy,1');
+		expect(got.map(g => [g.name, g.row])).toEqual([['Ann', 3], ['Bo\nTan', 6], ['Cy', 7]]);
 	});
 
 	it('returns nothing without a name column', () => {

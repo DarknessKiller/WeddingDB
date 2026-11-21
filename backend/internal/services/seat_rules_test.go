@@ -95,7 +95,7 @@ func TestBulkCreate_RejectsSeatOverlap(t *testing.T) {
 		{ID: uuid.New(), WeddingID: wid, Name: "A", Pax: 1, TableID: &tid, SeatNum: intPtr(5)},
 		{ID: uuid.New(), WeddingID: wid, Name: "B", Pax: 1, TableID: &tid, SeatNum: intPtr(5)},
 	}
-	created, err := svc.BulkCreate(context.Background(), batch)
+	created, err := svc.BulkCreate(context.Background(), batch, nil)
 	if !errors.Is(err, ErrSeatOverlap) {
 		t.Fatalf("error = %v, want ErrSeatOverlap", err)
 	}
@@ -116,7 +116,7 @@ func TestBulkCreate_RejectsForeignTable(t *testing.T) {
 	batch := []models.GuestRecord{
 		{ID: uuid.New(), WeddingID: wid, Name: "A", Pax: 1, TableID: &foreign},
 	}
-	if _, err := svc.BulkCreate(context.Background(), batch); err == nil {
+	if _, err := svc.BulkCreate(context.Background(), batch, nil); err == nil {
 		t.Fatal("foreign table without a seat must be rejected")
 	}
 }

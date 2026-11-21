@@ -465,10 +465,19 @@ func (s *GuestService) CheckOut(ctx context.Context, id, weddingID uuid.UUID) er
 	return nil
 }
 
-func (s *GuestService) BulkCreate(ctx context.Context, guests []models.GuestRecord) (int, error) {
+// BulkCreate imports guests in one transaction. rows[i] is the spreadsheet row
+// guests[i] came from, so an error names the line to fix; without it, rows
+// count from 1 in slice order.
+func (s *GuestService) BulkCreate(ctx context.Context, guests []models.GuestRecord, rows []int) (int, error) {
 	created := 0
 	if len(guests) == 0 {
 		return 0, nil
+	}
+	rowOf := func(i int) int {
+		if i < len(rows) && rows[i] > 0 {
+			return rows[i]
+		}
+		return i + 1
 	}
 	weddingID := guests[0].WeddingID
 	incoming := 0
@@ -477,10 +486,10 @@ func (s *GuestService) BulkCreate(ctx context.Context, guests []models.GuestReco
 			guests[i].Pax = 1
 		}
 		if err := validatePax(guests[i].Pax); err != nil {
-			return 0, fmt.Errorf("row %d: %w", i+1, err)
+			return 0, fmt.Errorf("row %d: %w", rowOf(i), err)
 		}
 		if err := validateGuestFields(&guests[i]); err != nil {
-			return 0, fmt.Errorf("row %d: %w", i+1, err)
+			return 0, fmt.Errorf("row %d: %w", rowOf(i), err)
 		}
 		incoming += guests[i].Pax
 	}
@@ -507,7 +516,7 @@ func (s *GuestService) BulkCreate(ctx context.Context, guests []models.GuestReco
 			g := &guests[i]
 			if err := bulkCreateOne(ctx, tx, txGuestRepo, g); err != nil {
 				// Name the CSV row, so an 800-row import says which one to fix.
-				return fmt.Errorf("row %d: %w", i+1, err)
+				return fmt.Errorf("row %d: %w", rowOf(i), err)
 			}
 			events = append(events, pendingEvent{"create", g})
 			created++

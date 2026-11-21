@@ -3,7 +3,7 @@ import type { GuestImportData } from '#lib/api/guests.ts';
 /**
  * Splits CSV text into rows of cells (RFC 4180): quoted cells may hold commas,
  * doubled quotes and line breaks. A leading UTF-8 BOM (Excel's "CSV UTF-8")
- * is dropped.
+ * is dropped. Blank rows are kept, so rows[i] is spreadsheet row i + 1.
  */
 export function parseCSVRows(text: string): string[][] {
 	const src = text.charCodeAt(0) === 0xfeff ? text.slice(1) : text;
@@ -25,8 +25,10 @@ export function parseCSVRows(text: string): string[][] {
 		} else cell += c;
 	}
 	if (cell !== '' || row.length > 0) { row.push(cell); rows.push(row); }
-	return rows.filter(r => r.some(c => c.trim() !== ''));
+	return rows;
 }
+
+const isBlank = (r: string[]) => r.every(c => c.trim() === '');
 
 // The app's own export prefixes formula-like cells with ' so spreadsheets
 // don't run them; undo that on import.
@@ -36,8 +38,12 @@ function unguard(s: string): string {
 
 /** Parses a guest CSV with a "name" column; other columns are optional. */
 export function parseGuestCSV(text: string): GuestImportData[] {
-	const [header, ...body] = parseCSVRows(text);
-	if (!header || body.length === 0) return [];
+	const rows = parseCSVRows(text);
+	const headerAt = rows.findIndex(r => !isBlank(r));
+	if (headerAt === -1) return [];
+	const header = rows[headerAt];
+	const body = rows.slice(headerAt + 1);
+	if (body.length === 0) return [];
 	const headers = header.map(h => h.trim().toLowerCase());
 	const col = (...names: string[]) => headers.findIndex(h => names.includes(h));
 	const nameIdx = col('name');
@@ -51,7 +57,7 @@ export function parseGuestCSV(text: string): GuestImportData[] {
 	const tableIdx = col('table', 'tablename');
 	const seatIdx = col('seat', 'seatnum', 'seat_number');
 
-	return body.map(raw => {
+	return body.map((raw, i) => {
 		const cols = raw.map(c => unguard(c.trim()));
 		const vip = vipIdx >= 0 ? cols[vipIdx]?.toLowerCase() : '';
 		return {
@@ -64,6 +70,8 @@ export function parseGuestCSV(text: string): GuestImportData[] {
 			dietary: dietaryIdx >= 0 ? (cols[dietaryIdx] ?? '').split(';').map(d => d.trim()).filter(Boolean) : [],
 			table: tableIdx >= 0 ? cols[tableIdx] || undefined : undefined,
 			seat: seatIdx >= 0 ? parseInt(cols[seatIdx]) || undefined : undefined,
+			// Spreadsheet row number, so an import error names the line to fix.
+			row: headerAt + i + 2,
 		};
 	}).filter(g => g.name);
 }

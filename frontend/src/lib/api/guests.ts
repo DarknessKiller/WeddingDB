@@ -92,6 +92,8 @@ export interface GuestImportData {
   seat?: number;
   tableId?: string;
   seatNum?: number;
+  /** Spreadsheet row the guest came from; import errors name it. */
+  row?: number;
 }
 
 export interface GuestResponse {
