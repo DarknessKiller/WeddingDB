@@ -39,3 +39,10 @@ describe('parseGuestCSV', () => {
 		expect(parseGuestCSV('email\na@b.c')).toEqual([]);
 	});
 });
+
+describe('parseGuestCSV rsvp', () => {
+	it('lowercases RSVP values from hand-made sheets', () => {
+		const rows = parseGuestCSV('name,rsvp\nTan,Confirmed\nLim,DECLINED\n');
+		expect(rows.map(r => r.rsvp)).toEqual(['confirmed', 'declined']);
+	});
+});

@@ -64,7 +64,8 @@ export function parseGuestCSV(text: string): GuestImportData[] {
 			name: cols[nameIdx] || '',
 			email: emailIdx >= 0 ? cols[emailIdx] : undefined,
 			pax: paxIdx >= 0 ? parseInt(cols[paxIdx]) || 1 : 1,
-			rsvp: rsvpIdx >= 0 ? cols[rsvpIdx] : 'no_response',
+			// Hand-made sheets write "Confirmed"; the server only knows lowercase values.
+			rsvp: rsvpIdx >= 0 ? cols[rsvpIdx]?.toLowerCase() : 'no_response',
 			isVip: vip === 'yes' || vip === '1' || vip === 'true',
 			notes: notesIdx >= 0 ? cols[notesIdx] : undefined,
 			dietary: dietaryIdx >= 0 ? (cols[dietaryIdx] ?? '').split(';').map(d => d.trim()).filter(Boolean) : [],
