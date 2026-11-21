@@ -128,7 +128,7 @@ export async function fetchAllGuests(weddingId: string): Promise<GuestResponse[]
 	const all: GuestResponse[] = [];
 	let cursor: string | undefined;
 	do {
-		const page = await listGuests(weddingId, { limit: 100, cursor });
+		const page = await listGuests(weddingId, { limit: 500, cursor });
 		all.push(...page.guests);
 		cursor = page.nextCursor ?? undefined;
 	} while (cursor);
