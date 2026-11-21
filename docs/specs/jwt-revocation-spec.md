@@ -443,10 +443,14 @@ A consumed token stays in the table with `rotated_at` + `replaced_by` set. For
 same successor — a response lost in transit, or a second tab replaying the
 token it still holds, no longer ends the session. Each such reuse is logged, so
 a repeated pattern is visible even though it cannot be told apart from an
-honest retry. Past the window the token is treated as stolen: `RevokeUserTokens`
-deletes the family's refresh tokens and bumps the token version, killing the
-attacker's access tokens too. An honest client retrying a tab left open for
-more than a minute is logged out; that is the intended cost of detecting reuse.
+honest retry. Past the window the same successor is still returned while it
+has never been used itself: that is a client whose rotation response was lost
+(venue WiFi dropped) and which retries minutes later. Once the successor has
+been used, or is gone, a replay of the old token is treated as stolen:
+`RevokeUserTokens` deletes the family's refresh tokens and bumps the token
+version, killing the attacker's access tokens too. A replay that mints an
+access token re-reads the successor afterwards and fails if a concurrent
+revoke deleted it.
 
 Consumed rows are reclaimed by `TokenRepo.DeleteExpired` once `expires_at`
 passes. Migration is two nullable columns via the existing `AutoMigrate` in

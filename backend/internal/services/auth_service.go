@@ -244,36 +244,39 @@ func (s *AuthService) successorToken(presented string) string {
 }
 
 // resumeRotation answers a retry of an already-rotated token with the same
-// successor, inside the grace window. Outside it the token counts as replayed.
+// successor. Inside the grace window any retry is answered. Past it, the
+// successor is served only while it is unused: that is the same client whose
+// rotation response was lost (flaky venue WiFi). Once the successor itself
+// was used, the old token is a replay and the whole family is revoked.
 // presented is the raw secret of consumed, which derives the successor.
 func (s *AuthService) resumeRotation(ctx context.Context, consumed *models.RefreshToken, presented string) (*LoginResult, error) {
 	if consumed.RotatedAt == nil || consumed.ReplacedBy == nil {
 		return nil, ErrInvalidRefreshToken
 	}
-	if time.Since(*consumed.RotatedAt) > refreshGraceWindow {
-		// Reuse past the grace window means the token leaked: the legitimate
-		// holder already rotated it. Kill the whole family instead of serving
-		// the successor to a possible attacker.
-		if err := s.RevokeUserTokens(ctx, consumed.AdminID); err != nil {
-			return nil, fmt.Errorf("revoke replayed refresh token family: %w", err)
-		}
-		return nil, ErrInvalidRefreshToken
-	}
-	// A replay inside the window is indistinguishable from a lost response or a
-	// second tab, so it is answered; log it so a repeated pattern is visible.
-	slog.Warn("refresh token reused inside grace window", "user", consumed.AdminID, "rotatedAt", consumed.RotatedAt)
 	successor := s.successorToken(presented)
 	if *consumed.ReplacedBy != repository.HashToken(successor) {
 		// Rotated into a token this server did not derive (another secret).
 		return nil, ErrInvalidRefreshToken
 	}
 	replacement, err := s.tokenRepo.FindByToken(ctx, successor)
-	if errors.Is(err, gorm.ErrRecordNotFound) {
+	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, fmt.Errorf("find successor refresh token: %w", err)
+	}
+	pastWindow := time.Since(*consumed.RotatedAt) > refreshGraceWindow
+	successorUsed := err != nil || replacement.RotatedAt != nil
+	if pastWindow && successorUsed {
+		// The legitimate holder already moved on, so this token leaked. Kill
+		// the whole family instead of serving it to a possible attacker.
+		if err := s.RevokeUserTokens(ctx, consumed.AdminID); err != nil {
+			return nil, fmt.Errorf("revoke replayed refresh token family: %w", err)
+		}
 		return nil, ErrInvalidRefreshToken
 	}
 	if err != nil {
-		return nil, fmt.Errorf("find successor refresh token: %w", err)
+		return nil, ErrInvalidRefreshToken
 	}
+	// Answered, but logged so a repeated pattern is visible.
+	slog.Warn("rotated refresh token reused", "user", consumed.AdminID, "rotatedAt", consumed.RotatedAt, "pastGraceWindow", pastWindow)
 	admin, err := s.adminRepo.FindByID(ctx, replacement.AdminID)
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return nil, ErrAdminNotFound
@@ -288,6 +291,15 @@ func (s *AuthService) resumeRotation(ctx context.Context, consumed *models.Refre
 	accessToken, err := s.generateAccessToken(ctx, admin, weddingID)
 	if err != nil {
 		return nil, err
+	}
+	// A revoke deletes refresh tokens before bumping the token version. If it
+	// ran between the lookup above and the mint, the successor is gone now and
+	// the minted access token must not be handed out.
+	if _, err := s.tokenRepo.FindByToken(ctx, successor); err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, ErrInvalidRefreshToken
+		}
+		return nil, fmt.Errorf("recheck successor refresh token: %w", err)
 	}
 	return s.sessionResult(ctx, admin, accessToken, successor)
 }
