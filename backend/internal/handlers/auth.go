@@ -265,13 +265,38 @@ func (h *AuthHandler) ChangePassword(c fuego.ContextWithBody[ChangePasswordReque
 	if err := h.adminRepo.SetPassword(ctx, admin.ID, string(hash), false); err != nil {
 		return nil, fuego.InternalServerError{Title: "Failed to update password"}
 	}
-	// Revoke all existing sessions so compromised tokens are invalidated
-	// Password was already changed; log but don't fail the request.
-	// ponytail: best-effort revocation — password hash is already updated
+	// Revoke all existing sessions so compromised tokens are invalidated.
+	// The hash is already saved, but reporting success while old sessions
+	// still work would tell the user a stolen session is gone when it isn't.
 	if err := h.authService.RevokeUserTokens(ctx, adminID); err != nil {
-		slog.Warn("revoke tokens after password change failed", "user", adminID, "err", err)
+		slog.Error("revoke tokens after password change failed", "user", adminID, "err", err)
+		if forced {
+			return nil, errRevokeAfterForcedChange
+		}
+		return nil, errRevokeAfterPassword
 	}
 	return map[string]any{"message": "Password updated"}, nil
+}
+
+// errRevokeAfterPassword answers a password write whose session revoke
+// failed. Changing it again, with the new password as current, retries the revoke.
+var errRevokeAfterPassword = fuego.InternalServerError{Title: "Password saved, but signing out other sessions failed. Change it again, entering your new password as the current one, to retry."}
+
+// errRevokeAfterForcedChange is the same for a forced change, whose page
+// asks for no current password: setting it again retries the revoke.
+var errRevokeAfterForcedChange = fuego.InternalServerError{Title: "Password saved, but signing out other sessions failed. Set it again to retry."}
+
+// errRevokeAfterReset answers an admin reset whose session revoke failed.
+// Resetting again retries the revoke.
+var errRevokeAfterReset = fuego.InternalServerError{Title: "Password saved, but signing out the user's sessions failed. Reset it again to retry."}
+
+// loginLimitError maps a failed login rate-limit check: an unreadable limit
+// is an outage (503), anything else is the limit being hit (429).
+func loginLimitError(err error) error {
+	if errors.Is(err, services.ErrRateLimitUnavailable) {
+		return fuego.HTTPError{Status: http.StatusServiceUnavailable, Title: err.Error()}
+	}
+	return fuego.HTTPError{Status: http.StatusTooManyRequests, Title: err.Error()}
 }
 
 func (h *AuthHandler) Register(c fuego.ContextWithBody[RegisterRequest]) (any, error) {

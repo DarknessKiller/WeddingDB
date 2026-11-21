@@ -168,14 +168,11 @@ func (h *AdminHandler) AssignWeddings(c fuego.ContextWithBody[AssignWeddingsRequ
 		return nil, err
 	}
 	// Fetch the old grants so removing access can revoke live sessions.
+	// Unknown old grants: revoke anyway rather than risk a lingering scoped token.
 	oldWeddings, err := h.adminRepo.GetUserWeddings(ctx, admin.ID)
 	if err != nil {
 		slog.Warn("fetch current wedding grants failed", "user", admin.ID, "err", err)
 	}
-	if err := h.adminRepo.SetUserWeddings(ctx, admin.ID, ids); err != nil {
-		return nil, fuego.InternalServerError{Title: "Failed to assign weddings"}
-	}
-	// Unknown old grants: revoke anyway rather than risk a lingering scoped token.
 	revoke := err != nil
 	kept := make(map[uuid.UUID]bool, len(ids))
 	for _, wid := range ids {
@@ -187,11 +184,23 @@ func (h *AdminHandler) AssignWeddings(c fuego.ContextWithBody[AssignWeddingsRequ
 			break
 		}
 	}
+	// Revoke before and after, like UpdateRole: a failure before changes
+	// nothing, and the second revoke catches a select-wedding that ran in
+	// between. A failure after is reported, not just logged, since saving
+	// the same grants again would not revoke again.
 	if revoke {
-		// Refresh also re-checks access, so a Redis failure only leaves the
-		// old scoped token valid until its next refresh; log, don't fail.
 		if err := h.authService.RevokeUserTokens(ctx, admin.ID); err != nil {
-			slog.Warn("revoke tokens after wedding unassign failed", "user", admin.ID, "err", err)
+			slog.Error("revoke tokens before wedding unassign failed", "user", admin.ID, "err", err)
+			return nil, fuego.InternalServerError{Title: "Failed to revoke user sessions"}
+		}
+	}
+	if err := h.adminRepo.SetUserWeddings(ctx, admin.ID, ids); err != nil {
+		return nil, fuego.InternalServerError{Title: "Failed to assign weddings"}
+	}
+	if revoke {
+		if err := h.authService.RevokeUserTokens(ctx, admin.ID); err != nil {
+			slog.Error("revoke tokens after wedding unassign failed", "user", admin.ID, "err", err)
+			return nil, fuego.InternalServerError{Title: "Weddings saved, but signing out the user failed. Revoke their sessions to retry."}
 		}
 	}
 	return admin, nil
@@ -251,10 +260,11 @@ func (h *AdminHandler) ResetPassword(c fuego.ContextWithBody[ResetPasswordReques
 		return nil, fuego.InternalServerError{Title: "Failed to update password"}
 	}
 	// Kill sessions minted under the old password. Password is already
-	// updated — a Redis failure must not fail the request; Refresh
-	// re-validates access anyway.
+	// saved; reporting success while old sessions still work would tell the
+	// admin the account is locked down when it is not.
 	if err := h.authService.RevokeUserTokens(ctx, id); err != nil {
-		slog.Warn("revoke tokens after admin password reset failed", "user", id, "err", err)
+		slog.Error("revoke tokens after admin password reset failed", "user", id, "err", err)
+		return nil, errRevokeAfterReset
 	}
 	return map[string]any{"message": "Password updated"}, nil
 }
@@ -312,6 +322,12 @@ func (h *AdminHandler) UpdateRole(c fuego.ContextWithBody[UpdateRoleRequest]) (a
 			return nil, fuego.BadRequestError{Title: "Cannot demote the last admin"}
 		}
 		return nil, fuego.InternalServerError{Title: "Failed to update role"}
+	}
+	// Revoke again: a login that ran between the first revoke and the role
+	// write read the old role at the new token version.
+	if err := h.authService.RevokeUserTokens(ctx, id); err != nil {
+		slog.Error("revoke tokens after role change failed", "user", id, "err", err)
+		return nil, fuego.InternalServerError{Title: "Role changed, but signing out the user failed. Revoke their sessions to retry."}
 	}
 	admin.Role = body.Role
 	return admin, nil
