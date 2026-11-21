@@ -171,6 +171,32 @@ describe('queue limits', () => {
 		expect(get(toasts).map(t => t.message)).toEqual([expect.stringMatching(/not applied/)]);
 	});
 
+	it('treats a skipped edit the server already holds as synced, not lost', async () => {
+		localStorage.setItem(
+			'offline_queue_w1',
+			JSON.stringify([
+				{ mutationId: 'm1', op: 'update', guestId: 'g1', clientUpdatedAt: '2026-01-01T00:00:00Z', payload: { name: 'Ann', pax: 2, dietary: ['vegan'], tableId: 't1', baseUpdatedAt: '2025-12-31T00:00:00Z' } },
+				{ mutationId: 'm2', op: 'checkout', guestId: 'g2', clientUpdatedAt: '2026-01-01T00:00:00Z' }
+			])
+		);
+		apiFetch.mockResolvedValue({
+			ok: true,
+			json: async () => ({ results: [
+				{ guestId: 'g1', status: 'skipped', reason: 'older than server', serverRecord: { id: 'g1', name: 'Ann', pax: 2, dietary: ['vegan'], tableId: 't1', updatedAt: '2026-01-01T00:00:01Z' } },
+				{ guestId: 'g2', status: 'skipped', reason: 'older than server', serverRecord: { id: 'g2', checkedInAt: null } }
+			] })
+		});
+
+		const { syncQueue, getQueue } = await import('./queue');
+		const { toasts } = await import('#lib/stores/index.ts');
+		const { get } = await import('svelte/store');
+		const outcome = await syncQueue('w1');
+
+		expect(getQueue('w1')).toEqual([]);
+		expect(outcome).toMatchObject({ applied: 2, skipped: 0 });
+		expect(get(toasts)).toEqual([]);
+	});
+
 	it('keeps a failed mutation and counts the attempt below the limit', async () => {
 		localStorage.setItem(
 			'offline_queue_w1',

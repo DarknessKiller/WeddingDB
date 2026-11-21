@@ -137,6 +137,9 @@ async function runSync(wid: string): Promise<SyncOutcome> {
 	for (let i = 0; i < q.length && i < data.results.length; i++) {
 		const r = data.results[i];
 		if (r.status === 'applied') { applied++; appliedIds.push(q[i].mutationId); }
+		// Skipped but already on the server: an online write that timed out after
+		// landing, then queued and replayed. Nothing was lost.
+		else if (r.status === 'skipped' && alreadyApplied(q[i], r.serverRecord)) { applied++; appliedIds.push(q[i].mutationId); }
 		else if (r.status === 'skipped') { skipped++; appliedIds.push(q[i].mutationId); }
 		// A retryable failure (server-side outage) stays queued without spending
 		// an attempt; only rejections of the edit itself count toward the limit.
@@ -150,6 +153,17 @@ async function runSync(wid: string): Promise<SyncOutcome> {
 	if (dropped) addToast(`${dropped} offline edit(s) failed ${MAX_ATTEMPTS} times and were discarded`, 'error');
 	return { applied, skipped, results: data.results };
 }
+/** True when the server record already holds what the queued mutation would write. */
+function alreadyApplied(m: QueuedMutation, record: unknown): boolean {
+	if (!record || typeof record !== 'object') return false;
+	const r = record as Record<string, unknown>;
+	if (m.op === 'checkin') return r.checkedInAt != null;
+	if (m.op === 'checkout') return r.checkedInAt == null;
+	if (m.op === 'delete' || !m.payload) return false;
+	return Object.entries(m.payload).every(([k, v]) =>
+		k === 'baseUpdatedAt' || JSON.stringify(r[k] ?? null) === JSON.stringify(v ?? null));
+}
+
 
 // bumpAttempts counts a failed server attempt per mutation and drops entries
 // that keep failing with the same validation error, so they cannot retry
