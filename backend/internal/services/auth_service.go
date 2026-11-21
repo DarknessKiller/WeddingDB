@@ -30,6 +30,8 @@ type AccessClaims struct {
 	// SessionID is the refresh token row this access token was minted with, so
 	// a session-level change (wedding scope) touches only that session.
 	SessionID uuid.UUID `json:"sid,omitzero"`
+	// ForcePasswordChange limits the token to the change-password endpoint.
+	ForcePasswordChange bool `json:"fpc,omitzero"`
 	jwt.RegisteredClaims
 }
 
@@ -557,6 +559,8 @@ func (s *AuthService) generateAccessToken(ctx context.Context, admin *models.Adm
 		Role:         admin.Role,
 		TokenVersion: tv,
 		SessionID:    sessionID,
+		// Refresh re-mints from the stored admin row, so the flag follows it.
+		ForcePasswordChange: admin.ForcePasswordChange,
 		RegisteredClaims: jwt.RegisteredClaims{
 			ID:        uuid.New().String(),
 			IssuedAt:  jwt.NewNumericDate(now),

@@ -132,3 +132,42 @@ func TestAuthMiddleware_WrongBearerFormat(t *testing.T) {
 		t.Errorf("status = %d, want %d", rec.Code, http.StatusUnauthorized)
 	}
 }
+
+func TestAuthMiddleware_ForcePasswordChangeOnlyReachesChangePassword(t *testing.T) {
+	secret := "test-secret"
+	mw := AuthMiddleware(newAuthService(t, secret))
+	handler := mw(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	claims := services.AccessClaims{
+		AdminID:             uuid.New(),
+		Role:                "user",
+		ForcePasswordChange: true,
+		RegisteredClaims: jwt.RegisteredClaims{
+			ID:        uuid.NewString(),
+			ExpiresAt: jwt.NewNumericDate(time.Now().Add(time.Minute)),
+		},
+	}
+	tok, err := jwt.NewWithClaims(jwt.SigningMethodHS256, claims).SignedString([]byte(secret))
+	testutil.NoErr(t, err)
+
+	tests := []struct {
+		method, path string
+		want         int
+	}{
+		{"POST", ChangePasswordPath, http.StatusOK},
+		{"GET", "/api/weddings", http.StatusForbidden},
+		{"POST", "/api/auth/select-wedding", http.StatusForbidden},
+	}
+	for _, tt := range tests {
+		t.Run(tt.path, func(t *testing.T) {
+			req := httptest.NewRequest(tt.method, tt.path, nil)
+			req.Header.Set("Authorization", "Bearer "+tok)
+			rec := httptest.NewRecorder()
+			handler.ServeHTTP(rec, req)
+			if rec.Code != tt.want {
+				t.Errorf("status = %d, want %d", rec.Code, tt.want)
+			}
+		})
+	}
+}

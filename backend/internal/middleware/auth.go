@@ -9,6 +9,10 @@ import (
 
 type contextKey string
 
+// ChangePasswordPath is the only authenticated route a token flagged for a
+// forced password change may call; login, refresh and logout are public.
+const ChangePasswordPath = "/api/auth/change-password"
+
 const (
 	AdminIDKey   contextKey = "adminId"
 	WeddingIDKey contextKey = "weddingId"
@@ -31,6 +35,11 @@ func AuthMiddleware(authService *services.AuthService) func(http.Handler) http.H
 			claims, err := authService.ValidateToken(r.Context(), token)
 			if err != nil {
 				http.Error(w, `{"error":"Invalid token"}`, http.StatusUnauthorized)
+				return
+			}
+
+			if claims.ForcePasswordChange && r.URL.Path != ChangePasswordPath {
+				http.Error(w, `{"error":"Password change required"}`, http.StatusForbidden)
 				return
 			}
 

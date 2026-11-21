@@ -114,7 +114,11 @@ func (h *SSEHandler) StreamHandler() http.HandlerFunc {
 }
 
 // canStream reports whether claims may read wid's events: admins read every
-// wedding, other users only the one their token is scoped to.
+// wedding, other users only the one their token is scoped to. A token pending
+// a forced password change reads nothing.
 func canStream(claims *services.AccessClaims, wid uuid.UUID) bool {
+	if claims.ForcePasswordChange {
+		return false
+	}
 	return claims.Role == "admin" || (claims.WeddingID != nil && *claims.WeddingID == wid)
 }
