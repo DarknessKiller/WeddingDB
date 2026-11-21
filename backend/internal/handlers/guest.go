@@ -234,7 +234,7 @@ func (h *GuestHandler) Delete(c fuego.ContextWithBody[any]) (any, error) {
 		return nil, fuego.BadRequestError{Title: "Invalid ID"}
 	}
 	if err := h.guestService.Delete(ctx, id, wid); err != nil {
-		return nil, err
+		return nil, notFoundIfMissing(err, "Guest not found")
 	}
 	c.SetStatus(204)
 	return nil, nil

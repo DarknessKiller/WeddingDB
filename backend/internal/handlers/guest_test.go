@@ -50,6 +50,7 @@ func newGuestTestServer(db *gorm.DB) *fuego.Server {
 	fuego.Post(s, "/api/weddings/{wid}/guests", h.Create)
 	fuego.Put(s, "/api/weddings/{wid}/guests/{id}", h.Update)
 	fuego.Delete(s, "/api/weddings/{wid}/guests/{id}/seat", h.UnassignSeat)
+	fuego.Delete(s, "/api/weddings/{wid}/guests/{id}", h.Delete)
 	return s
 }
 
@@ -242,5 +243,30 @@ func TestSync_MalformedMutationFailsAlone(t *testing.T) {
 	}
 	if !strings.Contains(rec.Body.String(), `"retryable":false`) {
 		t.Fatalf("response lacks retryable field: %s", rec.Body)
+	}
+}
+
+func TestGuestDelete_MissingIs404(t *testing.T) {
+	db := newGuestTestDB(t)
+	wid, gid := uuid.New(), uuid.New()
+	testutil.NoErr(t, db.Create(&models.GuestRecord{ID: gid, WeddingID: wid, Name: "Ann", Pax: 1}).Error)
+	s := newGuestTestServer(db)
+	path := "/api/weddings/" + wid.String() + "/guests/"
+
+	tests := []struct {
+		name string
+		id   uuid.UUID
+		want int
+	}{
+		{"missing guest", uuid.New(), http.StatusNotFound},
+		{"existing guest", gid, http.StatusNoContent},
+		{"already deleted", gid, http.StatusNotFound},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if rec := serveJSON(s, http.MethodDelete, path+tt.id.String(), ""); rec.Code != tt.want {
+				t.Fatalf("status = %d, want %d", rec.Code, tt.want)
+			}
+		})
 	}
 }

@@ -191,17 +191,16 @@ func (s *GuestService) Update(ctx context.Context, g *models.GuestRecord) error 
 }
 
 func (s *GuestService) Delete(ctx context.Context, id, weddingID uuid.UUID) error {
-	// Fetch guest before deletion so we can broadcast the event.
+	// Fetch guest before deletion so we can broadcast the event. A missing
+	// guest is gorm.ErrRecordNotFound: nothing to delete or broadcast.
 	guest, err := s.guestRepo.FindByID(ctx, id, weddingID)
 	if err != nil {
-		log.Printf("guest lookup before delete failed: %v", err)
+		return err
 	}
 	if err := s.guestRepo.Delete(ctx, id, weddingID); err != nil {
 		return err
 	}
-	if guest != nil {
-		s.publishEvent("delete", guest, weddingID)
-	}
+	s.publishEvent("delete", guest, weddingID)
 	return nil
 }
 
