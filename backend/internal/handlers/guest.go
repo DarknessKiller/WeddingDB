@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"encoding/json"
 	"errors"
 	"log/slog"
 	"strconv"
@@ -436,7 +437,9 @@ func (h *GuestHandler) UnassignSeat(c fuego.ContextNoBody) (any, error) {
 }
 
 type SyncRequest struct {
-	Mutations []services.SyncMutation `json:"mutations"`
+	// Mutations stay raw so one undecodable item fails alone (offline-sync
+	// invariant 7) instead of rejecting the whole batch.
+	Mutations []json.RawMessage `json:"mutations"`
 }
 
 func (h *GuestHandler) Sync(c fuego.ContextWithBody[SyncRequest]) (any, error) {
@@ -452,9 +455,22 @@ func (h *GuestHandler) Sync(c fuego.ContextWithBody[SyncRequest]) (any, error) {
 	if len(body.Mutations) > 500 {
 		return nil, fuego.BadRequestError{Title: "Too many mutations (max 500)"}
 	}
-	results, err := h.guestService.Sync(ctx, wid, body.Mutations)
-	if err != nil {
-		return nil, err
+	results := make([]services.SyncResult, 0, len(body.Mutations))
+	for _, raw := range body.Mutations {
+		var m services.SyncMutation
+		if err := json.Unmarshal(raw, &m); err != nil {
+			var id struct {
+				GuestID string `json:"guestId"`
+			}
+			json.Unmarshal(raw, &id) //nolint:errcheck // best effort: a guestId only labels the failure
+			results = append(results, services.SyncResult{GuestID: id.GuestID, Status: "failed", Reason: "malformed mutation"})
+			continue
+		}
+		res, err := h.guestService.Sync(ctx, wid, []services.SyncMutation{m})
+		if err != nil {
+			return nil, err
+		}
+		results = append(results, res...)
 	}
 	return map[string]any{"results": results}, nil
 }

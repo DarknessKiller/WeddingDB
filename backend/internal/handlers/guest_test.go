@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -201,5 +202,39 @@ func TestGuestCreate_ClientID(t *testing.T) {
 	testutil.NoErr(t, db.First(&other, "id = ?", foreign).Error)
 	if other.WeddingID != otherWid || other.Name != "Other" {
 		t.Fatalf("foreign guest changed: %+v", other)
+	}
+}
+
+func TestSync_MalformedMutationFailsAlone(t *testing.T) {
+	db := newGuestTestDB(t)
+	testutil.NoErr(t, db.Exec(`CREATE TABLE applied_mutations (wedding_id TEXT, mutation_id TEXT, created_at DATETIME, PRIMARY KEY (wedding_id, mutation_id))`).Error)
+	wid, gid := uuid.New(), uuid.New()
+	base := time.Now().Add(-time.Hour).UTC()
+	testutil.NoErr(t, db.Create(&models.GuestRecord{ID: gid, WeddingID: wid, Name: "Ann", Pax: 1, CreatedAt: base, UpdatedAt: base}).Error)
+	svc := services.NewGuestService(repository.NewGuestRepo(db), repository.NewTableRepo(db), nil, db)
+	s := fuego.NewServer(fuego.WithoutStartupMessages())
+	fuego.Post(s, "/api/weddings/{wid}/guests/sync", NewGuestHandler(svc).Sync)
+
+	body := `{"mutations":[
+		{"guestId":"bad","op":"update","clientUpdatedAt":"not a time"},
+		{"mutationId":"m2","guestId":"` + gid.String() + `","op":"update","clientUpdatedAt":"` + time.Now().Add(-time.Minute).UTC().Format(time.RFC3339) + `","payload":{"name":"Bea"}}
+	]}`
+	rec := serveJSON(s, http.MethodPost, "/api/weddings/"+wid.String()+"/guests/sync", body)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, body %s", rec.Code, rec.Body)
+	}
+	var got struct{ Results []services.SyncResult }
+	testutil.NoErr(t, json.Unmarshal(rec.Body.Bytes(), &got))
+	if len(got.Results) != 2 {
+		t.Fatalf("results = %+v", got.Results)
+	}
+	if r := got.Results[0]; r.Status != "failed" || r.Retryable || r.GuestID != "bad" {
+		t.Fatalf("malformed item: %+v, want failed, not retryable", r)
+	}
+	if got.Results[1].Status != "applied" {
+		t.Fatalf("valid item: %+v, want applied", got.Results[1])
+	}
+	if !strings.Contains(rec.Body.String(), `"retryable":false`) {
+		t.Fatalf("response lacks retryable field: %s", rec.Body)
 	}
 }

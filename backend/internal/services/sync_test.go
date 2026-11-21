@@ -607,3 +607,38 @@ func TestSync_ReplayOfAppliedBatchIsApplied(t *testing.T) {
 		}
 	}
 }
+
+func TestSync_RetryableOnlyForTransientFailures(t *testing.T) {
+	svc, db, wid := newGuestSyncService(t)
+	ctx := t.Context()
+	gid := uuid.New()
+	base := time.Now().Add(-10 * time.Minute)
+	testutil.NoErr(t, db.Create(&models.GuestRecord{ID: gid, WeddingID: wid, Name: "Ann", Pax: 1, CreatedAt: base, UpdatedAt: base}).Error)
+	missingTable := uuid.NewString()
+
+	tests := []struct {
+		name string
+		m    SyncMutation
+	}{
+		{"seat on unknown table", SyncMutation{Op: SyncOpUpdate, GuestID: gid.String(), ClientUpdatedAt: base.Add(time.Minute), Payload: &SyncPayload{TableID: &missingTable}}},
+		{"party too large", SyncMutation{Op: SyncOpUpdate, GuestID: gid.String(), ClientUpdatedAt: base.Add(time.Minute), Payload: &SyncPayload{Pax: MaxGuestPartySize + 1}}},
+		{"delete older than server", SyncMutation{Op: SyncOpDelete, GuestID: gid.String(), ClientUpdatedAt: base.Add(-time.Minute)}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			results, err := svc.Sync(ctx, wid, []SyncMutation{tt.m})
+			testutil.NoErr(t, err)
+			if results[0].Status != "failed" || results[0].Retryable {
+				t.Fatalf("got %+v, want failed and not retryable", results[0])
+			}
+		})
+	}
+
+	// A database failure is transient.
+	testutil.NoErr(t, db.Exec(`DROP TABLE applied_mutations`).Error)
+	results, err := svc.Sync(ctx, wid, []SyncMutation{{MutationID: uuid.NewString(), Op: SyncOpCheckIn, GuestID: gid.String(), ClientUpdatedAt: base.Add(time.Minute)}})
+	testutil.NoErr(t, err)
+	if results[0].Status != "failed" || !results[0].Retryable {
+		t.Fatalf("db failure: got %+v, want failed and retryable", results[0])
+	}
+}
