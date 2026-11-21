@@ -6,6 +6,7 @@ import (
 	"net"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -497,5 +498,65 @@ func TestPublishGuest_FastFailureDoesNotPause(t *testing.T) {
 	hub.publishGuest("create", &models.GuestRecord{ID: uuid.New()}, uuid.New())
 	if hub.pausedUntil.Load() != 0 {
 		t.Fatal("not-ready failure paused publishing")
+	}
+}
+
+// A publish that never reaches Redis ends that wedding's local streams, so
+// clients reconnect and reload instead of keeping a stale roster behind
+// pings. Other weddings' streams stay open.
+func TestPublishGuest_LostEventResyncsWedding(t *testing.T) {
+	hub := &SSEHub{clients: make(map[uuid.UUID]map[string]*SSEClient), ready: make(chan struct{})}
+	wid, other := uuid.New(), uuid.New()
+	stale, _ := hub.Subscribe(wid, uuid.New())
+	kept, _ := hub.Subscribe(other, uuid.New())
+	hub.publishGuest("checkin", &models.GuestRecord{ID: uuid.New()}, wid) // hub not ready: publish fails
+	select {
+	case <-stale.Done:
+	default:
+		t.Fatal("stream of wedding with lost event left open")
+	}
+	select {
+	case <-kept.Done:
+		t.Fatal("other wedding's stream was ended")
+	default:
+	}
+}
+
+// After a dropped Redis connection, go-redis re-subscribes; events published
+// in the gap are lost, so open streams must end and resync.
+func TestSSEHub_ResubscribeResyncsStreams(t *testing.T) {
+	mr := miniredis.RunT(t)
+	var mu sync.Mutex
+	var conns []net.Conn
+	rdb := redis.NewClient(&redis.Options{Addr: mr.Addr(), Dialer: func(ctx context.Context, network, addr string) (net.Conn, error) {
+		c, err := (&net.Dialer{}).DialContext(ctx, network, addr)
+		if err == nil {
+			mu.Lock()
+			conns = append(conns, c)
+			mu.Unlock()
+		}
+		return c, err
+	}})
+	hub := NewSSEHub(rdb)
+	t.Cleanup(hub.Shutdown)
+	time.Sleep(100 * time.Millisecond) // let the first subscription ack arrive
+	client, ok := hub.Subscribe(uuid.New(), uuid.New())
+	if !ok {
+		t.Fatal("subscribe rejected")
+	}
+	select {
+	case <-client.Done:
+		t.Fatal("first subscription ack ended a stream")
+	case <-time.After(200 * time.Millisecond):
+	}
+	mu.Lock()
+	for _, c := range conns {
+		c.Close() //nolint:errcheck // forcing a reconnect
+	}
+	mu.Unlock()
+	select {
+	case <-client.Done:
+	case <-time.After(10 * time.Second):
+		t.Fatal("stream not ended after Redis re-subscribe")
 	}
 }

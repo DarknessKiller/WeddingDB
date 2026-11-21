@@ -27,10 +27,12 @@ func openGuestPG(t *testing.T) (*GuestService, *gorm.DB) {
 	if !strings.HasSuffix(dbName, "_test") {
 		t.Fatalf("refusing to drop tables in %q", dbName)
 	}
-	drop := func() { db.Exec("DROP TABLE IF EXISTS guest_records, banquet_tables, wedding_events CASCADE") }
+	drop := func() {
+		db.Exec("DROP TABLE IF EXISTS guest_records, guest_tombstones, banquet_tables, wedding_events CASCADE")
+	}
 	drop()
 	t.Cleanup(drop)
-	testutil.NoErr(t, db.AutoMigrate(&models.WeddingEvent{}, &models.BanquetTable{}, &models.GuestRecord{}))
+	testutil.NoErr(t, db.AutoMigrate(&models.WeddingEvent{}, &models.BanquetTable{}, &models.GuestRecord{}, &models.GuestTombstone{}))
 	return NewGuestService(repository.NewGuestRepo(db), repository.NewTableRepo(db), nil, db), db
 }
 
@@ -150,7 +152,7 @@ func TestWeddingDelete_PostgresLeavesNoOrphanGuest(t *testing.T) {
 func TestCreateGuest_PostgresLongHanNamePinyinFits(t *testing.T) {
 	svc, db := openGuestPG(t)
 	testutil.NoErr(t, db.Exec("ALTER TABLE guest_records ALTER COLUMN name_pinyin TYPE varchar(255)").Error)
-	testutil.NoErr(t, db.AutoMigrate(&models.GuestRecord{}))
+	testutil.NoErr(t, db.AutoMigrate(&models.GuestRecord{}, &models.GuestTombstone{}))
 	wid := uuid.New()
 	testutil.NoErr(t, db.Create(&models.WeddingEvent{ID: wid, Name: "W"}).Error)
 

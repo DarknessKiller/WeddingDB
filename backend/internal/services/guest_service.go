@@ -470,11 +470,12 @@ func (s *GuestService) CheckIn(ctx context.Context, id, weddingID uuid.UUID, not
 	}
 	guest, err := s.guestRepo.FindByID(ctx, id, weddingID)
 	if err != nil {
+		// No event to send: make this wedding's streams reload instead.
 		log.Printf("guest lookup after check-in failed: %v", err)
+		s.sseHub.resync(weddingID)
+		return nil
 	}
-	if guest != nil {
-		s.sseHub.publishGuest("checkin", guest, weddingID)
-	}
+	s.sseHub.publishGuest("checkin", guest, weddingID)
 	return nil
 }
 
@@ -634,6 +635,7 @@ func (h *SSEHub) publishGuest(eventType string, guest *models.GuestRecord, weddi
 	// every check-in (and each item of a sync batch) for go-redis's retries.
 	if time.Now().UnixNano() < h.pausedUntil.Load() {
 		log.Printf("SSE: publish %s for guest %s in wedding %s skipped: Redis paused after failure", eventType, guest.ID, weddingID)
+		h.resync(weddingID)
 		return
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), publishTimeout)
@@ -645,6 +647,7 @@ func (h *SSEHub) publishGuest(eventType string, guest *models.GuestRecord, weddi
 			h.pausedUntil.Store(time.Now().Add(publishPause).UnixNano())
 		}
 		log.Printf("SSE: publish %s for guest %s in wedding %s: %v", eventType, guest.ID, weddingID, err)
+		h.resync(weddingID)
 	}
 }
 
@@ -747,13 +750,23 @@ func (s *GuestService) Sync(ctx context.Context, weddingID uuid.UUID, mutations 
 	// edit of the same guest without a base: it was built on the refused edit,
 	// so applying it would undo whatever newer change refused the first one.
 	refused := make(map[string]bool)
+	// Guests whose create failed retryably (server outage). Their later ops
+	// wait with it: run now, a check-in finds no row, is "skipped" and
+	// dequeued, and the retried create comes back without the arrival.
+	createPending := make(map[string]bool)
 	for _, m := range mutations {
 		edit := m.Op == SyncOpUpdate || m.Op == SyncOpCreate
 		var res SyncResult
-		if edit && m.BaseUpdatedAt == nil && refused[m.GuestID] {
+		switch {
+		case createPending[m.GuestID]:
+			res = SyncResult{GuestID: m.GuestID, Status: "failed", Reason: "waiting for guest create", Retryable: true}
+		case edit && m.BaseUpdatedAt == nil && refused[m.GuestID]:
 			res = syncFailed(m, ErrStaleGuest)
-		} else {
+		default:
 			res = s.applySyncMutation(ctx, weddingID, m)
+		}
+		if m.Op == SyncOpCreate && res.Retryable {
+			createPending[m.GuestID] = true
 		}
 		if edit && res.Status != "applied" {
 			refused[m.GuestID] = true
@@ -817,6 +830,13 @@ func (s *GuestService) applySyncMutation(ctx context.Context, weddingID uuid.UUI
 			}
 			s.sseHub.publishGuest("update", existing, weddingID)
 			return SyncResult{GuestID: m.GuestID, Status: "applied", ServerRecord: existing}
+		}
+		// A replayed create (first response lost) must not bring back a guest
+		// someone deleted since.
+		if deleted, err := s.guestRepo.IsDeleted(ctx, gid, weddingID); err != nil {
+			return syncFailed(m, fmt.Errorf("check deleted guest: %w", err))
+		} else if deleted {
+			return SyncResult{GuestID: m.GuestID, Status: "skipped", Reason: "deleted"}
 		}
 		if m.Payload == nil || m.Payload.Name == nil || strings.TrimSpace(*m.Payload.Name) == "" {
 			return SyncResult{GuestID: m.GuestID, Status: "skipped", Reason: "name required"}
@@ -973,7 +993,10 @@ func (s *GuestService) applySyncMutation(ctx context.Context, weddingID uuid.UUI
 			if err := lockGuestRow(tx, existing); err != nil {
 				return err
 			}
-			if opTime.Before(existing.UpdatedAt) {
+			// Only a check-in newer than this undo beats it. Unrelated newer edits
+			// (notes, table moves, the bump a synced check-in gives updated_at)
+			// do not, or an offline undo of a mistaken check-in is lost.
+			if existing.CheckedInAt != nil && opTime.Before(*existing.CheckedInAt) {
 				res = SyncResult{GuestID: m.GuestID, Status: "skipped", Reason: "older than server", ServerRecord: existing}
 				return nil
 			}
@@ -983,12 +1006,16 @@ func (s *GuestService) applySyncMutation(ctx context.Context, weddingID uuid.UUI
 				res = SyncResult{GuestID: m.GuestID, Status: "applied", ServerRecord: existing}
 				return nil
 			}
-			// opTime is not before the locked row's updated_at, so this never
-			// moves it backwards.
+			// Never move updated_at backwards, but always forward, so an editor
+			// holding the old value gets a 409 instead of re-checking the guest in.
 			existing.CheckedInAt = nil
-			existing.UpdatedAt = opTime
+			if opTime.After(existing.UpdatedAt) {
+				existing.UpdatedAt = opTime
+			} else {
+				existing.UpdatedAt = existing.UpdatedAt.Add(time.Microsecond)
+			}
 			res = SyncResult{GuestID: m.GuestID, Status: "applied", ServerRecord: existing}
-			return repository.NewGuestRepo(tx).CheckOut(ctx, gid, weddingID, opTime)
+			return repository.NewGuestRepo(tx).CheckOut(ctx, gid, weddingID, existing.UpdatedAt)
 		}); err != nil {
 			return syncFailed(m, err)
 		}
@@ -1066,6 +1093,12 @@ func syncCheckIn(ctx context.Context, tx *gorm.DB, g *models.GuestRecord, m Sync
 			// in with its note already present: skip it, don't duplicate it.
 			note := strings.TrimSpace(*m.Payload.Notes)
 			if !wasCheckedIn || !slices.Contains(strings.Split(g.Notes, "\n"), note) {
+				// Offline, nobody can shorten the note and retry: cut it to fit
+				// rather than refuse the check-in and lose the arrival and angbao.
+				if fitted := fitNote(g.Notes, note); fitted != note {
+					log.Printf("sync check-in of guest %s: note cut from %d to %d characters to fit notes limit", g.ID, utf8.RuneCountInString(note), utf8.RuneCountInString(fitted))
+					note = fitted
+				}
 				g.Notes = appendNote(g.Notes, note)
 			}
 		}
@@ -1155,6 +1188,22 @@ func appendNote(existing, notes string) string {
 		return notes
 	}
 	return existing + "\n" + notes
+}
+
+// fitNote cuts note to the room left under MaxGuestNotesLen once it is
+// appended to existing with appendNote.
+func fitNote(existing, note string) string {
+	room := MaxGuestNotesLen - utf8.RuneCountInString(existing)
+	if existing != "" {
+		room-- // the joining newline
+	}
+	if room <= 0 {
+		return ""
+	}
+	if r := []rune(note); len(r) > room {
+		return string(r[:room])
+	}
+	return note
 }
 
 func guestToEventData(g *models.GuestRecord) *GuestEventData {

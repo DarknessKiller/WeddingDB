@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -22,6 +23,7 @@ func newGuestSyncService(t *testing.T) (*GuestService, *gorm.DB, uuid.UUID) {
 	if err != nil {
 		t.Fatalf("sqlite open: %v", err)
 	}
+	testutil.NoErr(t, db.AutoMigrate(&models.GuestTombstone{}))
 	db.Exec(`CREATE TABLE guest_records (
 		id TEXT PRIMARY KEY,
 		wedding_id TEXT NOT NULL,
@@ -796,6 +798,41 @@ func TestSync_CheckOutReplayIsApplied(t *testing.T) {
 	}
 }
 
+// Offline undo of a mistaken check-in survives an unrelated newer edit (a
+// notes change) but still loses to a check-in newer than it, and never moves
+// updated_at backwards.
+func TestSync_CheckOutBeatsUnrelatedNewerEdit(t *testing.T) {
+	svc, db, wid := newGuestSyncService(t)
+	ctx := context.Background()
+	t1 := time.Now().Add(-time.Hour).UTC().Truncate(time.Millisecond)
+	edited := t1.Add(3 * time.Minute)
+	gid := uuid.New()
+	testutil.NoErr(t, db.Create(&models.GuestRecord{ID: gid, WeddingID: wid, Name: "X", Pax: 1, Notes: "desk B", CheckedInAt: &t1, CreatedAt: t1, UpdatedAt: edited}).Error)
+
+	res, err := svc.Sync(ctx, wid, []SyncMutation{{Op: SyncOpCheckOut, GuestID: gid.String(), ClientUpdatedAt: t1.Add(time.Minute)}})
+	testutil.NoErr(t, err)
+	if res[0].Status != "applied" {
+		t.Fatalf("status = %s (%s), want applied", res[0].Status, res[0].Reason)
+	}
+	var got models.GuestRecord
+	testutil.NoErr(t, db.First(&got, "id = ?", gid).Error)
+	if got.CheckedInAt != nil {
+		t.Fatal("guest still checked in")
+	}
+	if !got.UpdatedAt.After(edited) {
+		t.Fatalf("updated_at = %v, want after %v", got.UpdatedAt, edited)
+	}
+
+	// A check-in newer than the queued undo wins.
+	later := t1.Add(10 * time.Minute)
+	testutil.NoErr(t, db.Model(&models.GuestRecord{}).Where("id = ?", gid).Updates(map[string]any{"checked_in_at": later, "updated_at": later}).Error)
+	res, err = svc.Sync(ctx, wid, []SyncMutation{{Op: SyncOpCheckOut, GuestID: gid.String(), ClientUpdatedAt: t1.Add(5 * time.Minute)}})
+	testutil.NoErr(t, err)
+	if res[0].Status != "skipped" {
+		t.Fatalf("status = %s, want skipped behind newer check-in", res[0].Status)
+	}
+}
+
 // Offline edits follow the online PUT rules: a blank name or out-of-range
 // pax fails (not retryable) instead of being dropped and reported applied,
 // and an empty RSVP clears it as online does.
@@ -840,5 +877,79 @@ func TestSync_ZeroClientTimeFails(t *testing.T) {
 	testutil.NoErr(t, db.First(&got, "id = ?", gid).Error)
 	if got.CheckedInAt != nil {
 		t.Fatalf("checked in at %v", got.CheckedInAt)
+	}
+}
+
+// A create replayed after the guest was deleted (its first response was
+// lost) is skipped, not applied again.
+func TestSync_ReplayedCreateDoesNotResurrectDeletedGuest(t *testing.T) {
+	svc, db, wid := newGuestSyncService(t)
+	ctx := context.Background()
+	gid := uuid.New()
+	create := []SyncMutation{{Op: SyncOpCreate, GuestID: gid.String(), ClientUpdatedAt: time.Now().Add(-time.Minute), Payload: &SyncPayload{Name: new("Walk-in")}}}
+	res, err := svc.Sync(ctx, wid, create)
+	testutil.NoErr(t, err)
+	if res[0].Status != "applied" {
+		t.Fatalf("create: %s (%s)", res[0].Status, res[0].Reason)
+	}
+	testutil.NoErr(t, svc.Delete(ctx, gid, wid))
+
+	res, err = svc.Sync(ctx, wid, create)
+	testutil.NoErr(t, err)
+	if res[0].Status != "skipped" {
+		t.Fatalf("replayed create: %s (%s), want skipped", res[0].Status, res[0].Reason)
+	}
+	var n int64
+	testutil.NoErr(t, db.Model(&models.GuestRecord{}).Where("id = ?", gid).Count(&n).Error)
+	if n != 0 {
+		t.Fatal("deleted guest was recreated")
+	}
+}
+
+// An op queued after a create that failed retryably stays queued with it,
+// instead of finding no row and being dropped.
+func TestSync_OpAfterRetryableCreateFailureStaysQueued(t *testing.T) {
+	svc, db, wid := newGuestSyncService(t)
+	ctx := context.Background()
+	// Break only the create path: guest lookups still work.
+	testutil.NoErr(t, db.Migrator().DropTable(&models.GuestTombstone{}))
+	gid := uuid.New()
+	at := time.Now().Add(-time.Minute)
+	res, err := svc.Sync(ctx, wid, []SyncMutation{
+		{Op: SyncOpCreate, GuestID: gid.String(), ClientUpdatedAt: at, Payload: &SyncPayload{Name: new("Walk-in")}},
+		{Op: SyncOpCheckIn, GuestID: gid.String(), ClientUpdatedAt: at.Add(time.Second)},
+	})
+	testutil.NoErr(t, err)
+	for i, r := range res {
+		if r.Status != "failed" || !r.Retryable {
+			t.Errorf("result %d: %s retryable=%v (%s), want retryable failure", i, r.Status, r.Retryable, r.Reason)
+		}
+	}
+}
+
+// An offline check-in whose note would push notes past MaxGuestNotesLen
+// still applies, with the note cut to fit, instead of failing for good.
+func TestSync_CheckInNoteCutToFitNotesLimit(t *testing.T) {
+	svc, db, wid := newGuestSyncService(t)
+	ctx := context.Background()
+	t1 := time.Now().Add(-time.Hour).UTC().Truncate(time.Millisecond)
+	gid := uuid.New()
+	existing := strings.Repeat("n", MaxGuestNotesLen-10)
+	testutil.NoErr(t, db.Create(&models.GuestRecord{ID: gid, WeddingID: wid, Name: "X", Pax: 1, Notes: existing, CreatedAt: t1, UpdatedAt: t1}).Error)
+
+	angbao := 88
+	res, err := svc.Sync(ctx, wid, []SyncMutation{{Op: SyncOpCheckIn, GuestID: gid.String(), ClientUpdatedAt: t1.Add(time.Minute),
+		Payload: &SyncPayload{Notes: new("arrived with two extra guests"), AngbaoAmt: NullableJSON[int]{Set: true, Value: &angbao}}}})
+	testutil.NoErr(t, err)
+	if res[0].Status != "applied" {
+		t.Fatalf("status = %s (%s), want applied", res[0].Status, res[0].Reason)
+	}
+	var got models.GuestRecord
+	testutil.NoErr(t, db.First(&got, "id = ?", gid).Error)
+	if got.CheckedInAt == nil || got.AngbaoAmt == nil || *got.AngbaoAmt != angbao {
+		t.Fatalf("check-in or angbao lost: checkedInAt=%v angbao=%v", got.CheckedInAt, got.AngbaoAmt)
+	}
+	if want := existing + "\narrived w"; got.Notes != want {
+		t.Fatalf("notes = ...%q, want ...%q", got.Notes[len(existing):], want[len(existing):])
 	}
 }

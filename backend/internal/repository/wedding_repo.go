@@ -84,6 +84,9 @@ func (r *WeddingRepo) Delete(ctx context.Context, id uuid.UUID) error {
 		if err := tx.Where("wedding_id = ?", id).Delete(&models.GuestRecord{}).Error; err != nil {
 			return err
 		}
+		if err := tx.Where("wedding_id = ?", id).Delete(&models.GuestTombstone{}).Error; err != nil {
+			return err
+		}
 		if err := tx.Where("wedding_id = ?", id).Delete(&models.BanquetTable{}).Error; err != nil {
 			return err
 		}

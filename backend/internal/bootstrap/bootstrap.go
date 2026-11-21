@@ -72,6 +72,7 @@ func Init(env config.Env, version string) *App {
 		&models.AdminUser{},
 		&models.BanquetTable{},
 		&models.GuestRecord{},
+		&models.GuestTombstone{},
 		&models.RefreshToken{},
 		&models.UserWedding{},
 		&models.HallElement{},

@@ -14,6 +14,7 @@ import (
 
 	"github.com/google/uuid"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 var ErrInvalidCursor = errors.New("invalid cursor")
@@ -164,8 +165,20 @@ func checkAffected(res *gorm.DB) error {
 }
 
 func (r *GuestRepo) Delete(ctx context.Context, id, weddingID uuid.UUID) error {
-	res := r.db.WithContext(ctx).Where("id = ? AND wedding_id = ?", id, weddingID).Delete(&models.GuestRecord{})
-	return checkAffected(res)
+	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		res := tx.Where("id = ? AND wedding_id = ?", id, weddingID).Delete(&models.GuestRecord{})
+		if err := checkAffected(res); err != nil {
+			return err
+		}
+		return tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&models.GuestTombstone{GuestID: id, WeddingID: weddingID}).Error
+	})
+}
+
+// IsDeleted reports whether guest id was deleted from the wedding.
+func (r *GuestRepo) IsDeleted(ctx context.Context, id, weddingID uuid.UUID) (bool, error) {
+	var n int64
+	err := r.db.WithContext(ctx).Model(&models.GuestTombstone{}).Where("guest_id = ? AND wedding_id = ?", id, weddingID).Count(&n).Error
+	return n > 0, err
 }
 
 // SyncUpdate updates a guest and forces UpdatedAt to the provided time for LWW.

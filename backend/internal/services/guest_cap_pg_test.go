@@ -41,7 +41,7 @@ func TestGuestCap_PostgresConcurrent(t *testing.T) {
 	}
 	drop()
 	t.Cleanup(drop)
-	if err := db.AutoMigrate(&models.WeddingEvent{}, &models.GuestRecord{}); err != nil {
+	if err := db.AutoMigrate(&models.WeddingEvent{}, &models.GuestRecord{}, &models.GuestTombstone{}); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}
 

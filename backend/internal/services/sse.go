@@ -106,34 +106,77 @@ func (h *SSEHub) subscribeRedis() {
 		log.Printf("SSE: PSubscribe ping failed: %v", err)
 	}
 	close(h.ready)
-	ch := pubsub.Channel()
+	// With subscriptions: the first *redis.Subscription confirms PSubscribe;
+	// any later one is go-redis re-subscribing after a dropped connection.
+	// Events published in that gap are gone, so every local stream resyncs.
+	ch := pubsub.ChannelWithSubscriptions()
+	subscribed := false
 	for {
 		select {
 		case <-h.ctx.Done():
 			return
-		case msg, ok := <-ch:
+		case raw, ok := <-ch:
 			if !ok {
 				return
 			}
-			wid := extractWeddingID(msg.Channel)
-			if wid == uuid.Nil {
-				continue
-			}
-			h.mu.RLock()
-			clients := make([]*SSEClient, 0, len(h.clients[wid]))
-			for _, client := range h.clients[wid] {
-				clients = append(clients, client)
-			}
-			h.mu.RUnlock()
-			for _, client := range clients {
-				select {
-				case client.Chan <- []byte(msg.Payload):
-				default:
-					// A dropped event leaves the snapshot stale; force reconnect/resync instead.
-					h.Unsubscribe(client)
+			switch msg := raw.(type) {
+			case *redis.Subscription:
+				if subscribed {
+					h.resync(uuid.Nil)
 				}
+				subscribed = true
+			case *redis.Message:
+				h.fanOut(msg)
 			}
 		}
+	}
+}
+
+func (h *SSEHub) fanOut(msg *redis.Message) {
+	wid := extractWeddingID(msg.Channel)
+	if wid == uuid.Nil {
+		return
+	}
+	h.mu.RLock()
+	clients := make([]*SSEClient, 0, len(h.clients[wid]))
+	for _, client := range h.clients[wid] {
+		clients = append(clients, client)
+	}
+	h.mu.RUnlock()
+	for _, client := range clients {
+		select {
+		case client.Chan <- []byte(msg.Payload):
+		default:
+			// A dropped event leaves the snapshot stale; force reconnect/resync instead.
+			h.Unsubscribe(client)
+		}
+	}
+}
+
+// resync ends every local stream of weddingID (of every wedding for
+// uuid.Nil) after an event for it was lost. Pings keep a stream alive, so
+// without this a client never reconnects and reloads the guests it missed.
+func (h *SSEHub) resync(weddingID uuid.UUID) {
+	if h == nil {
+		return
+	}
+	var ended []*SSEClient
+	h.mu.Lock()
+	for wid, clients := range h.clients {
+		if weddingID != uuid.Nil && wid != weddingID {
+			continue
+		}
+		for _, c := range clients {
+			ended = append(ended, c)
+		}
+		delete(h.clients, wid)
+	}
+	h.mu.Unlock()
+	for _, c := range ended {
+		c.doneOnce.Do(func() { close(c.Done) })
+	}
+	if len(ended) > 0 {
+		log.Printf("SSE: ended %d streams to resync after lost events", len(ended))
 	}
 }
 
