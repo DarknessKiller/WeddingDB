@@ -41,14 +41,17 @@ func (r *LayoutRepo) SaveLayout(
 			}
 		}
 		for _, t := range tables {
-			if err := NewTableRepo(tx).CheckCapacity(ctx, weddingID, t.ID, t.Capacity); err != nil {
-				return err
+			cols := map[string]any{"x": t.X, "y": t.Y, "degree": t.Degree}
+			if t.Capacity != nil {
+				if err := NewTableRepo(tx).CheckCapacity(ctx, weddingID, t.ID, *t.Capacity); err != nil {
+					return err
+				}
+				cols["capacity"] = *t.Capacity
 			}
-			res := tx.Model(&models.BanquetTable{}).Where("id = ? AND wedding_id = ?", t.ID, weddingID).
-				Updates(map[string]any{
-					"x": t.X, "y": t.Y, "degree": t.Degree,
-					"capacity": t.Capacity, "is_vip": t.IsVip,
-				})
+			if t.IsVip != nil {
+				cols["is_vip"] = *t.IsVip
+			}
+			res := tx.Model(&models.BanquetTable{}).Where("id = ? AND wedding_id = ?", t.ID, weddingID).Updates(cols)
 			if res.Error != nil {
 				return res.Error
 			}

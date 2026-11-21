@@ -169,10 +169,29 @@ func TestTableCapacity_RejectsCutBelowSeatedGuests(t *testing.T) {
 	if err := svc.Update(ctx, table); !errors.Is(err, repository.ErrCapacityBelowSeats) {
 		t.Fatalf("table update: want ErrCapacityBelowSeats, got %v", err)
 	}
+	if err := db.Exec(`CREATE TABLE IF NOT EXISTS hall_elements (id TEXT PRIMARY KEY, wedding_id TEXT NOT NULL, name TEXT, type TEXT,
+		x REAL, y REAL, degree REAL, width REAL, height REAL, color TEXT, text_color TEXT, stroke_color TEXT,
+		opacity REAL, z_index INTEGER, created_at DATETIME, updated_at DATETIME)`).Error; err != nil {
+		t.Fatalf("create hall_elements: %v", err)
+	}
+	// A capacity the editor sent is checked like the table form's.
 	err := repository.NewLayoutRepo(db).SaveLayout(ctx, wid, 0, 0,
-		[]models.TableUpdate{{ID: tableID, Capacity: 9}}, nil, ReconcileElements)
+		[]models.TableUpdate{{ID: tableID, Capacity: new(9)}}, nil, ReconcileElements)
 	if !errors.Is(err, repository.ErrCapacityBelowSeats) {
 		t.Fatalf("layout save: want ErrCapacityBelowSeats, got %v", err)
+	}
+	// A save that leaves capacity out (editor did not change it) must not
+	// write back a stale copy: only the position moves.
+	if err := repository.NewLayoutRepo(db).SaveLayout(ctx, wid, 0, 0,
+		[]models.TableUpdate{{ID: tableID, X: 40, Y: 60}}, nil, ReconcileElements); err != nil {
+		t.Fatalf("layout save: %v", err)
+	}
+	var moved models.BanquetTable
+	if err := db.First(&moved, "id = ?", tableID).Error; err != nil {
+		t.Fatalf("reload table: %v", err)
+	}
+	if moved.Capacity != 10 || moved.X != 40 || moved.Y != 60 {
+		t.Fatalf("layout save: got capacity %d at (%v,%v), want 10 at (40,60)", moved.Capacity, moved.X, moved.Y)
 	}
 
 	table.Capacity = 10
