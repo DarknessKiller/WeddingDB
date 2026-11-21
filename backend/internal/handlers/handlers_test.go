@@ -121,10 +121,14 @@ func TestValidatePassword(t *testing.T) {
 		t.Errorf("lowercase-only valid password rejected: %v", err)
 	}
 	if err := validatePassword("Aa1!" + strings.Repeat("x", 68)); err != nil {
-		t.Errorf("72-byte password rejected: %v", err)
+		t.Errorf("72-character password rejected: %v", err)
 	}
 	if err := validatePassword("Aa1!" + strings.Repeat("x", 69)); err == nil {
-		t.Error("73-byte password should fail (bcrypt limit)")
+		t.Error("73-character password should fail")
+	}
+	// 72 Chinese characters are 216 bytes: the limit counts characters.
+	if err := validatePassword("Aa1!" + strings.Repeat("密", 68)); err != nil {
+		t.Errorf("72-character multi-byte password rejected: %v", err)
 	}
 }
 

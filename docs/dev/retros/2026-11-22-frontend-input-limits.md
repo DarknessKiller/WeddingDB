@@ -19,6 +19,8 @@ Every backend character cap has a matching `maxlength` on the input that feeds i
 
 `MAX_GUEST_NOTES_LEN` in `frontend/src/lib/api/guests.ts` now re-exports `GUEST_NOTES_MAXLEN` from the same module, so `noteRoom` and the notes textarea cannot drift.
 
+Passwords count characters, not bytes: `validatePassword` uses `utf8.RuneCountInString`, and `services.HashPassword` SHA-256 pre-hashes any password over bcrypt's 72-byte ceiling (hash carries a `{sha256}` marker). A 72-character Chinese password works, and hashes written before this change still verify.
+
 ## Inventory after the fix
 
 | Backend cap | Value | Frontend inputs |
@@ -36,7 +38,7 @@ Every backend character cap has a matching `maxlength` on the input that feeds i
 | `maxLen("Kiosk ... URL", ...)` | 500 | uploads only, no text input |
 | `maxLen("Element name", ...)` | 255 | layout editor element name |
 | admin name / email | 255 | users create modal, register page |
-| `validatePassword` | 8–72 bytes | users create/reset, change-password |
+| `validatePassword` | 8–72 characters | users create/reset, register, change-password |
 
 ## How to add a field
 
@@ -48,5 +50,4 @@ Every backend character cap has a matching `maxlength` on the input that feeds i
 ## Known gaps
 
 - HTML `maxlength` counts UTF-16 code units, Go counts runes. HTML is stricter for emoji, never looser, so textarea caps are safe.
-- Passwords: `validatePassword` caps 72 **bytes**; `maxlength={PASSWORD_MAXLEN}` caps 72 units. A password of multi-byte characters can pass the input and be refused by the server. The field cap is a guard, not a proof.
 - No automated drift check. A test that parses the Go constants would couple the frontend test run to the backend tree; the standards verify block is the check for now.

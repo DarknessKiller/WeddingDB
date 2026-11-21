@@ -88,7 +88,7 @@ func (s *AuthService) Login(ctx context.Context, email, password string) (*Login
 	if err != nil {
 		return nil, fmt.Errorf("find admin: %w", err)
 	}
-	if err := compareHash([]byte(admin.Password), []byte(password)); err != nil {
+	if err := ComparePassword(admin.Password, password); err != nil {
 		return nil, ErrInvalidCredentials
 	}
 	tv, err := s.GetTokenVersion(ctx, admin.ID)

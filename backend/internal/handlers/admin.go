@@ -11,7 +11,6 @@ import (
 
 	"github.com/go-fuego/fuego"
 	"github.com/google/uuid"
-	"golang.org/x/crypto/bcrypt"
 )
 
 type AdminHandler struct {
@@ -69,13 +68,13 @@ func (h *AdminHandler) Create(c fuego.ContextWithBody[AdminRequest]) (any, error
 	if body.Role != "admin" && body.Role != "user" {
 		body.Role = "user"
 	}
-	hash, err := bcrypt.GenerateFromPassword([]byte(body.Password), bcrypt.DefaultCost)
+	hash, err := services.HashPassword(body.Password)
 	if err != nil {
 		return nil, fuego.InternalServerError{Title: "Failed to hash password"}
 	}
 	admin := &models.AdminUser{
 		Email:    body.Email,
-		Password: string(hash),
+		Password: hash,
 		Name:     body.Name,
 		Role:     body.Role,
 		// Admin chose this password, so the user must replace it on first login.
@@ -251,12 +250,12 @@ func (h *AdminHandler) ResetPassword(c fuego.ContextWithBody[ResetPasswordReques
 	if err != nil {
 		return nil, fuego.NotFoundError{Title: "User not found"}
 	}
-	hash, err := bcrypt.GenerateFromPassword([]byte(body.Password), bcrypt.DefaultCost)
+	hash, err := services.HashPassword(body.Password)
 	if err != nil {
 		return nil, fuego.InternalServerError{Title: "Failed to hash password"}
 	}
 	// The admin chose and knows this password, so the user must replace it.
-	if err := h.adminRepo.SetPassword(ctx, admin.ID, string(hash), true); err != nil {
+	if err := h.adminRepo.SetPassword(ctx, admin.ID, hash, true); err != nil {
 		return nil, fuego.InternalServerError{Title: "Failed to update password"}
 	}
 	// Kill sessions minted under the old password. Password is already

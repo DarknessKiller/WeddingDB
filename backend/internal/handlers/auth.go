@@ -19,7 +19,6 @@ import (
 	"weddingdb/internal/utils"
 
 	"github.com/go-fuego/fuego"
-	"golang.org/x/crypto/bcrypt"
 	"gorm.io/gorm"
 )
 
@@ -33,12 +32,12 @@ func maxLen(field, value string, limit int) error {
 }
 
 func validatePassword(password string) error {
-	if len(password) < 8 {
+	chars := utf8.RuneCountInString(password)
+	if chars < 8 {
 		return fuego.BadRequestError{Title: "Password must be at least 8 characters"}
 	}
-	// bcrypt rejects more than 72 bytes; say so instead of answering 500.
-	if len(password) > 72 {
-		return fuego.BadRequestError{Title: "Password must be at most 72 bytes"}
+	if chars > services.MaxPasswordLen {
+		return fuego.BadRequestError{Title: fmt.Sprintf("Password must be at most %d characters", services.MaxPasswordLen)}
 	}
 	var hasLetter, hasDigit, hasSymbol bool
 	for _, c := range password {
@@ -256,17 +255,17 @@ func (h *AuthHandler) ChangePassword(c fuego.ContextWithBody[ChangePasswordReque
 		if err := h.authService.ReserveLoginAttempt(ctx, admin.Email, ip); err != nil {
 			return nil, loginLimitError(err)
 		}
-		if err := bcrypt.CompareHashAndPassword([]byte(admin.Password), []byte(body.CurrentPassword)); err != nil {
+		if err := services.ComparePassword(admin.Password, body.CurrentPassword); err != nil {
 			h.authService.LoginFailed(ctx, ip)
 			return nil, fuego.UnauthorizedError{Title: "Current password is incorrect"}
 		}
 		h.authService.ReleaseLoginAttempt(ctx, admin.Email, ip)
 	}
-	hash, err := bcrypt.GenerateFromPassword([]byte(body.Password), bcrypt.DefaultCost)
+	hash, err := services.HashPassword(body.Password)
 	if err != nil {
 		return nil, fuego.InternalServerError{Title: "Failed to hash password"}
 	}
-	if err := h.adminRepo.SetPassword(ctx, admin.ID, string(hash), false); err != nil {
+	if err := h.adminRepo.SetPassword(ctx, admin.ID, hash, false); err != nil {
 		return nil, fuego.InternalServerError{Title: "Failed to update password"}
 	}
 	// Revoke all existing sessions so compromised tokens are invalidated.
@@ -333,7 +332,7 @@ func (h *AuthHandler) Register(c fuego.ContextWithBody[RegisterRequest]) (any, e
 		return nil, fuego.HTTPError{Status: http.StatusTooManyRequests, Title: err.Error()}
 	}
 	// Hash first, so a taken email costs the same time as a new one.
-	hash, err := bcrypt.GenerateFromPassword([]byte(body.Password), bcrypt.DefaultCost)
+	hash, err := services.HashPassword(body.Password)
 	if err != nil {
 		return nil, fuego.InternalServerError{Title: "Failed to hash password"}
 	}
@@ -350,7 +349,7 @@ func (h *AuthHandler) Register(c fuego.ContextWithBody[RegisterRequest]) (any, e
 	}
 	admin := &models.AdminUser{
 		Email:    body.Email,
-		Password: string(hash),
+		Password: hash,
 		Name:     body.Name,
 		Role:     "user",
 	}

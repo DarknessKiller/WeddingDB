@@ -17,6 +17,6 @@ export const ELEMENT_NAME_MAXLEN = 255;
 
 export const ACCOUNT_NAME_MAXLEN = 255;
 export const ACCOUNT_EMAIL_MAXLEN = 255;
-// The backend counts bytes, so a multi-byte password can still be refused;
-// maxlength only stops the obvious overrun.
+// The user-facing cap, in characters. The backend SHA-256 pre-hashes a
+// password over bcrypt's 72-byte ceiling, so characters are the real unit.
 export const PASSWORD_MAXLEN = 72;

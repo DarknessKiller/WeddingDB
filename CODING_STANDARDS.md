@@ -69,7 +69,7 @@ Files: `frontend/src/lib/utils/limits.ts`, every `<input>`/`<textarea>` whose va
 
 - Every backend character cap has a matching `maxlength` on the input that feeds it, and both read the same number from `#lib/utils/limits.ts`. Never type the number into a template.
 - A field the API rejects is not a field the form may accept: online the whole submit fails, offline the edit retries until the queue drops it.
-- HTML `maxlength` counts UTF-16 units and Go counts runes, so HTML is stricter for emoji, never looser. Passwords are the exception: `validatePassword` caps 72 bytes, so a multi-byte password can still be refused by the server.
+- HTML `maxlength` counts UTF-16 units and Go counts runes, so HTML is stricter for emoji, never looser. Passwords: `validatePassword` caps 72 characters, and `Services.HashPassword` SHA-256 pre-hashes anything over bcrypt's 72-byte ceiling, so the two agree.
 
 ### Verify
 

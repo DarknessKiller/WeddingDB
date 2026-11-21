@@ -20,7 +20,6 @@ import (
 	"github.com/go-fuego/fuego"
 	"github.com/google/uuid"
 	"github.com/redis/go-redis/v9"
-	"golang.org/x/crypto/bcrypt"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 )
@@ -224,14 +223,14 @@ func Init(env config.Env, version string) *App {
 		if password == "replace-with-a-strong-one-time-password" {
 			log.Fatal("ADMIN_BOOTSTRAP_PASSWORD must not be the value shipped in .env.example; generate one with: openssl rand -hex 32")
 		}
-		hash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
+		hash, err := services.HashPassword(password)
 		if err != nil {
 			log.Fatal("Failed to hash seed admin password:", err)
 		}
 		admin := &models.AdminUser{
 			ID:                  uuid.New(),
 			Email:               email,
-			Password:            string(hash),
+			Password:            hash,
 			Name:                "Admin",
 			Role:                "admin",
 			ForcePasswordChange: true,
