@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import type { GuestResponse } from '#lib/api/guests.ts';
 
 vi.mock('#lib/stores/index.ts', () => ({
@@ -29,16 +29,25 @@ beforeEach(() => {
 	});
 });
 
+afterEach(() => {
+	vi.useRealTimers();
+});
+
+
 // An offline reload reads the session cache, so a change made after the
 // roster loaded must reach it; a partial list before the load must not.
 describe('offline roster cache', () => {
 	it('re-caches the roster after a change once it is seeded', async () => {
+		vi.useFakeTimers();
 		const { seedGuests, applyGuestResponse } = await import('./guestEvents');
 		const { loadCachedGuests } = await import('#lib/offline/queue.ts');
 		seedGuests([]);
 
 		applyGuestResponse(resp('g1'));
 
+		// One trailing write per burst: nothing is serialized per event.
+		expect(loadCachedGuests('w1')).toEqual([]);
+		vi.advanceTimersByTime(500);
 		expect(loadCachedGuests<{ id: string; angbaoAmount: number }>('w1')).toMatchObject([{ id: 'g1', angbaoAmount: 88 }]);
 	});
 

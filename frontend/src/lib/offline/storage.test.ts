@@ -87,6 +87,12 @@ describe('staff data across reloads and logins', () => {
 		expect(getQueue('w1')).toEqual([edit]);
 	});
 
+	it('reports the owner the login guard compares against', async () => {
+		const { claimStaffOfflineData, staffOfflineOwner } = await import('#lib/offline/storage.ts');
+		claimStaffOfflineData('Staff@x.test');
+		expect(staffOfflineOwner()).toBe('staff@x.test');
+	});
+
 	it('a different user logging in drops the previous user edits', async () => {
 		const { enqueue, getQueue } = await import('#lib/offline/queue.ts');
 		const { claimStaffOfflineData } = await import('#lib/offline/storage.ts');

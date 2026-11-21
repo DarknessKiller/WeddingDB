@@ -58,6 +58,12 @@ func (r *GuestRepo) FindByID(ctx context.Context, id, weddingID uuid.UUID) (*mod
 	return &g, err
 }
 
+// FindByIDLocked loads a guest row locked for update, so a write that merges into
+// the row it read cannot miss a write that commits while it waits.
+func (r *GuestRepo) FindByIDLocked(ctx context.Context, id, weddingID uuid.UUID) (*models.GuestRecord, error) {
+	return lockGuestTx(r.db.WithContext(ctx), id, weddingID)
+}
+
 func (r *GuestRepo) FindByTable(ctx context.Context, weddingID, tableID uuid.UUID) ([]models.GuestRecord, error) {
 	guests := make([]models.GuestRecord, 0)
 	err := r.db.WithContext(ctx).Where("wedding_id = ? AND table_id = ?", weddingID, tableID).Find(&guests).Error
@@ -101,39 +107,57 @@ func (r *GuestRepo) Create(ctx context.Context, g *models.GuestRecord) error {
 func (r *GuestRepo) Update(ctx context.Context, g *models.GuestRecord) error {
 	g.NamePinyin = models.GenerateNamePinyin(g.Name)
 	res := r.db.WithContext(ctx).Model(g).Where("id = ? AND wedding_id = ?", g.ID, g.WeddingID).Updates(map[string]interface{}{
-		"name":        g.Name,
-		"name_pinyin": g.NamePinyin,
-		"email":       g.Email,
-		"pax":         g.Pax,
-		"table_id":    g.TableID,
-		"seat_num":    g.SeatNum,
-		"rsvp":        g.RSVP,
-		"notes":       g.Notes,
-		"dietary":     g.Dietary,
-		"is_vip":      g.IsVip,
-		"angbao_amt":  g.AngbaoAmt,
-		"gift_item":   g.GiftItem,
+		"name":             g.Name,
+		"name_pinyin":      g.NamePinyin,
+		"email":            g.Email,
+		"pax":              g.Pax,
+		"table_id":         g.TableID,
+		"seat_num":         g.SeatNum,
+		"rsvp":             g.RSVP,
+		"notes":            g.Notes,
+		"dietary":          g.Dietary,
+		"is_vip":           g.IsVip,
+		"angbao_amt":       g.AngbaoAmt,
+		"gift_item":        g.GiftItem,
+		"field_updated_at": g.FieldUpdatedAt,
 	})
 	return checkAffected(res)
 }
 
 // SetSeat writes only the seat columns, so a concurrent check-in or notes edit
-// on the same guest survives a seat move.
+// on the same guest survives a seat move. It stamps the seat pair with the time
+// of this write, so a queued offline move wins or loses on time.
 func (r *GuestRepo) SetSeat(ctx context.Context, id, weddingID uuid.UUID, tableID *uuid.UUID, seatNum *int) error {
-	res := r.db.WithContext(ctx).Model(&models.GuestRecord{}).Where("id = ? AND wedding_id = ?", id, weddingID).
-		Updates(map[string]any{"table_id": tableID, "seat_num": seatNum})
-	return checkAffected(res)
+	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		g, err := lockGuestTx(tx, id, weddingID)
+		if err != nil {
+			return err
+		}
+		g.StampField(models.FieldSeat, time.Now())
+		res := tx.Model(&models.GuestRecord{}).Where("id = ? AND wedding_id = ?", id, weddingID).
+			Updates(map[string]any{"table_id": tableID, "seat_num": seatNum, "field_updated_at": g.FieldUpdatedAt})
+		return checkAffected(res)
+	})
 }
 
-// CheckOut clears checked_in_at only; checked_in_at is owned by the check-in
-// and check-out writes, never by the full-row Update/SyncUpdate. A guest who
-// is not checked in matches no row (gorm.ErrRecordNotFound), so a double tap
-// does not bump updated_at.
+// CheckOut clears checked_in_at only, and stamps that field with the undo's time
+// so a queued undo wins or loses like any other edit. A guest who is not checked
+// in matches no row (gorm.ErrRecordNotFound), so a double tap does not bump
+// updated_at.
 func (r *GuestRepo) CheckOut(ctx context.Context, id, weddingID uuid.UUID, at time.Time) error {
-	res := r.db.WithContext(ctx).Model(&models.GuestRecord{}).
-		Where("id = ? AND wedding_id = ? AND checked_in_at IS NOT NULL", id, weddingID).
-		Updates(map[string]any{"checked_in_at": nil, "updated_at": at})
-	return checkAffected(res)
+	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		g, err := lockGuestTx(tx, id, weddingID)
+		if err != nil {
+			return err
+		}
+		if g.CheckedInAt == nil {
+			return gorm.ErrRecordNotFound
+		}
+		g.StampField(models.FieldCheckedIn, at)
+		res := tx.Model(&models.GuestRecord{}).Where("id = ? AND wedding_id = ?", id, weddingID).
+			Updates(map[string]any{"checked_in_at": nil, "updated_at": at, "field_updated_at": g.FieldUpdatedAt})
+		return checkAffected(res)
+	})
 }
 
 // SyncCheckIn writes only the columns an offline check-in carries, so a stale
@@ -141,12 +165,13 @@ func (r *GuestRepo) CheckOut(ctx context.Context, id, weddingID uuid.UUID, at ti
 func (r *GuestRepo) SyncCheckIn(ctx context.Context, g *models.GuestRecord) error {
 	res := r.db.WithContext(ctx).Model(&models.GuestRecord{}).Where("id = ? AND wedding_id = ?", g.ID, g.WeddingID).
 		Updates(map[string]any{
-			"checked_in_at": g.CheckedInAt,
-			"rsvp":          g.RSVP,
-			"notes":         g.Notes,
-			"angbao_amt":    g.AngbaoAmt,
-			"gift_item":     g.GiftItem,
-			"updated_at":    g.UpdatedAt,
+			"checked_in_at":    g.CheckedInAt,
+			"rsvp":             g.RSVP,
+			"notes":            g.Notes,
+			"angbao_amt":       g.AngbaoAmt,
+			"gift_item":        g.GiftItem,
+			"updated_at":       g.UpdatedAt,
+			"field_updated_at": g.FieldUpdatedAt,
 		})
 	return checkAffected(res)
 }
@@ -162,6 +187,18 @@ func checkAffected(res *gorm.DB) error {
 		return gorm.ErrRecordNotFound
 	}
 	return nil
+}
+
+// lockGuestTx loads guest id row-locked for a write that must merge into the
+// row it read (sqlite tests have one writer).
+func lockGuestTx(tx *gorm.DB, id, weddingID uuid.UUID) (*models.GuestRecord, error) {
+	g := &models.GuestRecord{}
+	q := tx.Where("id = ? AND wedding_id = ?", id, weddingID)
+	if tx.Name() == "postgres" {
+		q = q.Clauses(clause.Locking{Strength: "UPDATE"})
+	}
+	err := q.First(g).Error
+	return g, err
 }
 
 func (r *GuestRepo) Delete(ctx context.Context, id, weddingID uuid.UUID) error {
@@ -185,19 +222,20 @@ func (r *GuestRepo) IsDeleted(ctx context.Context, id, weddingID uuid.UUID) (boo
 func (r *GuestRepo) SyncUpdate(ctx context.Context, g *models.GuestRecord) error {
 	g.NamePinyin = models.GenerateNamePinyin(g.Name)
 	res := r.db.WithContext(ctx).Model(g).Where("id = ? AND wedding_id = ?", g.ID, g.WeddingID).Updates(map[string]interface{}{
-		"name":        g.Name,
-		"name_pinyin": g.NamePinyin,
-		"email":       g.Email,
-		"pax":         g.Pax,
-		"table_id":    g.TableID,
-		"seat_num":    g.SeatNum,
-		"rsvp":        g.RSVP,
-		"notes":       g.Notes,
-		"dietary":     g.Dietary,
-		"is_vip":      g.IsVip,
-		"angbao_amt":  g.AngbaoAmt,
-		"gift_item":   g.GiftItem,
-		"updated_at":  g.UpdatedAt,
+		"name":             g.Name,
+		"name_pinyin":      g.NamePinyin,
+		"email":            g.Email,
+		"pax":              g.Pax,
+		"table_id":         g.TableID,
+		"seat_num":         g.SeatNum,
+		"rsvp":             g.RSVP,
+		"notes":            g.Notes,
+		"dietary":          g.Dietary,
+		"is_vip":           g.IsVip,
+		"angbao_amt":       g.AngbaoAmt,
+		"gift_item":        g.GiftItem,
+		"updated_at":       g.UpdatedAt,
+		"field_updated_at": g.FieldUpdatedAt,
 	})
 	return checkAffected(res)
 }
@@ -211,10 +249,11 @@ func (r *GuestRepo) UnassignByTable(ctx context.Context, weddingID, tableID uuid
 
 // ConditionalCheckIn atomically checks in a guest only if not already checked in,
 // and promotes their RSVP to confirmed. A non-empty notes value replaces the stored
-// notes (callers pass the already-joined text).
+// notes (callers pass the already-joined text). fieldTimes carries the write
+// stamps of the columns this check-in changes.
 // Returns ErrAlreadyCheckedIn if the guest was already checked in, gorm.ErrRecordNotFound if missing.
-func (r *GuestRepo) ConditionalCheckIn(ctx context.Context, id, weddingID uuid.UUID, now time.Time, notes string) error {
-	updates := map[string]any{"checked_in_at": now, "rsvp": "confirmed"}
+func (r *GuestRepo) ConditionalCheckIn(ctx context.Context, id, weddingID uuid.UUID, now time.Time, notes string, fieldTimes models.GuestFieldTimes) error {
+	updates := map[string]any{"checked_in_at": now, "rsvp": "confirmed", "field_updated_at": fieldTimes}
 	if notes != "" {
 		updates["notes"] = notes
 	}

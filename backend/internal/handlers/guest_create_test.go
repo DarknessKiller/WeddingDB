@@ -25,7 +25,7 @@ func newGuestCreateServer(t *testing.T, capacity int) (*fuego.Server, *gorm.DB, 
 	testutil.NoErr(t, db.Exec(`CREATE TABLE guest_records (id TEXT PRIMARY KEY, wedding_id TEXT NOT NULL, name TEXT NOT NULL,
 		name_pinyin TEXT, email TEXT, pax INTEGER NOT NULL DEFAULT 1, table_id TEXT, seat_num INTEGER, rsvp TEXT,
 		checked_in_at DATETIME, notes TEXT, dietary TEXT, is_vip INTEGER, angbao_amt INTEGER, gift_item TEXT,
-		created_at DATETIME, updated_at DATETIME)`).Error)
+		created_at DATETIME, updated_at DATETIME, field_updated_at TEXT)`).Error)
 	testutil.NoErr(t, db.Exec(`CREATE TABLE banquet_tables (id TEXT PRIMARY KEY, wedding_id TEXT NOT NULL, name TEXT NOT NULL,
 		capacity INTEGER, x REAL, y REAL, degree REAL, is_vip INTEGER, created_at DATETIME, updated_at DATETIME)`).Error)
 	wid, tid := uuid.New(), uuid.New()
@@ -89,7 +89,7 @@ func TestGuestSeatErrors_MapTo400And404(t *testing.T) {
 	testutil.NoErr(t, db.Exec(`CREATE TABLE guest_records (id TEXT PRIMARY KEY, wedding_id TEXT NOT NULL, name TEXT NOT NULL,
 		name_pinyin TEXT, email TEXT, pax INTEGER NOT NULL DEFAULT 1, table_id TEXT, seat_num INTEGER, rsvp TEXT,
 		checked_in_at DATETIME, notes TEXT, dietary TEXT, is_vip INTEGER, angbao_amt INTEGER, gift_item TEXT,
-		created_at DATETIME, updated_at DATETIME)`).Error)
+		created_at DATETIME, updated_at DATETIME, field_updated_at TEXT)`).Error)
 	testutil.NoErr(t, db.Exec(`CREATE TABLE banquet_tables (id TEXT PRIMARY KEY, wedding_id TEXT NOT NULL, name TEXT NOT NULL,
 		capacity INTEGER, x REAL, y REAL, degree REAL, is_vip INTEGER, created_at DATETIME, updated_at DATETIME)`).Error)
 	wid, tid, gid := uuid.New(), uuid.New(), uuid.New()

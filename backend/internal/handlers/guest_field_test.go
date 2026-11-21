@@ -21,7 +21,7 @@ func TestCreateGuest_RejectsOversizedName(t *testing.T) {
 	if err != nil {
 		t.Fatalf("sqlite open: %v", err)
 	}
-	if err := db.Exec(`CREATE TABLE guest_records (id TEXT PRIMARY KEY, wedding_id TEXT, name TEXT, pax INTEGER)`).Error; err != nil {
+	if err := db.Exec(`CREATE TABLE guest_records (id TEXT PRIMARY KEY, wedding_id TEXT, name TEXT, pax INTEGER, field_updated_at TEXT)`).Error; err != nil {
 		t.Fatalf("migrate: %v", err)
 	}
 	svc := services.NewGuestService(repository.NewGuestRepo(db), nil, nil, db)

@@ -23,7 +23,7 @@ func TestTableUpdate_DeletedMidRequestIsNotFound(t *testing.T) {
 	testutil.NoErr(t, db.Exec(`CREATE TABLE banquet_tables (id TEXT PRIMARY KEY, wedding_id TEXT NOT NULL, name TEXT NOT NULL,
 		capacity INTEGER, x REAL, y REAL, degree REAL, is_vip INTEGER, created_at DATETIME, updated_at DATETIME)`).Error)
 	testutil.NoErr(t, db.Exec(`CREATE TABLE guest_records (id TEXT PRIMARY KEY, wedding_id TEXT NOT NULL, table_id TEXT,
-		seat_num INTEGER, pax INTEGER)`).Error)
+		seat_num INTEGER, pax INTEGER, field_updated_at TEXT)`).Error)
 	wid, tid := uuid.New(), uuid.New()
 	testutil.NoErr(t, db.Create(&models.BanquetTable{ID: tid, WeddingID: wid, Name: "T1", Capacity: 10}).Error)
 

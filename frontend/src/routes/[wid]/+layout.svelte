@@ -78,7 +78,9 @@
     resetWeddingState();
     // Banner count and queue belong to this wedding now; send its edits before the snapshot.
     refreshQueued();
-    if (navigator.onLine) await syncQueue(w).catch(() => {});
+    // Never block the spinner on the replay: a full queue can take a minute.
+    // Load the snapshot now and reseed when the queued edits land.
+    if (navigator.onLine) syncQueue(w).then(() => { if (!stale()) loadGuests(w); }).catch(() => {});
     if (stale()) return;
     // Subscribe before the snapshot; guestEvents queues mutations until seeding completes.
     stopSSE();

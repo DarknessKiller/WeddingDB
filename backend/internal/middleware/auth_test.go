@@ -136,3 +136,24 @@ func TestAuthMiddleware_WrongBearerFormat(t *testing.T) {
 		t.Errorf("status = %d, want %d", rec.Code, http.StatusUnauthorized)
 	}
 }
+
+// A Redis outage must not read as an expired session: every client would rotate
+// its tokens into the same outage and the storm would keep it down.
+func TestAuthMiddleware_RevocationCheckOutageIs503(t *testing.T) {
+	mr := miniredis.RunT(t)
+	rdb := redis.NewClient(&redis.Options{Addr: mr.Addr()})
+	svc := services.NewAuthService(nil, nil, nil, "secret", rdb)
+	mr.Close()
+
+	tok := signToken(t, "secret", uuid.New(), "admin", nil, time.Now().Add(time.Hour))
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest("GET", "/api/weddings", nil)
+	req.Header.Set("Authorization", "Bearer "+tok)
+	AuthMiddleware(svc)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	})).ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Fatalf("status = %d, want %d", rec.Code, http.StatusServiceUnavailable)
+	}
+}

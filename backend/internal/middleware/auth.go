@@ -2,6 +2,7 @@ package middleware
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"strings"
 	"weddingdb/internal/services"
@@ -35,6 +36,12 @@ func AuthMiddleware(authService *services.AuthService) func(http.Handler) http.H
 			// Redis calls respect context cancellation and the request is rejected.
 			claims, err := authService.ValidateToken(r.Context(), token)
 			if err != nil {
+				// A failed revocation check says nothing about the token. Answering
+				// 401 would make every client rotate its tokens into the same outage.
+				if errors.Is(err, services.ErrAuthUnavailable) {
+					http.Error(w, `{"error":"Auth check unavailable"}`, http.StatusServiceUnavailable)
+					return
+				}
 				http.Error(w, `{"error":"Invalid token"}`, http.StatusUnauthorized)
 				return
 			}

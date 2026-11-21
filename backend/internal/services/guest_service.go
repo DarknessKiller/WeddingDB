@@ -1,7 +1,6 @@
 package services
 
 import (
-	"cmp"
 	"context"
 	"encoding/json"
 	"errors"
@@ -110,13 +109,10 @@ func validateGuestFields(g *models.GuestRecord) error {
 }
 
 // guestCountLocked serializes guest additions for one wedding and returns the
-// current count. The row lock is Postgres-only; sqlite (tests) has one writer.
+// current count.
 func guestCountLocked(tx *gorm.DB, weddingID uuid.UUID) (int, error) {
-	if tx.Name() == "postgres" {
-		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
-			Select("id").Where("id = ?", weddingID).First(&models.WeddingEvent{}).Error; err != nil {
-			return 0, err
-		}
+	if err := lockWeddingTx(tx, weddingID); err != nil {
+		return 0, err
 	}
 	var total int
 	if err := tx.Model(&models.GuestRecord{}).
@@ -125,6 +121,17 @@ func guestCountLocked(tx *gorm.DB, weddingID uuid.UUID) (int, error) {
 		return 0, err
 	}
 	return total, nil
+}
+
+// lockWeddingTx takes the wedding row lock every guest write takes first, so a
+// sync merge and an online edit of the same wedding serialize in one order.
+// The lock is Postgres-only; sqlite (tests) has one writer.
+func lockWeddingTx(tx *gorm.DB, weddingID uuid.UUID) error {
+	if tx.Name() != "postgres" {
+		return nil
+	}
+	return tx.Clauses(clause.Locking{Strength: "UPDATE"}).Select("id").
+		Where("id = ?", weddingID).First(&models.WeddingEvent{}).Error
 }
 
 func (s *GuestService) createGuestTx(ctx context.Context, tx *gorm.DB, g *models.GuestRecord) error {
@@ -173,7 +180,7 @@ func (s *GuestService) updateGuestTx(ctx context.Context, tx *gorm.DB, g *models
 		return err
 	}
 	var current models.GuestRecord
-	q := tx.Select("id", "pax", "updated_at").Where("id = ? AND wedding_id = ?", g.ID, g.WeddingID)
+	q := tx.Where("id = ? AND wedding_id = ?", g.ID, g.WeddingID)
 	if tx.Name() == "postgres" {
 		// Row lock so a check-in cannot commit between this read and the write.
 		q = q.Clauses(clause.Locking{Strength: "UPDATE"})
@@ -184,6 +191,9 @@ func (s *GuestService) updateGuestTx(ctx context.Context, tx *gorm.DB, g *models
 	if base != nil && !current.UpdatedAt.Equal(*base) {
 		return ErrStaleGuest
 	}
+	// An edit carries no checked_in_at: keep the committed arrival, so the
+	// broadcast after the write cannot report it cleared.
+	g.CheckedInAt = current.CheckedInAt
 	if g.Pax > current.Pax && total-current.Pax+g.Pax > MaxGuestsPerWedding {
 		return guestCapError(total, g.Pax-current.Pax)
 	}
@@ -191,6 +201,9 @@ func (s *GuestService) updateGuestTx(ctx context.Context, tx *gorm.DB, g *models
 	if syncWrite {
 		return repo.SyncUpdate(ctx, g)
 	}
+	// An online write carries every edit field with server time, so a queued
+	// offline edit of any of them loses to it.
+	g.StampFields(time.Now(), models.GuestEditFields)
 	return repo.Update(ctx, g)
 }
 
@@ -439,25 +452,29 @@ func (s *GuestService) CheckIn(ctx context.Context, id, weddingID uuid.UUID, not
 	now := time.Now()
 	notes = strings.TrimSpace(notes)
 	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		// Read the row under a row lock: a notes edit committing between this read
+		// and the write below would otherwise be overwritten, and the check-in
+		// stamps the fields it writes with this write's time.
+		var existing models.GuestRecord
+		q := tx.Where("id = ? AND wedding_id = ?", id, weddingID)
+		if tx.Name() == "postgres" {
+			q = q.Clauses(clause.Locking{Strength: "UPDATE"})
+		}
+		if err := q.First(&existing).Error; err != nil {
+			return err
+		}
 		updatedNotes := ""
 		if notes != "" {
-			// Read the notes under a row lock: a notes edit committing between
-			// this read and the write below would otherwise be overwritten.
-			var existing models.GuestRecord
-			q := tx.Select("notes").Where("id = ? AND wedding_id = ?", id, weddingID)
-			if tx.Name() == "postgres" {
-				q = q.Clauses(clause.Locking{Strength: "UPDATE"})
-			}
-			if err := q.First(&existing).Error; err != nil {
-				return err
-			}
 			updatedNotes = appendNote(existing.Notes, notes)
+			existing.StampField(models.FieldNotes, now)
 		}
 		if utf8.RuneCountInString(updatedNotes) > MaxGuestNotesLen {
 			return fmt.Errorf("%w: notes must be at most %d characters", ErrInvalidGuestField, MaxGuestNotesLen)
 		}
+		existing.StampField(models.FieldCheckedIn, now)
+		existing.StampField(models.FieldRSVP, now)
 		// Atomic conditional update: only check in if not already checked in
-		return repository.NewGuestRepo(tx).ConditionalCheckIn(ctx, id, weddingID, now, updatedNotes)
+		return repository.NewGuestRepo(tx).ConditionalCheckIn(ctx, id, weddingID, now, updatedNotes, existing.FieldUpdatedAt)
 	})
 	if err != nil {
 		if errors.Is(err, repository.ErrAlreadyCheckedIn) {
@@ -710,6 +727,20 @@ type SyncMutation struct {
 	ClientUpdatedAt time.Time    `json:"clientUpdatedAt"`
 	BaseUpdatedAt   *time.Time   `json:"baseUpdatedAt"`
 	Payload         *SyncPayload `json:"payload"`
+
+	// decodeErr is set when this element could not be decoded, so one
+	// malformed mutation fails alone instead of the whole batch.
+	decodeErr error
+}
+
+// UnmarshalJSON keeps a malformed mutation from failing its whole batch: the
+// error is reported in that mutation's own result.
+func (m *SyncMutation) UnmarshalJSON(b []byte) error {
+	type alias SyncMutation
+	if err := json.Unmarshal(b, (*alias)(m)); err != nil {
+		m.decodeErr = err
+	}
+	return nil
 }
 
 type SyncResult struct {
@@ -742,34 +773,21 @@ func syncFailed(m SyncMutation, err error) SyncResult {
 	return SyncResult{GuestID: m.GuestID, Status: "failed", Reason: "server error, will retry", Retryable: true}
 }
 
-// Sync applies a batch of mutations with newer-time-wins.
-// Mutations are processed in order received, FIFO.
+// Sync applies a batch of mutations field by field: each field keeps its
+// newest write. Mutations are processed in order received, FIFO.
 func (s *GuestService) Sync(ctx context.Context, weddingID uuid.UUID, mutations []SyncMutation) ([]SyncResult, error) {
 	results := make([]SyncResult, 0, len(mutations))
-	// Guests with a queued edit that did not apply. The client sends a later
-	// edit of the same guest without a base: it was built on the refused edit,
-	// so applying it would undo whatever newer change refused the first one.
-	refused := make(map[string]bool)
 	// Guests whose create failed retryably (server outage). Their later ops
 	// wait with it: run now, a check-in finds no row, is "skipped" and
 	// dequeued, and the retried create comes back without the arrival.
 	createPending := make(map[string]bool)
 	for _, m := range mutations {
-		edit := m.Op == SyncOpUpdate || m.Op == SyncOpCreate
-		var res SyncResult
-		switch {
-		case createPending[m.GuestID]:
-			res = SyncResult{GuestID: m.GuestID, Status: "failed", Reason: "waiting for guest create", Retryable: true}
-		case edit && m.BaseUpdatedAt == nil && refused[m.GuestID]:
-			res = syncFailed(m, ErrStaleGuest)
-		default:
+		res := SyncResult{GuestID: m.GuestID, Status: "failed", Reason: "waiting for guest create", Retryable: true}
+		if !createPending[m.GuestID] {
 			res = s.applySyncMutation(ctx, weddingID, m)
 		}
 		if m.Op == SyncOpCreate && res.Retryable {
 			createPending[m.GuestID] = true
-		}
-		if edit && res.Status != "applied" {
-			refused[m.GuestID] = true
 		}
 		results = append(results, res)
 	}
@@ -777,11 +795,13 @@ func (s *GuestService) Sync(ctx context.Context, weddingID uuid.UUID, mutations 
 }
 
 func (s *GuestService) applySyncMutation(ctx context.Context, weddingID uuid.UUID, m SyncMutation) SyncResult {
+	if m.decodeErr != nil {
+		return SyncResult{GuestID: m.GuestID, Status: "failed", Reason: "malformed mutation: " + m.decodeErr.Error()}
+	}
 	gid, err := utils.DecodeUUID(m.GuestID)
 	if err != nil {
 		return SyncResult{GuestID: m.GuestID, Status: "skipped", Reason: "invalid guestId"}
 	}
-
 	// Skew clamp: never trust a client clock in the future, or a skewed device
 	// would win every LWW comparison from then on.
 	// A missing clientUpdatedAt would stamp check-ins as year 1 and make
@@ -794,330 +814,497 @@ func (s *GuestService) applySyncMutation(ctx context.Context, weddingID uuid.UUI
 		opTime = time.Now()
 	}
 
-	// Load server record if exists. Only "no such row" means not found: any
-	// other error must stay "failed", or the client dequeues the mutation.
-	existing, err := s.guestRepo.FindByID(ctx, gid, weddingID)
-	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
-		return syncFailed(m, fmt.Errorf("load guest: %w", err))
-	}
-	found := err == nil
-
 	switch m.Op {
 	case SyncOpCreate:
-		if found {
-			// treat as update with LWW
-			if opTime.Before(existing.UpdatedAt) {
-				return SyncResult{GuestID: m.GuestID, Status: "skipped", Reason: "older than server", ServerRecord: existing}
-			}
-			if opTime.Equal(existing.UpdatedAt) {
-				// Replay of a write whose response was lost: it is already applied.
-				return SyncResult{GuestID: m.GuestID, Status: "applied", ServerRecord: existing}
-			}
-			before := *existing
-			if m.Payload != nil {
-				if err := applySyncPayload(existing, m.Payload, &gid); err != nil {
-					return syncFailed(m, err)
-				}
-			}
-			// Nothing to change: a replay whose clock ran ahead, so the Equal
-			// check above missed it. Re-saving would bump updated_at and 409
-			// every open editor.
-			if reflect.DeepEqual(before, *existing) {
-				return SyncResult{GuestID: m.GuestID, Status: "applied", ServerRecord: existing}
-			}
-			if err := s.syncUpdate(ctx, existing, m, opTime); err != nil {
-				return syncFailed(m, err)
-			}
-			s.sseHub.publishGuest("update", existing, weddingID)
-			return SyncResult{GuestID: m.GuestID, Status: "applied", ServerRecord: existing}
-		}
-		// A replayed create (first response lost) must not bring back a guest
-		// someone deleted since.
-		if deleted, err := s.guestRepo.IsDeleted(ctx, gid, weddingID); err != nil {
-			return syncFailed(m, fmt.Errorf("check deleted guest: %w", err))
-		} else if deleted {
-			return SyncResult{GuestID: m.GuestID, Status: "skipped", Reason: "deleted"}
-		}
-		if m.Payload == nil || m.Payload.Name == nil || strings.TrimSpace(*m.Payload.Name) == "" {
-			return SyncResult{GuestID: m.GuestID, Status: "skipped", Reason: "name required"}
-		}
-		pax := 1
-		if m.Payload.Pax != nil && *m.Payload.Pax >= 1 {
-			pax = *m.Payload.Pax
-		}
-		g := &models.GuestRecord{
-			ID:        gid,
-			WeddingID: weddingID,
-			Name:      *m.Payload.Name,
-			Pax:       pax,
-			AngbaoAmt: m.Payload.AngbaoAmt.Value,
-			GiftItem:  m.Payload.GiftItem.Value,
-			CreatedAt: opTime,
-			UpdatedAt: opTime,
-		}
-		if m.Payload.Email != nil {
-			g.Email = *m.Payload.Email
-		}
-		if m.Payload.RSVP != nil {
-			g.RSVP = *m.Payload.RSVP
-		}
-		if m.Payload.IsVip != nil {
-			g.IsVip = *m.Payload.IsVip
-		}
-		if m.Payload.Notes != nil {
-			g.Notes = *m.Payload.Notes
-		}
-		if m.Payload.Dietary != nil {
-			g.Dietary = *m.Payload.Dietary
-		}
-		if t := m.Payload.TableID; t.Set && t.Value != nil && *t.Value != "" {
-			tid, err := utils.DecodeUUID(*t.Value)
-			if err != nil {
-				return SyncResult{GuestID: m.GuestID, Status: "failed", Reason: fmt.Sprintf("invalid tableId %q", *t.Value)}
-			}
-			g.TableID = &tid
-		}
-		if g.TableID != nil {
-			g.SeatNum = m.Payload.SeatNum
-		}
-		if err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-			return s.createGuestTx(ctx, tx, g)
-		}); err != nil {
-			// A guestId already taken (say, by another wedding's guest) stays
-			// taken: report the key collision as a rule error, not retryable.
-			if t, ok := s.db.Dialector.(gorm.ErrorTranslator); ok {
-				err = t.Translate(err)
-			}
-			return syncFailed(m, err)
-		}
-		s.sseHub.publishGuest("create", g, weddingID)
-		return SyncResult{GuestID: m.GuestID, Status: "applied", ServerRecord: g}
-
+		return s.syncCreate(ctx, weddingID, gid, m, opTime)
 	case SyncOpUpdate:
-		if !found {
-			return SyncResult{GuestID: m.GuestID, Status: "skipped", Reason: "not found", ServerRecord: nil}
-		}
-		if opTime.Before(existing.UpdatedAt) {
-			return SyncResult{GuestID: m.GuestID, Status: "skipped", Reason: "older than server", ServerRecord: existing}
-		}
-		// The row already carries this op's time: a replay of a write whose
-		// response was lost. Re-applying it would fail its now-stale base.
-		if opTime.Equal(existing.UpdatedAt) {
-			return SyncResult{GuestID: m.GuestID, Status: "applied", ServerRecord: existing}
-		}
-		before := *existing
-		if m.Payload != nil {
-			if err := applySyncPayload(existing, m.Payload, nil); err != nil {
-				return syncFailed(m, err)
-			}
-		}
-		// Nothing to change: the edit is already in the row. This catches a
-		// replay whose clock was ahead, so its clamped opTime differs from the
-		// one the first attempt stored and the Equal check above misses it.
-		if reflect.DeepEqual(before, *existing) {
-			return SyncResult{GuestID: m.GuestID, Status: "applied", ServerRecord: existing}
-		}
-		if err := s.syncUpdate(ctx, existing, m, opTime); err != nil {
-			return syncFailed(m, err)
-		}
-		s.sseHub.publishGuest("update", existing, weddingID)
-		return SyncResult{GuestID: m.GuestID, Status: "applied", ServerRecord: existing}
-
+		return s.syncEdit(ctx, weddingID, gid, m, opTime)
 	case SyncOpDelete:
-		if !found {
-			return SyncResult{GuestID: m.GuestID, Status: "applied"}
-		}
-		var res SyncResult
-		if err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-			// Re-check under the row lock: an edit committed after the read
-			// above must be seen, not deleted unseen.
-			if err := lockGuestRow(tx, existing); err != nil {
-				return err
-			}
-			if opTime.Before(existing.UpdatedAt) {
-				// Report "failed", not "skipped": the client keeps failed items
-				// queued instead of dequeuing and losing the delete intent.
-				res = SyncResult{GuestID: m.GuestID, Status: "failed", Reason: "older than server", ServerRecord: existing}
-				return nil
-			}
-			// A delete made on a copy older than the row would discard someone
-			// else's edit unseen, like the online 409.
-			if m.BaseUpdatedAt != nil && !m.BaseUpdatedAt.Equal(existing.UpdatedAt) {
-				return ErrStaleGuest
-			}
-			res = SyncResult{GuestID: m.GuestID, Status: "applied"}
-			return repository.NewGuestRepo(tx).Delete(ctx, gid, weddingID)
-		}); err != nil {
-			if errors.Is(err, gorm.ErrRecordNotFound) {
-				// Someone else deleted it first: the intent holds.
-				return SyncResult{GuestID: m.GuestID, Status: "applied"}
-			}
-			return syncFailed(m, err)
-		}
-		if res.Status == "applied" {
-			s.sseHub.publishGuest("delete", existing, weddingID)
-		}
-		return res
-
+		return s.syncDelete(ctx, weddingID, gid, m, opTime)
 	case SyncOpCheckIn:
-		if !found {
-			return SyncResult{GuestID: m.GuestID, Status: "skipped", Reason: "not found"}
-		}
-		var res SyncResult
-		if err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-			// Reload under a row lock: two phones syncing the same arrival at
-			// once must each see the other's write, or the last one overwrites
-			// the first angbao and note.
-			if err := lockGuestRow(tx, existing); err != nil {
-				return err
-			}
-			var err error
-			res, err = syncCheckIn(ctx, tx, existing, m, opTime)
-			return err
-		}); err != nil {
-			return syncFailed(m, err)
-		}
-		if res.Status == "applied" {
-			s.sseHub.publishGuest("checkin", existing, weddingID)
-		}
-		return res
-
+		return s.syncCheckIn(ctx, weddingID, gid, m, opTime)
 	case SyncOpCheckOut:
-		if !found {
-			return SyncResult{GuestID: m.GuestID, Status: "skipped", Reason: "not found"}
-		}
-		var res SyncResult
-		if err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-			// Re-check under the row lock, as check-in does: a newer check-in
-			// committed after the read above must not be wiped.
-			if err := lockGuestRow(tx, existing); err != nil {
-				return err
-			}
-			// Only a check-in newer than this undo beats it. Unrelated newer edits
-			// (notes, table moves, the bump a synced check-in gives updated_at)
-			// do not, or an offline undo of a mistaken check-in is lost.
-			if existing.CheckedInAt != nil && opTime.Before(*existing.CheckedInAt) {
-				res = SyncResult{GuestID: m.GuestID, Status: "skipped", Reason: "older than server", ServerRecord: existing}
-				return nil
-			}
-			// Already checked out (replay whose response was lost, or
-			// another device got there first): intent holds, nothing to write.
-			if existing.CheckedInAt == nil {
-				res = SyncResult{GuestID: m.GuestID, Status: "applied", ServerRecord: existing}
-				return nil
-			}
-			// Never move updated_at backwards, but always forward, so an editor
-			// holding the old value gets a 409 instead of re-checking the guest in.
-			existing.CheckedInAt = nil
-			if opTime.After(existing.UpdatedAt) {
-				existing.UpdatedAt = opTime
-			} else {
-				existing.UpdatedAt = existing.UpdatedAt.Add(time.Microsecond)
-			}
-			res = SyncResult{GuestID: m.GuestID, Status: "applied", ServerRecord: existing}
-			return repository.NewGuestRepo(tx).CheckOut(ctx, gid, weddingID, existing.UpdatedAt)
-		}); err != nil {
-			return syncFailed(m, err)
-		}
-		if res.Status == "applied" {
-			s.sseHub.publishGuest("checkout", existing, weddingID)
-		}
-		return res
-
+		return s.syncCheckOut(ctx, weddingID, gid, m, opTime)
 	default:
 		return SyncResult{GuestID: m.GuestID, Status: "skipped", Reason: "unknown op"}
 	}
 }
 
-// errGuestChangedDuringSync means the guest changed between this sync's own
-// read and its write. Not in syncRuleErrors: a retry reloads and succeeds.
+// errGuestChangedDuringSync means the guest changed between a read and its
+// write. Not in syncRuleErrors: a retry reloads and succeeds.
 var errGuestChangedDuringSync = errors.New("guest changed during sync")
 
-// syncUpdate writes a queued edit of g. The client's base (the updatedAt its
-// editor loaded) refuses edits made on a stale copy, like the online 409; that
-// is a rule error. With no client base, the check still guards the gap since
-// this sync loaded g.
-func (s *GuestService) syncUpdate(ctx context.Context, g *models.GuestRecord, m SyncMutation, opTime time.Time) error {
-	base := cmp.Or(m.BaseUpdatedAt, new(g.UpdatedAt))
-	g.UpdatedAt = opTime
+// syncMerge records how a mutation's fields fared against the row they merged
+// into: changed means a value differs, won and lost say whether a carried field
+// was newer or older than that field's own last write.
+type syncMerge struct {
+	changed bool
+	won     bool
+	lost    bool
+}
+
+// take reports whether opTime wins field. A field written at the same instant
+// already holds this mutation's value (a replay), so it takes no write.
+func (r *syncMerge) take(g *models.GuestRecord, field string, opTime time.Time) bool {
+	switch written := g.WrittenAt(field); {
+	case opTime.After(written):
+		r.won = true
+		return true
+	case opTime.Before(written):
+		r.lost = true
+	}
+	return false
+}
+
+// result reports the mutation's outcome: a row it changed is applied, a
+// mutation whose every field lost to a newer server write is skipped, and a
+// replay that changed nothing is applied (invariant 5).
+func (r syncMerge) result(m SyncMutation, g *models.GuestRecord) SyncResult {
+	if !r.changed && r.lost && !r.won {
+		return SyncResult{GuestID: m.GuestID, Status: "skipped", Reason: "older than server", ServerRecord: g}
+	}
+	return SyncResult{GuestID: m.GuestID, Status: "applied", ServerRecord: g}
+}
+
+// nextWriteTime keeps updated_at moving forward: an editor holding the old value
+// must get a 409, never silently overwrite this write.
+func nextWriteTime(row, op time.Time) time.Time {
+	if op.After(row) {
+		return op
+	}
+	return row.Add(time.Microsecond)
+}
+
+// newerThanEveryField reports whether op is newer than every field write on g,
+// which is when a delete applies (invariant 4).
+func newerThanEveryField(g *models.GuestRecord, op time.Time) bool {
+	if op.Before(g.WrittenAt(models.FieldCheckedIn)) {
+		return false
+	}
+	for _, field := range models.GuestEditFields {
+		if op.Before(g.WrittenAt(field)) {
+			return false
+		}
+	}
+	return true
+}
+
+// syncEdit merges a queued edit into the row and writes the fields that won,
+// under one transaction: a write committing between the read and the write
+// cannot be undone unseen.
+func (s *GuestService) syncEdit(ctx context.Context, weddingID, gid uuid.UUID, m SyncMutation, opTime time.Time) SyncResult {
+	if err := validateSyncPayload(m.Payload); err != nil {
+		return syncFailed(m, err)
+	}
+	var res SyncResult
+	var wrote bool
 	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		return s.updateGuestTx(ctx, tx, g, true, base)
+		// Wedding row first, as every guest write locks in that order.
+		if err := lockWeddingTx(tx, weddingID); err != nil {
+			return err
+		}
+		repo := repository.NewGuestRepo(tx)
+		g, err := repo.FindByIDLocked(ctx, gid, weddingID)
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			res = SyncResult{GuestID: m.GuestID, Status: "skipped", Reason: "not found"}
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+		merge, err := mergeSyncPayload(g, m.Payload, opTime)
+		if err != nil {
+			return err
+		}
+		res = merge.result(m, g)
+		if !merge.changed {
+			return nil
+		}
+		g.UpdatedAt = nextWriteTime(g.UpdatedAt, opTime)
+		if err := s.updateGuestTx(ctx, tx, g, true, nil); err != nil {
+			return err
+		}
+		wrote = true
+		return nil
 	})
-	if m.BaseUpdatedAt == nil && errors.Is(err, ErrStaleGuest) {
-		return errGuestChangedDuringSync
+	if err != nil {
+		return syncFailed(m, err)
 	}
-	return err
+	if wrote {
+		s.sseHub.publishGuest("update", res.ServerRecord, weddingID)
+	}
+	return res
 }
 
-// lockGuestRow reloads g inside tx, row-locked on Postgres (sqlite tests have
-// one writer), so a sync write re-checks against the committed row.
-func lockGuestRow(tx *gorm.DB, g *models.GuestRecord) error {
-	q := tx.Where("id = ? AND wedding_id = ?", g.ID, g.WeddingID)
-	if tx.Name() == "postgres" {
-		q = q.Clauses(clause.Locking{Strength: "UPDATE"})
+// syncCreate creates a guest a phone added offline. An id that already exists
+// merges like an edit, so a replayed create cannot undo a newer write.
+func (s *GuestService) syncCreate(ctx context.Context, weddingID, gid uuid.UUID, m SyncMutation, opTime time.Time) SyncResult {
+	if m.Payload == nil || m.Payload.Name == nil || strings.TrimSpace(*m.Payload.Name) == "" {
+		return SyncResult{GuestID: m.GuestID, Status: "skipped", Reason: "name required"}
 	}
-	return q.First(g).Error
-}
-
-// syncCheckIn applies a queued check-in to g, which the caller loaded under a
-// row lock inside tx. A skip returns a result and no error; an error rolls back.
-func syncCheckIn(ctx context.Context, tx *gorm.DB, g *models.GuestRecord, m SyncMutation, opTime time.Time) (SyncResult, error) {
-	// An arrival recorded offline wins over unrelated newer edits (table
-	// moves, notes): skipping it would lose the check-in and angbao.
-	if g.CheckedInAt != nil && opTime.Before(g.UpdatedAt) {
-		return SyncResult{GuestID: m.GuestID, Status: "skipped", Reason: "older than server", ServerRecord: g}, nil
+	if err := validateSyncPayload(m.Payload); err != nil {
+		return syncFailed(m, err)
 	}
-	wasCheckedIn := g.CheckedInAt != nil
-	if wasCheckedIn && opTime.Equal(g.UpdatedAt) {
-		// Replay of this check-in whose response was lost: already applied.
-		return SyncResult{GuestID: m.GuestID, Status: "applied", ServerRecord: g}, nil
-	}
-	// A second check-in (another receptionist got there first) keeps the
-	// first arrival time and any angbao/gift already keyed, like the online
-	// path's 409: only fill what is still empty and append the note.
-	if !wasCheckedIn {
-		g.CheckedInAt = &opTime
-	}
-	g.RSVP = "confirmed"
-	if m.Payload != nil {
-		if v := m.Payload.AngbaoAmt.Value; v != nil && (!wasCheckedIn || g.AngbaoAmt == nil) {
-			g.AngbaoAmt = v
+	var res SyncResult
+	var event string
+	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		// Wedding row first, as every guest write locks in that order.
+		if err := lockWeddingTx(tx, weddingID); err != nil {
+			return err
 		}
-		if v := m.Payload.GiftItem.Value; v != nil && (!wasCheckedIn || g.GiftItem == nil) {
-			g.GiftItem = v
-		}
-		// A notes value in a checkin payload is appended to the guest's notes,
-		// never replacing them, so a queued note never wipes existing notes.
-		if m.Payload.Notes != nil {
-			// A retried checkin whose response was lost finds the guest checked
-			// in with its note already present: skip it, don't duplicate it.
-			note := strings.TrimSpace(*m.Payload.Notes)
-			if !wasCheckedIn || !slices.Contains(strings.Split(g.Notes, "\n"), note) {
-				// Offline, nobody can shorten the note and retry: cut it to fit
-				// rather than refuse the check-in and lose the arrival and angbao.
-				if fitted := fitNote(g.Notes, note); fitted != note {
-					log.Printf("sync check-in of guest %s: note cut from %d to %d characters to fit notes limit", g.ID, utf8.RuneCountInString(note), utf8.RuneCountInString(fitted))
-					note = fitted
-				}
-				g.Notes = appendNote(g.Notes, note)
+		repo := repository.NewGuestRepo(tx)
+		g, err := repo.FindByIDLocked(ctx, gid, weddingID)
+		switch {
+		case err == nil:
+			merge, err := mergeSyncPayload(g, m.Payload, opTime)
+			if err != nil {
+				return err
 			}
+			res = merge.result(m, g)
+			if !merge.changed {
+				return nil
+			}
+			g.UpdatedAt = nextWriteTime(g.UpdatedAt, opTime)
+			if err := s.updateGuestTx(ctx, tx, g, true, nil); err != nil {
+				return err
+			}
+			event = "update"
+			return nil
+		case !errors.Is(err, gorm.ErrRecordNotFound):
+			return err
 		}
+		// A replayed create (first response lost) must not bring back a guest
+		// someone deleted since.
+		deleted, err := repo.IsDeleted(ctx, gid, weddingID)
+		if err != nil {
+			return err
+		}
+		if deleted {
+			res = SyncResult{GuestID: m.GuestID, Status: "skipped", Reason: "deleted"}
+			return nil
+		}
+		g, err = newSyncGuest(weddingID, gid, m.Payload, opTime)
+		if err != nil {
+			return err
+		}
+		if err := s.createGuestTx(ctx, tx, g); err != nil {
+			return err
+		}
+		res = SyncResult{GuestID: m.GuestID, Status: "applied", ServerRecord: g}
+		event = "create"
+		return nil
+	})
+	if err != nil {
+		// A guestId already taken (say, by another wedding's guest) stays
+		// taken: report the key collision as a rule error, not retryable.
+		if t, ok := s.db.Dialector.(gorm.ErrorTranslator); ok {
+			err = t.Translate(err)
+		}
+		return syncFailed(m, err)
 	}
-	if err := validateGuestFields(g); err != nil {
-		return SyncResult{}, err
+	if event != "" {
+		s.sseHub.publishGuest(event, res.ServerRecord, weddingID)
 	}
-	// Never move updated_at backwards, or a stale queued edit could win next.
-	// Always move it forward, though: an editor holding the old updated_at
-	// must get a 409, not silently overwrite this check-in's angbao and note.
-	if opTime.After(g.UpdatedAt) {
-		g.UpdatedAt = opTime
-	} else {
-		g.UpdatedAt = g.UpdatedAt.Add(time.Microsecond)
+	return res
+}
+
+// syncDelete deletes the guest when the delete is newer than every field write
+// on the row (invariant 4). An older delete fails so the client keeps it queued.
+func (s *GuestService) syncDelete(ctx context.Context, weddingID, gid uuid.UUID, m SyncMutation, opTime time.Time) SyncResult {
+	var res SyncResult
+	var row *models.GuestRecord
+	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		repo := repository.NewGuestRepo(tx)
+		g, err := repo.FindByIDLocked(ctx, gid, weddingID)
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			// Already gone: the intent holds.
+			res = SyncResult{GuestID: m.GuestID, Status: "applied"}
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+		row = g
+		if !newerThanEveryField(g, opTime) {
+			// Report "failed", not "skipped": the client keeps failed items
+			// queued instead of dequeuing and losing the delete intent.
+			res = SyncResult{GuestID: m.GuestID, Status: "failed", Reason: "older than server", ServerRecord: g}
+			return nil
+		}
+		res = SyncResult{GuestID: m.GuestID, Status: "applied"}
+		return repo.Delete(ctx, gid, weddingID)
+	})
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			// Someone else deleted it first: the intent holds.
+			return SyncResult{GuestID: m.GuestID, Status: "applied"}
+		}
+		return syncFailed(m, err)
 	}
-	if err := repository.NewGuestRepo(tx).SyncCheckIn(ctx, g); err != nil {
-		return SyncResult{}, err
+	if res.Status == "applied" && row != nil {
+		s.sseHub.publishGuest("delete", row, weddingID)
 	}
-	return SyncResult{GuestID: m.GuestID, Status: "applied", ServerRecord: g}, nil
+	return res
+}
+
+// syncCheckIn applies a queued check-in field by field: the arrival, the RSVP,
+// the angbao and gift it carries, and its note appended (invariant 3).
+func (s *GuestService) syncCheckIn(ctx context.Context, weddingID, gid uuid.UUID, m SyncMutation, opTime time.Time) SyncResult {
+	var res SyncResult
+	var wrote bool
+	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		repo := repository.NewGuestRepo(tx)
+		g, err := repo.FindByIDLocked(ctx, gid, weddingID)
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			res = SyncResult{GuestID: m.GuestID, Status: "skipped", Reason: "not found"}
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+		merge, err := mergeSyncCheckIn(g, m.Payload, opTime)
+		if err != nil {
+			return err
+		}
+		res = merge.result(m, g)
+		if !merge.changed {
+			return nil
+		}
+		if err := validateGuestFields(g); err != nil {
+			return err
+		}
+		g.UpdatedAt = nextWriteTime(g.UpdatedAt, opTime)
+		if err := repo.SyncCheckIn(ctx, g); err != nil {
+			return err
+		}
+		wrote = true
+		return nil
+	})
+	if err != nil {
+		return syncFailed(m, err)
+	}
+	if wrote {
+		s.sseHub.publishGuest("checkin", res.ServerRecord, weddingID)
+	}
+	return res
+}
+
+// syncCheckOut applies a queued check-out: it clears the arrival when the undo
+// is newer than the row's own write of checked_in_at (invariant 2). An undo
+// behind a newer check-in skips; an undo of a guest already checked out is
+// applied.
+func (s *GuestService) syncCheckOut(ctx context.Context, weddingID, gid uuid.UUID, m SyncMutation, opTime time.Time) SyncResult {
+	var res SyncResult
+	var wrote bool
+	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		repo := repository.NewGuestRepo(tx)
+		g, err := repo.FindByIDLocked(ctx, gid, weddingID)
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			res = SyncResult{GuestID: m.GuestID, Status: "skipped", Reason: "not found"}
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+		var merge syncMerge
+		if merge.take(g, models.FieldCheckedIn, opTime) {
+			merge.changed = g.CheckedInAt != nil
+			g.CheckedInAt = nil
+			g.StampField(models.FieldCheckedIn, opTime)
+		}
+		res = merge.result(m, g)
+		if !merge.changed {
+			return nil
+		}
+		g.UpdatedAt = nextWriteTime(g.UpdatedAt, opTime)
+		if err := repo.CheckOut(ctx, gid, weddingID, g.UpdatedAt); err != nil {
+			return err
+		}
+		wrote = true
+		return nil
+	})
+	if err != nil {
+		return syncFailed(m, err)
+	}
+	if wrote {
+		s.sseHub.publishGuest("checkout", res.ServerRecord, weddingID)
+	}
+	return res
+}
+
+// mergeSyncPayload applies the fields p carries to g, each on its own time: a
+// field takes the value only when opTime is newer than that field's own last
+// write, so a newer write to another field cannot carry it away (invariant 1).
+func mergeSyncPayload(g *models.GuestRecord, p *SyncPayload, opTime time.Time) (syncMerge, error) {
+	var r syncMerge
+	if p == nil {
+		return r, nil
+	}
+	if p.Name != nil && r.take(g, models.FieldName, opTime) {
+		r.changed = r.changed || g.Name != *p.Name
+		g.Name = *p.Name
+		g.StampField(models.FieldName, opTime)
+	}
+	if p.Email != nil && r.take(g, models.FieldEmail, opTime) {
+		r.changed = r.changed || g.Email != *p.Email
+		g.Email = *p.Email
+		g.StampField(models.FieldEmail, opTime)
+	}
+	if p.Pax != nil && r.take(g, models.FieldPax, opTime) {
+		r.changed = r.changed || g.Pax != *p.Pax
+		g.Pax = *p.Pax
+		g.StampField(models.FieldPax, opTime)
+	}
+	// An empty RSVP means "not set", as online; validateGuestFields checks the rest.
+	if p.RSVP != nil && r.take(g, models.FieldRSVP, opTime) {
+		r.changed = r.changed || g.RSVP != *p.RSVP
+		g.RSVP = *p.RSVP
+		g.StampField(models.FieldRSVP, opTime)
+	}
+	if p.IsVip != nil && r.take(g, models.FieldIsVip, opTime) {
+		r.changed = r.changed || g.IsVip != *p.IsVip
+		g.IsVip = *p.IsVip
+		g.StampField(models.FieldIsVip, opTime)
+	}
+	if p.Notes != nil && r.take(g, models.FieldNotes, opTime) {
+		r.changed = r.changed || g.Notes != *p.Notes
+		g.Notes = *p.Notes
+		g.StampField(models.FieldNotes, opTime)
+	}
+	if p.Dietary != nil && r.take(g, models.FieldDietary, opTime) {
+		r.changed = r.changed || !slices.Equal(g.Dietary, *p.Dietary)
+		g.Dietary = *p.Dietary
+		g.StampField(models.FieldDietary, opTime)
+	}
+	// Present-but-null clears the value; absent leaves it alone.
+	if p.AngbaoAmt.Set && r.take(g, models.FieldAngbaoAmt, opTime) {
+		r.changed = r.changed || !reflect.DeepEqual(g.AngbaoAmt, p.AngbaoAmt.Value)
+		g.AngbaoAmt = p.AngbaoAmt.Value
+		g.StampField(models.FieldAngbaoAmt, opTime)
+	}
+	if p.GiftItem.Set && r.take(g, models.FieldGiftItem, opTime) {
+		r.changed = r.changed || !reflect.DeepEqual(g.GiftItem, p.GiftItem.Value)
+		g.GiftItem = p.GiftItem.Value
+		g.StampField(models.FieldGiftItem, opTime)
+	}
+	// Only an explicitly sent tableId touches the seat assignment: absent means
+	// "leave it alone", null or empty means unassign. The pair moves together.
+	if p.TableID.Set && r.take(g, models.FieldSeat, opTime) {
+		if p.TableID.Value == nil || *p.TableID.Value == "" {
+			r.changed = r.changed || g.TableID != nil
+			g.TableID, g.SeatNum = nil, nil
+		} else {
+			tid, err := utils.DecodeUUID(*p.TableID.Value)
+			if err != nil {
+				return r, fmt.Errorf("%w %q", errInvalidTableID, *p.TableID.Value)
+			}
+			r.changed = r.changed || !reflect.DeepEqual(g.TableID, &tid) || !reflect.DeepEqual(g.SeatNum, p.SeatNum)
+			g.TableID, g.SeatNum = &tid, p.SeatNum
+		}
+		g.StampField(models.FieldSeat, opTime)
+	}
+	return r, nil
+}
+
+// mergeSyncCheckIn applies a queued check-in to g: the arrival, the RSVP and
+// the angbao and gift it carries, each on its own time. Notes append instead of
+// replacing (invariant 3), and a note already present is a replay and is not
+// added again (invariant 5). The caller validates the merged row.
+func mergeSyncCheckIn(g *models.GuestRecord, p *SyncPayload, opTime time.Time) (syncMerge, error) {
+	var r syncMerge
+	if r.take(g, models.FieldCheckedIn, opTime) {
+		r.changed = r.changed || g.CheckedInAt == nil || !g.CheckedInAt.Equal(opTime)
+		g.CheckedInAt = &opTime
+		g.StampField(models.FieldCheckedIn, opTime)
+	}
+	if r.take(g, models.FieldRSVP, opTime) {
+		r.changed = r.changed || g.RSVP != "confirmed"
+		g.RSVP = "confirmed"
+		g.StampField(models.FieldRSVP, opTime)
+	}
+	if p == nil {
+		return r, nil
+	}
+	if p.AngbaoAmt.Set && r.take(g, models.FieldAngbaoAmt, opTime) {
+		r.changed = r.changed || !reflect.DeepEqual(g.AngbaoAmt, p.AngbaoAmt.Value)
+		g.AngbaoAmt = p.AngbaoAmt.Value
+		g.StampField(models.FieldAngbaoAmt, opTime)
+	}
+	if p.GiftItem.Set && r.take(g, models.FieldGiftItem, opTime) {
+		r.changed = r.changed || !reflect.DeepEqual(g.GiftItem, p.GiftItem.Value)
+		g.GiftItem = p.GiftItem.Value
+		g.StampField(models.FieldGiftItem, opTime)
+	}
+	if p.Notes != nil {
+		note := strings.TrimSpace(*p.Notes)
+		if note != "" && !slices.Contains(strings.Split(g.Notes, "\n"), note) {
+			// Offline, nobody can shorten the note and retry: cut it to fit
+			// rather than refuse the check-in and lose the arrival and angbao.
+			if fitted := fitNote(g.Notes, note); fitted != note {
+				log.Printf("sync check-in of guest %s: note cut from %d to %d characters to fit notes limit", g.ID, utf8.RuneCountInString(note), utf8.RuneCountInString(fitted))
+				note = fitted
+			}
+			g.Notes = appendNote(g.Notes, note)
+			r.changed = true
+		}
+		g.StampField(models.FieldNotes, opTime)
+	}
+	return r, nil
+}
+
+// validateSyncPayload runs the online PUT rules over the fields p carries, so an
+// offline edit is refused like an online one even when last-write-wins would
+// drop it anyway (invariant 7).
+func validateSyncPayload(p *SyncPayload) error {
+	if p == nil {
+		return nil
+	}
+	scratch := &models.GuestRecord{}
+	if err := applySyncPayload(scratch, p, nil); err != nil {
+		return err
+	}
+	return validateGuestFields(scratch)
+}
+
+// newSyncGuest builds the row a queued create carries.
+func newSyncGuest(weddingID, gid uuid.UUID, p *SyncPayload, opTime time.Time) (*models.GuestRecord, error) {
+	g := &models.GuestRecord{
+		ID:        gid,
+		WeddingID: weddingID,
+		Name:      *p.Name,
+		Pax:       1,
+		AngbaoAmt: p.AngbaoAmt.Value,
+		GiftItem:  p.GiftItem.Value,
+		CreatedAt: opTime,
+		UpdatedAt: opTime,
+	}
+	if p.Pax != nil && *p.Pax >= 1 {
+		g.Pax = *p.Pax
+	}
+	if p.Email != nil {
+		g.Email = *p.Email
+	}
+	if p.RSVP != nil {
+		g.RSVP = *p.RSVP
+	}
+	if p.IsVip != nil {
+		g.IsVip = *p.IsVip
+	}
+	if p.Notes != nil {
+		g.Notes = *p.Notes
+	}
+	if p.Dietary != nil {
+		g.Dietary = *p.Dietary
+	}
+	if t := p.TableID; t.Set && t.Value != nil && *t.Value != "" {
+		tid, err := utils.DecodeUUID(*t.Value)
+		if err != nil {
+			return nil, fmt.Errorf("%w: invalid tableId %q", errInvalidTableID, *t.Value)
+		}
+		g.TableID = &tid
+		g.SeatNum = p.SeatNum
+	}
+	return g, nil
 }
 
 func applySyncPayload(g *models.GuestRecord, p *SyncPayload, gid *uuid.UUID) error {

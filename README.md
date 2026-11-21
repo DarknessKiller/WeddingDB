@@ -47,11 +47,12 @@ You need Docker with Compose. The image comes from GitHub Container Registry, so
 export JWT_SECRET=$(openssl rand -hex 32)
 export POSTGRES_PASSWORD=$(openssl rand -hex 32)
 export REDIS_PASSWORD=$(openssl rand -hex 32)
+export ADMIN_BOOTSTRAP_EMAIL='you@yourdomain.com'
 export ADMIN_BOOTSTRAP_PASSWORD='a-strong-one-time-password'
 docker compose up -d
 ```
 
-`JWT_SECRET`, `POSTGRES_PASSWORD`, and `REDIS_PASSWORD` are required. Compose refuses to start without them. `ADMIN_BOOTSTRAP_PASSWORD` is required on first boot and is rejected if left at the placeholder.
+`JWT_SECRET`, `POSTGRES_PASSWORD`, and `REDIS_PASSWORD` are required. Compose refuses to start without them. `ADMIN_BOOTSTRAP_EMAIL` and `ADMIN_BOOTSTRAP_PASSWORD` are required on first boot; the password is rejected if left at the placeholder, and the example address is rejected too.
 
 | Service | Address |
 |---|---|
@@ -59,7 +60,7 @@ docker compose up -d
 | PostgreSQL | `localhost:5432`, user, password, and database all `weddingdb`, loopback only |
 | Redis (DragonflyDB) | internal to the compose network, no host port |
 
-First login uses `admin@weddingdb.local` and the password in `ADMIN_BOOTSTRAP_PASSWORD`. The first login asks for a new password. Bootstrap runs only when the admin table is empty.
+First login uses `ADMIN_BOOTSTRAP_EMAIL` and the password in `ADMIN_BOOTSTRAP_PASSWORD`. The first login asks for a new password. Bootstrap runs only when the admin table is empty.
 
 Update with `docker compose pull app && docker compose up -d`.
 

@@ -48,7 +48,8 @@ func TestTableDelete_PublishesUnassignedGuests(t *testing.T) {
 		angbao_amt INTEGER,
 		gift_item TEXT,
 		created_at DATETIME,
-		updated_at DATETIME
+		updated_at DATETIME,
+		field_updated_at TEXT
 	)`)
 	db.Exec(`CREATE TABLE banquet_tables (
 		id TEXT PRIMARY KEY,

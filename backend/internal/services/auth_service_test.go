@@ -2,7 +2,7 @@ package services
 
 import (
 	"context"
-	"strings"
+	"errors"
 	"testing"
 	"time"
 
@@ -287,9 +287,9 @@ func TestValidateToken_FailClosedOnRedisError(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error when Redis is unavailable (fail-closed), got nil")
 	}
-	// Should contain the "service temporarily unavailable" message
-	if !strings.Contains(err.Error(), "service temporarily unavailable") {
-		t.Errorf("expected 'service temporarily unavailable' in error, got: %v", err)
+	// The middleware answers 503 only when it can tell an outage from a bad token.
+	if !errors.Is(err, ErrAuthUnavailable) {
+		t.Errorf("expected ErrAuthUnavailable, got: %v", err)
 	}
 }
 

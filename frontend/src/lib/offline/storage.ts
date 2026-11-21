@@ -47,6 +47,16 @@ export function expireStaffOfflineData() {
 	} catch {}
 }
 
+/** Email that owns this device's queued edits, if any. */
+export function staffOfflineOwner(): string | null {
+	if (typeof window === 'undefined') return null;
+	try {
+		return localStorage.getItem(OWNER_KEY);
+	} catch {
+		return null;
+	}
+}
+
 /**
  * Called on login. Keeps queued edits when the same user logs back in (after a
  * reload, say) so they still sync; clears them when someone else logs in.

@@ -79,7 +79,8 @@ func TestWriteMissingGuestReturnsNotFound(t *testing.T) {
 		id TEXT PRIMARY KEY, wedding_id TEXT, name TEXT, name_pinyin TEXT,
 		email TEXT, pax INTEGER, table_id TEXT, seat_num INTEGER, rsvp TEXT,
 		checked_in_at DATETIME, notes TEXT, dietary TEXT, is_vip NUMERIC,
-		angbao_amt INTEGER, gift_item TEXT, created_at DATETIME, updated_at DATETIME)`).Error; err != nil {
+		angbao_amt INTEGER, gift_item TEXT, created_at DATETIME, updated_at DATETIME,
+		field_updated_at TEXT)`).Error; err != nil {
 		t.Fatalf("migrate: %v", err)
 	}
 	repo := NewGuestRepo(db)

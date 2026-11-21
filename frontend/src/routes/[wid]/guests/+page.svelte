@@ -437,10 +437,15 @@ import Users from 'lucide-svelte/icons/users';
     showBulkDeleteConfirm = false;
     if (selectedIds.size === 0) return;
     const ids = [...selectedIds];
-    const results = await Promise.allSettled(ids.map(id => apiDeleteGuest(wid, id)));
+    const deleted = new Set<string>();
+    // 1,000 parallel DELETEs swamp the app and the venue wifi; send ten at a time.
+    for (let i = 0; i < ids.length; i += 10) {
+      const chunk = ids.slice(i, i + 10);
+      const results = await Promise.allSettled(chunk.map(id => apiDeleteGuest(wid, id)));
+      results.forEach((r, j) => { if (r.status === 'fulfilled') deleted.add(chunk[j]); });
+    }
     // Drop the guests the server deleted even when others failed; keep the
     // failed ones selected so a retry targets only them.
-    const deleted = new Set(ids.filter((_, i) => results[i].status === 'fulfilled'));
     guestList.update(list => list.filter(g => !deleted.has(g.id)));
     selectedIds = new Set(ids.filter(id => !deleted.has(id)));
     const failed = ids.length - deleted.size;

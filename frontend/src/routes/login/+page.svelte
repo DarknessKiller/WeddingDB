@@ -2,7 +2,8 @@
   import { goto } from '$app/navigation';
   import { setAuth, addToast } from '#lib/stores/index.ts';
   import { weddingId, setWeddingId } from '#lib/stores/weddingId.ts';
-  import { claimStaffOfflineData } from '#lib/offline/storage.ts';
+  import { claimStaffOfflineData, staffOfflineOwner } from '#lib/offline/storage.ts';
+  import { flushAllQueues } from '#lib/offline/queue.ts';
   import { get } from 'svelte/store';
   import { withTimeout } from '#lib/utils/index.ts';
   import Eye from 'lucide-svelte/icons/eye';
@@ -74,7 +75,13 @@ import ChevronRight from 'lucide-svelte/icons/chevron-right';
       }
       const data = await res.json();
       // Unsynced edits are keyed by wedding, not user: keep them for the same
-      // user (they sync on load), drop them if someone else logs in.
+      // user (they sync on load). Another account deletes them, so send what we
+      // can first and ask before discarding the rest.
+      const owner = staffOfflineOwner();
+      if (owner && owner !== email.trim().toLowerCase()) {
+        const queued = await flushAllQueues();
+        if (queued > 0 && !confirm(`${queued} offline edit(s) from ${owner} have not reached the server. Logging in as ${email.trim()} deletes them. Continue?`)) return;
+      }
       claimStaffOfflineData(email);
       loginAccessToken = data.accessToken;
       loginRefreshToken = data.refreshToken;

@@ -485,6 +485,10 @@ func (s *AuthService) rateLimit(ctx context.Context, key string, limit int64, wi
 // ErrRateLimitUnavailable reports that password-guess limit could not be read.
 var ErrRateLimitUnavailable = errors.New("sign-in is temporarily unavailable, try again shortly")
 
+// ErrAuthUnavailable reports that the revocation check itself failed. The
+// token may be fine, so callers must not answer 401 and trigger a refresh storm.
+var ErrAuthUnavailable = errors.New("auth check unavailable")
+
 // Logout deletes the refresh token and blacklists the access token's JTI.
 // Blacklisting is best-effort: a Redis failure does not prevent refresh token deletion.
 func (s *AuthService) Logout(ctx context.Context, refreshToken string, accessToken string) error {
@@ -545,7 +549,7 @@ func (s *AuthService) CheckRevoked(ctx context.Context, claims *AccessClaims) er
 	// Check blacklist (targeted, time-bounded check — do this first)
 	blacklisted, err := s.IsTokenBlacklisted(ctx, claims.ID)
 	if err != nil {
-		return fmt.Errorf("service temporarily unavailable: %w", err)
+		return fmt.Errorf("%w: %v", ErrAuthUnavailable, err)
 	}
 	if blacklisted {
 		return errors.New("token has been revoked")
@@ -554,7 +558,7 @@ func (s *AuthService) CheckRevoked(ctx context.Context, claims *AccessClaims) er
 	// Check token version (broader sweep)
 	storedTV, err := s.GetTokenVersion(ctx, claims.AdminID)
 	if err != nil {
-		return fmt.Errorf("service temporarily unavailable: %w", err)
+		return fmt.Errorf("%w: %v", ErrAuthUnavailable, err)
 	}
 	if claims.TokenVersion < storedTV {
 		return errors.New("token version is stale")

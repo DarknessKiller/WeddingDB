@@ -72,7 +72,6 @@ export async function flushAllQueues(): Promise<number> {
 	for (const wid of weddingsWithQueuedEdits()) await syncQueue(wid).catch(() => {});
 	return weddingsWithQueuedEdits().reduce((n, wid) => n + queuedCount(wid), 0);
 }
-
 function writeCache(store: Storage, key: string, guests: unknown[]) {
 	try { store.setItem(key, JSON.stringify(guests)); } catch {}
 }

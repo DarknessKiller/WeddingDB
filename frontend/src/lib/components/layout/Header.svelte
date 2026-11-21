@@ -10,18 +10,20 @@ import X from 'lucide-svelte/icons/x';
 import LogOut from 'lucide-svelte/icons/log-out';
 
   const TITLES: Record<string, string> = {
-    '/dashboard': 'Dashboard',
-    '/guests': 'Guest Management',
-    '/seating': 'Seating Map',
-    '/search': 'Reception Check-In',
-    '/kiosk': 'Kiosk Mode',
-    '/reservation': 'Reservations',
-    '/tables': 'Table Management',
-    '/settings': 'Settings',
-    '/users': 'User Management',
+    dashboard: 'Dashboard',
+    guests: 'Guest Management',
+    seating: 'Seating Map',
+    search: 'Reception Check-In',
+    kiosk: 'Kiosk Mode',
+    reservation: 'Reservations',
+    tables: 'Table Management',
+    settings: 'Settings',
+    users: 'User Management',
+    reports: 'Reports',
   };
 
-  let pageTitle = $derived(TITLES[page.url.pathname] || 'WeddingDB');
+  // Staff routes are /{weddingId}/<page>: match the last segment.
+  let pageTitle = $derived(TITLES[page.url.pathname.split('/').filter(Boolean).pop() ?? ''] || 'WeddingDB');
   let auth = $derived(getAuth());
   let initials = $derived(
     (auth.name || 'A').split(' ').map((w: string) => w[0]).join('').toUpperCase().slice(0, 2)

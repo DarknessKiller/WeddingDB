@@ -245,14 +245,22 @@ import ArrowUpDown from 'lucide-svelte/icons/arrow-up-down';
   }
 
   async function save() {
+    // Whole numbers only: a typed decimal would be refused by the API as a
+    // bad field and, offline, would keep failing in the queue.
+    const pax = Math.round(Number(form.pax));
+    const angbao = form.angbaoAmt ? Math.round(Number(form.angbaoAmt)) : null;
+    if (!Number.isFinite(pax) || pax < 1 || (angbao !== null && !Number.isFinite(angbao))) {
+      addToast('Pax and angbao must be whole numbers', 'error');
+      return;
+    }
     saving = true;
     try {
       const wid = get(weddingId);
       if (createMode) {
         const created = await createGuest(wid, {
           name: form.name, email: form.email || undefined,
-          pax: form.pax, rsvp: form.rsvp, isVip: form.isVip, notes: form.notes,
-          dietary: form.dietary, angbaoAmt: form.angbaoAmt ? Number(form.angbaoAmt) : null,
+          pax: pax, rsvp: form.rsvp, isVip: form.isVip, notes: form.notes,
+          dietary: form.dietary, angbaoAmt: angbao,
           giftItem: form.giftItem || null,
         });
         addToast(`${created.name} created`, 'success');
@@ -260,8 +268,8 @@ import ArrowUpDown from 'lucide-svelte/icons/arrow-up-down';
       } else {
         const updated = await updateGuest(wid, guest!.id, {
           name: form.name, email: form.email ?? '',
-          pax: form.pax, rsvp: form.rsvp, isVip: form.isVip, notes: form.notes,
-          dietary: form.dietary, angbaoAmt: form.angbaoAmt ? Number(form.angbaoAmt) : null,
+          pax: pax, rsvp: form.rsvp, isVip: form.isVip, notes: form.notes,
+          dietary: form.dietary, angbaoAmt: angbao,
           giftItem: form.giftItem || null,
           baseUpdatedAt: editBase ?? undefined,
         });

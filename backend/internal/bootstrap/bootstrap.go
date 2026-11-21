@@ -208,6 +208,15 @@ func Init(env config.Env, version string) *App {
 	var count int64
 	db.Model(&models.AdminUser{}).Count(&count)
 	if count == 0 {
+		// A known default address would let anyone target the only admin for
+		// lockout, so the first admin's address must come from the environment.
+		email := strings.TrimSpace(os.Getenv("ADMIN_BOOTSTRAP_EMAIL"))
+		if email == "" {
+			log.Fatal("ADMIN_BOOTSTRAP_EMAIL is required when creating the first admin")
+		}
+		if email == "admin@weddingdb.local" {
+			log.Fatal("ADMIN_BOOTSTRAP_EMAIL must not be the shipped example address; use the address the admin really reads")
+		}
 		password := os.Getenv("ADMIN_BOOTSTRAP_PASSWORD")
 		if password == "" {
 			log.Fatal("ADMIN_BOOTSTRAP_PASSWORD is required when creating the first admin")
@@ -221,7 +230,7 @@ func Init(env config.Env, version string) *App {
 		}
 		admin := &models.AdminUser{
 			ID:                  uuid.New(),
-			Email:               "admin@weddingdb.local",
+			Email:               email,
 			Password:            string(hash),
 			Name:                "Admin",
 			Role:                "admin",
@@ -230,7 +239,7 @@ func Init(env config.Env, version string) *App {
 		if err := adminRepo.Create(context.Background(), admin); err != nil {
 			log.Println("Warning: failed to seed admin:", err)
 		} else {
-			log.Println("Seeded default admin: admin@weddingdb.local")
+			log.Println("Seeded default admin: " + email)
 		}
 	}
 

@@ -57,3 +57,21 @@ func TestProxyAware_UntrustedPeerIgnoresXFF(t *testing.T) {
 		t.Fatalf("untrusted peer must not rewrite RemoteAddr, got %q", got)
 	}
 }
+
+// A client can send X-Forwarded-For more than once; every line is part of the
+// chain. Reading only the first line let a second one set the IP unseen.
+func TestProxyAware_JoinsEveryXFFHeaderLine(t *testing.T) {
+	t.Setenv("TRUSTED_PROXIES", "10.0.0.0/8")
+	var got string
+	h := ProxyAwareMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		got = r.RemoteAddr
+	}))
+	req := httptest.NewRequest("GET", "/", nil)
+	req.RemoteAddr = "10.0.0.1:9999"
+	req.Header.Add("X-Forwarded-For", "10.0.0.2")
+	req.Header.Add("X-Forwarded-For", "6.6.6.6")
+	h.ServeHTTP(httptest.NewRecorder(), req)
+	if got != "6.6.6.6:" {
+		t.Fatalf("want client hop from the second header line, got %q", got)
+	}
+}

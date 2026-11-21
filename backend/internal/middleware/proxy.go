@@ -16,7 +16,9 @@ func ProxyAwareMiddleware(next http.Handler) http.Handler {
 	trusted := parseTrustedProxies(os.Getenv("TRUSTED_PROXIES"))
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if len(trusted) > 0 {
-			if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
+			// Join every header line: Get returns only the first, so a second
+			// line would decide the client IP unseen.
+			if xff := strings.Join(r.Header.Values("X-Forwarded-For"), ","); xff != "" {
 				if ip, ok := clientFromXFF(xff, r.RemoteAddr, trusted); ok {
 					r.RemoteAddr = ip
 				}

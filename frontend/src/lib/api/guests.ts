@@ -179,7 +179,8 @@ export async function fetchAllGuests(weddingId: string): Promise<GuestResponse[]
 	const all: GuestResponse[] = [];
 	let cursor: string | undefined;
 	do {
-		const page = await listGuests(weddingId, { limit: 100, cursor });
+		// The server caps a page at 500: 1,000 guests take two requests, not ten.
+		const page = await listGuests(weddingId, { limit: 500, cursor });
 		all.push(...page.guests);
 		cursor = page.nextCursor ?? undefined;
 	} while (cursor);

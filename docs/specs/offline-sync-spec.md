@@ -54,8 +54,8 @@ list. A change to a rule updates this list and the rule's test in the same diff.
    time. `TestSync_NewestWins`, `TestSync_PartialUpdatePreservesFields`
 2. **Undo is neutral.** Check-in writes `checkedInAt`, `rsvp` and the payload
    fields it carries. Check-out writes `checkedInAt = null`. Both win or lose on
-   time per field, like any edit. `TestSync_CheckOutBeatsUnrelatedNewerEdit`,
-   `TestSyncCheckOut_PostgresLosesToCheckInCommittedWhileWaiting`
+   time per field, like any edit. `TestSync_ArrivalAndUndoFollowTime`,
+   `TestSync_UndoBeatsUnrelatedNewerEdit`, `TestSyncCheckOut_PostgresLosesToCheckInCommittedWhileWaiting`
 3. **Notes append at check-in.** A check-in note is appended to existing notes,
    never replacing them. Exception to rule 1 for the `notes` field only.
    `TestSyncCheckIn_PostgresConcurrentKeepsBothNotes`
@@ -68,21 +68,19 @@ list. A change to a rule updates this list and the rule's test in the same diff.
    time; a missing one fails. `TestSync_FutureClockClamped`, `TestSync_ZeroClientTimeFails`
 7. **Offline validates like online.** A field the online API refuses fails the
    mutation without retry. `TestSync_UpdateValidatesLikeOnline`
+8. **One bad mutation fails alone.** A body item that cannot be decoded is
+   answered `failed` with `retryable: false`; the rest of the batch applies.
+   `TestSync_MalformedMutationFailsAlone`
+9. **Queued edits follow their owner.** A different account logging in on the
+   device first replays every queue, then asks before discarding what is left.
+   `a different user logging in drops the previous user edits` (storage test).
 
 ### Gaps
 
 Code and tests that break the rules above. Delete each line when fixed.
 
-- One `updated_at` per guest row. Rule 1 needs a time per field, so the code
-  gates whole mutations on the row time (`applySyncMutation`, `syncCheckIn` in
-  `guest_service.go`). Effect: phone A's offline check-in with angpao loses the
-  angpao when phone B checks the guest in later without one.
-- `TestSyncCheckIn_AlreadyCheckedInKeepsAngbaoAndArrival` asserts first write
-  wins for angpao and arrival. Rule 1 says the newest write wins.
-- `TestSync_StaleBaseKeepsOtherDesksAngbao` refuses a whole edit on a stale
-  `baseUpdatedAt`. Rule 1 applies each field on its own time.
-- `TestSync_CheckInLWW` and `TestSync_CheckOutBeatsUnrelatedNewerEdit` are named
-  after the old rules. Rename them after the invariant they guard.
+- Rule 3 (notes append) is an exception to rule 1 that the owner has not
+  confirmed yet. Ask before changing either side.
 
 ## Files
 
@@ -176,7 +174,7 @@ timer fires -> clear query and selected guest, re-arm
 - Clock skew: future client clocks are clamped (invariant 6).
 - Refresh fails offline: the queue is kept and the header shows the queued
   count; access tokens are still required to sync.
-- Queue full (500): drop the oldest mutation with a toast.
+- Queue full (500): refuse the new mutation with a toast; the oldest entry is an unsynced edit.
 - Create with a client-generated id: the id is final; no rewrite is needed.
 - SSE duplicate of your own sync: upserting the same guest is harmless.
 - Cold offline start: unsupported until a service worker caches the app shell.

@@ -3,7 +3,10 @@ package handlers
 import (
 	"context"
 	"errors"
+	"net/http"
 	"strconv"
+	"time"
+
 	"weddingdb/internal/models"
 	"weddingdb/internal/repository"
 	"weddingdb/internal/services"
@@ -12,6 +15,17 @@ import (
 	"github.com/go-fuego/fuego"
 	"github.com/google/uuid"
 )
+
+// The kiosk answers anyone with the link, guest names included. Serve it
+// until a week after the wedding, then 410; staff can preview it any time
+// before the date.
+const kioskClosesAfter = 7 * 24 * time.Hour
+
+var errKioskClosed = fuego.HTTPError{Status: http.StatusGone, Title: "Kiosk closed for this wedding"}
+
+func kioskOpen(w *models.WeddingEvent, now time.Time) bool {
+	return !now.After(w.Date.Add(kioskClosesAfter))
+}
 
 type publicGuest struct {
 	ID      string  `json:"id"`
@@ -38,6 +52,9 @@ func (h *PublicGuestHandler) toPublicGuests(ctx context.Context, wid uuid.UUID, 
 	w, err := h.weddingService.Get(ctx, wid)
 	if err != nil {
 		return nil, notFoundOr(err, "Wedding not found")
+	}
+	if !kioskOpen(w, time.Now()) {
+		return nil, errKioskClosed
 	}
 	out := make([]publicGuest, 0, len(guests))
 	for _, g := range guests {
@@ -115,6 +132,9 @@ func (h *PublicKioskHandler) GetKioskSettings(c fuego.ContextNoBody) (any, error
 	w, err := h.weddingService.Get(ctx, wid)
 	if err != nil {
 		return nil, notFoundOr(err, "Wedding not found")
+	}
+	if !kioskOpen(w, time.Now()) {
+		return nil, errKioskClosed
 	}
 	return map[string]any{
 		"venueName":             w.VenueName,

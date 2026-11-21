@@ -3,7 +3,6 @@ package services
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"strings"
 	"testing"
 	"time"
@@ -42,7 +41,8 @@ func newGuestSyncService(t *testing.T) (*GuestService, *gorm.DB, uuid.UUID) {
 		angbao_amt INTEGER,
 		gift_item TEXT,
 		created_at DATETIME,
-		updated_at DATETIME
+		updated_at DATETIME,
+		field_updated_at TEXT
 	)`)
 	db.Exec(`CREATE TABLE banquet_tables (
 		id TEXT PRIMARY KEY,
@@ -155,7 +155,9 @@ func TestSync_Create(t *testing.T) {
 	}
 }
 
-func TestSync_CheckInLWW(t *testing.T) {
+// An arrival and an undo each win or lose on time, per field: a check-in older
+// than the stored arrival is skipped, and a newer check-out clears it (invariant 2).
+func TestSync_ArrivalAndUndoFollowTime(t *testing.T) {
 	svc, db, wid := newGuestSyncService(t)
 	ctx := context.Background()
 	gid := uuid.New()
@@ -225,34 +227,6 @@ func TestSync_OfflineCheckInSurvivesNewerEdit(t *testing.T) {
 	// now get a 409 instead of writing over this angbao.
 	if !g.UpdatedAt.After(base.Add(5 * time.Minute)) {
 		t.Fatalf("updated_at = %v, want after %v", g.UpdatedAt, base.Add(5*time.Minute))
-	}
-}
-
-// An edit queued without a base after an edit of the same guest that was
-// refused as stale was built on the refused edit: it must not apply and undo
-// the change that made the first one stale.
-func TestSync_BaselessEditAfterStaleRefusalFails(t *testing.T) {
-	svc, db, wid := newGuestSyncService(t)
-	ctx := context.Background()
-	t1 := time.Now().Add(-time.Hour).UTC().Truncate(time.Millisecond)
-	gid := uuid.New()
-	amt := 200
-	// Another device keyed the angbao online at t1+5m.
-	db.Create(&models.GuestRecord{ID: gid, WeddingID: wid, Name: "X", Pax: 1, AngbaoAmt: &amt, CreatedAt: t1, UpdatedAt: t1.Add(5 * time.Minute)})
-
-	cleared := NullableJSON[int]{Set: true}
-	res, err := svc.Sync(ctx, wid, []SyncMutation{
-		{Op: SyncOpUpdate, GuestID: gid.String(), ClientUpdatedAt: t1.Add(2 * time.Minute), BaseUpdatedAt: &t1, Payload: &SyncPayload{Name: syncStr("X1"), AngbaoAmt: cleared}},
-		{Op: SyncOpUpdate, GuestID: gid.String(), ClientUpdatedAt: t1.Add(6 * time.Minute), Payload: &SyncPayload{Name: syncStr("X2"), AngbaoAmt: cleared}},
-	})
-	testutil.NoErr(t, err)
-	if res[0].Status == "applied" || res[1].Status != "failed" {
-		t.Fatalf("statuses = %s, %s; want not applied, failed", res[0].Status, res[1].Status)
-	}
-	g, err := svc.Get(ctx, gid, wid)
-	testutil.NoErr(t, err)
-	if g.AngbaoAmt == nil || *g.AngbaoAmt != amt {
-		t.Fatalf("angbao = %v, want %d kept", g.AngbaoAmt, amt)
 	}
 }
 
@@ -671,9 +645,9 @@ func TestSyncUpdate_NullClearsAngbaoAndGift(t *testing.T) {
 	}
 }
 
-// A queued check-in for a guest someone already checked in must keep the
-// first arrival time and the angbao already keyed, as the online path does.
-func TestSyncCheckIn_AlreadyCheckedInKeepsAngbaoAndArrival(t *testing.T) {
+// A newer check-in writes its own arrival and angbao: per-field last-write-wins
+// gives the newest write each field, not the first one (invariant 1).
+func TestSyncCheckIn_NewestCheckInWinsAngbaoAndArrival(t *testing.T) {
 	svc, db, wid := newGuestSyncService(t)
 	gid := uuid.New()
 	arrived := time.Now().Add(-time.Hour).UTC().Truncate(time.Second)
@@ -684,8 +658,9 @@ func TestSyncCheckIn_AlreadyCheckedInKeepsAngbaoAndArrival(t *testing.T) {
 	}).Error)
 
 	other := 100
+	at := time.Now().Add(-time.Minute)
 	res, err := svc.Sync(t.Context(), wid, []SyncMutation{{
-		Op: SyncOpCheckIn, GuestID: gid.String(), ClientUpdatedAt: time.Now(),
+		Op: SyncOpCheckIn, GuestID: gid.String(), ClientUpdatedAt: at,
 		Payload: &SyncPayload{AngbaoAmt: NullableJSON[int]{Set: true, Value: &other}, Notes: syncStr("came late")},
 	}})
 	testutil.NoErr(t, err)
@@ -694,60 +669,82 @@ func TestSyncCheckIn_AlreadyCheckedInKeepsAngbaoAndArrival(t *testing.T) {
 	}
 	var got models.GuestRecord
 	testutil.NoErr(t, db.First(&got, "id = ?", gid).Error)
-	if got.AngbaoAmt == nil || *got.AngbaoAmt != 200 {
-		t.Fatalf("angbao = %v, want the first-keyed 200", got.AngbaoAmt)
+	if got.AngbaoAmt == nil || *got.AngbaoAmt != other {
+		t.Fatalf("angbao = %v, want the newest keyed %d", got.AngbaoAmt, other)
 	}
-	if got.CheckedInAt == nil || !got.CheckedInAt.Equal(arrived) {
-		t.Fatalf("checked_in_at = %v, want first arrival %v", got.CheckedInAt, arrived)
+	if got.CheckedInAt == nil || !got.CheckedInAt.Equal(at) {
+		t.Fatalf("checked_in_at = %v, want the newest arrival %v", got.CheckedInAt, at)
 	}
 	if got.Notes != "came late" {
 		t.Fatalf("notes = %q, want the queued note appended", got.Notes)
 	}
 }
 
-// An offline edit made on a copy older than the server's must not apply: here
-// it would clear the angbao another desk keyed after the copy was loaded.
-func TestSync_StaleBaseKeepsOtherDesksAngbao(t *testing.T) {
+// A newer check-in that carries no angbao must leave an earlier phone's angbao
+// in place: each field keeps the value of its own newest write (invariant 1).
+func TestSyncCheckIn_KeepsEarlierAngbao(t *testing.T) {
 	svc, db, wid := newGuestSyncService(t)
+	ctx := context.Background()
 	gid := uuid.New()
-	loaded := time.Now().Add(-time.Hour).UTC().Truncate(time.Second)
-	keyed := loaded.Add(15 * time.Minute)
-	amt := 288
-	testutil.NoErr(t, db.Create(&models.GuestRecord{ID: gid, WeddingID: wid, Name: "Tan", Pax: 1, AngbaoAmt: &amt, UpdatedAt: keyed}).Error)
+	base := time.Now().Add(-time.Hour).UTC().Truncate(time.Millisecond)
+	testutil.NoErr(t, db.Create(&models.GuestRecord{ID: gid, WeddingID: wid, Name: "A", Pax: 1, CreatedAt: base, UpdatedAt: base}).Error)
 
-	res, err := svc.Sync(t.Context(), wid, []SyncMutation{{
-		Op: SyncOpUpdate, GuestID: gid.String(), ClientUpdatedAt: keyed.Add(5 * time.Minute), BaseUpdatedAt: &loaded,
-		Payload: &SyncPayload{Name: syncStr("Tan Ah Kow"), AngbaoAmt: NullableJSON[int]{Set: true}},
+	amt := 88
+	res, err := svc.Sync(ctx, wid, []SyncMutation{{
+		Op: SyncOpCheckIn, GuestID: gid.String(), ClientUpdatedAt: base.Add(time.Minute),
+		Payload: &SyncPayload{AngbaoAmt: NullableJSON[int]{Set: true, Value: &amt}},
 	}})
 	testutil.NoErr(t, err)
-	if res[0].Status != "failed" || res[0].Retryable {
-		t.Fatalf("status = %q retryable=%v, want a non-retryable failure", res[0].Status, res[0].Retryable)
+	if res[0].Status != "applied" {
+		t.Fatalf("first check-in: %s (%s)", res[0].Status, res[0].Reason)
+	}
+
+	// Phone B checks the guest in later without an angbao.
+	res, err = svc.Sync(ctx, wid, []SyncMutation{{Op: SyncOpCheckIn, GuestID: gid.String(), ClientUpdatedAt: base.Add(2 * time.Minute)}})
+	testutil.NoErr(t, err)
+	if res[0].Status != "applied" {
+		t.Fatalf("second check-in: %s (%s)", res[0].Status, res[0].Reason)
 	}
 	var got models.GuestRecord
 	testutil.NoErr(t, db.First(&got, "id = ?", gid).Error)
-	if got.AngbaoAmt == nil || *got.AngbaoAmt != amt || got.Name != "Tan" {
-		t.Fatalf("guest = %q angbao %v, want the server copy untouched", got.Name, got.AngbaoAmt)
+	if got.AngbaoAmt == nil || *got.AngbaoAmt != amt {
+		t.Fatalf("angbao = %v, want the earlier %d kept", got.AngbaoAmt, amt)
+	}
+	if got.CheckedInAt == nil || !got.CheckedInAt.Equal(base.Add(2*time.Minute)) {
+		t.Fatalf("checked_in_at = %v, want the newer arrival", got.CheckedInAt)
 	}
 }
 
-// With no client base, a write that lands between this sync's read and its own
-// write is caught too, and reported retryable so the edit stays queued.
-func TestSyncUpdate_ChangeAfterLoadIsRetryable(t *testing.T) {
+// An edit made on a stale copy still applies the fields it wrote after the
+// server's own write of them, and keeps a field another desk wrote later
+// (invariant 1). The stale base no longer refuses the whole edit.
+func TestSync_StaleBaseMergesFieldsByTime(t *testing.T) {
 	svc, db, wid := newGuestSyncService(t)
 	gid := uuid.New()
-	at := time.Now().Add(-time.Hour).UTC().Truncate(time.Second)
-	testutil.NoErr(t, db.Create(&models.GuestRecord{ID: gid, WeddingID: wid, Name: "Lim", Pax: 1, UpdatedAt: at}).Error)
-	g, err := svc.Get(t.Context(), gid, wid)
-	testutil.NoErr(t, err)
-	testutil.NoErr(t, db.Model(&models.GuestRecord{}).Where("id = ?", gid).Update("updated_at", at.Add(time.Minute)).Error)
+	loaded := time.Now().Add(-time.Hour).UTC().Truncate(time.Second)
+	nameWritten := loaded
+	keyed := loaded.Add(15 * time.Minute)
+	amt := 288
+	testutil.NoErr(t, db.Create(&models.GuestRecord{
+		ID: gid, WeddingID: wid, Name: "Tan", Pax: 1, AngbaoAmt: &amt, UpdatedAt: keyed,
+		FieldUpdatedAt: models.GuestFieldTimes{models.FieldName: nameWritten, models.FieldAngbaoAmt: keyed},
+	}).Error)
 
-	m := SyncMutation{Op: SyncOpUpdate, GuestID: gid.String()}
-	err = svc.syncUpdate(t.Context(), g, m, time.Now())
-	if !errors.Is(err, errGuestChangedDuringSync) {
-		t.Fatalf("err = %v, want errGuestChangedDuringSync", err)
+	res, err := svc.Sync(t.Context(), wid, []SyncMutation{{
+		Op: SyncOpUpdate, GuestID: gid.String(), ClientUpdatedAt: loaded.Add(5 * time.Minute), BaseUpdatedAt: &loaded,
+		Payload: &SyncPayload{Name: syncStr("Tan Ah Kow"), AngbaoAmt: NullableJSON[int]{Set: true}},
+	}})
+	testutil.NoErr(t, err)
+	if res[0].Status != "applied" {
+		t.Fatalf("status = %q (%s), want the newer name applied", res[0].Status, res[0].Reason)
 	}
-	if !syncFailed(m, err).Retryable {
-		t.Fatal("a change during sync must stay retryable")
+	var got models.GuestRecord
+	testutil.NoErr(t, db.First(&got, "id = ?", gid).Error)
+	if got.Name != "Tan Ah Kow" {
+		t.Fatalf("name = %q, want the edit applied", got.Name)
+	}
+	if got.AngbaoAmt == nil || *got.AngbaoAmt != amt {
+		t.Fatalf("angbao = %v, want the newer %d kept", got.AngbaoAmt, amt)
 	}
 }
 
@@ -798,10 +795,10 @@ func TestSync_CheckOutReplayIsApplied(t *testing.T) {
 	}
 }
 
-// Offline undo of a mistaken check-in survives an unrelated newer edit (a
-// notes change) but still loses to a check-in newer than it, and never moves
-// updated_at backwards.
-func TestSync_CheckOutBeatsUnrelatedNewerEdit(t *testing.T) {
+// Undo is neutral (invariant 2): an offline undo of a mistaken check-in
+// survives an unrelated newer edit, still loses to a check-in newer than it,
+// and never moves updated_at backwards.
+func TestSync_UndoBeatsUnrelatedNewerEdit(t *testing.T) {
 	svc, db, wid := newGuestSyncService(t)
 	ctx := context.Background()
 	t1 := time.Now().Add(-time.Hour).UTC().Truncate(time.Millisecond)
@@ -825,7 +822,10 @@ func TestSync_CheckOutBeatsUnrelatedNewerEdit(t *testing.T) {
 
 	// A check-in newer than the queued undo wins.
 	later := t1.Add(10 * time.Minute)
-	testutil.NoErr(t, db.Model(&models.GuestRecord{}).Where("id = ?", gid).Updates(map[string]any{"checked_in_at": later, "updated_at": later}).Error)
+	testutil.NoErr(t, db.Model(&models.GuestRecord{}).Where("id = ?", gid).Updates(map[string]any{
+		"checked_in_at": later, "updated_at": later,
+		"field_updated_at": models.GuestFieldTimes{models.FieldCheckedIn: later},
+	}).Error)
 	res, err = svc.Sync(ctx, wid, []SyncMutation{{Op: SyncOpCheckOut, GuestID: gid.String(), ClientUpdatedAt: t1.Add(5 * time.Minute)}})
 	testutil.NoErr(t, err)
 	if res[0].Status != "skipped" {

@@ -7,6 +7,7 @@ import (
 	"os"
 	"strings"
 	"testing"
+	"time"
 	"unicode/utf8"
 
 	"weddingdb/internal/models"
@@ -137,6 +138,26 @@ func TestPublicGuests_HideSeatNumbers(t *testing.T) {
 	for _, path := range []string{"/guests", "/search?q=Ali"} {
 		if got := seats(path); len(got) != 1 || got[0] != float64(3) {
 			t.Errorf("%s with seats shown: seatNum = %v, want [3]", path, got)
+		}
+	}
+}
+
+// The kiosk link exposes guest names; it must stop answering once the
+// wedding is over instead of staying public forever.
+func TestKioskOpen_ClosesAfterTheWedding(t *testing.T) {
+	day := time.Date(2026, 11, 21, 0, 0, 0, 0, time.UTC)
+	w := &models.WeddingEvent{Date: day}
+	for _, tc := range []struct {
+		name string
+		now  time.Time
+		want bool
+	}{
+		{"any time before the date", day.Add(-200 * 24 * time.Hour), true},
+		{"week of grace", day.Add(5 * 24 * time.Hour), true},
+		{"after the grace week", day.Add(8 * 24 * time.Hour), false},
+	} {
+		if got := kioskOpen(w, tc.now); got != tc.want {
+			t.Errorf("%s: kioskOpen = %v, want %v", tc.name, got, tc.want)
 		}
 	}
 }

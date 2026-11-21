@@ -59,6 +59,7 @@ The compose stack runs three services: `app` (the WeddingDB image), `postgres`, 
 export JWT_SECRET=$(openssl rand -hex 32)
 export POSTGRES_PASSWORD=$(openssl rand -hex 32)
 export REDIS_PASSWORD=$(openssl rand -hex 32)
+export ADMIN_BOOTSTRAP_EMAIL='you@yourdomain.com'
 export ADMIN_BOOTSTRAP_PASSWORD='a-strong-one-time-password'
 
 docker compose up -d
@@ -68,7 +69,7 @@ docker compose up -d
 - Postgres: `localhost:5432` (user/pass/db all `weddingdb`, bound to loopback only)
 - Redis: internal to the compose network (no host port published)
 
-All four variables are required; Compose refuses to start without them. See [Configuration](#configuration).
+All five variables are required; Compose refuses to start without them. See [Configuration](#configuration).
 
 ### Upload limits
 
@@ -87,13 +88,13 @@ reverse_proxy localhost:8080 {
 
 ### First login (bootstrap admin)
 
-On first start with an empty database, the app seeds a default admin:
+On first start with an empty database, the app seeds an admin from the environment:
 
-- **Email:** `admin@weddingdb.local`
+- **Email:** `ADMIN_BOOTSTRAP_EMAIL` (required on first boot; the shipped example address is rejected)
 - **Password:** whatever you set in `ADMIN_BOOTSTRAP_PASSWORD` (required on first boot; `log.Fatal` if missing or equal to the `.env.example` placeholder)
 - The seeded account is flagged `ForcePasswordChange`, so the first login asks for a new password.
 
-The bootstrap only runs when the admin table is empty. After the first admin exists, `ADMIN_BOOTSTRAP_PASSWORD` is ignored.
+The bootstrap only runs when the admin table is empty. After the first admin exists, both `ADMIN_BOOTSTRAP_*` variables are ignored.
 
 ### Configuration
 
@@ -105,6 +106,7 @@ The bootstrap only runs when the admin table is empty. After the first admin exi
 | `JWT_SECRET` | none | **Required**. Compose fails fast if unset; values shipped in `.env.example` are rejected at boot |
 | `POSTGRES_PASSWORD` | none | **Required**. Used by Postgres and the app connection URL |
 | `REDIS_PASSWORD` | none | **Required**. Dragonfly uses `--requirepass`; the app authenticates via `REDIS_URL`. No Redis host port is published |
+| `ADMIN_BOOTSTRAP_EMAIL` | none | First-boot admin address (required when the database is empty; a known default would let anyone lock that account out) |
 | `ADMIN_BOOTSTRAP_PASSWORD` | none | First-boot admin password (required when the database is empty) |
 | `TZ` | `Asia/Kuala_Lumpur` | Report timestamps follow this |
 
@@ -122,7 +124,7 @@ docker compose up -d
 ### Data and persistence
 
 - `weddingdb_pgdata` volume: PostgreSQL data. Survives `down`, removed by `down -v`.
-- `weddingdb_uploads` volume: uploaded kiosk logos and backgrounds, mounted at `/app/uploads`.
+- `weddingdb_uploads` volume: uploaded kiosk logos and backgrounds, mounted at `/app/uploads`. Run a single app replica: uploads live on that container's disk, so a second replica would 404 the images the first one stored. Shared object storage is not implemented.
 
 ### Backups
 
@@ -320,18 +322,19 @@ Guest limit: 1,000 guests per wedding, counted per person. A guest entry for a c
 
 | Method | Path | Description |
 |--------|------|-------------|
-| GET | `/api/public/weddings/{wid}/guests` | List guests (public view; includes `pinyin`, no contact fields or attendance status) |
-| GET | `/api/public/weddings/{wid}/guests/search?q=` | Search guests (public) |
+| GET | `/api/public/weddings/{wid}/guests` | List guests (public view; includes `pinyin`, no contact fields or attendance status; 410 once the kiosk window closes) |
+| GET | `/api/public/weddings/{wid}/guests/search?q=` | Search guests (public; same window) |
 | GET | `/api/public/weddings/{wid}/tables` | List tables (public) |
-| GET | `/api/public/weddings/{wid}/kiosk` | Get kiosk settings (includes `kioskIdleResetSeconds`, 0 = off) |
+| GET | `/api/public/weddings/{wid}/kiosk` | Get kiosk settings (includes `kioskIdleResetSeconds`, 0 = off; 410 once the kiosk window closes) |
 | GET | `/api/public/weddings/{wid}/layout` | Get hall layout (public view) |
 
 ### Offline and kiosk behavior
 
-- Guest mutations, including check-in with an optional note, queue in `localStorage` (`offline_queue_{wid}`) and replay through `/guests/sync`. A login by a different user (by email, `offline_owner`) drops the previous queue; the same user keeps it. Notes append, they do not replace.
+- Guest mutations, including check-in with an optional note, queue in `localStorage` (`offline_queue_{wid}`) and replay through `/guests/sync`. A login by a different user (by email, `offline_owner`) first flushes every queue, then asks before discarding what is left; the same user keeps the queue silently. Notes append, they do not replace.
 - The staff guest list caches in `sessionStorage` (`offline_cache_{wid}`), the kiosk list in `localStorage` (`kiosk_cache_{wid}`). A failed fetch falls back to the cache; the kiosk labels it "Offline copy".
 - Kiosk and staff search run in the browser over the synced guest list. Public guest JSON includes `pinyin` so Chinese names match romanized input. No request is made while typing.
 - `kioskIdleResetSeconds` is opt-in per wedding and defaults to 0 (off). Set it through `PUT /api/weddings/{id}/kiosk`; the kiosk clears the query and selected guest after that much inactivity.
+- The public kiosk answers until a week after the wedding date, then returns 410: guest names must not stay public forever. Staff can still preview it before the day. The cut-off lives in `kioskOpen` (`backend/internal/handlers/public_guest.go`).
 - Cold offline start is not supported yet: there is no service worker, so the SPA shell must be loaded once before the network drops.
 
 ## Operations notes

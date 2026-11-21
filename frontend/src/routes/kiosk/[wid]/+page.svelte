@@ -18,7 +18,7 @@ import X from 'lucide-svelte/icons/x';
   import { onMount, onDestroy, tick } from 'svelte';
   import { fade, fly } from 'svelte/transition';
   import { page } from '$app/state';
-  import { showSeatNumbers, setShowSeatNumbers } from '#lib/stores/index.ts';
+  import { showSeatNumbers, setShowSeatNumbers, readStoredAuth, expireAuth } from '#lib/stores/index.ts';
   import type { Guest, BanquetTable, HallElement } from '#lib/types/index.ts';
 
   let guestsLoading = $state(true);
@@ -51,6 +51,7 @@ import X from 'lucide-svelte/icons/x';
   let allGuests = $state<Guest[]>([]);
   let results = $derived(rankGuests(allGuests, query));
   let showingCachedGuests = $state(false);
+  let signedOutStaff = $state(false);
   let kioskIdleResetSeconds = $state(0);
   let tables = $state<BanquetTable[]>([]);
   let elements = $state<HallElement[]>([]);
@@ -198,6 +199,11 @@ import X from 'lucide-svelte/icons/x';
   function clearSearch() { query = ''; }
 
   onMount(() => {
+    // A kiosk tablet is public: no staff session may stay usable on it.
+    if (readStoredAuth()) {
+      expireAuth();
+      signedOutStaff = true;
+    }
     const mq = window.matchMedia('(prefers-reduced-motion: reduce)');
     prefersReducedMotion = mq.matches;
     mqHandler = (e: MediaQueryListEvent) => prefersReducedMotion = e.matches;
@@ -397,6 +403,12 @@ import X from 'lucide-svelte/icons/x';
 
 <!-- svelte-ignore a11y_no_static_element_interactions -->
 <main class="kiosk-root" class:reduced-motion={prefersReducedMotion}>
+  {#if signedOutStaff}
+    <div class="session-note" role="status">
+      <span>This tablet was signed in as staff. Signed out here so guest details stay private.</span>
+      <button class="retry-btn" onclick={() => signedOutStaff = false} aria-label="Dismiss notice">Dismiss</button>
+    </div>
+  {/if}
   <!-- Top Bar — translucent material, Apple-style -->
   <header class="top-bar">
     <div class="top-bar-inner">
@@ -694,6 +706,21 @@ import X from 'lucide-svelte/icons/x';
     font-family: 'Inter', -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
     -webkit-font-smoothing: antialiased;
     -webkit-tap-highlight-color: transparent;
+  }
+
+  .session-note {
+    flex: 0 0 auto;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.75rem;
+    padding: 0.5rem 1rem;
+    background: #FEF3C7;
+    border-bottom: 1px solid #FDE68A;
+    color: #78350F;
+    font-size: 0.8rem;
+    position: relative;
+    z-index: 40;
   }
 
   .kiosk-root.reduced-motion * {

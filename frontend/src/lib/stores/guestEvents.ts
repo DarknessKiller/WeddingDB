@@ -27,6 +27,7 @@ let queuedEvents: GuestEvent[] = [];
 // syncing window, so an older snapshot landing late cannot overwrite events.
 let refreshGen = 0;
 let resync: (() => Promise<Guest[]>) | undefined;
+let cacheTimer: ReturnType<typeof setTimeout> | undefined;
 
 /**
  * Initialize the SSE connection and start handling events.
@@ -46,8 +47,8 @@ export function initializeSSE(onResync?: () => Promise<Guest[]>): (() => void) |
 	}
 
 	const client = connectSSE(wid);
-	const unsubscribeStatus = client.onStatus((status, reconnect) => {
-		if (status === 'connected' && reconnect && resync) {
+	const unsubscribeStatus = client.onStatus((status) => {
+		if (status === 'connected' && resync) {
 			// Send edits queued while offline first, so the reseed shows them.
 			syncQueue(wid).catch(() => {}).then(() => {
 				if (resync && get(weddingId) === wid) return refreshGuests(resync);
@@ -166,6 +167,9 @@ function handleGuestEvent(event: GuestEvent) {
 		}
 
 		if (idx >= 0) {
+			// Out-of-order delivery after a reconnect must not roll a guest
+			// back to an older row.
+			if (event.timestamp > 0 && (list[idx].updatedAt?.getTime() ?? 0) > event.timestamp) return list;
 			const newList = [...list];
 			guest.createdAt = list[idx].createdAt;
 			// Older servers send no pinyin in events; keep the REST one so search still works.
@@ -198,10 +202,15 @@ function handleGuestEvent(event: GuestEvent) {
  */
 export function cacheGuestList() {
 	if (!seeded) return;
-	try {
-		const wid = get(weddingId);
-		if (wid) cacheGuests(wid, get(guestList));
-	} catch {}
+	// An import fires one event per guest; writing the whole roster for each
+	// froze phones. One trailing write covers the burst.
+	clearTimeout(cacheTimer);
+	cacheTimer = setTimeout(() => {
+		try {
+			const wid = get(weddingId);
+			if (wid) cacheGuests(wid, get(guestList));
+		} catch {}
+	}, 500);
 }
 
 function recalculateOccupancy() {
