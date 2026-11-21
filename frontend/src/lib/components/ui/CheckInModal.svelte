@@ -23,6 +23,8 @@ import Loader2 from 'lucide-svelte/icons/loader-2';
   } = $props();
 
   let notes = $state('');
+  // A check-in in flight must finish against the guest it started for.
+  const close = () => { if (!loading) onClose(); };
   let confirmBtn: HTMLButtonElement;
 
   function onNotesKeydown(e: KeyboardEvent) {
@@ -53,7 +55,7 @@ import Loader2 from 'lucide-svelte/icons/loader-2';
   function onTouchEnd() {
     if (!dragging) return;
     dragging = false;
-    if (dragY > 80) onClose();
+    if (dragY > 80) close();
     dragY = 0;
   }
   function onDialogKeydown(e: KeyboardEvent) {
@@ -68,9 +70,9 @@ import Loader2 from 'lucide-svelte/icons/loader-2';
   onMount(() => confirmBtn?.focus());
 </script>
 
-<svelte:window onkeydown={(e) => { if (e.key === 'Escape' && !loading) onClose(); }} />
+<svelte:window onkeydown={(e) => { if (e.key === 'Escape') close(); }} />
 <div class="fixed inset-0 z-[60] flex items-end sm:items-center justify-center p-0 sm:p-4" role="dialog" aria-modal="true" aria-labelledby="check-in-title">
-  <div class="absolute inset-0 bg-black/30 backdrop-blur-md" onclick={onClose} role="presentation" transition:fade={{ duration: 250 }}></div>
+  <div class="absolute inset-0 bg-black/30 backdrop-blur-md" onclick={close} role="presentation" transition:fade={{ duration: 250 }}></div>
   <!-- svelte-ignore a11y_no_static_element_interactions -->
   <div
     onkeydown={onDialogKeydown}
@@ -87,7 +89,7 @@ import Loader2 from 'lucide-svelte/icons/loader-2';
     </div>
     <div class="flex items-center justify-between p-5 border-b border-gray-100">
       <h3 id="check-in-title" class="font-bold text-gray-900">Check In {guestName}</h3>
-      <button onclick={onClose} aria-label="Close" class="min-w-[44px] min-h-[44px] rounded-lg flex items-center justify-center hover:bg-gray-100 transition-colors">
+      <button onclick={close} aria-label="Close" class="min-w-[44px] min-h-[44px] rounded-lg flex items-center justify-center hover:bg-gray-100 transition-colors">
         <X class="w-4 h-4 text-gray-500" />
       </button>
     </div>
@@ -116,7 +118,7 @@ import Loader2 from 'lucide-svelte/icons/loader-2';
           <UserCheck class="w-4 h-4" /> Confirm Check In
         {/if}
       </button>
-      <button onclick={onClose}
+      <button onclick={close}
         class="px-6 py-3 border border-black/[0.06] bg-white/90 rounded-xl text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors">
         Cancel
       </button>

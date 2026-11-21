@@ -44,6 +44,7 @@ import ArrowUpDown from 'lucide-svelte/icons/arrow-up-down';
 
   let showUnassignConfirm = $state(false);
   let showCheckInModal = $state(false);
+  let checkingIn = $state(false);
 
   async function refreshGuest() {
     if (!guest?.id) return;
@@ -299,26 +300,35 @@ import ArrowUpDown from 'lucide-svelte/icons/arrow-up-down';
   }
 
   async function handleCheckIn(notes: string) {
-    if (!guest) return;
+    // A second click or Enter while the first request runs would check in twice.
+    if (!guest || checkingIn) return;
+    // Capture before the await: the drawer may show another guest by the time it resolves.
+    const { id, name } = guest;
+    checkingIn = true;
     const wid = get(weddingId);
     try {
-      await checkInGuest(wid, guest.id, notes);
-      // Notes are appended by the server and echoed back over SSE (or by the
-      // offline optimisticPatch when queued) — appending here too duplicated them.
-      guest.checkedIn = true;
-      guest.checkedInAt = new Date();
-      guest.rsvp = 'confirmed';
-      pushGuestPatch(guest.id, { checkedIn: true, checkedInAt: guest.checkedInAt, rsvp: 'confirmed' });
-      localGuest = { ...guest };
-      showCheckInModal = false;
-      addToast(`${guest.name} checked in`, 'success');
+      await checkInGuest(wid, id, notes);
+      // Notes are appended by server and echoed back over SSE (or by the
+      // offline optimisticPatch when queued); appending here too duplicated them.
+      const checkedInAt = new Date();
+      pushGuestPatch(id, { checkedIn: true, checkedInAt, rsvp: 'confirmed' });
+      if (guest?.id === id) {
+        guest.checkedIn = true;
+        guest.checkedInAt = checkedInAt;
+        guest.rsvp = 'confirmed';
+        localGuest = { ...guest };
+        showCheckInModal = false;
+      }
+      addToast(`${name} checked in`, 'success');
     } catch (e: any) {
       if (e instanceof ConflictError) {
-        showCheckInModal = false;
-        addToast(`${guest.name} was already checked in`, 'info');
+        if (guest?.id === id) showCheckInModal = false;
+        addToast(`${name} was already checked in`, 'info');
       } else {
         addToast(e.message ?? 'Check-in failed', 'error');
       }
+    } finally {
+      checkingIn = false;
     }
   }
 
@@ -600,6 +610,7 @@ import ArrowUpDown from 'lucide-svelte/icons/arrow-up-down';
   <CheckInModal
     guestName={guest.name}
     onConfirm={handleCheckIn}
+    loading={checkingIn}
     onClose={() => showCheckInModal = false}
   />
 {/if}
