@@ -199,6 +199,9 @@ func (s *AuthService) Refresh(ctx context.Context, refreshTokenStr string, oldAc
 
 	err = s.tokenRepo.Rotate(ctx, refreshTokenStr, replacement)
 	if err == nil {
+		if err := s.discardIfRevoked(ctx, admin.ID, accessToken, replacement.Token); err != nil {
+			return nil, err
+		}
 		return s.sessionResult(ctx, admin, accessToken, replacement.Token)
 	}
 	if !errors.Is(err, repository.ErrTokenClaimed) {
@@ -467,7 +470,34 @@ func (s *AuthService) RevokeUserTokens(ctx context.Context, userID uuid.UUID) er
 	if lastErr != nil {
 		return fmt.Errorf("failed to increment token version after retries: %w", lastErr)
 	}
+	// A Rotate that committed between the first delete and the INCR leaves a
+	// successor row behind; delete again now that refresh can no longer mint
+	// under the old version.
+	if err := s.tokenRepo.DeleteByAdminID(ctx, userID); err != nil {
+		return fmt.Errorf("failed to delete refresh tokens after bump: %w", err)
+	}
 	return nil
+}
+
+// discardIfRevoked closes the refresh/revoke race: a Rotate that committed
+// after the token bump leaves a successor minted for a session revocation has
+// already ended. Remove it and reject instead of handing it out.
+func (s *AuthService) discardIfRevoked(ctx context.Context, userID uuid.UUID, accessToken, refreshToken string) error {
+	claims, err := s.parseTokenClaims(accessToken)
+	if err != nil {
+		return nil
+	}
+	current, err := s.GetTokenVersion(ctx, userID)
+	if err != nil {
+		return fmt.Errorf("failed to read token version: %w", err)
+	}
+	if claims.TokenVersion == current {
+		return nil
+	}
+	if _, err := s.tokenRepo.DeleteByToken(ctx, refreshToken); err != nil {
+		return fmt.Errorf("failed to delete revoked successor: %w", err)
+	}
+	return errors.New("session revoked")
 }
 
 // parseTokenClaims parses a JWT without blacklist/tv checks — used only for extracting claims during logout.
