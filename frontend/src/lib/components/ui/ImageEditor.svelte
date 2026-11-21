@@ -5,6 +5,7 @@ import Move from 'lucide-svelte/icons/move';
 import Maximize2 from 'lucide-svelte/icons/maximize-2';
   import { uploadFile } from '#lib/api/client.ts';
   import { addToast } from '#lib/stores/index.ts';
+  import { LIMITS } from '#lib/utils/limits.ts';
 
   let {
     value = $bindable(''),
@@ -28,6 +29,8 @@ import Maximize2 from 'lucide-svelte/icons/maximize-2';
     aspect?: string;
   } = $props();
 
+  // Settings renders several editors; fixed ids would collide.
+  const uid = $props.id();
   let uploading = $state(false);
 
   async function handleFile(e: Event) {
@@ -120,11 +123,11 @@ import Maximize2 from 'lucide-svelte/icons/maximize-2';
         <!-- Blur -->
         {#if showBlur}
           <div>
-            <label for="blur-range" class="flex items-center justify-between text-xs font-medium text-gray-600 mb-1">
+            <label for="{uid}-blur" class="flex items-center justify-between text-xs font-medium text-gray-600 mb-1">
               <span>Blur</span>
               <span class="text-gray-500">{blur}px</span>
             </label>
-            <input id="blur-range" type="range" min="0" max="20" step="1" bind:value={blur}
+            <input id="{uid}-blur" type="range" min="0" max="20" step="1" bind:value={blur}
               class="w-full h-1.5 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-red" />
           </div>
         {/if}
@@ -132,7 +135,7 @@ import Maximize2 from 'lucide-svelte/icons/maximize-2';
     </div>
   {:else}
     <!-- Upload area -->
-    <label for="image-upload" class="flex flex-col items-center justify-center h-32 border-2 border-dashed border-gray-200 rounded-xl cursor-pointer hover:border-red/50 hover:bg-red-50/30 transition-colors">
+    <label for="{uid}-upload" class="flex flex-col items-center justify-center h-32 border-2 border-dashed border-gray-200 rounded-xl cursor-pointer hover:border-red/50 hover:bg-red-50/30 transition-colors has-focus-visible:outline-2 has-focus-visible:outline-offset-2 has-focus-visible:outline-red">
       {#if uploading}
         <div class="w-6 h-6 border-2 border-red/30 border-t-red rounded-full animate-spin mb-2"></div>
         <span class="text-xs text-gray-500">Uploading...</span>
@@ -141,13 +144,16 @@ import Maximize2 from 'lucide-svelte/icons/maximize-2';
         <span class="text-xs text-gray-500">Click or drag to upload {label}</span>
         <span class="text-xs text-gray-500 mt-0.5">or paste a URL below</span>
       {/if}
-      <input id="image-upload" type="file" {accept} class="hidden" onchange={handleFile} />
+      <!-- sr-only, not hidden: the file input stays in the tab order -->
+      <input id="{uid}-upload" type="file" {accept} class="sr-only" onchange={handleFile} />
     </label>
 
     <!-- URL input fallback -->
     <div class="relative">
       <input
         type="url"
+        aria-label="{label} URL"
+        maxlength={LIMITS.url}
         {value}
         oninput={(e) => value = (e.target as HTMLInputElement).value}
         placeholder="Or paste image URL..."
