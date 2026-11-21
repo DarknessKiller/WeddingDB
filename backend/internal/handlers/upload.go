@@ -10,8 +10,11 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"syscall"
+
+	"weddingdb/internal/services"
 
 	"github.com/go-fuego/fuego"
 	"github.com/google/uuid"
@@ -33,10 +36,16 @@ const maxUploadFileBytes = 5 * 1024 * 1024
 // of multipart framing and headers.
 const maxUploadBytes = maxUploadFileBytes + 1024*1024
 
-type UploadHandler struct{}
+// maxWeddingUploadBytes caps the disk one wedding's uploads may use: 100 MiB,
+// twenty files at the per-file limit, far above a logo plus backgrounds.
+// Unscoped admins share one pool. Duplicate uploads reuse the stored file and
+// cost nothing.
+const maxWeddingUploadBytes = 100 * 1024 * 1024
 
-func NewUploadHandler() *UploadHandler {
-	return &UploadHandler{}
+type UploadHandler struct{ authService *services.AuthService }
+
+func NewUploadHandler(authService *services.AuthService) *UploadHandler {
+	return &UploadHandler{authService: authService}
 }
 
 // closeLogged closes c and logs a failure the caller cannot act on.
@@ -52,6 +61,13 @@ func (h *UploadHandler) Upload(c fuego.ContextWithBody[any]) (any, error) {
 	// must not be able to write files to the server.
 	if RoleFromContext(c.Context()) != "admin" && WeddingIDFromContext(c.Context()) == nil {
 		return nil, fuego.ForbiddenError{Title: "Upload requires wedding access"}
+	}
+	if err := h.authService.CheckUploadRate(c.Context(), AdminIDFromContext(c.Context())); err != nil {
+		return nil, fuego.HTTPError{Status: http.StatusTooManyRequests, Title: err.Error()}
+	}
+	scope := uuid.Nil
+	if wid := WeddingIDFromContext(c.Context()); wid != nil {
+		scope = *wid
 	}
 	r.Body = http.MaxBytesReader(c.Response(), r.Body, maxUploadBytes)
 	file, header, err := r.FormFile("file")
@@ -106,19 +122,31 @@ func (h *UploadHandler) Upload(c fuego.ContextWithBody[any]) (any, error) {
 	}
 	hash := hex.EncodeToString(hasher.Sum(nil))
 
-	// Check if file with same hash already exists via index file
+	// Check if file with same hash already exists via index file, and sum the
+	// wedding's usage in the same pass. Index lines: "hash filename [size wedding]";
+	// lines from before the quota carry no size and do not count.
+	// shortcut: concurrent uploads can each pass the check and overshoot the cap by one file; lock the index around check and append if that matters.
 	indexPath := filepath.Join(uploadDir, ".hash-index")
+	var used int64
 	if idx, err := os.ReadFile(indexPath); err == nil {
-		for _, line := range strings.Split(string(idx), "\n") {
-			parts := strings.SplitN(line, " ", 2)
-			if len(parts) == 2 && parts[0] == hash {
+		for line := range strings.SplitSeq(string(idx), "\n") {
+			parts := strings.Fields(line)
+			if len(parts) >= 2 && parts[0] == hash {
 				return map[string]any{
 					"url":      "/uploads/" + parts[1],
 					"filename": parts[1],
 					"hash":     hash,
 				}, nil
 			}
+			if len(parts) == 4 && parts[3] == scope.String() {
+				if size, err := strconv.ParseInt(parts[2], 10, 64); err == nil {
+					used += size
+				}
+			}
 		}
+	}
+	if used+header.Size > maxWeddingUploadBytes {
+		return nil, fuego.HTTPError{Status: http.StatusRequestEntityTooLarge, Title: "Upload storage for this wedding is full (max 100 MiB)"}
 	}
 
 	// Save new file with hash as prefix
@@ -135,7 +163,8 @@ func (h *UploadHandler) Upload(c fuego.ContextWithBody[any]) (any, error) {
 	if _, err := file.Seek(0, 0); err != nil {
 		return nil, fuego.InternalServerError{Title: "Failed to save file"}
 	}
-	if _, err := dst.ReadFrom(file); err != nil {
+	written, err := dst.ReadFrom(file)
+	if err != nil {
 		return nil, fuego.InternalServerError{Title: "Failed to save file"}
 	}
 
@@ -157,7 +186,7 @@ func (h *UploadHandler) Upload(c fuego.ContextWithBody[any]) (any, error) {
 	if err != nil {
 		// ponytail: index write failure is non-critical — file is already saved
 	} else {
-		if _, err := fmt.Fprintf(f, "%s %s\n", hash, filename); err != nil {
+		if _, err := fmt.Fprintf(f, "%s %s %d %s\n", hash, filename, written, scope); err != nil {
 			slog.Warn("write upload index failed", "err", err)
 		}
 		closeLogged(f)

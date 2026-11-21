@@ -3,15 +3,22 @@ package handlers
 import (
 	"bytes"
 	"context"
+	"fmt"
+	"os"
+	"strings"
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 
 	"weddingdb/internal/middleware"
+	"weddingdb/internal/services"
+	"weddingdb/internal/testutil"
 
+	"github.com/alicebob/miniredis/v2"
 	"github.com/go-fuego/fuego"
 	"github.com/google/uuid"
+	"github.com/redis/go-redis/v9"
 )
 
 // runUpload drives the upload controller via fuego's HTTPHandler, isolated in a
@@ -24,7 +31,17 @@ func runUpload(t *testing.T, filename string, content []byte) *httptest.Response
 func runUploadAs(t *testing.T, filename string, content []byte, role string, wid *uuid.UUID) *httptest.ResponseRecorder {
 	t.Helper()
 	t.Chdir(t.TempDir())
+	return serveUpload(t, newUploadHandler(t), filename, content, role, wid)
+}
 
+func newUploadHandler(t *testing.T) *UploadHandler {
+	t.Helper()
+	rdb := redis.NewClient(&redis.Options{Addr: miniredis.RunT(t).Addr()})
+	return NewUploadHandler(services.NewAuthService(nil, nil, nil, "secret", rdb))
+}
+
+func serveUpload(t *testing.T, h *UploadHandler, filename string, content []byte, role string, wid *uuid.UUID) *httptest.ResponseRecorder {
+	t.Helper()
 	s := fuego.NewServer(fuego.WithAddr(":0"))
 
 	var body bytes.Buffer
@@ -49,7 +66,7 @@ func runUploadAs(t *testing.T, filename string, content []byte, role string, wid
 	req = req.WithContext(ctx)
 	rec := httptest.NewRecorder()
 
-	handler := fuego.HTTPHandler[any, any, any](s, NewUploadHandler().Upload, fuego.BaseRoute{Path: "/upload", Method: http.MethodPost})
+	handler := fuego.HTTPHandler[any, any, any](s, h.Upload, fuego.BaseRoute{Path: "/upload", Method: http.MethodPost})
 	handler(rec, req)
 	return rec
 }
@@ -91,5 +108,52 @@ func TestUpload_RequiresWeddingAccess(t *testing.T) {
 	rec := runUploadAs(t, "a.jpg", []byte{0xff, 0xd8, 0xff}, "user", nil)
 	if rec.Code != http.StatusForbidden {
 		t.Fatalf("status = %d, want 403; body = %s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestUpload_WeddingQuota(t *testing.T) {
+	t.Chdir(t.TempDir())
+	wid, other := uuid.New(), uuid.New()
+	testutil.NoErr(t, os.MkdirAll("uploads", 0o755))
+	full := fmt.Sprintf("aaaa old.png %d %s\nlegacy legacy.png\n", maxWeddingUploadBytes-2, wid)
+	testutil.NoErr(t, os.WriteFile("uploads/.hash-index", []byte(full), 0o644))
+	h := newUploadHandler(t)
+
+	tests := []struct {
+		name    string
+		wid     uuid.UUID
+		content []byte
+		want    int
+	}{
+		{"over quota", wid, []byte{0xff, 0xd8, 0xff, 0x01}, http.StatusRequestEntityTooLarge},
+		{"other wedding", other, []byte{0xff, 0xd8, 0xff, 0x02}, http.StatusCreated},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			rec := serveUpload(t, h, "a.jpg", tt.content, "user", &tt.wid)
+			if rec.Code != tt.want {
+				t.Fatalf("status = %d, want %d; body = %s", rec.Code, tt.want, rec.Body)
+			}
+		})
+	}
+	idx, err := os.ReadFile("uploads/.hash-index")
+	testutil.NoErr(t, err)
+	if !strings.Contains(string(idx), " 4 "+other.String()+"\n") {
+		t.Fatalf("index line lacks size and wedding: %q", idx)
+	}
+}
+
+func TestUpload_RateLimited(t *testing.T) {
+	t.Chdir(t.TempDir())
+	h := newUploadHandler(t)
+	wid := uuid.New()
+	for i := range 21 {
+		rec := serveUpload(t, h, "a.jpg", []byte{0xff, 0xd8, 0xff, byte(i)}, "user", &wid)
+		if i < 20 && rec.Code != http.StatusCreated {
+			t.Fatalf("upload %d: status = %d", i, rec.Code)
+		}
+		if i == 20 && rec.Code != http.StatusTooManyRequests {
+			t.Fatalf("upload 21: status = %d, want 429", rec.Code)
+		}
 	}
 }

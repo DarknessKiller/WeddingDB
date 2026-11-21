@@ -312,6 +312,11 @@ func (s *AuthService) RecordLoginFailure(ctx context.Context, email, ip string) 
 	s.recordFailure(ctx, loginFailKey(email, ip), 15*time.Minute)
 }
 
+// CheckUploadRate caps file uploads at 20 per 10 minutes per user.
+func (s *AuthService) CheckUploadRate(ctx context.Context, userID uuid.UUID) error {
+	return s.rateLimit(ctx, "upload:user:"+userID.String(), 20, 10*time.Minute)
+}
+
 // CheckPublicRate caps public kiosk endpoints at 25 req/s per client IP.
 func (s *AuthService) CheckPublicRate(ctx context.Context, ip string) error {
 	key := fmt.Sprintf("public:ip:%s:%d", ip, time.Now().Unix())
