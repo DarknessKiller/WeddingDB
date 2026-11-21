@@ -327,7 +327,8 @@ import Map from 'lucide-svelte/icons/map';
           <!-- Three-dot menu -->
           <button
             onclick={(e) => { e.stopPropagation(); handleCtx(e, table); }}
-            class="absolute top-2 right-2 p-1.5 rounded-lg opacity-0 group-hover:opacity-100 hover:bg-gray-100 transition-all"
+            onkeydown={(e) => e.stopPropagation()}
+            class="absolute top-2 right-2 p-1.5 rounded-lg opacity-100 sm:opacity-0 sm:group-hover:opacity-100 focus-visible:opacity-100 group-focus-within:opacity-100 hover:bg-gray-100 transition-all"
             aria-label="Table options"
           >
             <MoreVertical class="w-4 h-4 text-gray-500" />
