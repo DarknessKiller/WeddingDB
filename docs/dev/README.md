@@ -329,7 +329,7 @@ Guest limit: 1,000 guests per wedding, counted per person. A guest entry for a c
 
 ### Offline and kiosk behavior
 
-- Guest mutations, including check-in with an optional note, queue in `localStorage` (`offline_queue_{wid}`) and replay through `/guests/sync`. Notes append, they do not replace.
+- Guest mutations, including check-in with an optional note, queue in `localStorage` (`offline_queue_{wid}`) and replay through `/guests/sync`.
 - Staff and kiosk guest lists cache in `localStorage` (`offline_cache_{wid}`). A failed fetch falls back to the cache; the kiosk labels it "Offline copy".
 - Kiosk and staff search run in the browser over the synced guest list. Public guest JSON includes `pinyin` so Chinese names match romanized input. No request is made while typing.
 - `kioskIdleResetSeconds` is opt-in per wedding and defaults to 0 (off). Set it through `PUT /api/weddings/{id}/kiosk`; the kiosk clears the query and selected guest after that much inactivity.
