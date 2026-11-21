@@ -19,8 +19,8 @@ import (
 	"weddingdb/internal/utils"
 
 	"github.com/go-fuego/fuego"
-	"github.com/google/uuid"
 	"golang.org/x/crypto/bcrypt"
+	"gorm.io/gorm"
 )
 
 // maxLen answers 400 when value has more than limit characters, before the
@@ -328,16 +328,21 @@ func (h *AuthHandler) Register(c fuego.ContextWithBody[RegisterRequest]) (any, e
 	if err := h.authService.CheckCredentialIPRate(ctx, clientIP(c.Request())); err != nil {
 		return nil, fuego.HTTPError{Status: http.StatusTooManyRequests, Title: err.Error()}
 	}
-	existing, err := h.adminRepo.FindByEmail(ctx, body.Email)
-	if err != nil {
-		slog.Warn("email lookup during registration failed", "err", err)
-	}
-	if existing != nil && existing.ID != uuid.Nil {
-		return nil, fuego.ConflictError{Title: "Email already registered"}
-	}
+	// Hash first, so a taken email costs the same time as a new one.
 	hash, err := bcrypt.GenerateFromPassword([]byte(body.Password), bcrypt.DefaultCost)
 	if err != nil {
 		return nil, fuego.InternalServerError{Title: "Failed to hash password"}
+	}
+	// A taken email gets the same reply as a new account, so this endpoint
+	// cannot be used to probe which emails have accounts.
+	_, err = h.adminRepo.FindByEmail(ctx, body.Email)
+	if err == nil {
+		c.SetStatus(201)
+		return registerReply(), nil
+	}
+	if !errors.Is(err, gorm.ErrRecordNotFound) {
+		slog.Error("email lookup during registration failed", "err", err)
+		return nil, fuego.InternalServerError{Title: "Failed to create account"}
 	}
 	admin := &models.AdminUser{
 		Email:    body.Email,
@@ -346,10 +351,17 @@ func (h *AuthHandler) Register(c fuego.ContextWithBody[RegisterRequest]) (any, e
 		Role:     "user",
 	}
 	if err := h.adminRepo.Create(ctx, admin); err != nil {
+		slog.Error("create account failed", "err", err)
 		return nil, fuego.InternalServerError{Title: "Failed to create account"}
 	}
 	c.SetStatus(201)
-	return map[string]any{"id": admin.ID.String(), "email": admin.Email, "name": admin.Name, "role": admin.Role}, nil
+	return registerReply(), nil
+}
+
+// registerReply is the one answer register gives on success, whether or not
+// the email already had an account.
+func registerReply() map[string]string {
+	return map[string]string{"message": "Registration received. Sign in with your email and password."}
 }
 
 // clientIP strips the port from RemoteAddr (already XFF-normalized by
