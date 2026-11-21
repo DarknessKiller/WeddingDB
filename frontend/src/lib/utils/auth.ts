@@ -1,5 +1,6 @@
 import { goto } from '$app/navigation';
-import { getAuth, setAuth, clearAuth } from '#lib/stores/index.ts';
+import { getAuth, clearAuth } from '#lib/stores/index.ts';
+import { refreshSession } from '#lib/api/client.ts';
 import { setWeddingId } from '#lib/stores/weddingId.ts';
 
 function toLogin() {
@@ -15,7 +16,7 @@ function toLogin() {
  * still valid, and offline pages must keep working.
  */
 export async function validateToken(): Promise<boolean> {
-  const { accessToken, refreshToken } = getAuth();
+  const { accessToken } = getAuth();
   if (!accessToken) {
     goto('/login', { replaceState: true });
     return false;
@@ -30,31 +31,10 @@ export async function validateToken(): Promise<boolean> {
   } catch {
     return true;
   }
-  if (res.ok) return true;
-
-  // Only a rejected access token can be recovered with the refresh token.
-  if (res.status === 401 && refreshToken) {
-    let refreshRes: Response;
-    try {
-      refreshRes = await fetch('/api/auth/refresh', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ refreshToken })
-      });
-    } catch {
-      // Network failure — the refresh token was never seen by the server, so keep it.
-      return true;
-    }
-    if (refreshRes.ok) {
-      const data = await refreshRes.json();
-      setAuth(data.accessToken, data.refreshToken, data.role ?? getAuth().role ?? '', data.name ?? getAuth().name ?? '');
-      return true;
-    }
-    if (refreshRes.status !== 400 && refreshRes.status !== 401) return true;
-  } else if (res.status !== 401) {
-    return true;
-  }
-
-  toLogin();
-  return false;
+  // 401 is an expired token; 403 can be a forced password change. The shared
+  // refresh answers both and redirects to change-password when forced.
+  if (res.status !== 401 && res.status !== 403) return true;
+  const result = await refreshSession();
+  if (result === 'ended') toLogin();
+  return result === 'refreshed' || result === 'unavailable';
 }

@@ -1,5 +1,8 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
+const goto = vi.hoisted(() => vi.fn());
+vi.mock('$app/navigation', () => ({ goto }));
+
 function memoryStorage() {
 	const map = new Map<string, string>();
 	return {
@@ -133,5 +136,17 @@ describe('apiFetch refresh recovery', () => {
 		expect(result.status).toBe(403);
 		expect(fetchMock).toHaveBeenCalledTimes(1);
 		expect(getAuth().accessToken).toBe('old-access');
+	});
+
+	it('a forced password change keeps the new tokens and navigates without a reload', async () => {
+		fetchMock.mockResolvedValueOnce(res({ ...REFRESH_OK, forcePasswordChange: true }));
+
+		const { refreshSession } = await import('./client');
+		const { getAuth } = await import('#lib/stores/index.ts');
+
+		expect(await refreshSession()).toBe('forced');
+		expect(getAuth().accessToken).toBe('new-access');
+		expect(goto).toHaveBeenCalledWith('/change-password?forced=1', { replaceState: true });
+		expect(location.href).toBe('');
 	});
 });
