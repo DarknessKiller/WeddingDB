@@ -126,6 +126,9 @@ function handleGuestEvent(event: GuestEvent) {
 		if (idx >= 0) {
 			const newList = [...list];
 			guest.createdAt = list[idx].createdAt;
+			// SSE payloads carry no pinyin; keep the seeded value or local
+			// pinyin search stops matching after any edit.
+			guest.pinyin = guest.pinyin ?? list[idx].pinyin;
 			newList[idx] = guest;
 			return newList;
 		}
