@@ -659,7 +659,7 @@ import X from 'lucide-svelte/icons/x';
               <p class="results-more">Showing 8 of {results.length}. Type more of your name.</p>
             {/if}
           </div>
-        {:else if guestsLoading || guestsError || showingCachedGuests}
+        {:else if query.trim() && (guestsLoading || guestsError || showingCachedGuests)}
           <div class="empty-state" role="status">
             {guestsLoading ? 'Refreshing guests…' : 'No match in saved guests. Refresh to check current guests.'}
             <button class="retry-btn" onclick={retry}>Retry</button>
