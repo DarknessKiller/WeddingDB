@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"errors"
 	"log/slog"
 	"net/mail"
 	"weddingdb/internal/models"
@@ -107,16 +108,10 @@ func (h *AdminHandler) Delete(c fuego.ContextWithBody[any]) (any, error) {
 	if err != nil {
 		return nil, fuego.NotFoundError{Title: "User not found"}
 	}
-	if target.Role == "admin" {
-		adminCount, err := h.adminRepo.CountByRole(ctx, "admin")
-		if err != nil {
-			return nil, fuego.InternalServerError{Title: "Failed to check admin count"}
-		}
-		if adminCount <= 1 {
+	if err := h.adminRepo.Delete(ctx, target.ID); err != nil {
+		if errors.Is(err, repository.ErrLastAdmin) {
 			return nil, fuego.BadRequestError{Title: "Cannot delete the last admin"}
 		}
-	}
-	if err := h.adminRepo.Delete(ctx, id); err != nil {
 		return nil, err
 	}
 
@@ -274,20 +269,14 @@ func (h *AdminHandler) UpdateRole(c fuego.ContextWithBody[UpdateRoleRequest]) (a
 	if err != nil {
 		return nil, fuego.NotFoundError{Title: "User not found"}
 	}
-	// Prevent demoting the last admin
-	if admin.Role == "admin" && body.Role == "user" {
-		adminCount, err := h.adminRepo.CountByRole(ctx, "admin")
-		if err != nil {
-			return nil, fuego.InternalServerError{Title: "Failed to check admin count"}
-		}
-		if adminCount <= 1 {
+	// The last-admin check runs in the same locked transaction as the write.
+	if err := h.adminRepo.UpdateRole(ctx, admin.ID, body.Role); err != nil {
+		if errors.Is(err, repository.ErrLastAdmin) {
 			return nil, fuego.BadRequestError{Title: "Cannot demote the last admin"}
 		}
-	}
-	admin.Role = body.Role
-	if err := h.adminRepo.UpdateFields(ctx, admin.ID, map[string]any{"role": body.Role}); err != nil {
 		return nil, fuego.InternalServerError{Title: "Failed to update role"}
 	}
+	admin.Role = body.Role
 	// Force re-login so role claims in live tokens update. Role is already
 	// updated — log a revoke failure, don't fail the request.
 	if err := h.authService.RevokeUserTokens(ctx, id); err != nil {

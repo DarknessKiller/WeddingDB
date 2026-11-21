@@ -2,12 +2,48 @@ package repository
 
 import (
 	"context"
+	"errors"
+	"slices"
 
 	"weddingdb/internal/models"
 
 	"github.com/google/uuid"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
+
+// ErrLastAdmin is returned when a delete or demotion would leave no admin.
+var ErrLastAdmin = errors.New("cannot remove the last admin")
+
+// guardLastAdmin fails with ErrLastAdmin when id is an admin and the only
+// one. It locks every admin row first (Postgres; sqlite has one writer), so
+// two concurrent removals cannot both see two admins.
+func guardLastAdmin(tx *gorm.DB, id uuid.UUID) error {
+	q := tx.Model(&models.AdminUser{}).Where("role = ?", "admin")
+	if tx.Name() == "postgres" {
+		q = q.Clauses(clause.Locking{Strength: "UPDATE"})
+	}
+	var admins []uuid.UUID
+	if err := q.Pluck("id", &admins).Error; err != nil {
+		return err
+	}
+	if slices.Contains(admins, id) && len(admins) <= 1 {
+		return ErrLastAdmin
+	}
+	return nil
+}
+
+// UpdateRole sets the account's role, refusing to demote the last admin.
+func (r *AdminRepo) UpdateRole(ctx context.Context, id uuid.UUID, role string) error {
+	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if role != "admin" {
+			if err := guardLastAdmin(tx, id); err != nil {
+				return err
+			}
+		}
+		return tx.Model(&models.AdminUser{}).Where("id = ?", id).Update("role", role).Error
+	})
+}
 
 type AdminRepo struct{ db *gorm.DB }
 
@@ -43,16 +79,13 @@ func (r *AdminRepo) UpdateFields(ctx context.Context, id uuid.UUID, fields map[s
 	return r.db.WithContext(ctx).Model(&models.AdminUser{}).Where("id = ?", id).Updates(fields).Error
 }
 
-// CountByRole returns the number of admins with the given role.
-func (r *AdminRepo) CountByRole(ctx context.Context, role string) (int64, error) {
-	var count int64
-	err := r.db.WithContext(ctx).Model(&models.AdminUser{}).Where("role = ?", role).Count(&count).Error
-	return count, err
-}
-
-// Delete removes the account and its wedding grants in one transaction.
+// Delete removes the account and its wedding grants in one transaction,
+// refusing to delete the last admin.
 func (r *AdminRepo) Delete(ctx context.Context, id uuid.UUID) error {
 	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := guardLastAdmin(tx, id); err != nil {
+			return err
+		}
 		if err := tx.Where("user_id = ?", id).Delete(&models.UserWedding{}).Error; err != nil {
 			return err
 		}
