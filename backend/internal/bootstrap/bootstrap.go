@@ -132,6 +132,9 @@ func Init(env config.Env, version string) *App {
 	if err != nil {
 		log.Fatal("Invalid REDIS_URL:", err)
 	}
+	// Honor context deadlines on every call: without this go-redis waits out
+	// its own read timeout and retries, so bounds like publishTimeout never apply.
+	redisOpts.ContextTimeoutEnabled = true
 	rdb := redis.NewClient(redisOpts)
 	if err := rdb.Ping(context.Background()).Err(); err != nil {
 		log.Fatal("Failed to connect to Redis:", err)

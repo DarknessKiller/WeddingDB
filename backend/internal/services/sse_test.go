@@ -460,3 +460,42 @@ func TestSSEHub_ShutdownWhileDialing(t *testing.T) {
 		t.Fatal("subscriber did not stop after Shutdown")
 	}
 }
+
+// A stalled Redis (accepts, never answers) must cost one publishTimeout per
+// pause, not one per row: an 800-row import used to spend ~400s publishing
+// after commit, long enough for the client to time out and import again.
+func TestPublishGuest_StalledRedisPausesPublishes(t *testing.T) {
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	testutil.NoErr(t, err)
+	t.Cleanup(func() { ln.Close() }) //nolint:errcheck // test teardown
+	go func() {
+		for {
+			conn, err := ln.Accept()
+			if err != nil {
+				return
+			}
+			t.Cleanup(func() { conn.Close() }) //nolint:errcheck // test teardown
+		}
+	}()
+	ready := make(chan struct{})
+	close(ready)
+	hub := &SSEHub{redis: redis.NewClient(&redis.Options{Addr: ln.Addr().String(), ContextTimeoutEnabled: true}), ready: ready}
+	start := time.Now()
+	for range 10 {
+		hub.publishGuest("create", &models.GuestRecord{ID: uuid.New()}, uuid.New())
+	}
+	if took := time.Since(start); took > 3*publishTimeout {
+		t.Fatalf("10 publishes to a stalled Redis took %v; want one timeout, then skips", took)
+	}
+}
+
+// A failure that costs no time (hub not ready at startup) must not pause:
+// pausing would drop every event after it for publishPause.
+func TestPublishGuest_FastFailureDoesNotPause(t *testing.T) {
+	mr := miniredis.RunT(t)
+	hub := &SSEHub{redis: redis.NewClient(&redis.Options{Addr: mr.Addr()}), ready: make(chan struct{})}
+	hub.publishGuest("create", &models.GuestRecord{ID: uuid.New()}, uuid.New())
+	if hub.pausedUntil.Load() != 0 {
+		t.Fatal("not-ready failure paused publishing")
+	}
+}

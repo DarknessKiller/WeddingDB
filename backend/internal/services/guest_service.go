@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"log"
 	"log/slog"
+	"net"
 	"reflect"
 	"slices"
 	"strings"
@@ -611,6 +612,11 @@ func (s *GuestService) Occupancy(ctx context.Context, weddingID uuid.UUID) ([]re
 // publishes. A nil hub (tests, SSE disabled) is a no-op.
 const publishTimeout = 500 * time.Millisecond
 
+// publishPause is how long publishes are skipped after one times out, so a
+// stalled Redis costs one publishTimeout per pause instead of one per row.
+// Events skipped meanwhile would have timed out anyway.
+const publishPause = 2 * time.Second
+
 func (h *SSEHub) publishGuest(eventType string, guest *models.GuestRecord, weddingID uuid.UUID) {
 	if h == nil {
 		return
@@ -626,9 +632,18 @@ func (h *SSEHub) publishGuest(eventType string, guest *models.GuestRecord, weddi
 
 	// Bounded: the write already committed, and a stalled Redis must not hold
 	// every check-in (and each item of a sync batch) for go-redis's retries.
+	if time.Now().UnixNano() < h.pausedUntil.Load() {
+		log.Printf("SSE: publish %s for guest %s in wedding %s skipped: Redis paused after failure", eventType, guest.ID, weddingID)
+		return
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), publishTimeout)
 	defer cancel()
 	if err := h.Publish(ctx, weddingID, event); err != nil {
+		// Only a stall pauses: other failures (hub not ready yet, a bad
+		// event) cost no time and must not drop the events after them.
+		if ne, ok := errors.AsType[net.Error](err); errors.Is(err, context.DeadlineExceeded) || (ok && ne.Timeout()) {
+			h.pausedUntil.Store(time.Now().Add(publishPause).UnixNano())
+		}
 		log.Printf("SSE: publish %s for guest %s in wedding %s: %v", eventType, guest.ID, weddingID, err)
 	}
 }

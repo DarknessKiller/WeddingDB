@@ -7,6 +7,7 @@ import (
 	"log"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/google/uuid"
@@ -71,6 +72,10 @@ type SSEHub struct {
 	// ponytail: closed after PSubscribe ACKs so the first Publish is not lost during Redis warm-up.
 	// Race B (client joins SSE mid-publish) is not addressed here — fix needs a per-wedding replay buffer.
 	ready chan struct{}
+	// pausedUntil (unix nanos) skips publishes for a while after one fails,
+	// so a stalled Redis costs one publishTimeout per pause, not one per row
+	// of an import or sync batch.
+	pausedUntil atomic.Int64
 }
 
 // NewSSEHub creates a new SSEHub and starts the Redis subscriber.
