@@ -101,6 +101,8 @@ func (r *GuestRepo) Create(ctx context.Context, g *models.GuestRecord) error {
 	return r.db.WithContext(ctx).Create(g).Error
 }
 
+// Update writes the editable columns of a guest. checked_in_at is left out:
+// only check-in and check-out own it, so a stale edit form cannot undo them.
 func (r *GuestRepo) Update(ctx context.Context, g *models.GuestRecord) error {
 	g.NamePinyin = models.GenerateNamePinyin(g.Name)
 	return r.db.WithContext(ctx).Model(g).Where("id = ? AND wedding_id = ?", g.ID, g.WeddingID).Updates(map[string]interface{}{
@@ -111,13 +113,27 @@ func (r *GuestRepo) Update(ctx context.Context, g *models.GuestRecord) error {
 		"table_id":      g.TableID,
 		"seat_num":      g.SeatNum,
 		"rsvp":          g.RSVP,
-		"checked_in_at": g.CheckedInAt,
 		"notes":         g.Notes,
 		"dietary":       g.Dietary,
 		"is_vip":        g.IsVip,
 		"angbao_amt":    g.AngbaoAmt,
 		"gift_item":     g.GiftItem,
 	}).Error
+}
+
+// UpdateFields writes only the given columns of one guest, so a concurrent
+// check-in or edit of other columns survives. Returns gorm.ErrRecordNotFound
+// when no guest matches.
+func (r *GuestRepo) UpdateFields(ctx context.Context, id, weddingID uuid.UUID, fields map[string]any) error {
+	res := r.db.WithContext(ctx).Model(&models.GuestRecord{}).
+		Where("id = ? AND wedding_id = ?", id, weddingID).Updates(fields)
+	if res.Error != nil {
+		return res.Error
+	}
+	if res.RowsAffected == 0 {
+		return gorm.ErrRecordNotFound
+	}
+	return nil
 }
 
 func (r *GuestRepo) Delete(ctx context.Context, id, weddingID uuid.UUID) error {

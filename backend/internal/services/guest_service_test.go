@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"weddingdb/internal/models"
+	"weddingdb/internal/testutil"
 	"weddingdb/internal/utils"
 
 	"github.com/google/uuid"
@@ -220,4 +221,27 @@ func TestCheckInPromotesRSVPAndAppendsNotes(t *testing.T) {
 			t.Errorf("Notes = %q", got.Notes)
 		}
 	})
+}
+
+func TestUpdateWithSeat_StaleEditKeepsCheckIn(t *testing.T) {
+	svc, db, wid := newGuestSyncService(t)
+	ctx := t.Context()
+	gid := uuid.New()
+	testutil.NoErr(t, db.Create(&models.GuestRecord{ID: gid, WeddingID: wid, Name: "Alice", Pax: 1}).Error)
+
+	stale, err := svc.Get(ctx, gid, wid) // edit form opened before arrival
+	testutil.NoErr(t, err)
+	testutil.NoErr(t, svc.CheckIn(ctx, gid, wid, ""))
+
+	stale.Name = "Alicia"
+	testutil.NoErr(t, svc.UpdateWithSeat(ctx, stale, nil, 0))
+
+	var got models.GuestRecord
+	testutil.NoErr(t, db.First(&got, "id = ?", gid).Error)
+	if got.Name != "Alicia" {
+		t.Fatalf("name = %q, want Alicia", got.Name)
+	}
+	if got.CheckedInAt == nil || stale.CheckedInAt == nil {
+		t.Fatalf("stale edit undid check-in: stored=%v returned=%v", got.CheckedInAt, stale.CheckedInAt)
+	}
 }

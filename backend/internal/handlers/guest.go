@@ -419,14 +419,8 @@ func (h *GuestHandler) UnassignSeat(c fuego.ContextNoBody) (any, error) {
 	if err != nil {
 		return nil, fuego.BadRequestError{Title: "Invalid ID"}
 	}
-	guest, err := h.guestService.Get(ctx, guestID, wid)
-	if err != nil {
-		return nil, fuego.NotFoundError{Title: "Guest not found"}
-	}
-	guest.TableID = nil
-	guest.SeatNum = nil
-	if err := h.guestService.Update(ctx, guest); err != nil {
-		return nil, err
+	if err := h.guestService.UnassignSeat(ctx, guestID, wid); err != nil {
+		return nil, notFoundIfMissing(err, "Guest not found")
 	}
 	c.SetStatus(204)
 	return nil, nil

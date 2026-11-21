@@ -112,7 +112,7 @@ func (s *GuestService) updateGuestTx(ctx context.Context, tx *gorm.DB, g *models
 		return err
 	}
 	var current models.GuestRecord
-	if err := tx.Select("id", "pax").
+	if err := tx.Select("id", "pax", "checked_in_at").
 		Where("id = ? AND wedding_id = ?", g.ID, g.WeddingID).
 		First(&current).Error; err != nil {
 		return err
@@ -124,6 +124,8 @@ func (s *GuestService) updateGuestTx(ctx context.Context, tx *gorm.DB, g *models
 	if syncWrite {
 		return repo.SyncUpdate(ctx, g)
 	}
+	// Online edits never write checked_in_at; report the stored value.
+	g.CheckedInAt = current.CheckedInAt
 	return repo.Update(ctx, g)
 }
 
@@ -251,7 +253,7 @@ func (s *GuestService) AssignSeat(ctx context.Context, guestID, weddingID, table
 		}
 		guest.TableID = &tableID
 		guest.SeatNum = &seatNum
-		return txGuestRepo.Update(ctx, guest)
+		return txGuestRepo.UpdateFields(ctx, guestID, weddingID, map[string]any{"table_id": tableID, "seat_num": seatNum})
 	})
 	if err != nil {
 		return err
@@ -315,16 +317,31 @@ func (s *GuestService) CheckIn(ctx context.Context, id, weddingID uuid.UUID, not
 }
 
 func (s *GuestService) CheckOut(ctx context.Context, id, weddingID uuid.UUID) error {
+	if err := s.guestRepo.UpdateFields(ctx, id, weddingID, map[string]any{"checked_in_at": nil}); err != nil {
+		return err
+	}
+	s.publishFresh(ctx, "checkout", id, weddingID)
+	return nil
+}
+
+// UnassignSeat clears the guest's table and seat without touching other columns.
+func (s *GuestService) UnassignSeat(ctx context.Context, id, weddingID uuid.UUID) error {
+	if err := s.guestRepo.UpdateFields(ctx, id, weddingID, map[string]any{"table_id": nil, "seat_num": nil}); err != nil {
+		return err
+	}
+	s.publishFresh(ctx, "update", id, weddingID)
+	return nil
+}
+
+// publishFresh re-reads the guest after a column-targeted write and broadcasts
+// it. The write already committed, so a failed read is only logged.
+func (s *GuestService) publishFresh(ctx context.Context, eventType string, id, weddingID uuid.UUID) {
 	guest, err := s.guestRepo.FindByID(ctx, id, weddingID)
 	if err != nil {
-		return err
+		log.Printf("guest lookup after %s failed: %v", eventType, err)
+		return
 	}
-	guest.CheckedInAt = nil
-	if err := s.guestRepo.Update(ctx, guest); err != nil {
-		return err
-	}
-	s.publishEvent("checkout", guest, weddingID)
-	return nil
+	s.publishEvent(eventType, guest, weddingID)
 }
 
 func (s *GuestService) BulkCreate(ctx context.Context, guests []models.GuestRecord) (int, error) {
