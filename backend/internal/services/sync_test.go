@@ -226,6 +226,32 @@ func TestSync_OfflineCheckInSurvivesNewerEdit(t *testing.T) {
 	}
 }
 
+// A sync whose response was lost is sent again: every edit in it already
+// applied, so the replay must report applied, not a stale failure.
+func TestSync_ReplayOfAppliedBatchIsApplied(t *testing.T) {
+	svc, db, wid := newGuestSyncService(t)
+	ctx := context.Background()
+	t1 := time.Now().Add(-time.Hour).UTC().Truncate(time.Millisecond)
+	gid, gid2 := uuid.New(), uuid.New()
+	db.Create(&models.GuestRecord{ID: gid, WeddingID: wid, Name: "X", Pax: 1, CreatedAt: t1, UpdatedAt: t1})
+	db.Create(&models.GuestRecord{ID: gid2, WeddingID: wid, Name: "Z", Pax: 1, CreatedAt: t1, UpdatedAt: t1})
+
+	amt := 88
+	batch := []SyncMutation{
+		{Op: SyncOpUpdate, GuestID: gid.String(), ClientUpdatedAt: t1.Add(time.Minute), BaseUpdatedAt: &t1, Payload: &SyncPayload{Name: syncStr("Y")}},
+		{Op: SyncOpCheckIn, GuestID: gid2.String(), ClientUpdatedAt: t1.Add(2 * time.Minute), Payload: &SyncPayload{AngbaoAmt: NullableJSON[int]{Set: true, Value: &amt}}},
+	}
+	for round := range 2 {
+		res, err := svc.Sync(ctx, wid, batch)
+		testutil.NoErr(t, err)
+		for i, r := range res {
+			if r.Status != "applied" {
+				t.Fatalf("round %d mutation %d: %s (%s), want applied", round, i, r.Status, r.Reason)
+			}
+		}
+	}
+}
+
 // TestSync_UnassignViaNullPointer covers the seat contract: an explicit JSON
 // null (or empty string) tableId clears the assignment, while an absent
 // tableId leaves the current seat untouched.

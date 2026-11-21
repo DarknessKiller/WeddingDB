@@ -710,9 +710,13 @@ func (s *GuestService) applySyncMutation(ctx context.Context, weddingID uuid.UUI
 	switch m.Op {
 	case SyncOpCreate:
 		if found {
-			// treat as update with LWW; equal timestamps count as newer (tie-break)
+			// treat as update with LWW
 			if opTime.Before(existing.UpdatedAt) {
 				return SyncResult{GuestID: m.GuestID, Status: "skipped", Reason: "older than server", ServerRecord: existing}
+			}
+			if opTime.Equal(existing.UpdatedAt) {
+				// Replay of a write whose response was lost: it is already applied.
+				return SyncResult{GuestID: m.GuestID, Status: "applied", ServerRecord: existing}
 			}
 			if m.Payload != nil {
 				if err := applySyncPayload(existing, m.Payload, &gid); err != nil {
@@ -779,9 +783,13 @@ func (s *GuestService) applySyncMutation(ctx context.Context, weddingID uuid.UUI
 		if !found {
 			return SyncResult{GuestID: m.GuestID, Status: "skipped", Reason: "not found", ServerRecord: nil}
 		}
-		// Equal timestamps win the tie-break: only strictly older ops lose.
 		if opTime.Before(existing.UpdatedAt) {
 			return SyncResult{GuestID: m.GuestID, Status: "skipped", Reason: "older than server", ServerRecord: existing}
+		}
+		// The row already carries this op's time: a replay of a write whose
+		// response was lost. Re-applying it would fail its now-stale base.
+		if opTime.Equal(existing.UpdatedAt) {
+			return SyncResult{GuestID: m.GuestID, Status: "applied", ServerRecord: existing}
 		}
 		if m.Payload != nil {
 			if err := applySyncPayload(existing, m.Payload, nil); err != nil {
@@ -885,6 +893,10 @@ func syncCheckIn(ctx context.Context, tx *gorm.DB, g *models.GuestRecord, m Sync
 		return SyncResult{GuestID: m.GuestID, Status: "skipped", Reason: "older than server", ServerRecord: g}, nil
 	}
 	wasCheckedIn := g.CheckedInAt != nil
+	if wasCheckedIn && opTime.Equal(g.UpdatedAt) {
+		// Replay of this check-in whose response was lost: already applied.
+		return SyncResult{GuestID: m.GuestID, Status: "applied", ServerRecord: g}, nil
+	}
 	// A second check-in (another receptionist got there first) keeps the
 	// first arrival time and any angbao/gift already keyed, like the online
 	// path's 409: only fill what is still empty and append the note.
