@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -14,6 +15,9 @@ import (
 // sseKeepaliveInterval keeps proxies/NAT from killing silent streams (~60s idle)
 // and paces the revocation re-check on open streams.
 const sseKeepaliveInterval = 20 * time.Second
+
+// sseWriteTimeout bounds one stream write to a client that stopped reading.
+const sseWriteTimeout = 10 * time.Second
 
 // SSEHandler provides raw HTTP handlers for SSE streaming.
 type SSEHandler struct {
@@ -89,17 +93,26 @@ func (h *SSEHandler) StreamHandler() http.HandlerFunc {
 		w.Header().Set("Connection", "keep-alive")
 		w.Header().Set("X-Accel-Buffering", "no")
 
-		flusher, ok := w.(http.Flusher)
-		if !ok {
-			http.Error(w, "streaming not supported", http.StatusInternalServerError)
-			return
+		// Each write gets a deadline: a phone that left the wifi without closing
+		// its socket would otherwise block a write until TCP gives up (15+ min),
+		// holding this goroutine and never seeing client.Done.
+		rc := http.NewResponseController(w)
+		write := func(format string, args ...any) error {
+			// ErrNotSupported: a writer without deadlines (test recorder) still streams.
+			if err := rc.SetWriteDeadline(time.Now().Add(sseWriteTimeout)); err != nil && !errors.Is(err, http.ErrNotSupported) {
+				return err
+			}
+			if _, err := fmt.Fprintf(w, format, args...); err != nil {
+				return err
+			}
+			return rc.Flush()
 		}
 
 		// Send initial keepalive comment.
-		if _, err := fmt.Fprintf(w, ": keepalive\n\n"); err != nil {
+		if err := write(": keepalive\n\n"); err != nil {
 			slog.Warn("SSE: initial keepalive write failed", "wedding", wid, "err", err)
+			return
 		}
-		flusher.Flush()
 
 		// Periodic keepalive: silent streams get killed by proxies/NAT at ~60s idle.
 		keepalive := time.NewTicker(h.keepalive)
@@ -133,18 +146,16 @@ func (h *SSEHandler) StreamHandler() http.HandlerFunc {
 						return
 					}
 				}
-				if _, err := fmt.Fprintf(w, ": ping\n\n"); err != nil {
+				if err := write(": ping\n\n"); err != nil {
 					return
 				}
-				flusher.Flush()
 			case data, ok := <-client.Chan:
 				if !ok {
 					return
 				}
-				if _, err := fmt.Fprintf(w, "data: %s\n\n", data); err != nil {
+				if err := write("data: %s\n\n", data); err != nil {
 					return
 				}
-				flusher.Flush()
 			}
 		}
 	}
