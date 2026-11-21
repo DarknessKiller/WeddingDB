@@ -170,6 +170,37 @@ func TestUpload_ScopeQuotaRejected(t *testing.T) {
 	}
 }
 
+// An admin working inside a wedding uses that wedding's quota, not the shared
+// global one, so a full global namespace never blocks kiosk setup.
+func TestUpload_AdminInWeddingUsesWeddingQuota(t *testing.T) {
+	t.Chdir(t.TempDir())
+	uploadDir := "./uploads"
+	if err := os.MkdirAll(uploadDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	filler, err := os.Create(filepath.Join(uploadDir, "filler.jpg"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := filler.Truncate(uploadQuotaPerScope); err != nil {
+		t.Fatal(err)
+	}
+	if err := filler.Close(); err != nil {
+		t.Fatal(err)
+	}
+	index := "global " + strings.Repeat("0", 64) + " filler.jpg\n"
+	if err := os.WriteFile(filepath.Join(uploadDir, ".hash-index"), []byte(index), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	wid := uuid.MustParse("00000000-0000-0000-0000-000000000002")
+	ctx := context.WithValue(context.WithValue(context.Background(), middleware.RoleKey, "admin"), middleware.WeddingIDKey, &wid)
+	rec := doUpload(t, ctx, "a.jpg", []byte{0xff, 0xd8, 0xff})
+	if rec.Code < 200 || rec.Code >= 300 {
+		t.Fatalf("status = %d, want 2xx, body = %s", rec.Code, rec.Body.String())
+	}
+}
+
 func TestUpload_RateLimitedPerScope(t *testing.T) {
 	h := NewUploadHandler()
 	for range uploadRateLimit {

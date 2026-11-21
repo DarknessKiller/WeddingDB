@@ -100,11 +100,11 @@ func (h *UploadHandler) Upload(c fuego.ContextWithBody[any]) (any, error) {
 	if RoleFromContext(c.Context()) != "admin" && WeddingIDFromContext(c.Context()) == nil {
 		return nil, fuego.ForbiddenError{Title: "Select a wedding before uploading"}
 	}
-	// Namespace the hash index per caller: a wedding-scoped upload may only
-	// reuse a file from its own wedding, never another tenant's. Admins share
-	// one global namespace.
+	// Namespace the hash index, quota and rate limit per wedding: an upload may
+	// only reuse a file from its own wedding, never another tenant's. Only an
+	// admin with no wedding selected falls back to the shared global scope.
 	scope := "global"
-	if wid := WeddingIDFromContext(c.Context()); RoleFromContext(c.Context()) != "admin" && wid != nil {
+	if wid := WeddingIDFromContext(c.Context()); wid != nil {
 		scope = wid.String()
 	}
 	if !h.allow(scope) {
