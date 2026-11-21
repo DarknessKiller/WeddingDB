@@ -748,3 +748,25 @@ func TestSyncUpdate_ChangeAfterLoadIsRetryable(t *testing.T) {
 		t.Fatal("a change during sync must stay retryable")
 	}
 }
+
+// A device whose clock runs ahead gets its opTime clamped to server time, so
+// a replay of its applied edit carries a different opTime than the row. The
+// replay must still report applied, not a stale-base failure.
+func TestSync_ReplayFromFastClockIsApplied(t *testing.T) {
+	svc, db, wid := newGuestSyncService(t)
+	t1 := time.Now().Add(-time.Hour).UTC().Truncate(time.Millisecond)
+	gid := uuid.New()
+	testutil.NoErr(t, db.Create(&models.GuestRecord{ID: gid, WeddingID: wid, Name: "X", Pax: 1, CreatedAt: t1, UpdatedAt: t1}).Error)
+
+	batch := []SyncMutation{{
+		Op: SyncOpUpdate, GuestID: gid.String(), ClientUpdatedAt: time.Now().Add(time.Hour), BaseUpdatedAt: &t1,
+		Payload: &SyncPayload{Name: syncStr("Y")},
+	}}
+	for round := range 2 {
+		res, err := svc.Sync(t.Context(), wid, batch)
+		testutil.NoErr(t, err)
+		if res[0].Status != "applied" {
+			t.Fatalf("round %d: %s (%s), want applied", round, res[0].Status, res[0].Reason)
+		}
+	}
+}

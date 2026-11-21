@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"reflect"
 	"slices"
 	"strings"
 	"time"
@@ -804,10 +805,17 @@ func (s *GuestService) applySyncMutation(ctx context.Context, weddingID uuid.UUI
 		if opTime.Equal(existing.UpdatedAt) {
 			return SyncResult{GuestID: m.GuestID, Status: "applied", ServerRecord: existing}
 		}
+		before := *existing
 		if m.Payload != nil {
 			if err := applySyncPayload(existing, m.Payload, nil); err != nil {
 				return syncFailed(m, err)
 			}
+		}
+		// Nothing to change: the edit is already in the row. This catches a
+		// replay whose clock was ahead, so its clamped opTime differs from the
+		// one the first attempt stored and the Equal check above misses it.
+		if reflect.DeepEqual(before, *existing) {
+			return SyncResult{GuestID: m.GuestID, Status: "applied", ServerRecord: existing}
 		}
 		if err := s.syncUpdate(ctx, existing, m, opTime); err != nil {
 			return syncFailed(m, err)
