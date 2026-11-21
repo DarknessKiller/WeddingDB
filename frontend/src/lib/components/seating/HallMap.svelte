@@ -622,9 +622,13 @@ import RotateCcw from 'lucide-svelte/icons/rotate-ccw';
       const baseH = el.height / 100 * displayHallHeight;
       const newW = node.scaleX() * baseW / displayHallWidth * 100;
       const newH = node.scaleY() * baseH / displayHallHeight * 100;
+      // Scaling from a non-center anchor moves the group origin, so the new
+      // center must be stored or the element jumps after save/reload.
+      const x = node.x() / displayHallWidth * 100;
+      const y = node.y() / displayHallHeight * 100;
       node.scaleX(1);
       node.scaleY(1);
-      editElements[eidx] = { ...el, degree: rotation, width: newW, height: newH };
+      editElements[eidx] = { ...el, x, y, degree: rotation, width: newW, height: newH };
       commit();
       void refreshTransformerAfterUpdate();
     }
