@@ -119,7 +119,7 @@ func (h *AuthHandler) Login(c fuego.ContextWithBody[LoginRequest]) (TokenRespons
 	if err := h.authService.CheckAuthRate(c.Context(), ip); err != nil {
 		return TokenResponse{}, fuego.HTTPError{Status: http.StatusTooManyRequests, Title: err.Error()}
 	}
-	if err := h.authService.CheckCredentialIPRate(c.Context(), ip); err != nil {
+	if err := h.authService.CheckLoginIPRate(c.Context(), ip); err != nil {
 		return TokenResponse{}, fuego.HTTPError{Status: http.StatusTooManyRequests, Title: err.Error()}
 	}
 	if err := h.authService.CheckLoginAccountRate(c.Context(), body.Email, ip); err != nil {
