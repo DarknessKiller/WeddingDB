@@ -81,18 +81,23 @@ export function isRetiredRefreshToken(token: string): boolean {
 
 // user defaults to the current one: refresh and wedding selection keep the same user.
 export function setAuth(access: string, refresh: string, r: string, n: string, user = _user) {
+  const hadSession = !!_refreshToken;
   if (_refreshToken && _refreshToken !== refresh) retiredRefreshTokens.add(_refreshToken);
   _accessToken = access;
   _refreshToken = refresh;
   _role = r;
   _name = n;
   _user = user;
-  writeStoredAuth();
+  writeStoredAuth(hadSession);
 }
 
-function writeStoredAuth() {
+function writeStoredAuth(guardForeignSession = false) {
   if (typeof window === 'undefined' || !_accessToken || !_refreshToken) return;
   try {
+    // Another tab may have logged in as someone else while this tab's refresh
+    // was in flight; that session wins and this tab ends on its storage event.
+    const stored = guardForeignSession ? readStoredAuth() : null;
+    if (stored?.user && stored.user !== _user) return;
     localStorage.setItem(AUTH_KEY, JSON.stringify({
       accessToken: _accessToken,
       refreshToken: _refreshToken,

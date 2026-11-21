@@ -546,6 +546,41 @@ func TestSelectWedding_LeavesOtherDeviceScope(t *testing.T) {
 	}
 }
 
+// Two logins (two devices) are independent sessions: each rotates and can be
+// logged out without ending the other, and the second login never reuses the
+// first device's refresh token.
+func TestLogin_TwoDevicesKeepIndependentSessions(t *testing.T) {
+	svc, _, db := newIntegrationAuthService(t, "test-secret")
+	adminID := uuid.New()
+	hash, err := HashPassword("Passw0rd!x1")
+	testutil.NoErr(t, err)
+	admin := &models.AdminUser{ID: adminID, Email: "both@test.com", Password: hash, Name: "Both", Role: "user"}
+	testutil.NoErr(t, db.Create(admin).Error)
+	ctx := context.Background()
+
+	phone, err := svc.Login(ctx, "both@test.com", "Passw0rd!x1")
+	testutil.NoErr(t, err)
+	laptop, err := svc.Login(ctx, "both@test.com", "Passw0rd!x1")
+	testutil.NoErr(t, err)
+	if phone.RefreshToken == laptop.RefreshToken {
+		t.Fatal("two logins shared one refresh token")
+	}
+
+	phoneNext, err := svc.Refresh(ctx, phone.RefreshToken, "")
+	testutil.NoErr(t, err)
+	laptopNext, err := svc.Refresh(ctx, laptop.RefreshToken, "")
+	testutil.NoErr(t, err)
+
+	// Logging out one device must leave the other device's session alive.
+	testutil.NoErr(t, svc.Logout(ctx, laptopNext.RefreshToken, ""))
+	if _, err := svc.Refresh(ctx, laptopNext.RefreshToken, ""); !errors.Is(err, ErrInvalidRefreshToken) {
+		t.Errorf("logged-out device: want ErrInvalidRefreshToken, got %v", err)
+	}
+	if _, err := svc.Refresh(ctx, phoneNext.RefreshToken, ""); err != nil {
+		t.Errorf("other device session ended by one logout: %v", err)
+	}
+}
+
 // Login email must ignore case and surrounding spaces, on write and on lookup.
 func TestFindByEmail_IgnoresCase(t *testing.T) {
 	_, _, db := newIntegrationAuthService(t, "test-secret")

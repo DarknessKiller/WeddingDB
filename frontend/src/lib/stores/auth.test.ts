@@ -118,4 +118,17 @@ describe('auth storage', () => {
 		expect(w.location.href).toBe('/login');
 		expect(storage.getItem('weddingdb_auth')).toBe(other);
 	});
+
+	it('never overwrites another user session when a refresh lands late', async () => {
+		const { getAuth, setAuth } = await import('#lib/stores/index.ts');
+		setAuth('a', 'refresh-a', 'staff', 'A', 'a@x.com');
+
+		// Another tab logs in as B while A's refresh is in flight.
+		const other = JSON.stringify({ accessToken: 'b', refreshToken: 'refresh-b', role: 'staff', name: 'B', user: 'b@x.com' });
+		storage.setItem('weddingdb_auth', other);
+		setAuth('late', 'refresh-a2', 'staff', 'A', 'a@x.com');
+
+		expect(storage.getItem('weddingdb_auth')).toBe(other);
+		expect(getAuth().refreshToken).toBe('refresh-a2');
+	});
 });

@@ -80,6 +80,29 @@ rg -n "maxlength" frontend/src
 
 Every cap on the first line has an input on the second. Adding a cap or a form input means changing both.
 
+## Multi-tab and multi-device
+
+Files: `frontend/src/lib/stores/index.ts`, `frontend/src/lib/api/client.ts`, `frontend/src/lib/offline/**`, `backend/internal/services/auth_service.go`, `backend/internal/repository/token_repo.go`.
+
+One account may be signed in on any number of devices, and one browser may open any number of tabs. Say which scope a piece of state belongs to.
+
+- **Per device (session):** one refresh token per login. Never store a single "current token" per user; logout ends that token, and only a security action (password, role, wedding grant) revokes all of them.
+- **Per browser (localStorage):** the stored auth, the unsynced queue and the kiosk cache. Tabs share it: read it again after an `await` before writing, listen for the `storage` event, and never adopt another user's stored auth. A late response must not overwrite a session another tab has since replaced.
+- **Per tab (sessionStorage or memory):** cached roster data and UI state. Tabs must survive another tab rotating the token and must not render a previous user's data after a login switch.
+- **Per connection:** live updates. Every tab and device holds its own SSE stream; an echo of this client's own write is an upsert, and a reconnect reseeds instead of assuming it missed nothing.
+- One browser has one active wedding because its tabs share the refresh token. Do not build a feature that needs two weddings open in one browser.
+- Only one tab syncs a wedding's queue (`navigator.locks`, `runSync` re-reads inside the lock). Where Web Locks are unavailable, server replay handling stays idempotent.
+- Concurrent edits from different devices merge per field by last write; a replayed mutation is `skipped`, never applied twice.
+
+### Verify
+
+```sh
+cd backend && go test -run 'TwoDevices|OtherDeviceScope|ReplayWithinGrace' ./internal/services/
+cd frontend && npx vitest run src/lib/stores/auth.test.ts src/lib/offline/
+```
+
+Add a test with every new rule about session scope, token rotation, or the shared queue.
+
 ## Frontend pagination
 
 Files: `frontend/src/lib/api/*.ts`, `frontend/src/routes/[wid]/**/+page.svelte`.
