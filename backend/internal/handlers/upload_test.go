@@ -275,7 +275,10 @@ func TestUpload_IndexWriteFailureRemovesFile(t *testing.T) {
 	if rec.Code != http.StatusInternalServerError {
 		t.Fatalf("status = %d, want 500", rec.Code)
 	}
-	matches, _ := filepath.Glob(filepath.Join("uploads", "*.png"))
+	matches, err := filepath.Glob(filepath.Join("uploads", "*.png"))
+	if err != nil {
+		t.Fatal(err)
+	}
 	if len(matches) != 0 {
 		t.Fatalf("unindexed upload left on disk: %v", matches)
 	}
