@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"math"
 	"strings"
 	"sync"
 	"time"
@@ -602,6 +603,16 @@ func (s *AuthService) RevokeUserTokens(ctx context.Context, userID uuid.UUID) er
 
 // accessTokenTTL is how long an access token lives.
 const accessTokenTTL = 15 * time.Minute
+
+// PinDeletedUser raises a deleted user's cached token version above any
+// token's until every access token minted before the delete has expired. A
+// login that raced the delete's revoke otherwise keeps a working token: the
+// cache still holds its version, and nothing checks that the user exists.
+// After the pin expires, a cache miss reads Postgres, finds no user and
+// fails closed.
+func (s *AuthService) PinDeletedUser(ctx context.Context, userID uuid.UUID) error {
+	return s.redisClient.Set(ctx, tvKey(userID), math.MaxInt32, accessTokenTTL).Err()
+}
 
 // parseTokenClaims parses a JWT without blacklist/tv checks — used only for extracting claims during logout.
 func (s *AuthService) parseTokenClaims(tokenStr string) (*AccessClaims, error) {

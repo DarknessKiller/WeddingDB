@@ -57,11 +57,13 @@ func (r *TokenRepo) SaveAtVersion(ctx context.Context, token *models.RefreshToke
 			return err
 		}
 		var current int
-		if err := tx.Model(&models.AdminUser{}).Where("id = ?", token.AdminID).
-			Select("token_version").Scan(&current).Error; err != nil {
-			return fmt.Errorf("read token version: %w", err)
+		res := tx.Model(&models.AdminUser{}).Where("id = ?", token.AdminID).
+			Select("token_version").Scan(&current)
+		if res.Error != nil {
+			return fmt.Errorf("read token version: %w", res.Error)
 		}
-		if current > tokenVersion {
+		// A deleted owner has no sessions left: Scan of no rows leaves current at 0.
+		if res.RowsAffected == 0 || current > tokenVersion {
 			return ErrTokenVersionStale
 		}
 		return tx.Create(hashed(token)).Error

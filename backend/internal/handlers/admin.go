@@ -132,6 +132,12 @@ func (h *AdminHandler) Delete(c fuego.ContextWithBody[any]) (any, error) {
 		}
 		return nil, err
 	}
+	// A login between the revoke and the delete minted a token at the new
+	// version; pin the cached version so it stops working too. The user is
+	// gone, so a retry cannot help: log, don't fail.
+	if err := h.authService.PinDeletedUser(ctx, id); err != nil {
+		slog.Error("pin token version after user delete failed", "user", id, "err", err)
+	}
 	c.SetStatus(204)
 	return nil, nil
 }

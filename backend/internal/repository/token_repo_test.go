@@ -1,6 +1,7 @@
 package repository
 
 import (
+	"errors"
 	"os"
 	"strings"
 	"testing"
@@ -149,5 +150,19 @@ func TestTokenRepo_StoresOnlyHashes(t *testing.T) {
 	testutil.NoErr(t, db.Model(&models.RefreshToken{}).Count(&left).Error)
 	if left != 2 {
 		t.Errorf("rows left = %d, want the 2 hashed rows", left)
+	}
+}
+
+// A deleted owner reads as no row, which Scan leaves at version 0: the token
+// must not be stored for a user who no longer exists.
+func TestTokenRepo_SaveAtVersionRefusesMissingOwner(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	testutil.NoErr(t, err)
+	testutil.NoErr(t, db.Exec(`CREATE TABLE admin_users (id TEXT PRIMARY KEY, token_version INTEGER, deleted_at DATETIME)`).Error)
+	testutil.NoErr(t, db.Exec(`CREATE TABLE refresh_tokens (id TEXT PRIMARY KEY, admin_id TEXT NOT NULL, wedding_id TEXT,
+		token TEXT NOT NULL UNIQUE, expires_at DATETIME, created_at DATETIME, rotated_at DATETIME, replaced_by TEXT)`).Error)
+	err = NewTokenRepo(db).SaveAtVersion(t.Context(), &models.RefreshToken{ID: uuid.New(), AdminID: uuid.New(), Token: "t", ExpiresAt: time.Now().Add(time.Hour)}, 0)
+	if !errors.Is(err, ErrTokenVersionStale) {
+		t.Fatalf("err = %v, want ErrTokenVersionStale", err)
 	}
 }
