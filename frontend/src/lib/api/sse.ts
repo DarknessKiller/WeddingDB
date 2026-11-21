@@ -8,6 +8,7 @@ export interface GuestEvent {
 	guest?: {
 		id: string;
 		name: string;
+		pinyin?: string;
 		email: string;
 		pax: number;
 		rsvp: string;

@@ -26,6 +26,7 @@ type GuestEvent struct {
 type GuestEventData struct {
 	ID          string   `json:"id"`
 	Name        string   `json:"name"`
+	Pinyin      string   `json:"pinyin"`
 	Email       string   `json:"email"`
 	Pax         int      `json:"pax"`
 	RSVP        string   `json:"rsvp"`

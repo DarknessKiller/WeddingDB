@@ -139,8 +139,8 @@ function handleGuestEvent(event: GuestEvent) {
 		if (idx >= 0) {
 			const newList = [...list];
 			guest.createdAt = list[idx].createdAt;
-			// SSE payloads carry no pinyin; keep the one from the REST load so search still works.
-			guest.pinyin = list[idx].pinyin;
+			// Older servers send no pinyin in events; keep the REST one so search still works.
+			guest.pinyin ??= list[idx].pinyin;
 			newList[idx] = guest;
 			return newList;
 		}

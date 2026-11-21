@@ -1017,6 +1017,7 @@ func guestToEventData(g *models.GuestRecord) *GuestEventData {
 	d := &GuestEventData{
 		ID:      utils.EncodeUUID(g.ID),
 		Name:    g.Name,
+		Pinyin:  g.NamePinyin,
 		Email:   g.Email,
 		Pax:     g.Pax,
 		RSVP:    g.RSVP,

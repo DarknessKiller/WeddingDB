@@ -178,6 +178,16 @@ describe('guestEvents store', () => {
 
 		expect(get(guestList)[0].pinyin).toBe('zhangwei');
 	});
+
+	it('a rename event takes the new pinyin from the event', async () => {
+		const { initializeSSE, seedGuests, guestList } = await freshModule();
+		initializeSSE(() => Promise.resolve([]));
+		seedGuests([{ ...makeGuest({ id: 'g1', name: '王伟' }), pinyin: 'wangwei' }]);
+
+		sseState.eventHandler!(makeEvent({ type: 'update', guest: { id: 'g1', name: '李娜', pinyin: 'lina', email: '', pax: 1, rsvp: 'confirmed', isVip: false, notes: '', dietary: [], tableId: null, seatNum: null, checkedInAt: null, angbaoAmt: null, giftItem: null } }));
+
+		expect(get(guestList)[0].pinyin).toBe('lina');
+	});
 });
 
 describe('refreshGuests overlap', () => {
