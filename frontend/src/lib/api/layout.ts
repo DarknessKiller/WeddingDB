@@ -13,7 +13,16 @@ export async function getPublicLayout(wid: string, opts: { signal?: AbortSignal 
 	return res.json();
 }
 
+// Another device saved the layout after this one loaded it (HTTP 409).
+export class LayoutConflictError extends Error {
+	constructor() {
+		super('Another device changed the hall layout. We reloaded it; make your changes again.');
+		this.name = 'LayoutConflictError';
+	}
+}
+
 export interface SaveLayoutPayload {
+	version: number; // from the getLayout this edit started from
 	hallWidth: number;
 	hallHeight: number;
 	tables: { id: string; x: number; y: number; degree: number; capacity: number; isVip: boolean }[];
@@ -35,5 +44,6 @@ export async function saveLayout(wid: string, data: SaveLayoutPayload): Promise<
 		method: 'PATCH',
 		body: JSON.stringify(clean)
 	});
+	if (res.status === 409) throw new LayoutConflictError();
 	if (!res.ok) throw new Error('Failed to save layout');
 }

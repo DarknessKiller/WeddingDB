@@ -7,7 +7,7 @@
   import { goto } from '$app/navigation';
   import { assignSeat, checkInGuest, checkOutGuest, ConflictError } from '#lib/api/guests.ts';
   import { getOccupancy, listTables } from '#lib/api/tables.ts';
-  import { getLayout, saveLayout } from '#lib/api/layout.ts';
+  import { getLayout, saveLayout, LayoutConflictError } from '#lib/api/layout.ts';
   import Badge from '#lib/components/ui/Badge.svelte';
   import { cn } from '#lib/utils/index.ts';
   import { page } from '$app/state';
@@ -78,6 +78,8 @@ import Pencil from 'lucide-svelte/icons/pencil';
     allGuests = list;
   }
 
+  let layoutVersion = 0;
+
   async function loadData() {
     const wid = get(weddingId);
     const [rawOcc, layout] = await Promise.all([
@@ -88,6 +90,7 @@ import Pencil from 'lucide-svelte/icons/pencil';
     elements = layout.elements ?? [];
     hallWidth = layout.hallWidth ?? 860;
     hallHeight = layout.hallHeight ?? 1000;
+    layoutVersion = layout.version ?? 0;
     const occMap: Record<string, number> = {};
     for (const o of rawOcc) occMap[o.TableID] = o.Pax;
     occupancyData = occMap;
@@ -238,6 +241,7 @@ import Pencil from 'lucide-svelte/icons/pencil';
     const wid = get(weddingId);
     try {
       await saveLayout(wid, {
+        version: layoutVersion,
         hallWidth: hw,
         hallHeight: hh,
         tables: editTables.map(t => ({ id: t.id, x: t.x, y: t.y, degree: t.degree, capacity: t.capacity, isVip: t.isVip })),
@@ -248,6 +252,10 @@ import Pencil from 'lucide-svelte/icons/pencil';
       await loadData();
     } catch (e: any) {
       addToast(e.message ?? 'Save failed', 'error');
+      if (e instanceof LayoutConflictError) {
+        editMode = false;
+        await loadData().catch(() => {});
+      }
     }
   }
 

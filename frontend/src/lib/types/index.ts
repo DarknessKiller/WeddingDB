@@ -102,6 +102,7 @@ export interface HallElement {
 }
 
 export interface HallLayoutData {
+  version?: number; // staff layout only: send it back on save (409 when stale)
   hallWidth: number;
   hallHeight: number;
   tables: BanquetTable[];

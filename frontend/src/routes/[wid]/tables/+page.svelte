@@ -15,7 +15,7 @@ import Trash2 from 'lucide-svelte/icons/trash-2';
 import AlertCircle from 'lucide-svelte/icons/alert-circle';
 import Map from 'lucide-svelte/icons/map';
   import { listTables, createTable, updateTable, deleteTable, getOccupancy } from '#lib/api/tables.ts';
-  import { getLayout, saveLayout } from '#lib/api/layout.ts';
+  import { getLayout, saveLayout, LayoutConflictError } from '#lib/api/layout.ts';
   import { defaultSlot } from '#lib/utils/layout.ts';
   import { weddingId } from '#lib/stores/weddingId.ts';
   import { get } from 'svelte/store';
@@ -83,12 +83,15 @@ import Map from 'lucide-svelte/icons/map';
     prevDrawerOpen = isOpen;
   });
 
+  let layoutVersion = 0;
+
   async function loadData() {
     const [layout, rawOcc] = await Promise.all([getLayout(wid), getOccupancy(wid)]);
     tables = layout.tables ?? [];
     elements = layout.elements ?? [];
     hallWidth = layout.hallWidth ?? 860;
     hallHeight = layout.hallHeight ?? 1000;
+    layoutVersion = layout.version ?? 0;
     tablesError = null;
     const occMap: Record<string, TableOccupancy> = {};
     for (const o of rawOcc) {
@@ -206,6 +209,7 @@ import Map from 'lucide-svelte/icons/map';
   async function handleSaveLayout(editTables: BanquetTable[], editElements: HallElement[], hw: number, hh: number) {
     try {
       await saveLayout(wid, {
+        version: layoutVersion,
         hallWidth: hw,
         hallHeight: hh,
         tables: editTables.map(t => ({ id: t.id, x: t.x, y: t.y, degree: t.degree, capacity: t.capacity, isVip: t.isVip })),
@@ -216,6 +220,10 @@ import Map from 'lucide-svelte/icons/map';
       await loadData();
     } catch (e: any) {
       addToast(e.message ?? 'Save failed', 'error');
+      if (e instanceof LayoutConflictError) {
+        editMode = false;
+        await loadData().catch(() => {});
+      }
     }
   }
 
