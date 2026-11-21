@@ -462,14 +462,14 @@ import Users from 'lucide-svelte/icons/users';
   async function bulkDelete() {
     if (selectedIds.size === 0) return;
     const ids = [...selectedIds];
-    try {
-      await Promise.all(ids.map(id => apiDeleteGuest(wid, id)));
-      guestList.update(list => list.filter(g => !selectedIds.has(g.id)));
-      addToast(`Deleted ${ids.length} guests`, 'info');
-      selectedIds = new Set();
-    } catch (e: any) {
-      addToast(e.message ?? 'Bulk delete failed', 'error');
-    }
+    // allSettled: one failure must not hide the deletes that went through.
+    const results = await Promise.allSettled(ids.map(id => apiDeleteGuest(wid, id)));
+    const gone = new Set(ids.filter((_, i) => results[i].status === 'fulfilled'));
+    const failed = results.filter((r): r is PromiseRejectedResult => r.status === 'rejected');
+    guestList.update(list => list.filter(g => !gone.has(g.id)));
+    selectedIds = new Set([...selectedIds].filter(id => !gone.has(id)));
+    if (gone.size) addToast(`Deleted ${gone.size} guest${gone.size === 1 ? '' : 's'}`, 'info');
+    if (failed.length) addToast(`${failed.length} guest${failed.length === 1 ? '' : 's'} not deleted: ${failed[0].reason?.message ?? 'unknown error'}`, 'error');
   }
 
   function openBulkMove() {
