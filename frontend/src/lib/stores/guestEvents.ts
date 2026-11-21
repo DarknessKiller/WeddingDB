@@ -12,6 +12,11 @@ export const guestList = writable<Guest[]>([]);
 // Table occupancy: tableId -> total pax seated.
 export const tableOccupancy = writable<Map<string, number>>(new Map());
 
+// Whether the current wedding's roster has loaded. 'error' means the first load
+// failed and no roster (live or cached) is shown, so pages must not render an
+// empty list as "no guests".
+export const rosterStatus = writable<'loading' | 'ready' | 'error'>('loading');
+
 let initialized = false;
 // True once the stores hold the wedding's full roster (seedGuests), false
 // after clearGuests. Only a full roster may overwrite the offline cache.
@@ -87,6 +92,7 @@ export async function refreshGuests(fetchFn: () => Promise<Guest[]>): Promise<Gu
 		return guests;
 	} catch (e) {
 		if (gen !== refreshGen) throw e;
+		if (!seeded && get(weddingId) === wid) rosterStatus.set('error');
 		// Abandon the window; replay anything that queued up meanwhile.
 		syncing = false;
 		const pending = queuedEvents;
@@ -96,12 +102,20 @@ export async function refreshGuests(fetchFn: () => Promise<Guest[]>): Promise<Gu
 	}
 }
 
+/** Re-run the current wedding's roster load, e.g. from a Retry button. */
+export async function retryRoster(): Promise<void> {
+	if (!resync) return;
+	rosterStatus.set('loading');
+	await refreshGuests(resync).catch(() => {});
+}
+
 /**
  * Seed the stores with the initial guest list (called after first fetch).
  */
 export function seedGuests(guests: Guest[]) {
 	guestList.set(guests);
 	seeded = true;
+	rosterStatus.set('ready');
 	recalculateOccupancy();
 	// cache for offline reads
 	try {
@@ -122,6 +136,7 @@ export function seedGuests(guests: Guest[]) {
  */
 export function clearGuests() {
 	seeded = false;
+	rosterStatus.set('loading');
 	guestList.set([]);
 	tableOccupancy.set(new Map());
 }

@@ -3,10 +3,11 @@
   import { weddingTitle } from '#lib/stores/weddingTitle.ts';
   import { goto } from '$app/navigation';
   import { cn } from '#lib/utils/index.ts';
+  import { firstFreeSeatRun, isContiguous } from '#lib/utils/seat.ts';
   import { z } from 'zod';
   import CheckCircle2 from 'lucide-svelte/icons/check-circle-2';
 import AlertCircle from 'lucide-svelte/icons/alert-circle';
-  import { fetchAllGuests, createGuest, type GuestResponse } from '#lib/api/guests.ts';
+  import { fetchAllGuests, createGuest, MAX_GUEST_NOTES_LEN, type GuestResponse } from '#lib/api/guests.ts';
   import { listTables } from '#lib/api/tables.ts';
   import { getLayout } from '#lib/api/layout.ts';
   import { weddingId } from '#lib/stores/weddingId.ts';
@@ -76,11 +77,7 @@ import AlertCircle from 'lucide-svelte/icons/alert-circle';
         .filter(g => g.tableId === tableId && g.seatNumber !== null)
         .flatMap(g => Array.from({ length: g.pax }, (_, i) => g.seatNumber! + i))
     );
-    const seats: number[] = [];
-    for (let i = 1; i <= table.capacity && seats.length < count; i++) {
-      if (!occupied.has(i)) seats.push(i);
-    }
-    return seats;
+    return firstFreeSeatRun(table.capacity, occupied, count);
   }
 
   function handleSeatClick(tableId: string, seatNum: number, guest: Guest | null) {
@@ -190,24 +187,23 @@ import AlertCircle from 'lucide-svelte/icons/alert-circle';
 
   function validate() {
     const result = schema.safeParse(form);
-    if (result.success) {
-      errors = {};
-      return true;
-    }
     const fieldErrors: Record<string, string> = {};
-    for (const issue of result.error.issues) {
+    for (const issue of result.error?.issues ?? []) {
       const field = issue.path[0] as string;
       if (!fieldErrors[field]) fieldErrors[field] = issue.message;
     }
-    // Custom validation
-    if (form.tableId && (!form.seatNumbers || form.seatNumbers.length === 0)) {
+    // Seat checks run even when the schema passes. Only the first seat and the
+    // pax count reach the server, so seats must form one unbroken run.
+    const seats = form.seatNumbers ?? [];
+    if (form.tableId && seats.length === 0) {
       fieldErrors.seatNumbers = 'Select at least one seat';
-    }
-    if (form.tableId && form.seatNumbers && form.seatNumbers.length < form.pax) {
+    } else if (form.tableId && seats.length < form.pax) {
       fieldErrors.seatNumbers = `Select ${form.pax} seat(s) for ${form.pax} guest(s)`;
+    } else if (form.tableId && !isContiguous(seats)) {
+      fieldErrors.seatNumbers = 'Choose seats next to each other';
     }
     errors = fieldErrors;
-    return false;
+    return Object.keys(fieldErrors).length === 0;
   }
 
   function toggleDietary(id: string) {
@@ -424,6 +420,7 @@ import AlertCircle from 'lucide-svelte/icons/alert-circle';
           <textarea
             id="notes"
             bind:value={form.notes}
+            maxlength={MAX_GUEST_NOTES_LEN}
             rows="3"
             class="w-full px-4 py-3 border border-black/[0.08] rounded-xl text-sm bg-white/80 focus:border-red focus:ring-2 focus:ring-red/10 outline-none transition-all resize-none min-h-[80px]"
             placeholder="Any special requirements or notes..."

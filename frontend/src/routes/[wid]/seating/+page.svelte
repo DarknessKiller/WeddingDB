@@ -91,7 +91,9 @@ import Pencil from 'lucide-svelte/icons/pencil';
       hallWidth = layout.hallWidth ?? 860;
       hallHeight = layout.hallHeight ?? 1000;
     } else {
-      allTables = await listTables(wid).catch(() => []);
+      // No layout and no table list means the server is unreachable: let the
+      // caller show the error state instead of "No tables yet".
+      allTables = await listTables(wid);
     }
     const occMap: Record<string, number> = {};
     for (const o of rawOcc) occMap[o.TableID] = o.Pax;
@@ -328,12 +330,30 @@ import Pencil from 'lucide-svelte/icons/pencil';
   </div>
 
   {#if !editMode}
-    <button
-      onclick={() => (editMode = true)}
-      class="absolute top-3 right-14 sm:top-4 sm:right-16 z-10 px-2.5 py-1.5 bg-white border border-gray-200 rounded-lg shadow-sm text-xs font-semibold text-gray-700 hover:bg-gray-50 transition-colors flex items-center gap-1"
-    >
-      <Pencil class="w-3 h-3" /> Edit Layout
-    </button>
+    <div class="absolute top-3 right-14 sm:top-4 sm:right-16 z-10 flex items-center gap-2">
+      <!-- Keyboard path to a table: the map canvas only takes pointer input. -->
+      <label for="seating-table-select" class="sr-only">Choose table</label>
+      <select
+        id="seating-table-select"
+        value={selectedTableId ?? ''}
+        onchange={(e) => {
+          selectedTableId = e.currentTarget.value || null;
+          showMobilePanel = selectedTableId !== null;
+        }}
+        class="max-w-[10rem] px-2.5 py-1.5 bg-white border border-gray-200 rounded-lg shadow-sm text-xs font-semibold text-gray-700 focus:border-gold focus:ring-2 focus:ring-gold/15 outline-none"
+      >
+        <option value="">Choose table</option>
+        {#each allTables as t}
+          <option value={t.id}>{t.name || `Table ${t.id}`}</option>
+        {/each}
+      </select>
+      <button
+        onclick={() => (editMode = true)}
+        class="px-2.5 py-1.5 bg-white border border-gray-200 rounded-lg shadow-sm text-xs font-semibold text-gray-700 hover:bg-gray-50 transition-colors flex items-center gap-1"
+      >
+        <Pencil class="w-3 h-3" /> Edit Layout
+      </button>
+    </div>
   {/if}
 
   <!-- Desktop Side Panel -->

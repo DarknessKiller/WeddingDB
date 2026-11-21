@@ -4,7 +4,7 @@
   import { weddingTitle } from '#lib/stores/weddingTitle.ts';
   import { selectedGuest, isDrawerOpen, drawerStartEditing, drawerCreateMode, addToast, showSeatNumbers } from '#lib/stores/index.ts';
   import { weddingId } from '#lib/stores/weddingId.ts';
-  import { guestList, toGuest } from '#lib/stores/guestEvents.ts';
+  import { guestList, toGuest, rosterStatus, retryRoster } from '#lib/stores/guestEvents.ts';
   import { goto } from '$app/navigation';
   import { deleteGuest as apiDeleteGuest, searchGuests, assignSeat, unassignSeat, bulkImportGuests, isNetworkError } from '#lib/api/guests.ts';
   import { rankGuests } from '#lib/utils/guestSearch.ts';
@@ -46,9 +46,9 @@ import Users from 'lucide-svelte/icons/users';
   let unassignTarget = $state<Guest | null>(null);
   let showDeleteConfirm = $state(false);
   let deleteTarget = $state<Guest | null>(null);
-  let loading = $state(true);
-  let errored = $state(false);
-  let error = $state<string | null>(null);
+  // The wedding layout loads the roster; a failed load must not read as "No guests yet".
+  let loading = $derived($rosterStatus === 'loading');
+  let errored = $derived($rosterStatus === 'error');
 
   // Server-side search results (pinyin-aware)
   let searchResults = $state<Guest[] | null>(null);
@@ -132,7 +132,6 @@ import Users from 'lucide-svelte/icons/users';
 
   onMount(() => {
     loadTables();
-    loading = false;
     function onKey(e: KeyboardEvent) {
       if (e.key === 'Escape') {
         contextMenu = null;
@@ -432,17 +431,21 @@ import Users from 'lucide-svelte/icons/users';
   let bulkMoveSeatStart = $state(1);
   let bulkMoveSaving = $state(false);
 
+  let showBulkDeleteConfirm = $state(false);
+
   async function bulkDelete() {
+    showBulkDeleteConfirm = false;
     if (selectedIds.size === 0) return;
     const ids = [...selectedIds];
-    try {
-      await Promise.all(ids.map(id => apiDeleteGuest(wid, id)));
-      guestList.update(list => list.filter(g => !selectedIds.has(g.id)));
-      addToast(`Deleted ${ids.length} guests`, 'info');
-      selectedIds = new Set();
-    } catch (e: any) {
-      addToast(e.message ?? 'Bulk delete failed', 'error');
-    }
+    const results = await Promise.allSettled(ids.map(id => apiDeleteGuest(wid, id)));
+    // Drop the guests the server deleted even when others failed; keep the
+    // failed ones selected so a retry targets only them.
+    const deleted = new Set(ids.filter((_, i) => results[i].status === 'fulfilled'));
+    guestList.update(list => list.filter(g => !deleted.has(g.id)));
+    selectedIds = new Set(ids.filter(id => !deleted.has(id)));
+    const failed = ids.length - deleted.size;
+    if (deleted.size > 0) addToast(`Deleted ${deleted.size} guests`, 'info');
+    if (failed > 0) addToast(`${failed} guests could not be deleted`, 'error');
   }
 
   function openBulkMove() {
@@ -544,8 +547,7 @@ import Users from 'lucide-svelte/icons/users';
       />
     </div>
     <div class="flex items-center gap-1 sm:gap-2 flex-wrap">
-      <select bind:value={rsvpFilter} class="px-2 sm:px-3 py-2 border border-gray-200 rounded-xl text-sm bg-white focus:border-gold outline-none">
-        aria-label="Filter by RSVP status"
+      <select bind:value={rsvpFilter} aria-label="Filter by RSVP status" class="px-2 sm:px-3 py-2 border border-gray-200 rounded-xl text-sm bg-white focus:border-gold outline-none">
         <option value="all">All Status</option>
         <option value="confirmed">Confirmed</option>
         <option value="pending">Pending</option>
@@ -569,7 +571,7 @@ import Users from 'lucide-svelte/icons/users';
     <div class="mb-4 px-4 py-3 bg-red-50 border border-red-100 rounded-xl flex items-center gap-3 text-sm">
       <span class="font-semibold text-red">{selectedIds.size} selected</span>
       <button onclick={openBulkMove} class="px-3 py-1.5 bg-white/90 border border-black/[0.06] rounded-lg text-xs font-medium hover:bg-gray-50">Move Table</button>
-      <button onclick={bulkDelete} class="px-3 py-1.5 bg-white border border-red-200 rounded-lg text-xs font-medium text-red hover:bg-red-50">Delete</button>
+      <button onclick={() => showBulkDeleteConfirm = true} class="px-3 py-1.5 bg-white border border-red-200 rounded-lg text-xs font-medium text-red hover:bg-red-50">Delete</button>
     </div>
   {/if}
 
@@ -581,8 +583,8 @@ import Users from 'lucide-svelte/icons/users';
         <AlertCircle class="w-8 h-8 text-red" />
       </div>
       <p class="text-red font-medium">Failed to load guests</p>
-      <p class="text-sm text-gray-500 mt-1 mb-4">{error}</p>
-      <button onclick={() => { currentPage = 0; }} class="px-4 py-2 bg-red text-white rounded-xl text-sm font-semibold hover:bg-red-light transition-colors">
+      <p class="text-sm text-gray-500 mt-1 mb-4">Check the connection to the server, then retry.</p>
+      <button onclick={() => { currentPage = 0; retryRoster(); }} class="px-4 py-2 bg-red text-white rounded-xl text-sm font-semibold hover:bg-red-light transition-colors">
         Retry
       </button>
     </div>
@@ -889,4 +891,15 @@ import Users from 'lucide-svelte/icons/users';
   variant="danger"
   onConfirm={confirmDelete}
   onCancel={() => { showDeleteConfirm = false; deleteTarget = null; }}
+/>
+
+<ConfirmDialog
+  open={showBulkDeleteConfirm}
+  title="Delete Guests"
+  message={`Delete ${selectedIds.size} selected guests? This cannot be undone.`}
+  confirmLabel="Delete"
+  cancelLabel="Cancel"
+  variant="danger"
+  onConfirm={bulkDelete}
+  onCancel={() => { showBulkDeleteConfirm = false; }}
 />

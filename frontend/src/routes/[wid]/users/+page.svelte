@@ -16,6 +16,7 @@ import Check from 'lucide-svelte/icons/check';
 import LogOut from 'lucide-svelte/icons/log-out';
   import { weddingTitle } from '#lib/stores/weddingTitle.ts';
   import PasswordRequirements from '#lib/components/ui/PasswordRequirements.svelte';
+  import { trapFocus } from '#lib/utils/focus.ts';
 
   let admins = $state<User[]>([]);
   let weddings = $state<Wedding[]>([]);
@@ -55,6 +56,9 @@ import LogOut from 'lucide-svelte/icons/log-out';
   let assignTarget = $state<User | null>(null);
   let assignWeddingIds = $state<string[]>([]);
   let assignSaving = $state(false);
+  // Save stays off until the user's current grants load: saving an empty or
+  // stale list would replace every grant they hold.
+  let assignState = $state<'loading' | 'ready' | 'error'>('loading');
 
   // Reset password modal
   let resetTarget = $state<User | null>(null);
@@ -164,13 +168,29 @@ import LogOut from 'lucide-svelte/icons/log-out';
   function openAssign(user: User) {
     assignTarget = user;
     assignWeddingIds = [];
+    assignState = 'loading';
     getUserWeddings(user.id).then(weds => {
+      // A late reply for a previously opened user must not tick its weddings here.
+      if (assignTarget?.id !== user.id) return;
       assignWeddingIds = weds.map(w => w.id);
-    }).catch(() => {});
+      assignState = 'ready';
+    }).catch((e: any) => {
+      if (assignTarget?.id !== user.id) return;
+      assignState = 'error';
+      addToast(e.message ?? 'Failed to load assigned weddings', 'error');
+    });
+  }
+
+  // Escape closes whichever modal is open (only one opens at a time).
+  function handleKeydown(e: KeyboardEvent) {
+    if (e.key !== 'Escape') return;
+    showCreate = false;
+    assignTarget = null;
+    resetTarget = null;
   }
 
   async function handleAssign() {
-    if (!assignTarget) return;
+    if (!assignTarget || assignState !== 'ready') return;
     assignSaving = true;
     try {
       await assignWeddings(assignTarget.id, assignWeddingIds);
@@ -342,14 +362,16 @@ import LogOut from 'lucide-svelte/icons/log-out';
   {/if}
 </div>
 
+<svelte:window onkeydown={handleKeydown} />
+
 <!-- Create User Modal -->
 {#if showCreate}
   <div class="fixed inset-0 z-50 flex items-center justify-center p-4">
     <div class="absolute inset-0 bg-black/30 backdrop-blur-md" onclick={() => showCreate = false} role="presentation"></div>
-    <div class="relative bg-white/95 backdrop-blur-xl rounded-2xl shadow-2xl w-full max-w-md overflow-hidden">
+    <div class="relative bg-white/95 backdrop-blur-xl rounded-2xl shadow-2xl w-full max-w-md overflow-hidden" role="dialog" aria-modal="true" aria-labelledby="create-user-title" tabindex="-1" use:trapFocus>
       <div class="flex items-center justify-between p-5 border-b border-gray-100">
-        <h3 class="font-bold text-gray-900">Add User</h3>
-        <button onclick={() => showCreate = false} class="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-gray-100 transition-colors">
+        <h3 id="create-user-title" class="font-bold text-gray-900">Add User</h3>
+        <button onclick={() => showCreate = false} aria-label="Close" class="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-gray-100 transition-colors">
           <X class="w-4 h-4 text-gray-500" />
         </button>
       </div>
@@ -401,16 +423,20 @@ import LogOut from 'lucide-svelte/icons/log-out';
 {#if assignTarget}
   <div class="fixed inset-0 z-50 flex items-center justify-center p-4">
     <div class="absolute inset-0 bg-black/30 backdrop-blur-md" onclick={() => assignTarget = null} role="presentation"></div>
-    <div class="relative bg-white/95 backdrop-blur-xl rounded-2xl shadow-2xl w-full max-w-sm overflow-hidden">
+    <div class="relative bg-white/95 backdrop-blur-xl rounded-2xl shadow-2xl w-full max-w-sm overflow-hidden" role="dialog" aria-modal="true" aria-labelledby="assign-title" tabindex="-1" use:trapFocus>
       <div class="flex items-center justify-between p-5 border-b border-gray-100">
-        <h3 class="font-bold text-gray-900">Assign Weddings</h3>
-        <button onclick={() => assignTarget = null} class="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-gray-100 transition-colors">
+        <h3 id="assign-title" class="font-bold text-gray-900">Assign Weddings</h3>
+        <button onclick={() => assignTarget = null} aria-label="Close" class="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-gray-100 transition-colors">
           <X class="w-4 h-4 text-gray-500" />
         </button>
       </div>
       <div class="p-5 space-y-4">
         <p class="text-sm text-gray-600">Assign weddings to <strong>{assignTarget.name}</strong></p>
-        {#if weddings.length === 0}
+        {#if assignState === 'loading'}
+          <p class="text-sm text-gray-500" role="status">Loading current weddings...</p>
+        {:else if assignState === 'error'}
+          <p class="text-sm text-red" role="alert">Could not load this user's weddings. Close and try again.</p>
+        {:else if weddings.length === 0}
           <p class="text-sm text-gray-500 italic">No weddings available</p>
         {:else}
           <div class="space-y-2 max-h-60 overflow-y-auto">
@@ -424,7 +450,7 @@ import LogOut from 'lucide-svelte/icons/log-out';
         {/if}
       </div>
       <div class="flex gap-3 p-5 pt-0">
-        <button onclick={handleAssign} disabled={assignSaving}
+        <button onclick={handleAssign} disabled={assignSaving || assignState !== 'ready'}
           class="flex-1 py-2.5 bg-red text-white rounded-xl text-sm font-semibold hover:bg-red-light transition-colors disabled:opacity-50">
           {assignSaving ? 'Saving...' : 'Save'}
         </button>
@@ -440,10 +466,10 @@ import LogOut from 'lucide-svelte/icons/log-out';
 {#if resetTarget}
   <div class="fixed inset-0 z-50 flex items-center justify-center p-4">
     <div class="absolute inset-0 bg-black/30 backdrop-blur-md" onclick={() => resetTarget = null} role="presentation"></div>
-    <div class="relative bg-white/95 backdrop-blur-xl rounded-2xl shadow-2xl w-full max-w-md overflow-hidden">
+    <div class="relative bg-white/95 backdrop-blur-xl rounded-2xl shadow-2xl w-full max-w-md overflow-hidden" role="dialog" aria-modal="true" aria-labelledby="reset-title" tabindex="-1" use:trapFocus>
       <div class="flex items-center justify-between p-5 border-b border-gray-100">
-        <h3 class="font-bold text-gray-900">Reset Password</h3>
-        <button onclick={() => resetTarget = null} class="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-gray-100 transition-colors">
+        <h3 id="reset-title" class="font-bold text-gray-900">Reset Password</h3>
+        <button onclick={() => resetTarget = null} aria-label="Close" class="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-gray-100 transition-colors">
           <X class="w-4 h-4 text-gray-500" />
         </button>
       </div>
