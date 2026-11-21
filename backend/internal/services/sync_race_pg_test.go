@@ -230,3 +230,21 @@ func TestSyncDelete_PostgresRefusesStaleBase(t *testing.T) {
 	}
 	testutil.NoErr(t, db.First(&models.GuestRecord{}, "id = ?", gid).Error)
 }
+
+// A synced create whose id another wedding's guest already holds can never
+// succeed, so it must not be reported retryable and kept queued forever.
+func TestSyncCreate_PostgresTakenIDIsNotRetryable(t *testing.T) {
+	svc, db := openGuestPG(t)
+	wid, other, gid := uuid.New(), uuid.New(), uuid.New()
+	testutil.NoErr(t, db.Create(&models.WeddingEvent{ID: wid, Name: "W"}).Error)
+	testutil.NoErr(t, db.Create(&models.WeddingEvent{ID: other, Name: "O"}).Error)
+	testutil.NoErr(t, db.Create(&models.GuestRecord{ID: gid, WeddingID: other, Name: "Taken", Pax: 1}).Error)
+
+	res, err := svc.Sync(t.Context(), wid, []SyncMutation{{
+		Op: SyncOpCreate, GuestID: gid.String(), ClientUpdatedAt: time.Now(), Payload: &SyncPayload{Name: syncStr("New")},
+	}})
+	testutil.NoErr(t, err)
+	if res[0].Status != "failed" || res[0].Retryable {
+		t.Fatalf("status = %q retryable=%v (%s), want a non-retryable failure", res[0].Status, res[0].Retryable, res[0].Reason)
+	}
+}

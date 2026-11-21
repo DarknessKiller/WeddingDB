@@ -667,6 +667,7 @@ type SyncResult struct {
 var syncRuleErrors = []error{
 	ErrInvalidGuestField, ErrInvalidPax, ErrGuestCapExceeded, ErrSeatOverlap, ErrStaleGuest,
 	ErrSeatRange, ErrTableFull, ErrTableNotFound, errInvalidTableID, gorm.ErrRecordNotFound,
+	gorm.ErrDuplicatedKey,
 }
 
 // syncFailed reports err for m, marking anything that is not a rule
@@ -788,6 +789,11 @@ func (s *GuestService) applySyncMutation(ctx context.Context, weddingID uuid.UUI
 		if err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 			return s.createGuestTx(ctx, tx, g)
 		}); err != nil {
+			// A guestId already taken (say, by another wedding's guest) stays
+			// taken: report the key collision as a rule error, not retryable.
+			if t, ok := s.db.Dialector.(gorm.ErrorTranslator); ok {
+				err = t.Translate(err)
+			}
 			return syncFailed(m, err)
 		}
 		s.sseHub.publishGuest("create", g, weddingID)
