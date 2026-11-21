@@ -414,20 +414,29 @@ func (s *GuestService) UpdateWithSeat(ctx context.Context, g *models.GuestRecord
 // receptionist (FIFO conflict).
 func (s *GuestService) CheckIn(ctx context.Context, id, weddingID uuid.UUID, notes string) error {
 	now := time.Now()
-	updatedNotes := ""
 	notes = strings.TrimSpace(notes)
-	if notes != "" {
-		existing, err := s.guestRepo.FindByID(ctx, id, weddingID)
-		if err != nil {
-			return err
+	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		updatedNotes := ""
+		if notes != "" {
+			// Read the notes under a row lock: a notes edit committing between
+			// this read and the write below would otherwise be overwritten.
+			var existing models.GuestRecord
+			q := tx.Select("notes").Where("id = ? AND wedding_id = ?", id, weddingID)
+			if tx.Name() == "postgres" {
+				q = q.Clauses(clause.Locking{Strength: "UPDATE"})
+			}
+			if err := q.First(&existing).Error; err != nil {
+				return err
+			}
+			updatedNotes = appendNote(existing.Notes, notes)
 		}
-		updatedNotes = appendNote(existing.Notes, notes)
-	}
-	if utf8.RuneCountInString(updatedNotes) > MaxGuestNotesLen {
-		return fmt.Errorf("%w: notes must be at most %d characters", ErrInvalidGuestField, MaxGuestNotesLen)
-	}
-	// Atomic conditional update: only check in if not already checked in
-	if err := s.guestRepo.ConditionalCheckIn(ctx, id, weddingID, now, updatedNotes); err != nil {
+		if utf8.RuneCountInString(updatedNotes) > MaxGuestNotesLen {
+			return fmt.Errorf("%w: notes must be at most %d characters", ErrInvalidGuestField, MaxGuestNotesLen)
+		}
+		// Atomic conditional update: only check in if not already checked in
+		return repository.NewGuestRepo(tx).ConditionalCheckIn(ctx, id, weddingID, now, updatedNotes)
+	})
+	if err != nil {
 		if errors.Is(err, repository.ErrAlreadyCheckedIn) {
 			return ErrAlreadyCheckedIn
 		}

@@ -89,6 +89,32 @@ func TestAssignSeat_PostgresUsesPaxCommittedWhileWaiting(t *testing.T) {
 	}
 }
 
+// A notes edit that commits while an online check-in waits on the guest row
+// must survive: the check-in appends to the committed notes, not a copy read
+// before the edit.
+func TestCheckIn_PostgresKeepsNotesCommittedWhileWaiting(t *testing.T) {
+	svc, db := openGuestPG(t)
+	wid, gid := uuid.New(), uuid.New()
+	testutil.NoErr(t, db.Create(&models.WeddingEvent{ID: wid, Name: "W"}).Error)
+	testutil.NoErr(t, db.Create(&models.GuestRecord{ID: gid, WeddingID: wid, Name: "G", Pax: 1}).Error)
+
+	// Hold the guest row the way a Drawer save does, while writing a note.
+	tx := db.Begin()
+	testutil.NoErr(t, tx.Clauses(clause.Locking{Strength: "UPDATE"}).Select("id").Where("id = ?", gid).First(&models.GuestRecord{}).Error)
+	testutil.NoErr(t, tx.Model(&models.GuestRecord{}).Where("id = ?", gid).Update("notes", "halal").Error)
+	checkedIn := make(chan error, 1)
+	go func() { checkedIn <- svc.CheckIn(t.Context(), gid, wid, "came late") }()
+	time.Sleep(100 * time.Millisecond) // let CheckIn block on the row lock
+	testutil.NoErr(t, tx.Commit().Error)
+	testutil.NoErr(t, <-checkedIn)
+
+	var got models.GuestRecord
+	testutil.NoErr(t, db.First(&got, "id = ?", gid).Error)
+	if got.Notes != "halal\ncame late" {
+		t.Fatalf("notes = %q, want both notes", got.Notes)
+	}
+}
+
 // A guest created while its wedding is being deleted must not outlive the
 // wedding: the delete waits for the wedding lock and then removes the guest.
 func TestWeddingDelete_PostgresLeavesNoOrphanGuest(t *testing.T) {
