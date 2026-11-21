@@ -819,16 +819,37 @@ func (s *GuestService) applySyncMutation(ctx context.Context, weddingID uuid.UUI
 		if !found {
 			return SyncResult{GuestID: m.GuestID, Status: "applied"}
 		}
-		if opTime.Before(existing.UpdatedAt) {
-			// Report "failed", not "skipped": the client keeps failed items
-			// queued instead of dequeuing and losing the delete intent.
-			return SyncResult{GuestID: m.GuestID, Status: "failed", Reason: "older than server", ServerRecord: existing}
-		}
-		if err := s.guestRepo.Delete(ctx, gid, weddingID); err != nil {
+		var res SyncResult
+		if err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+			// Re-check under the row lock: an edit committed after the read
+			// above must be seen, not deleted unseen.
+			if err := lockGuestRow(tx, existing); err != nil {
+				return err
+			}
+			if opTime.Before(existing.UpdatedAt) {
+				// Report "failed", not "skipped": the client keeps failed items
+				// queued instead of dequeuing and losing the delete intent.
+				res = SyncResult{GuestID: m.GuestID, Status: "failed", Reason: "older than server", ServerRecord: existing}
+				return nil
+			}
+			// A delete made on a copy older than the row would discard someone
+			// else's edit unseen, like the online 409.
+			if m.BaseUpdatedAt != nil && !m.BaseUpdatedAt.Equal(existing.UpdatedAt) {
+				return ErrStaleGuest
+			}
+			res = SyncResult{GuestID: m.GuestID, Status: "applied"}
+			return repository.NewGuestRepo(tx).Delete(ctx, gid, weddingID)
+		}); err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				// Someone else deleted it first: the intent holds.
+				return SyncResult{GuestID: m.GuestID, Status: "applied"}
+			}
 			return syncFailed(m, err)
 		}
-		s.sseHub.publishGuest("delete", existing, weddingID)
-		return SyncResult{GuestID: m.GuestID, Status: "applied"}
+		if res.Status == "applied" {
+			s.sseHub.publishGuest("delete", existing, weddingID)
+		}
+		return res
 
 	case SyncOpCheckIn:
 		if !found {

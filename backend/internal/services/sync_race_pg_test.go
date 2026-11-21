@@ -202,3 +202,31 @@ func TestSyncCheckOut_PostgresLosesToCheckInCommittedWhileWaiting(t *testing.T) 
 		t.Fatalf("checked_in_at = %v updated_at = %v, want the newer check-in kept", got.CheckedInAt, got.UpdatedAt)
 	}
 }
+
+// A queued delete made on a copy older than an edit that commits while the
+// delete waits must be refused, not delete the guest with that edit unseen.
+func TestSyncDelete_PostgresRefusesStaleBase(t *testing.T) {
+	svc, db := openGuestPG(t)
+	wid, gid := uuid.New(), uuid.New()
+	t0 := time.Now().Add(-time.Hour).UTC().Truncate(time.Microsecond)
+	testutil.NoErr(t, db.Create(&models.WeddingEvent{ID: wid, Name: "W"}).Error)
+	testutil.NoErr(t, db.Create(&models.GuestRecord{ID: gid, WeddingID: wid, Name: "G", Pax: 1, UpdatedAt: t0}).Error)
+
+	tx := holdGuestRow(t, db, gid, map[string]any{"notes": "VIP uncle", "updated_at": t0.Add(time.Minute)})
+	done := make(chan SyncResult, 1)
+	go func() {
+		res, err := svc.Sync(t.Context(), wid, []SyncMutation{{
+			Op: SyncOpDelete, GuestID: gid.String(), ClientUpdatedAt: t0.Add(2 * time.Minute), BaseUpdatedAt: &t0,
+		}})
+		if err != nil {
+			t.Errorf("sync: %v", err)
+		}
+		done <- res[0]
+	}()
+	time.Sleep(100 * time.Millisecond) // let the sync read the old row and block
+	testutil.NoErr(t, tx.Commit().Error)
+	if res := <-done; res.Status != "failed" || res.Retryable {
+		t.Errorf("status = %q retryable=%v (%s), want a non-retryable failure", res.Status, res.Retryable, res.Reason)
+	}
+	testutil.NoErr(t, db.First(&models.GuestRecord{}, "id = ?", gid).Error)
+}
