@@ -65,7 +65,11 @@ func (h *SSEHandler) StreamHandler() http.HandlerFunc {
 		}
 
 		// Subscribe to wedding events.
-		client := h.sseHub.Subscribe(wid)
+		client, err := h.sseHub.Subscribe(wid)
+		if err != nil {
+			http.Error(w, `{"error":"Too many event streams"}`, http.StatusServiceUnavailable)
+			return
+		}
 		defer h.sseHub.Unsubscribe(client)
 
 		// Send initial keepalive comment.

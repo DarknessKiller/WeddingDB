@@ -3,6 +3,7 @@ package services
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"strings"
 	"testing"
 	"time"
@@ -19,7 +20,8 @@ func TestSSEHub_SubscribeUnsubscribe(t *testing.T) {
 	}
 
 	wid := uuid.New()
-	client := hub.Subscribe(wid)
+	client, err := hub.Subscribe(wid)
+	testutil.NoErr(t, err)
 
 	if client == nil {
 		t.Fatal("Subscribe returned nil client")
@@ -58,7 +60,9 @@ func TestSSEHub_FanOut(t *testing.T) {
 	const numClients = 3
 	clients := make([]*SSEClient, numClients)
 	for i := range numClients {
-		clients[i] = hub.Subscribe(wid)
+		c, err := hub.Subscribe(wid)
+		testutil.NoErr(t, err)
+		clients[i] = c
 	}
 
 	// Manually fan out an event (simulating what subscribeRedis does).
@@ -119,7 +123,8 @@ func TestSSEHub_BufferFull(t *testing.T) {
 	}
 
 	wid := uuid.New()
-	client := hub.Subscribe(wid)
+	client, err := hub.Subscribe(wid)
+	testutil.NoErr(t, err)
 
 	// Fill the buffer (capacity 64).
 	for range 64 {
@@ -158,8 +163,10 @@ func TestSSEHub_MultipleWeddings(t *testing.T) {
 
 	wid1 := uuid.New()
 	wid2 := uuid.New()
-	client1 := hub.Subscribe(wid1)
-	client2 := hub.Subscribe(wid2)
+	client1, err := hub.Subscribe(wid1)
+	testutil.NoErr(t, err)
+	client2, err := hub.Subscribe(wid2)
+	testutil.NoErr(t, err)
 
 	// Send event to wedding 1.
 	event := GuestEvent{
@@ -315,4 +322,16 @@ type mockGuestRecord struct {
 	checkedInAt *time.Time
 	angbaoAmt   *int
 	giftItem    *string
+}
+
+func TestSSEHub_SubscribeCap(t *testing.T) {
+	hub := &SSEHub{clients: make(map[uuid.UUID]map[string]*SSEClient), ctx: context.Background()}
+	wid := uuid.New()
+	for range maxSSEClientsPerWedding {
+		_, err := hub.Subscribe(wid)
+		testutil.NoErr(t, err)
+	}
+	if _, err := hub.Subscribe(wid); !errors.Is(err, ErrTooManyStreams) {
+		t.Fatalf("expected ErrTooManyStreams, got %v", err)
+	}
 }

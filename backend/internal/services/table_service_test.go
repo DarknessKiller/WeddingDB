@@ -8,6 +8,7 @@ import (
 
 	"weddingdb/internal/models"
 	"weddingdb/internal/repository"
+	"weddingdb/internal/testutil"
 
 	"github.com/alicebob/miniredis/v2"
 	"github.com/google/uuid"
@@ -77,7 +78,8 @@ func TestTableDelete_PublishesUnassignedGuests(t *testing.T) {
 		t.Fatalf("seed table: %v", err)
 	}
 
-	client := hub.Subscribe(wid)
+	client, err := hub.Subscribe(wid)
+	testutil.NoErr(t, err)
 
 	svc := NewTableService(repository.NewTableRepo(db), repository.NewGuestRepo(db), hub, db)
 	if err := svc.Delete(context.Background(), tableID, wid); err != nil {

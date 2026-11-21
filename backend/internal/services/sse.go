@@ -3,6 +3,7 @@ package services
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"strings"
@@ -113,17 +114,28 @@ func (h *SSEHub) subscribeRedis() {
 	}
 }
 
-// Subscribe registers a new SSE client for a wedding.
-func (h *SSEHub) Subscribe(weddingID uuid.UUID) *SSEClient {
-	client := &SSEClient{ID: uuid.New().String(), WeddingID: weddingID, Chan: make(chan []byte, 64), Done: make(chan struct{})}
+const maxSSEClientsPerWedding = 100
+
+// ErrTooManyStreams is returned when a wedding already holds its maximum
+// number of open event streams.
+var ErrTooManyStreams = errors.New("too many SSE streams for this wedding")
+
+// Subscribe registers a new SSE client for a wedding, refusing once the
+// per-wedding cap is reached so one token holder cannot exhaust memory or
+// file descriptors.
+func (h *SSEHub) Subscribe(weddingID uuid.UUID) (*SSEClient, error) {
 	h.mu.Lock()
+	defer h.mu.Unlock()
+	if len(h.clients[weddingID]) >= maxSSEClientsPerWedding {
+		return nil, ErrTooManyStreams
+	}
+	client := &SSEClient{ID: uuid.New().String(), WeddingID: weddingID, Chan: make(chan []byte, 64), Done: make(chan struct{})}
 	if h.clients[weddingID] == nil {
 		h.clients[weddingID] = make(map[string]*SSEClient)
 	}
 	h.clients[weddingID][client.ID] = client
-	h.mu.Unlock()
 	log.Printf("SSE: client %s connected for wedding %s", client.ID, weddingID)
-	return client
+	return client, nil
 }
 
 // Unsubscribe removes an SSE client.
