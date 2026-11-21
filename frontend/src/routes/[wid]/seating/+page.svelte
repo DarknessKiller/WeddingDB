@@ -426,6 +426,7 @@ import Pencil from 'lucide-svelte/icons/pencil';
             <input
               type="text"
               placeholder="Search unassigned guests..."
+              aria-label="Search unassigned guests"
               bind:value={guestSearch}
               class="w-full pl-9 pr-3 py-2 border border-gray-200 rounded-lg text-sm focus:border-gold outline-none"
             />
