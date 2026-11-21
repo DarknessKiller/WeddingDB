@@ -15,12 +15,15 @@ vi.mock('#lib/stores/weddingId.ts', () => ({
 }));
 
 // Captures the SSE event handler so tests can drive handleGuestEvent.
-const sseState = vi.hoisted(() => ({ eventHandler: undefined as ((e: unknown) => void) | undefined }));
+const sseState = vi.hoisted(() => ({ eventHandler: undefined as ((e: unknown) => void) | undefined, statusHandler: undefined as ((s: string, reconnect: boolean) => void) | undefined }));
+const syncQueue = vi.hoisted(() => vi.fn(async () => ({ applied: 0, skipped: 0, results: [] })));
+
+vi.mock('#lib/offline/queue.ts', () => ({ cacheGuests: vi.fn(), syncQueue }));
 
 vi.mock('#lib/api/sse.ts', () => ({
 	connectSSE: vi.fn(() => ({
 		onEvent: vi.fn((cb: (e: unknown) => void) => { sseState.eventHandler = cb; return () => {}; }),
-		onStatus: vi.fn(() => () => {}),
+		onStatus: vi.fn((cb: (s: string, reconnect: boolean) => void) => { sseState.statusHandler = cb; return () => {}; }),
 		disconnect: vi.fn()
 	})),
 	disconnectSSE: vi.fn()
@@ -169,6 +172,27 @@ describe('guestEvents store', () => {
 		expect(get(tableOccupancy).get('t2')).toBe(4);
 	});
 
+	it('ignores events for another wedding', async () => {
+		const { initializeSSE, seedGuests, guestList } = await freshModule();
+		initializeSSE(() => Promise.resolve([]));
+		seedGuests([]);
+
+		sseState.eventHandler!(makeEvent({ type: 'create', weddingId: 'w-other' }));
+
+		expect(get(guestList)).toEqual([]);
+	});
+
+	it('matches the UUID in events against the base64url wedding id', async () => {
+		const { initializeSSE, seedGuests, guestList } = await freshModule();
+		widState.value = 'ABEiM0RVZneImaq7zN3u_w';
+		initializeSSE(() => Promise.resolve([]));
+		seedGuests([]);
+
+		sseState.eventHandler!(makeEvent({ type: 'create', weddingId: '00112233-4455-6677-8899-aabbccddeeff' }));
+
+		expect(get(guestList).map(g => g.id)).toEqual(['g1']);
+	});
+
 	it('update events keep the loaded pinyin', async () => {
 		const { initializeSSE, seedGuests, guestList } = await freshModule();
 		initializeSSE(() => Promise.resolve([]));
@@ -200,5 +224,24 @@ describe('refreshGuests overlap', () => {
 		releaseOld([makeGuest({ id: 'g1', name: 'Stale' })]);
 		await older;
 		expect(get(mod.guestList).map(g => g.name)).toEqual(['Fresh']);
+	});
+});
+
+describe('SSE reconnect', () => {
+	it('flushes the offline queue before reseeding from the server', async () => {
+		const mod = await freshModule();
+		const order: string[] = [];
+		syncQueue.mockImplementationOnce(async () => { order.push('sync'); return { applied: 1, skipped: 0, results: [] }; });
+		const resync = vi.fn(async () => { order.push('fetch'); return [makeGuest({ id: 'g1', checkedIn: true })]; });
+		mod.initializeSSE(resync);
+		mod.seedGuests([makeGuest({ id: 'g1' })]);
+
+		sseState.statusHandler!('connected', true);
+		await vi.waitFor(() => expect(resync).toHaveBeenCalled());
+		await Promise.resolve();
+
+		expect(syncQueue).toHaveBeenCalledWith('w1');
+		expect(order).toEqual(['sync', 'fetch']);
+		expect(get(mod.guestList)[0].checkedIn).toBe(true);
 	});
 });

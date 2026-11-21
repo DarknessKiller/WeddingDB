@@ -4,7 +4,7 @@ import { connectSSE, disconnectSSE, type GuestEvent } from '#lib/api/sse.ts';
 import { weddingId } from '#lib/stores/weddingId.ts';
 import type { Guest, RSVPStatus } from '#lib/types/index.ts';
 import type { GuestResponse } from '#lib/api/guests.ts';
-import { cacheGuests } from '#lib/offline/queue.ts';
+import { cacheGuests, syncQueue } from '#lib/offline/queue.ts';
 
 // All guests for the current wedding, kept in sync via SSE.
 export const guestList = writable<Guest[]>([]);
@@ -43,7 +43,10 @@ export function initializeSSE(onResync?: () => Promise<Guest[]>): (() => void) |
 	const client = connectSSE(wid);
 	const unsubscribeStatus = client.onStatus((status, reconnect) => {
 		if (status === 'connected' && reconnect && resync) {
-			refreshGuests(resync).catch(() => {});
+			// Send edits queued while offline first, so the reseed shows them.
+			syncQueue(wid).catch(() => {}).then(() => {
+				if (resync && get(weddingId) === wid) return refreshGuests(resync);
+			}).catch(() => {});
 		}
 	});
 	const unsubscribe = client.onEvent((event: GuestEvent) => {

@@ -8,7 +8,7 @@
   import { weddingId, setWeddingId } from '#lib/stores/weddingId.ts';
   import { weddingTitle } from '#lib/stores/weddingTitle.ts';
   import { validateToken } from '#lib/utils/auth.ts';
-  import { fetchAllGuests, isNetworkError } from '#lib/api/guests.ts';
+  import { fetchAllGuests, isNetworkError, withQueuedEdits } from '#lib/api/guests.ts';
   import { syncQueue, loadCachedGuests, queuedCount } from '#lib/offline/queue.ts';
   import { getWedding } from '#lib/api/weddings.ts';
   import { listTables } from '#lib/api/tables.ts';
@@ -34,8 +34,8 @@
 
   const loadGuests = async (w: string) => {
     try {
-      const guests = (await fetchAllGuests(w)).map((g) => toGuest(g));
-      return guests;
+      // Edits still queued (sync failed or skipped) stay visible over the server copy.
+      return withQueuedEdits(w, (await fetchAllGuests(w)).map((g) => toGuest(g)));
     } catch (e) {
       // Only an unreachable server may fall back to cached data. An HTTP
       // rejection (401/403/404) means the server denied access; serving a

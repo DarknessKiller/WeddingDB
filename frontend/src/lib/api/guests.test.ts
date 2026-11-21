@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 const apiFetch = vi.fn();
 const enqueue = vi.fn();
-const getQueue = vi.fn((): { guestId: string }[] => []);
+const getQueue = vi.fn((): { guestId: string; op?: string; payload?: Record<string, unknown> }[] => []);
 
 vi.mock('./client', () => ({ apiFetch: (...args: unknown[]) => apiFetch(...args) }));
 vi.mock('#lib/offline/queue.ts', () => ({ enqueue: (...args: unknown[]) => enqueue(...args), getQueue: () => getQueue(), syncQueue: vi.fn() }));
@@ -115,5 +115,35 @@ describe('server errors', () => {
 		const { assignSeat } = await import('./guests');
 
 		await expect(assignSeat('w1', 'g1', 't1', 1)).rejects.toThrow('Failed to assign seat: 500');
+	});
+});
+
+describe('withQueuedEdits', () => {
+	it('lays still-queued edits over a fresh server roster', async () => {
+		getQueue.mockReturnValue([
+			{ op: 'checkin', guestId: 'g1', payload: { notes: 'gift at door' } },
+			{ op: 'create', guestId: 'g2', payload: { name: 'New', pax: 1 } }
+		]);
+		const { withQueuedEdits } = await import('./guests');
+		const server = [{ id: 'g1', name: 'A', pax: 1, notes: '', checkedIn: false }] as never;
+
+		const list = withQueuedEdits('w1', server);
+
+		expect(list.map(g => g.id)).toEqual(['g1', 'g2']);
+		expect(list[0]).toMatchObject({ checkedIn: true, notes: 'gift at door' });
+		const again = withQueuedEdits('w1', list);
+		expect(again.map(g => g.id)).toEqual(['g1', 'g2']);
+		expect(again[0]).toMatchObject({ checkedIn: true, notes: 'gift at door' });
+	});
+
+	it('does not reapply a check-in the server already holds', async () => {
+		getQueue.mockReturnValue([{ op: 'checkin', guestId: 'g1', payload: { notes: 'gift at door', angbaoAmt: 50, giftItem: 'vase' } }]);
+		const { withQueuedEdits } = await import('./guests');
+		const at = new Date('2026-01-01T09:00:00Z');
+		const server = [{ id: 'g1', name: 'A', pax: 1, notes: 'vegan\ngift at door', checkedIn: true, checkedInAt: at, angbaoAmount: 100 }] as never;
+
+		const [g] = withQueuedEdits('w1', server);
+
+		expect(g).toMatchObject({ checkedIn: true, checkedInAt: at, notes: 'vegan\ngift at door', angbaoAmount: 100, giftItem: 'vase' });
 	});
 });
