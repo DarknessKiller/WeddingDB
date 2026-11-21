@@ -223,7 +223,13 @@ func TestSync_MalformedMutationFailsAlone(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, body %s", rec.Code, rec.Body)
 	}
-	var got struct{ Results []services.SyncResult }
+	var got struct {
+		Results []struct {
+			GuestID   string
+			Status    string
+			Retryable bool
+		}
+	}
 	testutil.NoErr(t, json.Unmarshal(rec.Body.Bytes(), &got))
 	if len(got.Results) != 2 {
 		t.Fatalf("results = %+v", got.Results)
