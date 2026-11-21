@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -44,7 +45,12 @@ func (h *ReportHandler) ExportAngpao(w http.ResponseWriter, r *http.Request) {
 		data, filename, err = h.reportService.GenerateCSV(ctx, wid)
 	}
 
+	if errors.Is(err, services.ErrWeddingNotFound) {
+		http.Error(w, "Wedding not found", http.StatusNotFound)
+		return
+	}
 	if err != nil {
+		slog.Error("generate report failed", "wedding", wid, "format", format, "err", err)
 		http.Error(w, "Failed to generate report", http.StatusInternalServerError)
 		return
 	}

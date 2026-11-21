@@ -19,6 +19,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/xuri/excelize/v2"
+	"gorm.io/gorm"
 )
 
 type ReportService struct {
@@ -60,9 +61,9 @@ type angpaoSummary struct {
 }
 
 func (s *ReportService) GenerateCSV(ctx context.Context, weddingID uuid.UUID) ([]byte, string, error) {
-	wedding, err := s.weddingRepo.FindByID(ctx, weddingID)
+	wedding, err := s.findWedding(ctx, weddingID)
 	if err != nil {
-		return nil, "", fmt.Errorf("wedding not found")
+		return nil, "", err
 	}
 
 	guests, err := s.guestRepo.ListAllByWedding(ctx, weddingID)
@@ -131,9 +132,9 @@ func (s *ReportService) GenerateCSV(ctx context.Context, weddingID uuid.UUID) ([
 }
 
 func (s *ReportService) GenerateXLSX(ctx context.Context, weddingID uuid.UUID) ([]byte, string, error) {
-	wedding, err := s.weddingRepo.FindByID(ctx, weddingID)
+	wedding, err := s.findWedding(ctx, weddingID)
 	if err != nil {
-		return nil, "", fmt.Errorf("wedding not found")
+		return nil, "", err
 	}
 
 	guests, err := s.guestRepo.ListAllByWedding(ctx, weddingID)
@@ -296,6 +297,19 @@ func (s *ReportService) GenerateXLSX(ctx context.Context, weddingID uuid.UUID) (
 		time.Now().Local().Format("2006-01-02"))
 
 	return buf.Bytes(), filename, nil
+}
+
+// findWedding maps a missing wedding to ErrWeddingNotFound and keeps every
+// other error for the caller to log.
+func (s *ReportService) findWedding(ctx context.Context, id uuid.UUID) (*models.WeddingEvent, error) {
+	wedding, err := s.weddingRepo.FindByID(ctx, id)
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, ErrWeddingNotFound
+	}
+	if err != nil {
+		return nil, fmt.Errorf("load wedding %s: %w", id, err)
+	}
+	return wedding, nil
 }
 
 func (s *ReportService) buildRows(guests []models.GuestRecord, tableMap map[uuid.UUID]string) ([]angpaoRow, angpaoSummary) {

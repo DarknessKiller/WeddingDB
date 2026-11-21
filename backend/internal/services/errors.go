@@ -11,6 +11,9 @@ var (
 
 	// ErrGuestNotFound is returned when the guest does not exist in the wedding.
 	ErrGuestNotFound = errors.New("guest not found")
+
+	// ErrWeddingNotFound is returned when a report names an unknown wedding.
+	ErrWeddingNotFound = errors.New("wedding not found")
 )
 
 // SelectWedding sentinels; handlers map them to 401/403.
