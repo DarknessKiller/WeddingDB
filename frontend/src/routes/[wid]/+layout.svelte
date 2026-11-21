@@ -31,6 +31,31 @@
     try { queued = JSON.parse(localStorage.getItem(`offline_queue_${wid}`) || '[]').length; } catch { queued = 0; }
   }
 
+  const toGuest = (g: any) => {
+    const createdAt = g.createdAt ? new Date(g.createdAt) : new Date();
+    return {
+      id: g.id, name: g.name, email: g.email,
+      pinyin: g.pinyin,
+      rsvp: g.rsvp as any, pax: g.pax, tableId: g.tableId, seatNumber: g.seatNum,
+      checkedIn: !!g.checkedInAt, checkedInAt: g.checkedInAt ? new Date(g.checkedInAt) : undefined,
+      notes: g.notes, dietaryRequirements: g.dietary ?? [], isVip: g.isVip,
+      angbaoAmount: g.angbaoAmt ?? undefined, giftItem: g.giftItem ?? undefined,
+      createdAt, updatedAt: g.updatedAt ? new Date(g.updatedAt) : createdAt,
+    };
+  };
+  const loadGuests = async () => {
+    try {
+      const guests = (await fetchAllGuests($weddingId)).map(toGuest);
+      return guests;
+    } catch {
+      try {
+        const cached = JSON.parse(localStorage.getItem(`offline_cache_${$weddingId}`) || 'null');
+        if (cached) return (cached as any[]).map(toGuest);
+      } catch {}
+      throw new Error('offline');
+    }
+  };
+
   let destroyed = false;
   let cleanupListeners: (() => void) | undefined;
   onMount(async () => {
@@ -46,31 +71,6 @@
     selectedGuest.set(null);
     weddingTitle.set('');
     authChecked = true;
-
-    const toGuest = (g: any) => {
-      const createdAt = g.createdAt ? new Date(g.createdAt) : new Date();
-      return {
-        id: g.id, name: g.name, email: g.email,
-        pinyin: g.pinyin,
-        rsvp: g.rsvp as any, pax: g.pax, tableId: g.tableId, seatNumber: g.seatNum,
-        checkedIn: !!g.checkedInAt, checkedInAt: g.checkedInAt ? new Date(g.checkedInAt) : undefined,
-        notes: g.notes, dietaryRequirements: g.dietary ?? [], isVip: g.isVip,
-        angbaoAmount: g.angbaoAmt ?? undefined, giftItem: g.giftItem ?? undefined,
-        createdAt, updatedAt: g.updatedAt ? new Date(g.updatedAt) : createdAt,
-      };
-    };
-    const loadGuests = async () => {
-      try {
-        const guests = (await fetchAllGuests($weddingId)).map(toGuest);
-        return guests;
-      } catch {
-        try {
-          const cached = JSON.parse(localStorage.getItem(`offline_cache_${$weddingId}`) || 'null');
-          if (cached) return (cached as any[]).map(toGuest);
-        } catch {}
-        throw new Error('offline');
-      }
-    };
 
     async function doSync() {
       if (!wid || typeof window === 'undefined' || !navigator.onLine) return;
