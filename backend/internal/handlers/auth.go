@@ -130,6 +130,9 @@ func (h *AuthHandler) Login(c fuego.ContextWithBody[LoginRequest]) (TokenRespons
 		h.authService.RecordLoginFailure(c.Context(), body.Email, ip)
 		return TokenResponse{}, fuego.UnauthorizedError{Title: "invalid credentials"}
 	}
+	if errors.Is(err, services.ErrSessionsChanged) {
+		return TokenResponse{}, fuego.ConflictError{Title: err.Error()}
+	}
 	if err != nil {
 		slog.Error("login failed", "err", err)
 		return TokenResponse{}, fuego.InternalServerError{Title: "Login failed"}

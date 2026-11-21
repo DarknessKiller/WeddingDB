@@ -90,15 +90,36 @@ func (s *AuthService) Login(ctx context.Context, email, password string) (*Login
 	if err := compareHash([]byte(admin.Password), []byte(password)); err != nil {
 		return nil, ErrInvalidCredentials
 	}
-	accessToken, err := s.generateAccessToken(ctx, admin, nil)
+	tv, err := s.GetTokenVersion(ctx, admin.ID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read token version: %w", err)
+	}
+	accessToken, err := s.signAccessToken(admin, nil, tv)
 	if err != nil {
 		return nil, err
 	}
-	refreshToken, err := s.generateRefreshToken(ctx, admin.ID, nil)
+	refresh, err := s.buildRefreshToken(admin.ID, nil)
 	if err != nil {
 		return nil, err
 	}
-	return s.sessionResult(ctx, admin, accessToken, refreshToken)
+	// A revoke (password change, demotion) that landed after admin was read
+	// must not leave this login holding live refresh token.
+	if err := s.tokenRepo.SaveAtVersion(ctx, refresh, tv); err != nil {
+		if errors.Is(err, repository.ErrTokenVersionStale) {
+			// The cache may also lag a revoke whose Redis write failed: lift it
+			// so next attempt mints at current version.
+			dbTV, err := s.adminRepo.TokenVersion(ctx, admin.ID)
+			if err == nil {
+				err = raiseTV.Run(ctx, s.redisClient, []string{tvKey(admin.ID)}, dbTV).Err()
+			}
+			if err != nil {
+				slog.Warn("raise cached token version after stale login", "user", admin.ID, "err", err)
+			}
+			return nil, ErrSessionsChanged
+		}
+		return nil, err
+	}
+	return s.sessionResult(ctx, admin, accessToken, refresh.Token)
 }
 
 // sessionResult assembles the token payload shared by Login and Refresh.
@@ -360,6 +381,26 @@ func (s *AuthService) RecordLoginFailure(ctx context.Context, email, ip string) 
 	s.recordFailure(ctx, credIPKey(ip), time.Minute)
 }
 
+func (s *AuthService) checkRateLimit(ctx context.Context, key string, limit int64, window time.Duration) error {
+	n, err := s.redisClient.Get(ctx, "ratelimit:"+key).Int64()
+	if err != nil { // redis.Nil = under limit; any other error = fail open
+		if !errors.Is(err, redis.Nil) {
+			slog.Warn("rate limit unavailable, failing open", "key", key, "err", err)
+		}
+		return nil
+	}
+	if n >= limit {
+		return errors.New("too many attempts, please try again later")
+	}
+	return nil
+}
+
+func (s *AuthService) recordFailure(ctx context.Context, key string, window time.Duration) {
+	if _, err := s.incrWindow(ctx, key, window); err != nil {
+		slog.Warn("record login failure failed", "key", key, "err", err)
+	}
+}
+
 // CheckPublicRate caps public kiosk endpoints at 25 req/s per client IP.
 func (s *AuthService) CheckPublicRate(ctx context.Context, ip string) error {
 	key := fmt.Sprintf("public:ip:%s:%d", ip, time.Now().Unix())
@@ -393,25 +434,8 @@ func (s *AuthService) rateLimit(ctx context.Context, key string, limit int64, wi
 	return nil
 }
 
-func (s *AuthService) checkRateLimit(ctx context.Context, key string, limit int64, window time.Duration) error {
-	n, err := s.redisClient.Get(ctx, "ratelimit:"+key).Int64()
-	if err != nil { // redis.Nil = under limit; any other error = fail open
-		if !errors.Is(err, redis.Nil) {
-			slog.Warn("rate limit unavailable, failing open", "key", key, "err", err)
-		}
-		return nil
-	}
-	if n >= limit {
-		return errors.New("too many attempts, please try again later")
-	}
-	return nil
-}
-
-func (s *AuthService) recordFailure(ctx context.Context, key string, window time.Duration) {
-	if _, err := s.incrWindow(ctx, key, window); err != nil {
-		slog.Warn("record login failure failed", "key", key, "err", err)
-	}
-}
+// ErrRateLimitUnavailable reports that password-guess limit could not be read.
+var ErrRateLimitUnavailable = errors.New("sign-in is temporarily unavailable, try again shortly")
 
 // Logout deletes the refresh token and blacklists the access token's JTI.
 // Blacklisting is best-effort: a Redis failure does not prevent refresh token deletion.
@@ -576,6 +600,9 @@ func (s *AuthService) RevokeUserTokens(ctx context.Context, userID uuid.UUID) er
 	return fmt.Errorf("failed to cache token version after retries: %w", lastErr)
 }
 
+// accessTokenTTL is how long an access token lives.
+const accessTokenTTL = 15 * time.Minute
+
 // parseTokenClaims parses a JWT without blacklist/tv checks — used only for extracting claims during logout.
 func (s *AuthService) parseTokenClaims(tokenStr string) (*AccessClaims, error) {
 	token, err := jwt.ParseWithClaims(tokenStr, &AccessClaims{}, func(t *jwt.Token) (interface{}, error) {
@@ -599,9 +626,12 @@ func (s *AuthService) generateAccessToken(ctx context.Context, admin *models.Adm
 	if err != nil {
 		return "", fmt.Errorf("failed to read token version: %w", err)
 	}
+	return s.signAccessToken(admin, weddingID, tv)
+}
 
+func (s *AuthService) signAccessToken(admin *models.AdminUser, weddingID *uuid.UUID, tv int) (string, error) {
 	now := time.Now()
-	expiry := now.Add(15 * time.Minute)
+	expiry := now.Add(accessTokenTTL)
 	claims := AccessClaims{
 		AdminID:             admin.ID,
 		WeddingID:           weddingID,
@@ -631,15 +661,4 @@ func (s *AuthService) buildRefreshToken(adminID uuid.UUID, weddingID *uuid.UUID)
 		Token:     hex.EncodeToString(b),
 		ExpiresAt: time.Now().Add(7 * 24 * time.Hour),
 	}, nil
-}
-
-func (s *AuthService) generateRefreshToken(ctx context.Context, adminID uuid.UUID, weddingID *uuid.UUID) (string, error) {
-	token, err := s.buildRefreshToken(adminID, weddingID)
-	if err != nil {
-		return "", err
-	}
-	if err := s.tokenRepo.Save(ctx, token); err != nil {
-		return "", err
-	}
-	return token.Token, nil
 }

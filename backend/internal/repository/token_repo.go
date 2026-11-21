@@ -44,6 +44,30 @@ func (r *TokenRepo) Save(ctx context.Context, token *models.RefreshToken) error 
 	return r.db.WithContext(ctx).Create(hashed(token)).Error
 }
 
+// ErrTokenVersionStale reports that owner's sessions were revoked after
+// token version was read.
+var ErrTokenVersionStale = errors.New("token version is stale")
+
+// SaveAtVersion stores token only while owner's token version is still at or
+// below tokenVersion. It holds same shared admin lock as Rotate, so revoke
+// that commits first is seen here and revoke that comes after deletes this row.
+func (r *TokenRepo) SaveAtVersion(ctx context.Context, token *models.RefreshToken, tokenVersion int) error {
+	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := lockAdmin(tx, token.AdminID, "SHARE"); err != nil {
+			return err
+		}
+		var current int
+		if err := tx.Model(&models.AdminUser{}).Where("id = ?", token.AdminID).
+			Select("token_version").Scan(&current).Error; err != nil {
+			return fmt.Errorf("read token version: %w", err)
+		}
+		if current > tokenVersion {
+			return ErrTokenVersionStale
+		}
+		return tx.Create(hashed(token)).Error
+	})
+}
+
 // DeleteLegacyPlaintext removes refresh tokens stored before hashing. Their
 // owners log in again once.
 func (r *TokenRepo) DeleteLegacyPlaintext(ctx context.Context) error {

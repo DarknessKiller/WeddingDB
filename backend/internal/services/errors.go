@@ -35,4 +35,7 @@ var (
 var (
 	ErrInvalidCredentials  = errors.New("invalid credentials")
 	ErrInvalidRefreshToken = errors.New("invalid refresh token")
+	// ErrSessionsChanged means the password was right but a session revoke
+	// landed mid-login; trying again succeeds.
+	ErrSessionsChanged = errors.New("your sessions were just changed, sign in again")
 )
