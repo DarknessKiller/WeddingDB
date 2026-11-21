@@ -3,6 +3,7 @@
   import { setAuth, addToast } from '#lib/stores/index.ts';
   import { weddingId, setWeddingId } from '#lib/stores/weddingId.ts';
   import { get } from 'svelte/store';
+  import { LIMITS } from '#lib/utils/limits.ts';
   import Eye from 'lucide-svelte/icons/eye';
 import EyeOff from 'lucide-svelte/icons/eye-off';
 import LogIn from 'lucide-svelte/icons/log-in';
@@ -151,6 +152,7 @@ import ChevronRight from 'lucide-svelte/icons/chevron-right';
             type="email"
             bind:value={email}
             required
+            maxlength={LIMITS.email}
             class="form-input"
             placeholder="admin@weddingdb.local"
           />
@@ -164,6 +166,7 @@ import ChevronRight from 'lucide-svelte/icons/chevron-right';
               type={showPassword ? 'text' : 'password'}
               bind:value={password}
               required
+              maxlength={LIMITS.password}
               class="form-input password-input"
               placeholder="Enter password"
             />
@@ -215,7 +218,7 @@ import ChevronRight from 'lucide-svelte/icons/chevron-right';
             <div class="form-grid">
               <div class="form-field">
                 <label for="wedding-name" class="form-label">Wedding Name</label>
-                <input id="wedding-name" type="text" bind:value={newName} placeholder="e.g. John & Jane's Wedding" class="form-input" />
+                <input id="wedding-name" type="text" bind:value={newName} maxlength={LIMITS.name} placeholder="e.g. John & Jane's Wedding" class="form-input" />
               </div>
               <div class="form-field">
                 <label for="wedding-date" class="form-label">Date</label>

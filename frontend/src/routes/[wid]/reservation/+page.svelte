@@ -12,6 +12,7 @@ import AlertCircle from 'lucide-svelte/icons/alert-circle';
   import { weddingId } from '#lib/stores/weddingId.ts';
   import { get } from 'svelte/store';
   import { onMount } from 'svelte';
+  import { LIMITS } from '#lib/utils/limits.ts';
   import type { BanquetTable, Guest, HallElement, RSVPStatus } from '#lib/types/index.ts';
   import HallMap from '#lib/components/seating/HallMap.svelte';
 
@@ -98,14 +99,14 @@ import AlertCircle from 'lucide-svelte/icons/alert-circle';
   }
 
   const schema = z.object({
-    name: z.string().min(1, 'Name is required'),
-    email: z.string().email('Invalid email').optional().or(z.literal('')),
+    name: z.string().min(1, 'Name is required').max(LIMITS.name),
+    email: z.string().email('Invalid email').max(LIMITS.email).optional().or(z.literal('')),
     pax: z.number().min(1, 'At least 1 guest').max(10, 'Max 10 guests'),
     rsvp: z.enum(['confirmed', 'pending', 'declined']),
     tableId: z.string().nullable().optional(),
     seatNumbers: z.array(z.number()).optional(),
     dietary: z.array(z.string()).optional(),
-    notes: z.string().optional(),
+    notes: z.string().max(LIMITS.guestNotes).optional(),
     isVip: z.boolean().optional(),
   });
 
@@ -285,6 +286,7 @@ import AlertCircle from 'lucide-svelte/icons/alert-circle';
               id="name"
               type="text"
               bind:value={form.name}
+              maxlength={LIMITS.name}
               class={cn("w-full px-4 py-2.5 border rounded-xl text-sm bg-white outline-none transition-all",
                 errors.name ? "border-red focus:ring-2 focus:ring-red/15" : "border-gray-200 focus:border-gold focus:ring-2 focus:ring-gold/15"
               )}
@@ -304,6 +306,7 @@ import AlertCircle from 'lucide-svelte/icons/alert-circle';
               id="email"
               type="email"
               bind:value={form.email}
+              maxlength={LIMITS.email}
               class="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm bg-white focus:border-gold focus:ring-2 focus:ring-gold/15 outline-none transition-all"
               placeholder="Optional"
             />
@@ -424,6 +427,7 @@ import AlertCircle from 'lucide-svelte/icons/alert-circle';
           <textarea
             id="notes"
             bind:value={form.notes}
+            maxlength={LIMITS.guestNotes}
             rows="3"
             class="w-full px-4 py-3 border border-black/[0.08] rounded-xl text-sm bg-white/80 focus:border-red focus:ring-2 focus:ring-red/10 outline-none transition-all resize-none min-h-[80px]"
             placeholder="Any special requirements or notes..."
