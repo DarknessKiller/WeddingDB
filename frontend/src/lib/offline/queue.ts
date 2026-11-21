@@ -122,7 +122,9 @@ async function runSync(wid: string): Promise<SyncOutcome> {
 	if (!q.length) return { applied: 0, skipped: 0, results: [] };
 	const res = await apiFetch(`/api/weddings/${wid}/guests/sync`, {
 		method: 'POST',
-		body: JSON.stringify({ mutations: q })
+		body: JSON.stringify({ mutations: q }),
+		// A full queue replays many edits; a timeout keeps them queued for the next sync.
+		signal: AbortSignal.timeout(60_000)
 	});
 	if (!res.ok) {
 		const t = await res.text().catch(() => '');

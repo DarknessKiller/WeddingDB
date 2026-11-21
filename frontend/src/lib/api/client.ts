@@ -1,5 +1,6 @@
 import { getAuth, setAuth, expireAuth, readStoredAuth } from '#lib/stores/index.ts';
 import { setWeddingId } from '#lib/stores/weddingId.ts';
+import { withTimeout } from '#lib/utils/index.ts';
 
 const BASE = '';
 
@@ -21,7 +22,8 @@ async function doRefresh(): Promise<boolean> {
 		refreshRes = await fetch(`${BASE}/api/auth/refresh`, {
 			method: 'POST',
 			headers: { 'Content-Type': 'application/json' },
-			body: JSON.stringify({ refreshToken })
+			body: JSON.stringify({ refreshToken }),
+			signal: withTimeout()
 		});
 	} catch {
 		// Network failure — the token was never seen by the server, so keep the session.
@@ -69,7 +71,8 @@ async function reselectWedding(wid: string): Promise<boolean> {
 		const res = await fetch(`${BASE}/api/auth/select-wedding`, {
 			method: 'POST',
 			headers: { 'Content-Type': 'application/json', ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}) },
-			body: JSON.stringify({ weddingId: wid, refreshToken })
+			body: JSON.stringify({ weddingId: wid, refreshToken }),
+			signal: withTimeout()
 		});
 		if (!res.ok) return false;
 		const data = await res.json();
@@ -86,6 +89,8 @@ export async function apiFetch(path: string, opts: RequestInit = {}): Promise<Re
 		const { accessToken } = getAuth();
 		return fetch(`${BASE}${path}`, {
 			...opts,
+			// A caller passing its own signal owns the deadline (long imports, exports, sync).
+			signal: opts.signal ?? withTimeout(),
 			headers: {
 				...(!isDelete ? { 'Content-Type': 'application/json' } : {}),
 				...opts.headers,

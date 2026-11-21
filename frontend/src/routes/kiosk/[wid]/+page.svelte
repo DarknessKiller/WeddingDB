@@ -4,7 +4,7 @@
   import { getPublicLayout } from '#lib/api/layout.ts';
   import { cacheKioskGuests, loadCachedKioskGuests } from '#lib/offline/queue.ts';
   import { rankGuests } from '#lib/utils/guestSearch.ts';
-  import { cn, getInitials } from '#lib/utils/index.ts';
+  import { cn, getInitials, withTimeout } from '#lib/utils/index.ts';
   import { formatSeatRange, formatPartySize } from '#lib/utils/seat.ts';
   import Maximize from 'lucide-svelte/icons/maximize';
 import Minimize from 'lucide-svelte/icons/minimize';
@@ -104,7 +104,7 @@ import X from 'lucide-svelte/icons/x';
   // without a reload.
   async function loadKioskConfig() {
     const wid = page.params.wid ?? '';
-    const data = await fetch(`/api/public/weddings/${wid}/kiosk`, { signal: pageAbort.signal })
+    const data = await fetch(`/api/public/weddings/${wid}/kiosk`, { signal: withTimeout(pageAbort.signal) })
       .then(r => r.ok ? r.json() : null)
       .catch(() => null);
     if (!data) return;

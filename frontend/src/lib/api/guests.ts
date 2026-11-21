@@ -11,6 +11,7 @@ function isOffline() {
 export function isNetworkError(e: unknown) {
 	if (isOffline()) return true;
 	// Chrome/Firefox say "Failed to fetch"/"NetworkError"; Safari says "Load failed".
+	if (e instanceof DOMException && e.name === 'TimeoutError') return true;
 	return e instanceof TypeError && /failed to fetch|networkerror|load failed/i.test((e as Error).message || '');
 }
 // genId makes a random 16-byte id in the server's base64url UUID form, so an
@@ -291,6 +292,7 @@ export async function bulkImportGuests(guests: GuestImportData[]): Promise<{ imp
   const res = await apiFetch(`/api/weddings/${get(weddingId)}/guests/import`, {
     method: 'POST',
     body: JSON.stringify({ guests }),
+    signal: AbortSignal.timeout(120_000), // up to 1,000 rows in one transaction
   });
   if (!res.ok) {
     const err = await res.json().catch(() => ({ title: 'Import failed' }));

@@ -1,6 +1,7 @@
 import type { Guest } from '#lib/types/index.ts';
 import { weddingId } from '#lib/stores/weddingId.ts';
 import { get } from 'svelte/store';
+import { withTimeout } from '#lib/utils/index.ts';
 
 interface PublicGuest {
 	id: string;
@@ -34,7 +35,7 @@ export async function publicListGuests(opts: { signal?: AbortSignal } = {}): Pro
 	const all: Guest[] = [];
 	let cursor: string | undefined;
 	do {
-		const res = await fetch(`/api/public/weddings/${wid}/guests?limit=1000${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ''}`, { signal: opts.signal });
+		const res = await fetch(`/api/public/weddings/${wid}/guests?limit=1000${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ''}`, { signal: withTimeout(opts.signal) });
 		if (!res.ok) throw new Error('Failed to list guests');
 		const data = await res.json();
 		all.push(...(data.guests ?? []).map(mapGuest));
