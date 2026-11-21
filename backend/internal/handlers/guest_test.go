@@ -31,6 +31,14 @@ func newGuestTestDB(t *testing.T) *gorm.DB {
 		id TEXT PRIMARY KEY, wedding_id TEXT NOT NULL, name TEXT NOT NULL, capacity INTEGER,
 		x REAL NOT NULL DEFAULT 0, y REAL NOT NULL DEFAULT 0, degree REAL NOT NULL DEFAULT 0,
 		is_vip INTEGER, created_at DATETIME, updated_at DATETIME)`).Error)
+	testutil.NoErr(t, db.Exec(`CREATE TABLE wedding_events (
+		id TEXT PRIMARY KEY, name TEXT NOT NULL, date DATETIME, hall_width INTEGER DEFAULT 860,
+		hall_height INTEGER DEFAULT 1000, layout_version INTEGER NOT NULL DEFAULT 0,
+		created_at DATETIME, updated_at DATETIME)`).Error)
+	testutil.NoErr(t, db.Exec(`CREATE TABLE hall_elements (
+		id TEXT PRIMARY KEY, wedding_id TEXT NOT NULL, name TEXT NOT NULL, type TEXT NOT NULL,
+		x REAL, y REAL, degree REAL, width REAL, height REAL, color TEXT, text_color TEXT,
+		stroke_color TEXT, opacity REAL, z_index INTEGER, created_at DATETIME, updated_at DATETIME)`).Error)
 	return db
 }
 

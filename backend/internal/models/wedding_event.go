@@ -29,8 +29,11 @@ type WeddingEvent struct {
 	KioskIdleResetSeconds int       `gorm:"not null;default:0" json:"kioskIdleResetSeconds"`
 	HallWidth             int       `gorm:"not null;default:860" json:"hallWidth"`
 	HallHeight            int       `gorm:"not null;default:1000" json:"hallHeight"`
-	CreatedAt             time.Time `json:"createdAt"`
-	UpdatedAt             time.Time `json:"updatedAt"`
+	// LayoutVersion counts layout saves; a save carrying an older version is
+	// rejected so concurrent editors cannot overwrite each other.
+	LayoutVersion int       `gorm:"not null;default:0" json:"-"`
+	CreatedAt     time.Time `json:"createdAt"`
+	UpdatedAt     time.Time `json:"updatedAt"`
 }
 
 func (w WeddingEvent) MarshalJSON() ([]byte, error) {

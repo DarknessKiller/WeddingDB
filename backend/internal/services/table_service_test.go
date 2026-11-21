@@ -126,6 +126,10 @@ func TestCapacityCannotDropBelowSeatedGuests(t *testing.T) {
 	testutil.NoErr(t, db.Create(&models.BanquetTable{ID: tid, WeddingID: wid, Name: "T1", Capacity: 10}).Error)
 	// Seats 3-4.
 	testutil.NoErr(t, db.Create(&models.GuestRecord{ID: uuid.New(), WeddingID: wid, Name: "Ann", Pax: 2, TableID: &tid, SeatNum: &seat}).Error)
+	testutil.NoErr(t, db.Exec(`CREATE TABLE wedding_events (id TEXT PRIMARY KEY, name TEXT,
+		hall_width INTEGER, hall_height INTEGER, layout_version INTEGER NOT NULL DEFAULT 0,
+		created_at DATETIME, updated_at DATETIME)`).Error)
+	testutil.NoErr(t, db.Exec(`INSERT INTO wedding_events (id, name) VALUES (?, 'W')`, wid).Error)
 	tables := NewTableService(repository.NewTableRepo(db), repository.NewGuestRepo(db), nil, db)
 	layouts := repository.NewLayoutRepo(db)
 
@@ -144,7 +148,7 @@ func TestCapacityCannotDropBelowSeatedGuests(t *testing.T) {
 			}
 		})
 		t.Run(fmt.Sprintf("layout save capacity %d", tt.capacity), func(t *testing.T) {
-			err := layouts.SaveLayout(ctx, wid, 0, 0, []models.TableUpdate{{ID: tid, Capacity: tt.capacity}}, nil, nil, nil)
+			_, err := layouts.SaveLayout(ctx, wid, nil, 0, 0, []models.TableUpdate{{ID: tid, Capacity: tt.capacity}}, nil, nil, nil)
 			if got := errors.Is(err, repository.ErrCapacityBelowSeated); got != tt.wantErr {
 				t.Fatalf("err = %v, wantErr %v", err, tt.wantErr)
 			}

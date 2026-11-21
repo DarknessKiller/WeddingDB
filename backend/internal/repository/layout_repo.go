@@ -2,12 +2,18 @@ package repository
 
 import (
 	"context"
+	"errors"
 
 	"weddingdb/internal/models"
 
 	"github.com/google/uuid"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
+
+// ErrLayoutVersionConflict is returned when a layout save names a version
+// other than the stored one: someone else saved since the editor loaded.
+var ErrLayoutVersionConflict = errors.New("layout was changed by someone else")
 
 type LayoutRepo struct{ db *gorm.DB }
 
@@ -19,20 +25,41 @@ func (r *LayoutRepo) ElementsByWedding(ctx context.Context, weddingID uuid.UUID)
 	return els, err
 }
 
+// SaveLayout writes the layout and returns the new layout version. A non-nil
+// version must equal the stored one or ErrLayoutVersionConflict is returned;
+// nil skips the check (older clients).
 func (r *LayoutRepo) SaveLayout(
 	ctx context.Context,
 	weddingID uuid.UUID,
+	version *int,
 	hallWidth, hallHeight int,
 	tables []models.TableUpdate,
 	toCreate, toUpdate []models.HallElement,
 	toDelete []uuid.UUID,
-) error {
-	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+) (int, error) {
+	var newVersion int
+	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		// Wedding row lock first, like every guest write, so saves serialize and
+		// the version check sees the last committed save. sqlite has one writer.
+		q := tx
+		if tx.Name() == "postgres" {
+			q = tx.Clauses(clause.Locking{Strength: "UPDATE"})
+		}
+		var w models.WeddingEvent
+		if err := q.Select("id", "layout_version").Where("id = ?", weddingID).First(&w).Error; err != nil {
+			return err
+		}
+		if version != nil && *version != w.LayoutVersion {
+			return ErrLayoutVersionConflict
+		}
+		newVersion = w.LayoutVersion + 1
+		fields := map[string]any{"layout_version": newVersion}
 		if hallWidth > 0 && hallHeight > 0 {
-			if err := tx.Model(&models.WeddingEvent{}).Where("id = ?", weddingID).
-				Updates(map[string]any{"hall_width": hallWidth, "hall_height": hallHeight}).Error; err != nil {
-				return err
-			}
+			fields["hall_width"] = hallWidth
+			fields["hall_height"] = hallHeight
+		}
+		if err := tx.Model(&models.WeddingEvent{}).Where("id = ?", weddingID).Updates(fields).Error; err != nil {
+			return err
 		}
 		for _, t := range tables {
 			res := tx.Model(&models.BanquetTable{}).Where("id = ? AND wedding_id = ?", t.ID, weddingID).
@@ -80,4 +107,8 @@ func (r *LayoutRepo) SaveLayout(
 		}
 		return nil
 	})
+	if err != nil {
+		return 0, err
+	}
+	return newVersion, nil
 }

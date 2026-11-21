@@ -47,6 +47,8 @@ type ElementInput struct {
 }
 
 type LayoutRequest struct {
+	// Version is the layout version the editor loaded; absent skips the check.
+	Version    *int           `json:"version"`
 	HallWidth  int            `json:"hallWidth"`
 	HallHeight int            `json:"hallHeight"`
 	Tables     []TablePos     `json:"tables"`
@@ -54,6 +56,7 @@ type LayoutRequest struct {
 }
 
 type LayoutResponse struct {
+	Version    int                   `json:"version"`
 	HallWidth  int                   `json:"hallWidth"`
 	HallHeight int                   `json:"hallHeight"`
 	Tables     []models.BanquetTable `json:"tables"`
@@ -79,6 +82,7 @@ func (h *LayoutHandler) Get(c fuego.ContextNoBody) (any, error) {
 		return nil, err
 	}
 	return LayoutResponse{
+		Version:   wedding.LayoutVersion,
 		HallWidth: wedding.HallWidth, HallHeight: wedding.HallHeight,
 		Tables: tables, Elements: elements,
 	}, nil
@@ -145,13 +149,16 @@ func (h *LayoutHandler) Save(c fuego.ContextWithBody[LayoutRequest]) (any, error
 		}
 		elements = append(elements, el)
 	}
-	if err := h.layoutService.Save(ctx, wid, body.HallWidth, body.HallHeight, tables, elements); err != nil {
+	version, err := h.layoutService.Save(ctx, wid, body.Version, body.HallWidth, body.HallHeight, tables, elements)
+	if err != nil {
+		if errors.Is(err, repository.ErrLayoutVersionConflict) {
+			return nil, fuego.ConflictError{Title: "Layout was changed by someone else; reload and try again"}
+		}
 		if errors.Is(err, repository.ErrCapacityBelowSeated) {
 			return nil, fuego.BadRequestError{Title: err.Error()}
 		}
 		log.Printf("layout save error: %v", err)
 		return nil, fuego.InternalServerError{Title: "Failed to save layout"}
 	}
-	c.SetStatus(204)
-	return nil, nil
+	return map[string]int{"version": version}, nil
 }
