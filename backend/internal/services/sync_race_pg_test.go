@@ -143,3 +143,20 @@ func TestWeddingDelete_PostgresLeavesNoOrphanGuest(t *testing.T) {
 		t.Fatalf("%d guest rows outlived their wedding", n)
 	}
 }
+
+// A 200-character Han name romanizes to far more than 255 letters. A database
+// migrated while name_pinyin was varchar(255) must be widened by AutoMigrate,
+// or every such save is a 500 and a synced one stays queued forever.
+func TestCreateGuest_PostgresLongHanNamePinyinFits(t *testing.T) {
+	svc, db := openGuestPG(t)
+	testutil.NoErr(t, db.Exec("ALTER TABLE guest_records ALTER COLUMN name_pinyin TYPE varchar(255)").Error)
+	testutil.NoErr(t, db.AutoMigrate(&models.GuestRecord{}))
+	wid := uuid.New()
+	testutil.NoErr(t, db.Create(&models.WeddingEvent{ID: wid, Name: "W"}).Error)
+
+	g := &models.GuestRecord{WeddingID: wid, Name: strings.Repeat("庄", MaxGuestNameLen), Pax: 1}
+	testutil.NoErr(t, svc.Create(t.Context(), g))
+	if n := len(g.NamePinyin); n <= 255 {
+		t.Fatalf("pinyin is %d bytes; the test needs one over 255", n)
+	}
+}
