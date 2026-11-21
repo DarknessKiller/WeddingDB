@@ -137,6 +137,37 @@ func (s *GuestService) Get(ctx context.Context, id, weddingID uuid.UUID) (*model
 	return s.guestRepo.FindByID(ctx, id, weddingID)
 }
 
+// ErrGuestIDTaken is returned when a client-supplied guest ID belongs to a
+// guest of another wedding.
+var ErrGuestIDTaken = errors.New("guest ID already in use")
+
+// CreateOrGet creates g, or returns the stored guest when g.ID already exists
+// in g's wedding, so a retried create (lost response, offline replay) is a
+// no-op. created reports which happened.
+func (s *GuestService) CreateOrGet(ctx context.Context, g *models.GuestRecord) (guest *models.GuestRecord, created bool, err error) {
+	if g.ID != uuid.Nil {
+		if existing, err := s.guestRepo.FindByID(ctx, g.ID, g.WeddingID); err == nil {
+			return existing, false, nil
+		}
+	}
+	createErr := s.Create(ctx, g)
+	if createErr == nil || g.ID == uuid.Nil {
+		return g, createErr == nil, createErr
+	}
+	// A concurrent create with the same ID may have won the insert.
+	if existing, err := s.guestRepo.FindByID(ctx, g.ID, g.WeddingID); err == nil {
+		return existing, false, nil
+	}
+	inUse, err := s.guestRepo.IDInUse(ctx, g.ID)
+	if err != nil {
+		return nil, false, fmt.Errorf("check guest id: %w", err)
+	}
+	if inUse {
+		return nil, false, ErrGuestIDTaken
+	}
+	return nil, false, createErr
+}
+
 func (s *GuestService) Create(ctx context.Context, g *models.GuestRecord) error {
 	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		return s.createGuestTx(ctx, tx, g, false)

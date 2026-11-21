@@ -65,6 +65,13 @@ func (r *GuestRepo) FindByID(ctx context.Context, id, weddingID uuid.UUID) (*mod
 	return &g, err
 }
 
+// IDInUse reports whether any wedding has a guest with this ID.
+func (r *GuestRepo) IDInUse(ctx context.Context, id uuid.UUID) (bool, error) {
+	var n int64
+	err := r.db.WithContext(ctx).Model(&models.GuestRecord{}).Where("id = ?", id).Count(&n).Error
+	return n > 0, err
+}
+
 func (r *GuestRepo) FindByTable(ctx context.Context, weddingID, tableID uuid.UUID) ([]models.GuestRecord, error) {
 	guests := make([]models.GuestRecord, 0)
 	err := r.db.WithContext(ctx).Where("wedding_id = ? AND table_id = ?", weddingID, tableID).Find(&guests).Error

@@ -19,6 +19,9 @@ func NewGuestHandler(guestService *services.GuestService) *GuestHandler {
 }
 
 type GuestCreateRequest struct {
+	// ID is an optional client-generated guest UUID; a retry with the same ID
+	// returns the guest created by the first attempt.
+	ID        string   `json:"id"`
 	Name      string   `json:"name"`
 	Email     string   `json:"email"`
 	Pax       int      `json:"pax"`
@@ -128,14 +131,26 @@ func (h *GuestHandler) Create(c fuego.ContextWithBody[GuestCreateRequest]) (any,
 		guest.TableID = &tid
 		guest.SeatNum = &seatNum
 	}
-	if err := h.guestService.Create(ctx, guest); err != nil {
+	if body.ID != "" {
+		id, err := DecodeID(body.ID)
+		if err != nil || id == uuid.Nil {
+			return nil, fuego.BadRequestError{Title: "Invalid guest ID"}
+		}
+		guest.ID = id
+	}
+	saved, _, err := h.guestService.CreateOrGet(ctx, guest)
+	if err != nil {
+		if errors.Is(err, services.ErrGuestIDTaken) {
+			return nil, fuego.ConflictError{Title: "Guest ID already in use"}
+		}
 		if errors.Is(err, services.ErrGuestCapExceeded) || seated {
 			return nil, fuego.BadRequestError{Title: err.Error()}
 		}
 		return nil, err
 	}
+	// A replay answers like the first create, so the client treats both alike.
 	c.SetStatus(201)
-	return guest, nil
+	return saved, nil
 }
 
 func (h *GuestHandler) Update(c fuego.ContextWithBody[GuestCreateRequest]) (any, error) {

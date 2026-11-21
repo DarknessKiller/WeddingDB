@@ -166,3 +166,40 @@ func TestGuestCreate_SeatInSameTransaction(t *testing.T) {
 		t.Fatalf("guests = %v, want only D and Seated", names)
 	}
 }
+
+func TestGuestCreate_ClientID(t *testing.T) {
+	db := newGuestTestDB(t)
+	wid, otherWid := uuid.New(), uuid.New()
+	gid, foreign := uuid.New(), uuid.New()
+	testutil.NoErr(t, db.Create(&models.GuestRecord{ID: foreign, WeddingID: otherWid, Name: "Other", Pax: 1}).Error)
+	s := newGuestTestServer(db)
+	path := "/api/weddings/" + wid.String() + "/guests"
+
+	tests := []struct {
+		name, body string
+		want       int
+	}{
+		{"first create", `{"id":"` + gid.String() + `","name":"Ann","pax":1}`, http.StatusCreated},
+		{"retry returns stored guest", `{"id":"` + gid.String() + `","name":"Ann changed","pax":1}`, http.StatusCreated},
+		{"other wedding's id", `{"id":"` + foreign.String() + `","name":"X","pax":1}`, http.StatusConflict},
+		{"invalid id", `{"id":"nope","name":"Y","pax":1}`, http.StatusBadRequest},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			rec := serveJSON(s, http.MethodPost, path, tt.body)
+			if rec.Code != tt.want {
+				t.Fatalf("status = %d, want %d; body %s", rec.Code, tt.want, rec.Body)
+			}
+		})
+	}
+	var got []models.GuestRecord
+	testutil.NoErr(t, db.Where("wedding_id = ?", wid).Find(&got).Error)
+	if len(got) != 1 || got[0].ID != gid || got[0].Name != "Ann" {
+		t.Fatalf("guests = %+v, want one Ann with the client id", got)
+	}
+	var other models.GuestRecord
+	testutil.NoErr(t, db.First(&other, "id = ?", foreign).Error)
+	if other.WeddingID != otherWid || other.Name != "Other" {
+		t.Fatalf("foreign guest changed: %+v", other)
+	}
+}
