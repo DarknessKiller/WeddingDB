@@ -236,10 +236,16 @@ func (h *AuthHandler) ChangePassword(c fuego.ContextWithBody[ChangePasswordReque
 	if err != nil {
 		return nil, fuego.NotFoundError{Title: "User not found"}
 	}
-	// A forced change follows an admin reset, so the old password is not known.
+	// A forced change follows an admin reset, so the old password is not
+	// known. Only a token minted under the reset (pwc claim, which needs the
+	// reset password to obtain) may skip the check: a token from before the
+	// reset must still prove the password, or a stolen one could take over
+	// the account. The claim, not the DB flag, decides, so a forced change
+	// whose revoke failed can be retried from the same page.
 	// Same per-account lockout as Login, so a stolen access token cannot
 	// brute-force the current password.
-	if !admin.ForcePasswordChange {
+	forced := ForcePasswordChangeFromContext(ctx)
+	if !forced {
 		ip := clientIP(c.Request())
 		if err := h.authService.CheckLoginAccountRate(ctx, admin.Email, ip); err != nil {
 			return nil, fuego.HTTPError{Status: http.StatusTooManyRequests, Title: err.Error()}

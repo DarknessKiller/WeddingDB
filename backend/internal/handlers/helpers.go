@@ -29,6 +29,13 @@ func RoleFromContext(ctx context.Context) string {
 	return v
 }
 
+// ForcePasswordChangeFromContext reports whether the token carries the pwc
+// claim, i.e. was minted after an admin password reset.
+func ForcePasswordChangeFromContext(ctx context.Context) bool {
+	v, _ := ctx.Value(middleware.ForcePasswordChangeKey).(bool)
+	return v
+}
+
 // DecodeWID parses a UUID from the path param "wid", supporting base64-encoded IDs.
 func DecodeWID(c interface{ PathParam(string) string }) (uuid.UUID, error) {
 	return middleware.DecodeWIDString(c.PathParam("wid"))
