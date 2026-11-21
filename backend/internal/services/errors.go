@@ -11,6 +11,17 @@ var (
 
 	// ErrGuestNotFound is returned when the guest does not exist in the wedding.
 	ErrGuestNotFound = errors.New("guest not found")
+
+	// ErrStaleGuest is returned when an edit was based on a guest row that
+	// someone else changed since the editor loaded it.
+	ErrStaleGuest = errors.New("guest was changed by someone else")
+
+	// Seat and table rule violations. The messages are shown to staff as is.
+	ErrSeatRange     = errors.New("seat range exceeds table capacity")
+	ErrTableFull     = errors.New("table capacity exceeded")
+	ErrTableNotFound = errors.New("table not found")
+
+	errInvalidTableID = errors.New("invalid tableId")
 )
 
 // SelectWedding sentinels; handlers map them to 401/403.
@@ -18,4 +29,13 @@ var (
 	ErrAdminNotFound   = errors.New("admin not found")
 	ErrNoWeddingAccess = errors.New("no access to this wedding")
 	ErrSessionNotFound = errors.New("refresh token not found or expired")
+)
+
+// Login/Refresh sentinels; handlers map them to 401 and anything else to 500.
+var (
+	ErrInvalidCredentials  = errors.New("invalid credentials")
+	ErrInvalidRefreshToken = errors.New("invalid refresh token")
+	// ErrSessionsChanged means the password was right but a session revoke
+	// landed mid-login; trying again succeeds.
+	ErrSessionsChanged = errors.New("your sessions were just changed, sign in again")
 )

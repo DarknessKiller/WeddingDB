@@ -1,6 +1,10 @@
 package handlers
 
 import (
+	"cmp"
+	"fmt"
+	"net/url"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -9,7 +13,6 @@ import (
 	"weddingdb/internal/services"
 
 	"github.com/go-fuego/fuego"
-	"github.com/google/uuid"
 )
 
 type WeddingHandler struct {
@@ -32,14 +35,21 @@ func (h *WeddingHandler) List(c fuego.ContextNoBody) (any, error) {
 	if role == "admin" {
 		return h.weddingService.List(ctx)
 	}
-	// user: only return their own wedding from JWT
+	// user: only their own wedding from the JWT, while still assigned to it.
 	wid := WeddingIDFromContext(ctx)
 	if wid == nil {
 		return []models.WeddingEvent{}, nil
 	}
+	allowed, err := h.adminRepo.HasWeddingAccess(ctx, AdminIDFromContext(ctx), *wid)
+	if err != nil {
+		return nil, fmt.Errorf("wedding access check: %w", err)
+	}
+	if !allowed {
+		return []models.WeddingEvent{}, nil
+	}
 	w, err := h.weddingService.Get(ctx, *wid)
 	if err != nil {
-		return nil, fuego.NotFoundError{Title: "Wedding not found"}
+		return nil, notFoundOr(err, "Wedding not found")
 	}
 	return []models.WeddingEvent{*w}, nil
 }
@@ -50,8 +60,8 @@ func (h *WeddingHandler) Get(c fuego.ContextNoBody) (any, error) {
 		return nil, fuego.BadRequestError{Title: "Invalid ID"}
 	}
 	ctx := c.Context()
-	if err := requireWeddingAccess(ctx, id); err != nil {
-		return nil, fuego.ForbiddenError{Title: err.Error()}
+	if err := requireWeddingAccess(ctx, h.adminRepo, id); err != nil {
+		return nil, err
 	}
 	return h.weddingService.Get(ctx, id)
 }
@@ -59,7 +69,7 @@ func (h *WeddingHandler) Get(c fuego.ContextNoBody) (any, error) {
 func (h *WeddingHandler) Create(c fuego.ContextWithBody[WeddingRequest]) (any, error) {
 	ctx := c.Context()
 	if err := requireAdmin(ctx); err != nil {
-		return nil, fuego.UnauthorizedError{Title: err.Error()}
+		return nil, err
 	}
 	body, err := c.Body()
 	if err != nil {
@@ -73,15 +83,13 @@ func (h *WeddingHandler) Create(c fuego.ContextWithBody[WeddingRequest]) (any, e
 	if w.Name == "" {
 		return nil, fuego.BadRequestError{Title: "Name is required"}
 	}
-	if err := h.weddingService.Create(ctx, w); err != nil {
+	if err := maxLen("Name", w.Name, 255); err != nil {
 		return nil, err
 	}
-	// Link the creating admin to this wedding
-	adminID := AdminIDFromContext(c.Context())
-	if adminID != uuid.Nil {
-		if err := h.adminRepo.AddUserWedding(ctx, adminID, w.ID); err != nil {
-			return nil, err
-		}
+	// The creating admin is linked in the same transaction: a failed link
+	// must not leave a committed wedding that a retry would duplicate.
+	if err := h.weddingService.Create(ctx, w, AdminIDFromContext(c.Context())); err != nil {
+		return nil, err
 	}
 	c.SetStatus(201)
 	return w, nil
@@ -93,8 +101,8 @@ func (h *WeddingHandler) Update(c fuego.ContextWithBody[WeddingRequest]) (any, e
 		return nil, fuego.BadRequestError{Title: "Invalid ID"}
 	}
 	ctx := c.Context()
-	if err := requireWeddingAccess(ctx, id); err != nil {
-		return nil, fuego.ForbiddenError{Title: err.Error()}
+	if err := requireWeddingAccess(ctx, h.adminRepo, id); err != nil {
+		return nil, err
 	}
 	body, err := c.Body()
 	if err != nil {
@@ -102,11 +110,14 @@ func (h *WeddingHandler) Update(c fuego.ContextWithBody[WeddingRequest]) (any, e
 	}
 	w, err := h.weddingService.Get(ctx, id)
 	if err != nil {
-		return nil, fuego.NotFoundError{Title: "Wedding not found"}
+		return nil, notFoundOr(err, "Wedding not found")
 	}
 	name := strings.TrimSpace(body.Name)
 	if name == "" {
 		return nil, fuego.BadRequestError{Title: "Name is required"}
+	}
+	if err := maxLen("Name", name, 255); err != nil {
+		return nil, err
 	}
 	w.Name = name
 	if body.Date != "" {
@@ -147,8 +158,8 @@ func (h *WeddingHandler) UpdateKioskSettings(c fuego.ContextWithBody[KioskSettin
 		return nil, fuego.BadRequestError{Title: "Invalid ID"}
 	}
 	ctx := c.Context()
-	if err := requireWeddingAccess(ctx, id); err != nil {
-		return nil, fuego.ForbiddenError{Title: err.Error()}
+	if err := requireWeddingAccess(ctx, h.adminRepo, id); err != nil {
+		return nil, err
 	}
 	body, err := c.Body()
 	if err != nil {
@@ -156,7 +167,7 @@ func (h *WeddingHandler) UpdateKioskSettings(c fuego.ContextWithBody[KioskSettin
 	}
 	w, err := h.weddingService.Get(ctx, id)
 	if err != nil {
-		return nil, fuego.NotFoundError{Title: "Wedding not found"}
+		return nil, notFoundOr(err, "Wedding not found")
 	}
 	if body.Name != nil {
 		name := strings.TrimSpace(*body.Name)
@@ -174,11 +185,22 @@ func (h *WeddingHandler) UpdateKioskSettings(c fuego.ContextWithBody[KioskSettin
 	if body.KioskDescription != nil {
 		w.KioskDescription = strings.TrimSpace(*body.KioskDescription)
 	}
+	if err := cmp.Or(maxLen("Name", w.Name, 255), maxLen("Venue name", w.VenueName, 255), maxLen("Venue address", w.VenueAddress, 500), maxLen("Kiosk description", w.KioskDescription, 2000)); err != nil {
+		return nil, err
+	}
 	if body.KioskLogoUrl != nil {
 		w.KioskLogoUrl = sanitizeURL(*body.KioskLogoUrl)
 	}
 	if body.KioskBackgroundUrl != nil {
-		w.KioskBackgroundUrl = sanitizeURL(*body.KioskBackgroundUrl)
+		bg, ok := backgroundURL(*body.KioskBackgroundUrl)
+		if !ok {
+			return nil, fuego.BadRequestError{Title: "kioskBackgroundUrl must be an uploaded image or an http(s) URL"}
+		}
+		w.KioskBackgroundUrl = bg
+	}
+	// Both columns are varchar(500): longer values would fail in Postgres as a 500.
+	if err := cmp.Or(maxLen("Kiosk logo URL", w.KioskLogoUrl, 500), maxLen("Kiosk background URL", w.KioskBackgroundUrl, 500)); err != nil {
+		return nil, err
 	}
 	if body.KioskBackgroundBlur != nil {
 		w.KioskBackgroundBlur = max(0, min(20, *body.KioskBackgroundBlur))
@@ -224,7 +246,7 @@ func (h *WeddingHandler) UpdateKioskSettings(c fuego.ContextWithBody[KioskSettin
 func (h *WeddingHandler) Delete(c fuego.ContextWithBody[any]) (any, error) {
 	ctx := c.Context()
 	if err := requireAdmin(ctx); err != nil {
-		return nil, fuego.UnauthorizedError{Title: err.Error()}
+		return nil, err
 	}
 	id, err := DecodeID(c.PathParam("id"))
 	if err != nil {
@@ -235,6 +257,47 @@ func (h *WeddingHandler) Delete(c fuego.ContextWithBody[any]) (any, error) {
 	}
 	c.SetStatus(204)
 	return nil, nil
+}
+
+// uploadName matches file names the upload handler writes; no leading dot,
+// so the upload index itself is never a valid target.
+var uploadName = regexp.MustCompile(`^[A-Za-z0-9_-][A-Za-z0-9._-]*$`)
+
+// uploadPath returns the /uploads/<file> path s points at, or "" for empty
+// input. It accepts the absolute form the settings page sends (origin + the
+// upload URL) and drops the origin, so the kiosk's CSS url() only ever loads
+// our own uploads. ok is false for anything else.
+func uploadPath(s string) (string, bool) {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return "", true
+	}
+	u, err := url.Parse(s)
+	if err != nil || u.User != nil || u.RawQuery != "" || u.Fragment != "" ||
+		(u.Scheme != "" && u.Scheme != "http" && u.Scheme != "https") {
+		return "", false
+	}
+	name, ok := strings.CutPrefix(u.Path, "/uploads/")
+	if !ok || !uploadName.MatchString(name) {
+		return "", false
+	}
+	return "/uploads/" + name, true
+}
+
+// backgroundURL accepts our own uploads (normalised by uploadPath) or an
+// external http(s) image URL. Characters that could end a CSS url("...") or
+// open a new declaration are refused, since the kiosk renders it in a style.
+func backgroundURL(s string) (string, bool) {
+	if p, ok := uploadPath(s); ok {
+		return p, true
+	}
+	s = strings.TrimSpace(s)
+	u, err := url.Parse(s)
+	if err != nil || u.User != nil || u.Host == "" || (u.Scheme != "http" && u.Scheme != "https") ||
+		strings.ContainsAny(s, "\"'\\()<>; \t\r\n") {
+		return "", false
+	}
+	return s, true
 }
 
 // sanitizeURL strips any value that isn't a safe URL prefix or a relative path.

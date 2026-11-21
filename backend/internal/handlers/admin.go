@@ -1,6 +1,8 @@
 package handlers
 
 import (
+	"cmp"
+	"errors"
 	"log/slog"
 	"net/mail"
 	"weddingdb/internal/models"
@@ -32,7 +34,7 @@ type AdminRequest struct {
 func (h *AdminHandler) List(c fuego.ContextNoBody) (any, error) {
 	ctx := c.Context()
 	if err := requireAdmin(ctx); err != nil {
-		return nil, fuego.UnauthorizedError{Title: err.Error()}
+		return nil, err
 	}
 	return h.adminRepo.List(ctx)
 }
@@ -40,7 +42,7 @@ func (h *AdminHandler) List(c fuego.ContextNoBody) (any, error) {
 func (h *AdminHandler) Create(c fuego.ContextWithBody[AdminRequest]) (any, error) {
 	ctx := c.Context()
 	if err := requireAdmin(ctx); err != nil {
-		return nil, fuego.UnauthorizedError{Title: err.Error()}
+		return nil, err
 	}
 	body, err := c.Body()
 	if err != nil {
@@ -49,10 +51,14 @@ func (h *AdminHandler) Create(c fuego.ContextWithBody[AdminRequest]) (any, error
 	if body.Email == "" || body.Name == "" {
 		return nil, fuego.BadRequestError{Title: "Name and email are required"}
 	}
-	if _, err := mail.ParseAddress(body.Email); err != nil {
+	addr, err := mail.ParseAddress(body.Email)
+	if err != nil {
 		return nil, fuego.BadRequestError{Title: "Invalid email format"}
 	}
-	if err := validatePassword(body.Password); err != nil {
+	// "Bob <bob@x.com>" parses too; keep only the address, or logging in
+	// with bob@x.com would never match the stored value.
+	body.Email = addr.Address
+	if err := cmp.Or(maxLen("Name", body.Name, 255), maxLen("Email", body.Email, 255), validatePassword(body.Password)); err != nil {
 		return nil, err
 	}
 	// The unique index would otherwise surface as an opaque 500.
@@ -75,22 +81,12 @@ func (h *AdminHandler) Create(c fuego.ContextWithBody[AdminRequest]) (any, error
 		// Admin chose this password, so the user must replace it on first login.
 		ForcePasswordChange: true,
 	}
-	if err := h.adminRepo.Create(ctx, admin); err != nil {
+	ids, err := decodeWeddingIDs(body.Weddings)
+	if err != nil {
 		return nil, err
 	}
-	// Assign weddings if provided
-	if len(body.Weddings) > 0 {
-		var ids []uuid.UUID
-		for _, ws := range body.Weddings {
-			if id, err := DecodeID(ws); err == nil {
-				ids = append(ids, id)
-			}
-		}
-		if len(ids) > 0 {
-			if err := h.adminRepo.SetUserWeddings(ctx, admin.ID, ids); err != nil {
-				return nil, err
-			}
-		}
+	if err := h.adminRepo.CreateWithWeddings(ctx, admin, ids); err != nil {
+		return nil, err
 	}
 	c.SetStatus(201)
 	return admin, nil
@@ -99,7 +95,7 @@ func (h *AdminHandler) Create(c fuego.ContextWithBody[AdminRequest]) (any, error
 func (h *AdminHandler) Delete(c fuego.ContextWithBody[any]) (any, error) {
 	ctx := c.Context()
 	if err := requireAdmin(ctx); err != nil {
-		return nil, fuego.UnauthorizedError{Title: err.Error()}
+		return nil, err
 	}
 	adminID := AdminIDFromContext(ctx)
 	id, err := DecodeID(c.PathParam("id"))
@@ -113,6 +109,8 @@ func (h *AdminHandler) Delete(c fuego.ContextWithBody[any]) (any, error) {
 	if err != nil {
 		return nil, fuego.NotFoundError{Title: "User not found"}
 	}
+	// Early check so the last admin's sessions are not revoked for a refused
+	// delete; adminRepo.Delete re-checks under lock to close the race.
 	if target.Role == "admin" {
 		adminCount, err := h.adminRepo.CountByRole(ctx, "admin")
 		if err != nil {
@@ -129,7 +127,16 @@ func (h *AdminHandler) Delete(c fuego.ContextWithBody[any]) (any, error) {
 		return nil, fuego.InternalServerError{Title: "Failed to revoke user sessions"}
 	}
 	if err := h.adminRepo.Delete(ctx, id); err != nil {
+		if errors.Is(err, repository.ErrLastAdmin) {
+			return nil, fuego.BadRequestError{Title: "Cannot delete the last admin"}
+		}
 		return nil, err
+	}
+	// A login between the revoke and the delete minted a token at the new
+	// version; pin the cached version so it stops working too. The user is
+	// gone, so a retry cannot help: log, don't fail.
+	if err := h.authService.PinDeletedUser(ctx, id); err != nil {
+		slog.Error("pin token version after user delete failed", "user", id, "err", err)
 	}
 	c.SetStatus(204)
 	return nil, nil
@@ -142,7 +149,7 @@ type AssignWeddingsRequest struct {
 func (h *AdminHandler) AssignWeddings(c fuego.ContextWithBody[AssignWeddingsRequest]) (any, error) {
 	ctx := c.Context()
 	if err := requireAdmin(ctx); err != nil {
-		return nil, fuego.UnauthorizedError{Title: err.Error()}
+		return nil, err
 	}
 	body, err := c.Body()
 	if err != nil {
@@ -156,32 +163,44 @@ func (h *AdminHandler) AssignWeddings(c fuego.ContextWithBody[AssignWeddingsRequ
 	if err != nil {
 		return nil, fuego.NotFoundError{Title: "Admin not found"}
 	}
-	var ids []uuid.UUID
-	for _, ws := range body.Weddings {
-		if wid, err := DecodeID(ws); err == nil {
-			ids = append(ids, wid)
-		}
+	ids, err := decodeWeddingIDs(body.Weddings)
+	if err != nil {
+		return nil, err
 	}
 	// Fetch the old grants so removing access can revoke live sessions.
+	// Unknown old grants: revoke anyway rather than risk a lingering scoped token.
 	oldWeddings, err := h.adminRepo.GetUserWeddings(ctx, admin.ID)
 	if err != nil {
 		slog.Warn("fetch current wedding grants failed", "user", admin.ID, "err", err)
 	}
-	if err := h.adminRepo.SetUserWeddings(ctx, admin.ID, ids); err != nil {
-		return nil, fuego.InternalServerError{Title: "Failed to assign weddings"}
-	}
+	revoke := err != nil
 	kept := make(map[uuid.UUID]bool, len(ids))
 	for _, wid := range ids {
 		kept[wid] = true
 	}
 	for _, w := range oldWeddings {
 		if !kept[w.ID] {
-			// Refresh also re-checks access, so a Redis failure only leaves
-			// the old scoped token valid until its next refresh — log, don't fail.
-			if err := h.authService.RevokeUserTokens(ctx, admin.ID); err != nil {
-				slog.Warn("revoke tokens after wedding unassign failed", "user", admin.ID, "err", err)
-			}
+			revoke = true
 			break
+		}
+	}
+	// Revoke before and after, like UpdateRole: a failure before changes
+	// nothing, and the second revoke catches a select-wedding that ran in
+	// between. A failure after is reported, not just logged, since saving
+	// the same grants again would not revoke again.
+	if revoke {
+		if err := h.authService.RevokeUserTokens(ctx, admin.ID); err != nil {
+			slog.Error("revoke tokens before wedding unassign failed", "user", admin.ID, "err", err)
+			return nil, fuego.InternalServerError{Title: "Failed to revoke user sessions"}
+		}
+	}
+	if err := h.adminRepo.SetUserWeddings(ctx, admin.ID, ids); err != nil {
+		return nil, fuego.InternalServerError{Title: "Failed to assign weddings"}
+	}
+	if revoke {
+		if err := h.authService.RevokeUserTokens(ctx, admin.ID); err != nil {
+			slog.Error("revoke tokens after wedding unassign failed", "user", admin.ID, "err", err)
+			return nil, fuego.InternalServerError{Title: "Weddings saved, but signing out the user failed. Revoke their sessions to retry."}
 		}
 	}
 	return admin, nil
@@ -190,7 +209,7 @@ func (h *AdminHandler) AssignWeddings(c fuego.ContextWithBody[AssignWeddingsRequ
 func (h *AdminHandler) GetUserWeddings(c fuego.ContextNoBody) (any, error) {
 	ctx := c.Context()
 	if err := requireAdmin(ctx); err != nil {
-		return nil, fuego.UnauthorizedError{Title: err.Error()}
+		return nil, err
 	}
 	id, err := DecodeID(c.PathParam("id"))
 	if err != nil {
@@ -210,7 +229,7 @@ type ResetPasswordRequest struct {
 func (h *AdminHandler) ResetPassword(c fuego.ContextWithBody[ResetPasswordRequest]) (any, error) {
 	ctx := c.Context()
 	if err := requireAdmin(ctx); err != nil {
-		return nil, fuego.UnauthorizedError{Title: err.Error()}
+		return nil, err
 	}
 	body, err := c.Body()
 	if err != nil {
@@ -236,17 +255,16 @@ func (h *AdminHandler) ResetPassword(c fuego.ContextWithBody[ResetPasswordReques
 	if err != nil {
 		return nil, fuego.InternalServerError{Title: "Failed to hash password"}
 	}
-	admin.Password = string(hash)
 	// The admin chose and knows this password, so the user must replace it.
-	admin.ForcePasswordChange = true
-	if err := h.adminRepo.Update(ctx, admin); err != nil {
+	if err := h.adminRepo.SetPassword(ctx, admin.ID, string(hash), true); err != nil {
 		return nil, fuego.InternalServerError{Title: "Failed to update password"}
 	}
 	// Kill sessions minted under the old password. Password is already
-	// updated — a Redis failure must not fail the request; Refresh
-	// re-validates access anyway.
+	// saved; reporting success while old sessions still work would tell the
+	// admin the account is locked down when it is not.
 	if err := h.authService.RevokeUserTokens(ctx, id); err != nil {
-		slog.Warn("revoke tokens after admin password reset failed", "user", id, "err", err)
+		slog.Error("revoke tokens after admin password reset failed", "user", id, "err", err)
+		return nil, errRevokeAfterReset
 	}
 	return map[string]any{"message": "Password updated"}, nil
 }
@@ -258,7 +276,7 @@ type UpdateRoleRequest struct {
 func (h *AdminHandler) UpdateRole(c fuego.ContextWithBody[UpdateRoleRequest]) (any, error) {
 	ctx := c.Context()
 	if err := requireAdmin(ctx); err != nil {
-		return nil, fuego.UnauthorizedError{Title: err.Error()}
+		return nil, err
 	}
 	body, err := c.Body()
 	if err != nil {
@@ -281,8 +299,9 @@ func (h *AdminHandler) UpdateRole(c fuego.ContextWithBody[UpdateRoleRequest]) (a
 	if err != nil {
 		return nil, fuego.NotFoundError{Title: "User not found"}
 	}
-	// Prevent demoting the last admin
-	if admin.Role == "admin" && body.Role == "user" {
+	// Early check so the last admin's sessions are not revoked for a refused
+	// demotion; adminRepo.UpdateRole re-checks under lock to close the race.
+	if admin.Role == "admin" && body.Role != "admin" {
 		adminCount, err := h.adminRepo.CountByRole(ctx, "admin")
 		if err != nil {
 			return nil, fuego.InternalServerError{Title: "Failed to check admin count"}
@@ -291,22 +310,33 @@ func (h *AdminHandler) UpdateRole(c fuego.ContextWithBody[UpdateRoleRequest]) (a
 			return nil, fuego.BadRequestError{Title: "Cannot demote the last admin"}
 		}
 	}
-	admin.Role = body.Role
-	if err := h.adminRepo.Update(ctx, admin); err != nil {
+	// Revoke first, like Delete: live tokens carry the role claim, so a revoke
+	// that failed after the change would leave a demoted admin with admin
+	// tokens until they expire.
+	if err := h.authService.RevokeUserTokens(ctx, id); err != nil {
+		slog.Error("revoke tokens before role change failed", "user", id, "err", err)
+		return nil, fuego.InternalServerError{Title: "Failed to revoke user sessions"}
+	}
+	if err := h.adminRepo.UpdateRole(ctx, id, body.Role); err != nil {
+		if errors.Is(err, repository.ErrLastAdmin) {
+			return nil, fuego.BadRequestError{Title: "Cannot demote the last admin"}
+		}
 		return nil, fuego.InternalServerError{Title: "Failed to update role"}
 	}
-	// Force re-login so role claims in live tokens update. Role is already
-	// updated — log a revoke failure, don't fail the request.
+	// Revoke again: a login that ran between the first revoke and the role
+	// write read the old role at the new token version.
 	if err := h.authService.RevokeUserTokens(ctx, id); err != nil {
-		slog.Warn("revoke tokens after role change failed", "user", id, "err", err)
+		slog.Error("revoke tokens after role change failed", "user", id, "err", err)
+		return nil, fuego.InternalServerError{Title: "Role changed, but signing out the user failed. Revoke their sessions to retry."}
 	}
+	admin.Role = body.Role
 	return admin, nil
 }
 
 // RevokeUser bumps the target user's token version in Redis, invalidating all their active tokens.
 func (h *AdminHandler) RevokeUser(c fuego.ContextNoBody) (any, error) {
 	if err := requireAdmin(c.Context()); err != nil {
-		return nil, fuego.UnauthorizedError{Title: err.Error()}
+		return nil, err
 	}
 
 	callerID := AdminIDFromContext(c.Context())
@@ -330,4 +360,18 @@ func (h *AdminHandler) RevokeUser(c fuego.ContextNoBody) (any, error) {
 	}
 
 	return map[string]any{"message": "User tokens revoked"}, nil
+}
+
+// decodeWeddingIDs parses every wedding ID or rejects the request. Silently
+// dropping a bad one would grant (or, on reassign, revoke) the wrong set.
+func decodeWeddingIDs(raw []string) ([]uuid.UUID, error) {
+	ids := make([]uuid.UUID, 0, len(raw))
+	for _, ws := range raw {
+		id, err := DecodeID(ws)
+		if err != nil {
+			return nil, fuego.BadRequestError{Title: "Invalid wedding ID: " + ws}
+		}
+		ids = append(ids, id)
+	}
+	return ids, nil
 }

@@ -3,12 +3,17 @@ package services
 import (
 	"context"
 	"encoding/json"
+	"net"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/alicebob/miniredis/v2"
 	"github.com/google/uuid"
+	"github.com/redis/go-redis/v9"
 
+	"weddingdb/internal/models"
 	"weddingdb/internal/testutil"
 )
 
@@ -330,22 +335,45 @@ type mockGuestRecord struct {
 	giftItem    *string
 }
 
-// One account must not hold unlimited streams in a wedding.
-func TestSSEHub_RejectsPerUserCap(t *testing.T) {
+// At the per-user cap a new stream evicts that user's oldest one, so dead
+// phone streams cannot lock the user out.
+func TestSSEHub_EvictsOldestAtPerUserCap(t *testing.T) {
 	hub := &SSEHub{clients: make(map[uuid.UUID]map[string]*SSEClient), ctx: context.Background()}
 	wid := uuid.New()
 	owner := uuid.New()
-	for range maxClientsPerUser {
-		if _, ok := hub.Subscribe(wid, owner); !ok {
-			t.Fatalf("connection %d should be allowed", maxClientsPerUser)
+	var first *SSEClient
+	for i := range maxClientsPerUser {
+		c, ok := hub.Subscribe(wid, owner)
+		if !ok {
+			t.Fatalf("connection %d should be allowed", i)
+		}
+		if i == 0 {
+			first = c
 		}
 	}
-	if _, ok := hub.Subscribe(wid, owner); ok {
-		t.Fatalf("connection over the per-user cap of %d was allowed", maxClientsPerUser)
+	newest, ok := hub.Subscribe(wid, owner)
+	if !ok {
+		t.Fatal("connection at per-user cap should evict oldest, not be rejected")
 	}
-	// Another user still gets a slot.
+	select {
+	case <-first.Done:
+	default:
+		t.Fatal("oldest stream was not closed")
+	}
+	if _, still := hub.clients[wid][first.ID]; still {
+		t.Fatal("oldest stream still registered")
+	}
+	if _, ok := hub.clients[wid][newest.ID]; !ok || len(hub.clients[wid]) != maxClientsPerUser {
+		t.Fatalf("want %d streams incl. newest, got %d", maxClientsPerUser, len(hub.clients[wid]))
+	}
+	// Handler's deferred Unsubscribe on the evicted client must not panic.
+	hub.Unsubscribe(first)
+	if len(hub.clients[wid]) != maxClientsPerUser {
+		t.Fatal("unsubscribing evicted client removed another stream")
+	}
+	// Another user still gets slot.
 	if _, ok := hub.Subscribe(wid, uuid.New()); !ok {
-		t.Fatal("a different user should not be blocked by another user's streams")
+		t.Fatal("different user should not be blocked by another user's streams")
 	}
 }
 
@@ -364,5 +392,110 @@ func TestSSEHub_RejectsPerWeddingCap(t *testing.T) {
 	// Other weddings are unaffected.
 	if _, ok := hub.Subscribe(uuid.New(), uuid.New()); !ok {
 		t.Fatal("another wedding should not be blocked by a full wedding")
+	}
+}
+
+// Events for one guest must reach subscribers in the order they were written.
+func TestPublishGuest_PreservesOrder(t *testing.T) {
+	mr := miniredis.RunT(t)
+	hub := NewSSEHub(redis.NewClient(&redis.Options{Addr: mr.Addr()}))
+	t.Cleanup(hub.Shutdown)
+	wid := uuid.New()
+	client, ok := hub.Subscribe(wid, uuid.New())
+	if !ok {
+		t.Fatal("subscribe rejected")
+	}
+	const n = 40
+	for i := range n {
+		hub.publishGuest("update", &models.GuestRecord{ID: uuid.New(), Name: strconv.Itoa(i)}, wid)
+	}
+	for i := range n {
+		select {
+		case raw := <-client.Chan:
+			var ev GuestEvent
+			testutil.NoErr(t, json.Unmarshal(raw, &ev))
+			if ev.Guest.Name != strconv.Itoa(i) {
+				t.Fatalf("event %d carried %q: events arrived out of order", i, ev.Guest.Name)
+			}
+		case <-time.After(2 * time.Second):
+			t.Fatalf("timed out waiting for event %d", i)
+		}
+	}
+}
+
+// Shutdown must end open streams; otherwise a graceful HTTP shutdown waits
+// on them until its deadline.
+func TestSSEHub_ShutdownClosesStreams(t *testing.T) {
+	mr := miniredis.RunT(t)
+	hub := NewSSEHub(redis.NewClient(&redis.Options{Addr: mr.Addr()}))
+	client, ok := hub.Subscribe(uuid.New(), uuid.New())
+	if !ok {
+		t.Fatal("subscribe rejected")
+	}
+	hub.Shutdown()
+	select {
+	case <-client.Done:
+	case <-time.After(time.Second):
+		t.Fatal("open stream was not closed by Shutdown")
+	}
+}
+
+// Shutdown can run while the subscriber goroutine is still dialing Redis
+// (NewSSEHub gives up waiting after 5s). Run with -race: the subscriber must
+// not share its PubSub with Shutdown unsynchronised.
+func TestSSEHub_ShutdownWhileDialing(t *testing.T) {
+	t.Parallel()
+	rdb := redis.NewClient(&redis.Options{
+		Addr: "redis.invalid:6379",
+		Dialer: func(ctx context.Context, _, _ string) (net.Conn, error) {
+			<-ctx.Done() // a dial that hangs until the hub is shut down
+			return nil, ctx.Err()
+		},
+	})
+	hub := NewSSEHub(rdb)
+	hub.Shutdown()
+	select {
+	case <-hub.ready: // the subscriber has finished touching its PubSub
+	case <-time.After(5 * time.Second):
+		t.Fatal("subscriber did not stop after Shutdown")
+	}
+}
+
+// A stalled Redis (accepts, never answers) must cost one publishTimeout per
+// pause, not one per row: an 800-row import used to spend ~400s publishing
+// after commit, long enough for the client to time out and import again.
+func TestPublishGuest_StalledRedisPausesPublishes(t *testing.T) {
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	testutil.NoErr(t, err)
+	t.Cleanup(func() { ln.Close() }) //nolint:errcheck // test teardown
+	go func() {
+		for {
+			conn, err := ln.Accept()
+			if err != nil {
+				return
+			}
+			t.Cleanup(func() { conn.Close() }) //nolint:errcheck // test teardown
+		}
+	}()
+	ready := make(chan struct{})
+	close(ready)
+	hub := &SSEHub{redis: redis.NewClient(&redis.Options{Addr: ln.Addr().String(), ContextTimeoutEnabled: true}), ready: ready}
+	start := time.Now()
+	for range 10 {
+		hub.publishGuest("create", &models.GuestRecord{ID: uuid.New()}, uuid.New())
+	}
+	if took := time.Since(start); took > 3*publishTimeout {
+		t.Fatalf("10 publishes to a stalled Redis took %v; want one timeout, then skips", took)
+	}
+}
+
+// A failure that costs no time (hub not ready at startup) must not pause:
+// pausing would drop every event after it for publishPause.
+func TestPublishGuest_FastFailureDoesNotPause(t *testing.T) {
+	mr := miniredis.RunT(t)
+	hub := &SSEHub{redis: redis.NewClient(&redis.Options{Addr: mr.Addr()}), ready: make(chan struct{})}
+	hub.publishGuest("create", &models.GuestRecord{ID: uuid.New()}, uuid.New())
+	if hub.pausedUntil.Load() != 0 {
+		t.Fatal("not-ready failure paused publishing")
 	}
 }

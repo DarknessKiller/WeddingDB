@@ -27,6 +27,7 @@ type adminClient struct {
 	do   func(method, path, body string) int
 	db   *gorm.DB
 	auth *services.AuthService
+	mr   *miniredis.Miniredis
 }
 
 func newAdminTestServer(t *testing.T, adminID uuid.UUID) *adminClient {
@@ -34,7 +35,7 @@ func newAdminTestServer(t *testing.T, adminID uuid.UUID) *adminClient {
 	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
 	testutil.NoErr(t, err)
 	testutil.NoErr(t, db.Exec(`CREATE TABLE admin_users (id TEXT PRIMARY KEY, email TEXT NOT NULL, password TEXT NOT NULL,
-		name TEXT, role TEXT NOT NULL, force_password_change INTEGER DEFAULT 0, revoked INTEGER DEFAULT 0,
+		name TEXT, role TEXT NOT NULL, force_password_change INTEGER DEFAULT 0, token_version INTEGER NOT NULL DEFAULT 0, revoked INTEGER DEFAULT 0,
 		created_at DATETIME, updated_at DATETIME)`).Error)
 	testutil.NoErr(t, db.Exec(`CREATE TABLE refresh_tokens (id TEXT PRIMARY KEY, admin_id TEXT NOT NULL, wedding_id TEXT,
 		token TEXT NOT NULL UNIQUE, expires_at DATETIME, created_at DATETIME, rotated_at DATETIME, replaced_by TEXT)`).Error)
@@ -48,6 +49,7 @@ func newAdminTestServer(t *testing.T, adminID uuid.UUID) *adminClient {
 	fuego.Delete(s, "/users/{id}", h.Delete)
 	fuego.Post(s, "/users/{id}/reset-password", h.ResetPassword)
 	fuego.Post(s, "/users", h.Create)
+	fuego.Put(s, "/users/{id}/role", h.UpdateRole)
 
 	// Same identity injection as AuthMiddleware.
 	adminCtx := context.WithValue(context.Background(), middleware.AdminIDKey, adminID)
@@ -56,6 +58,7 @@ func newAdminTestServer(t *testing.T, adminID uuid.UUID) *adminClient {
 	return &adminClient{
 		db:   db,
 		auth: authSvc,
+		mr:   mr,
 		do: func(method, path, body string) int {
 			req := httptest.NewRequest(method, path, strings.NewReader(body))
 			req.Header.Set("Content-Type", "application/json")
@@ -167,5 +170,76 @@ func TestCreateUser_ValidatesInput(t *testing.T) {
 	}
 	if code := c.do(http.MethodPost, "/users", `{"email":"dup@b.test","password":"Str0ngPassw0rd!","name":"A"}`); code != http.StatusConflict {
 		t.Errorf("duplicate email: status = %d, want 409", code)
+	}
+}
+
+// "Name <addr>" is a valid RFC 5322 address; only the bare address may be
+// stored, or logging in with it never matches.
+func TestCreateUser_StoresBareAddress(t *testing.T) {
+	c := newAdminTestServer(t, uuid.New())
+
+	if got := c.do(http.MethodPost, "/users", `{"email":"Bob <Bob@X.test>","name":"Bob","role":"user","password":"TempPassw0rd!x"}`); got != http.StatusCreated {
+		t.Fatalf("status = %d, want 201", got)
+	}
+	var email string
+	testutil.NoErr(t, c.db.Raw(`SELECT email FROM admin_users`).Scan(&email).Error)
+	if email != "bob@x.test" {
+		t.Fatalf("stored email = %q, want bob@x.test", email)
+	}
+}
+
+// A create whose wedding grants fail must not leave the user behind, and a
+// malformed wedding ID is a client error, not silently dropped.
+func TestCreateUser_WeddingGrantsAreAllOrNothing(t *testing.T) {
+	c := newAdminTestServer(t, uuid.New()) // no user_weddings table: every grant insert fails
+	body := func(wedding string) string {
+		return `{"email":"g@x.test","name":"G","role":"user","password":"TempPassw0rd!x","weddings":["` + wedding + `"]}`
+	}
+	if got := c.do(http.MethodPost, "/users", body("not-an-id")); got != http.StatusBadRequest {
+		t.Fatalf("malformed wedding ID: status = %d, want 400", got)
+	}
+	if got := c.do(http.MethodPost, "/users", body(uuid.New().String())); got < 500 {
+		t.Fatalf("failing grant: status = %d, want 5xx", got)
+	}
+	var n int64
+	testutil.NoErr(t, c.db.Raw(`SELECT COUNT(*) FROM admin_users WHERE email = 'g@x.test'`).Scan(&n).Error)
+	if n != 0 {
+		t.Fatalf("%d half-made users left behind", n)
+	}
+}
+
+// A demotion whose session revoke fails must not change the role: the
+// target's live tokens still say admin, so the change would not take effect.
+func TestUpdateRole_RevokeFailureKeepsRole(t *testing.T) {
+	db := newAdminTestServer(t, uuid.New())
+	seedUser(t, db.db, "admin")
+	target := seedUser(t, db.db, "admin")
+	db.mr.Close() // Redis down: RevokeUserTokens cannot bump the token version
+
+	code := db.do(http.MethodPut, "/users/"+target.String()+"/role", `{"role":"user"}`)
+	if code != http.StatusInternalServerError {
+		t.Fatalf("status = %d, want 500", code)
+	}
+	var role string
+	testutil.NoErr(t, db.db.Raw(`SELECT role FROM admin_users WHERE id = ?`, target).Scan(&role).Error)
+	if role != "admin" {
+		t.Errorf("role = %q, want admin (unchanged)", role)
+	}
+}
+
+// A signed-in non-admin gets 403, not 401: the client treats 401 as an
+// expired session and rotates its refresh token before retrying.
+func TestAdminOnly_NonAdminGetsForbidden(t *testing.T) {
+	h := NewAdminHandler(nil, nil)
+	s := fuego.NewServer(fuego.WithoutStartupMessages())
+	fuego.Get(s, "/users", h.List)
+
+	ctx := context.WithValue(context.Background(), middleware.AdminIDKey, uuid.New())
+	ctx = context.WithValue(ctx, middleware.RoleKey, "user")
+	req := httptest.NewRequest(http.MethodGet, "/users", nil).WithContext(ctx)
+	rec := httptest.NewRecorder()
+	s.Mux.ServeHTTP(rec, req)
+	if rec.Code != http.StatusForbidden {
+		t.Errorf("status = %d, want 403", rec.Code)
 	}
 }

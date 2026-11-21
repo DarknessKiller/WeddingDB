@@ -42,6 +42,7 @@ func TestGuestToEventData_FullGuest(t *testing.T) {
 	guest := &models.GuestRecord{
 		ID:          gid,
 		Name:        "张三",
+		NamePinyin:  "zhangsan",
 		Email:       "zhang@example.com",
 		Pax:         4,
 		RSVP:        "confirmed",
@@ -65,6 +66,10 @@ func TestGuestToEventData_FullGuest(t *testing.T) {
 	}
 	if d.Pax != 4 {
 		t.Errorf("Pax = %d, want 4", d.Pax)
+	}
+	// Other devices search by pinyin; an event without it hides the guest.
+	if d.Pinyin != "zhangsan" {
+		t.Errorf("Pinyin = %q, want %q", d.Pinyin, "zhangsan")
 	}
 	if !d.IsVip {
 		t.Error("IsVip should be true")

@@ -1,25 +1,47 @@
-import { getAuth, setAuth, expireAuth } from '#lib/stores/index.ts';
+import { getAuth, setAuth, expireAuth, readStoredAuth, isSameUser, dropForeignSession, isRetiredRefreshToken } from '#lib/stores/index.ts';
 import { setWeddingId } from '#lib/stores/weddingId.ts';
+import { withTimeout } from '#lib/utils/index.ts';
 
 const BASE = '';
 
 // Serialize concurrent refresh attempts — only one refresh in flight at a time.
 let refreshPromise: Promise<boolean> | null = null;
 
-export function getAccessToken(): string {
-	const { accessToken } = getAuth();
-	return accessToken ?? '';
-}
-
 async function doRefresh(): Promise<boolean> {
-	const { refreshToken } = getAuth();
+	let { refreshToken } = getAuth();
 	if (!refreshToken) return false;
+	// Another tab already rotated the token. Reusing our stale one would make the
+	// server revoke the whole token family and log out every tab.
+	const stored = readStoredAuth();
+	// Another tab logged out or expired the session: end ours, never refresh it.
+	if (!stored) {
+		expireAuth();
+		setWeddingId('');
+		if (typeof window !== 'undefined') window.location.href = '/login';
+		return false;
+	}
+	// A token this tab already rotated away from is our own failed write, not
+	// another tab's rotation: in-memory auth is newer.
+	if (stored.refreshToken !== refreshToken && !isRetiredRefreshToken(stored.refreshToken)) {
+		// Another user logged in from another tab: never become them.
+		if (!isSameUser(stored)) {
+			dropForeignSession();
+			if (typeof window !== 'undefined') window.location.href = '/login';
+			return false;
+		}
+		setAuth(stored.accessToken, stored.refreshToken, stored.role, stored.name);
+		// The other tab may have rotated long ago and its access token since
+		// expired: retrying with it would 401 with no second refresh.
+		if (!accessTokenExpired(stored.accessToken)) return true;
+		refreshToken = stored.refreshToken;
+	}
 	let refreshRes: Response;
 	try {
 		refreshRes = await fetch(`${BASE}/api/auth/refresh`, {
 			method: 'POST',
 			headers: { 'Content-Type': 'application/json' },
-			body: JSON.stringify({ refreshToken })
+			body: JSON.stringify({ refreshToken }),
+			signal: withTimeout()
 		});
 	} catch {
 		// Network failure — the token was never seen by the server, so keep the session.
@@ -45,6 +67,17 @@ async function doRefresh(): Promise<boolean> {
 	return false;
 }
 
+// accessTokenExpired reads the JWT exp claim (no signature check: the server
+// does that). Unreadable tokens count as expired so they get refreshed.
+function accessTokenExpired(token: string): boolean {
+	try {
+		const payload = JSON.parse(atob(token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/')));
+		return typeof payload.exp !== 'number' || payload.exp * 1000 <= Date.now() + 10_000;
+	} catch {
+		return true;
+	}
+}
+
 async function refreshIfNeeded(): Promise<boolean> {
 	if (!refreshPromise) {
 		refreshPromise = doRefresh().finally(() => { refreshPromise = null; });
@@ -57,31 +90,52 @@ export async function refreshAccessToken(): Promise<boolean> {
 	return refreshIfNeeded();
 }
 
-export async function apiFetch(path: string, opts: RequestInit = {}): Promise<Response> {
-	const { accessToken } = getAuth();
-	const isDelete = opts.method === 'DELETE';
-	let res = await fetch(`${BASE}${path}`, {
-		...opts,
-		headers: {
-			...(!isDelete ? { 'Content-Type': 'application/json' } : {}),
-			...opts.headers,
-			...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {})
-		}
-	});
+// Tabs share one refresh token. When another tab picks a different wedding,
+// our next refresh comes back scoped to that one and every call here gets 403.
+// Re-pick the wedding in the URL once; admins are not wedding-scoped.
+// Shared with the SSE client, whose stream gets the same 403.
+export async function reselectWedding(wid: string): Promise<boolean> {
+	const { accessToken, refreshToken, role, name } = getAuth();
+	if (!refreshToken || role === 'admin') return false;
+	try {
+		const res = await fetch(`${BASE}/api/auth/select-wedding`, {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json', ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}) },
+			body: JSON.stringify({ weddingId: wid, refreshToken }),
+			signal: withTimeout()
+		});
+		if (!res.ok) return false;
+		const data = await res.json();
+		setAuth(data.accessToken, refreshToken, role ?? '', name ?? '');
+		return true;
+	} catch {
+		return false;
+	}
+}
 
-	if (res.status === 401) {
-		const refreshed = await refreshIfNeeded();
-		if (refreshed) {
-			const { accessToken: newToken } = getAuth();
-			res = await fetch(`${BASE}${path}`, {
-				...opts,
-				headers: {
-					'Content-Type': 'application/json',
-					...opts.headers,
-					Authorization: `Bearer ${newToken}`
-				}
-			});
-		}
+// body may be a function, built per attempt, for a body carrying the refresh
+// token: a 401 retry after rotation must not resend the spent one.
+export async function apiFetch(path: string, opts: Omit<RequestInit, 'body'> & { body?: BodyInit | null | (() => BodyInit) } = {}): Promise<Response> {
+	const isDelete = opts.method === 'DELETE';
+	const send = () => {
+		const { accessToken } = getAuth();
+		return fetch(`${BASE}${path}`, {
+			...opts,
+			body: typeof opts.body === 'function' ? opts.body() : opts.body,
+			// A caller passing its own signal owns the deadline (long imports, exports, sync).
+			signal: opts.signal ?? withTimeout(),
+			headers: {
+				...(!isDelete ? { 'Content-Type': 'application/json' } : {}),
+				...opts.headers,
+				...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {})
+			}
+		});
+	};
+	let res = await send();
+	if (res.status === 401 && (await refreshIfNeeded())) res = await send();
+	if (res.status === 403) {
+		const wid = path.match(/^\/api\/weddings\/([^/?]+)/)?.[1];
+		if (wid && (await reselectWedding(wid))) res = await send();
 	}
 	return res;
 }
@@ -90,12 +144,15 @@ export async function uploadFile(file: File): Promise<{ url: string; filename: s
 	const { accessToken } = getAuth();
 	const formData = new FormData();
 	formData.append('file', file);
+	// Uploads get longer than the default deadline: a photo on venue WiFi is slow.
+	const signal = () => withTimeout(null, 60_000);
 	let res = await fetch('/api/upload', {
 		method: 'POST',
 		headers: {
 			Authorization: `Bearer ${accessToken}`
 		},
-		body: formData
+		body: formData,
+		signal: signal()
 	});
 
 	if (res.status === 401) {
@@ -107,7 +164,8 @@ export async function uploadFile(file: File): Promise<{ url: string; filename: s
 				headers: {
 					Authorization: `Bearer ${newToken}`
 				},
-				body: formData
+				body: formData,
+				signal: signal()
 			});
 		}
 	}

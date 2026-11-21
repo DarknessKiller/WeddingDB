@@ -46,7 +46,7 @@ New here? The [root README](../../README.md) explains what the product does.
 
 ### Deployment
 - Docker Compose (`docker-compose.yml`; the `redis` service runs DragonflyDB), distroless image, timezone set.
-- The Release workflow publishes images to GitHub Container Registry (`ghcr.io/darknesskiller/weddingdb`) on `v*` tags (multi-arch: amd64 + arm64). The compose file pins `ghcr.io/darknesskiller/weddingdb:v0.14.6`, so nothing builds locally and a redeploy runs the version you tested.
+- The Release workflow publishes images to GitHub Container Registry (`ghcr.io/darknesskiller/weddingdb`) on `v*` tags (multi-arch: amd64 + arm64). The compose file pins `ghcr.io/darknesskiller/weddingdb:0.14.6`, so nothing builds locally and a redeploy runs the version you tested.
 - CI (`ci.yml`) runs on push and PR to `master`: backend `golangci-lint`, `go test -race`, `govulncheck`; frontend `npm audit`, `npm run check`, tests, and build.
 
 ## Deployment (Docker Compose)

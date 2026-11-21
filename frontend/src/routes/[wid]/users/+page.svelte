@@ -246,11 +246,11 @@ import LogOut from 'lucide-svelte/icons/log-out';
                       <option value="user">User</option>
                       <option value="admin">Admin</option>
                     </select>
-                    <button onclick={() => saveRole(user)} disabled={roleSaving}
+                    <button onclick={() => saveRole(user)} disabled={roleSaving} aria-label="Save role"
                       class="p-1 rounded-md bg-emerald-50 text-emerald-600 hover:bg-emerald-100 transition-colors" title="Save">
                       <Check class="w-3.5 h-3.5" />
                     </button>
-                    <button onclick={cancelEditRole}
+                    <button onclick={cancelEditRole} aria-label="Cancel"
                       class="p-1 rounded-md bg-gray-100 text-gray-500 hover:bg-gray-200 transition-colors" title="Cancel">
                       <X class="w-3.5 h-3.5" />
                     </button>
@@ -302,11 +302,11 @@ import LogOut from 'lucide-svelte/icons/log-out';
                   <option value="user">User</option>
                   <option value="admin">Admin</option>
                 </select>
-                <button onclick={() => saveRole(user)} disabled={roleSaving}
+                <button onclick={() => saveRole(user)} disabled={roleSaving} aria-label="Save role"
                   class="p-1 rounded-md bg-emerald-50 text-emerald-600 hover:bg-emerald-100 transition-colors">
                   <Check class="w-3.5 h-3.5" />
                 </button>
-                <button onclick={cancelEditRole}
+                <button onclick={cancelEditRole} aria-label="Cancel"
                   class="p-1 rounded-md bg-gray-100 text-gray-500 hover:bg-gray-200 transition-colors">
                   <X class="w-3.5 h-3.5" />
                 </button>

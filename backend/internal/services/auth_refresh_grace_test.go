@@ -33,7 +33,7 @@ func TestRefresh_MintFailureKeepsTokenUsable(t *testing.T) {
 	}
 
 	var live int64
-	db.Model(&models.RefreshToken{}).Where("token = ? AND rotated_at IS NULL", refreshStr).Count(&live)
+	db.Model(&models.RefreshToken{}).Where("token = ? AND rotated_at IS NULL", repository.HashToken(refreshStr)).Count(&live)
 	if live != 1 {
 		t.Fatalf("failed Refresh consumed the token: %d unrotated rows left", live)
 	}
@@ -89,8 +89,9 @@ func TestRefresh_ConcurrentRefreshesShareSuccessor(t *testing.T) {
 	}
 }
 
-// A replay of a consumed refresh token outside the grace window is theft: the
-// whole family must die, not just the replayed row.
+// A replay of a consumed refresh token outside the grace window, after its
+// successor was itself used, is theft: the whole family must die, not just the
+// replayed row.
 func TestRefresh_ReplayAfterGraceRejected(t *testing.T) {
 	svc, _, db := newIntegrationAuthService(t, "test-secret")
 	adminID := uuid.New()
@@ -99,11 +100,15 @@ func TestRefresh_ReplayAfterGraceRejected(t *testing.T) {
 	seedAdmin(t, db, adminID, "admin")
 	seedRefreshToken(t, db, adminID, nil, refreshStr)
 
-	if _, err := svc.Refresh(context.Background(), refreshStr, ""); err != nil {
+	first, err := svc.Refresh(context.Background(), refreshStr, "")
+	if err != nil {
 		t.Fatalf("first Refresh failed: %v", err)
 	}
+	if _, err := svc.Refresh(context.Background(), first.RefreshToken, ""); err != nil {
+		t.Fatalf("refresh with the successor failed: %v", err)
+	}
 
-	db.Model(&models.RefreshToken{}).Where("token = ?", refreshStr).
+	db.Model(&models.RefreshToken{}).Where("token = ?", repository.HashToken(refreshStr)).
 		Update("rotated_at", time.Now().Add(-refreshGraceWindow-time.Minute))
 
 	if _, err := svc.Refresh(context.Background(), refreshStr, ""); err == nil {
@@ -121,6 +126,40 @@ func TestRefresh_ReplayAfterGraceRejected(t *testing.T) {
 	}
 	if tv != 1 {
 		t.Errorf("token version = %d after replay, want 1 (access tokens revoked)", tv)
+	}
+}
+
+// A rotation whose response was lost leaves the client holding the consumed
+// token. Retrying it past the grace window, while the successor is still
+// unused, must hand back that successor rather than revoke every device.
+func TestRefresh_LostResponseAfterGraceServesUnusedSuccessor(t *testing.T) {
+	svc, _, db := newIntegrationAuthService(t, "test-secret")
+	adminID := uuid.New()
+	refreshStr := "grace-lost-response"
+
+	seedAdmin(t, db, adminID, "admin")
+	seedRefreshToken(t, db, adminID, nil, refreshStr)
+
+	first, err := svc.Refresh(context.Background(), refreshStr, "")
+	if err != nil {
+		t.Fatalf("first Refresh failed: %v", err)
+	}
+	db.Model(&models.RefreshToken{}).Where("token = ?", repository.HashToken(refreshStr)).
+		Update("rotated_at", time.Now().Add(-refreshGraceWindow-time.Minute))
+
+	retry, err := svc.Refresh(context.Background(), refreshStr, "")
+	if err != nil {
+		t.Fatalf("retry of a lost rotation was rejected: %v", err)
+	}
+	if retry.RefreshToken != first.RefreshToken {
+		t.Errorf("retry returned %q, want the unused successor %q", retry.RefreshToken, first.RefreshToken)
+	}
+	tv, err := svc.GetTokenVersion(context.Background(), adminID)
+	if err != nil {
+		t.Fatalf("read token version: %v", err)
+	}
+	if tv != 0 {
+		t.Errorf("token version = %d, want 0 (no revoke)", tv)
 	}
 }
 
@@ -142,12 +181,12 @@ func TestTokenRotate_SecondClaimRejected(t *testing.T) {
 	}
 
 	var stored int64
-	db.Model(&models.RefreshToken{}).Where("token = ?", "claim-loser").Count(&stored)
+	db.Model(&models.RefreshToken{}).Where("token = ?", repository.HashToken("claim-loser")).Count(&stored)
 	if stored != 0 {
 		t.Errorf("loser's replacement was stored: %d rows", stored)
 	}
 	var live int64
-	db.Model(&models.RefreshToken{}).Where("token = ? AND rotated_at IS NULL", "claim-successor").Count(&live)
+	db.Model(&models.RefreshToken{}).Where("token = ? AND rotated_at IS NULL", repository.HashToken("claim-successor")).Count(&live)
 	if live != 1 {
 		t.Errorf("winner's replacement missing: %d rows", live)
 	}

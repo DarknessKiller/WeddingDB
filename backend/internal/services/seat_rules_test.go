@@ -9,8 +9,10 @@ import (
 
 	"weddingdb/internal/models"
 	"weddingdb/internal/repository"
+	"weddingdb/internal/testutil"
 
 	"github.com/google/uuid"
+	"gorm.io/gorm"
 )
 
 // seedTable inserts a banquet table in wid and returns its id.
@@ -93,7 +95,7 @@ func TestBulkCreate_RejectsSeatOverlap(t *testing.T) {
 		{ID: uuid.New(), WeddingID: wid, Name: "A", Pax: 1, TableID: &tid, SeatNum: intPtr(5)},
 		{ID: uuid.New(), WeddingID: wid, Name: "B", Pax: 1, TableID: &tid, SeatNum: intPtr(5)},
 	}
-	created, err := svc.BulkCreate(context.Background(), batch)
+	created, err := svc.BulkCreate(context.Background(), batch, nil)
 	if !errors.Is(err, ErrSeatOverlap) {
 		t.Fatalf("error = %v, want ErrSeatOverlap", err)
 	}
@@ -114,7 +116,7 @@ func TestBulkCreate_RejectsForeignTable(t *testing.T) {
 	batch := []models.GuestRecord{
 		{ID: uuid.New(), WeddingID: wid, Name: "A", Pax: 1, TableID: &foreign},
 	}
-	if _, err := svc.BulkCreate(context.Background(), batch); err == nil {
+	if _, err := svc.BulkCreate(context.Background(), batch, nil); err == nil {
 		t.Fatal("foreign table without a seat must be rejected")
 	}
 }
@@ -131,7 +133,7 @@ func TestUpdateWithSeat_FailedSeatLeavesFieldsUntouched(t *testing.T) {
 	}
 
 	g.Name = "Renamed"
-	err := svc.UpdateWithSeat(context.Background(), g, &tid, 2)
+	err := svc.UpdateWithSeat(context.Background(), g, &tid, new(2), nil)
 	if !errors.Is(err, ErrSeatOverlap) {
 		t.Fatalf("error = %v, want ErrSeatOverlap", err)
 	}
@@ -155,7 +157,7 @@ func TestUpdateWithSeat_AppliesBoth(t *testing.T) {
 	g := seedGuest(t, svc, wid, "Alice")
 
 	g.Name = "Renamed"
-	if err := svc.UpdateWithSeat(context.Background(), g, &tid, 4); err != nil {
+	if err := svc.UpdateWithSeat(context.Background(), g, &tid, new(4), nil); err != nil {
 		t.Fatalf("update: %v", err)
 	}
 	stored, err := repository.NewGuestRepo(svc.db).FindByID(context.Background(), g.ID, wid)
@@ -164,5 +166,148 @@ func TestUpdateWithSeat_AppliesBoth(t *testing.T) {
 	}
 	if stored.Name != "Renamed" || stored.TableID == nil || *stored.TableID != tid || stored.SeatNum == nil || *stored.SeatNum != 4 {
 		t.Fatalf("stored = %+v", stored)
+	}
+}
+
+// A table without a seat number still enforces capacity: three 4-pax parties
+// do not fit on a 10-seat table.
+func TestUpdateWithoutSeat_RejectsOverCapacity(t *testing.T) {
+	svc, _, wid := newGuestSyncService(t)
+	ctx := context.Background()
+	tid := seedTable(t, svc, wid, "T1", 10)
+	for i, name := range []string{"A", "B", "C"} {
+		g := seedGuest(t, svc, wid, name)
+		g.Pax = 4
+		g.TableID = &tid
+		err := svc.Update(ctx, g)
+		if i < 2 && err != nil {
+			t.Fatalf("party %s should fit: %v", name, err)
+		}
+		if i == 2 && err == nil {
+			t.Fatal("third 4-pax party must be rejected on a 10-seat table")
+		}
+	}
+}
+
+// Seat moves and check-out write only their own columns, so a concurrent
+// check-in or notes edit made after the guest was loaded survives.
+func TestSeatAndCheckOut_KeepConcurrentEdits(t *testing.T) {
+	svc, db, wid := newGuestSyncService(t)
+	ctx := context.Background()
+	tid := seedTable(t, svc, wid, "T1", 10)
+	g := seedGuest(t, svc, wid, "A")
+
+	// Another staff phone writes after service loaded guest but
+	// before its own update runs.
+	var concurrent func(*gorm.DB)
+	testutil.NoErr(t, db.Callback().Update().Before("gorm:update").Register("test:concurrent_write", func(tx *gorm.DB) {
+		if f := concurrent; f != nil {
+			concurrent = nil
+			f(tx.Session(&gorm.Session{NewDB: true}))
+		}
+	}))
+
+	concurrent = func(tx *gorm.DB) {
+		testutil.NoErr(t, tx.Exec("UPDATE guest_records SET checked_in_at = ? WHERE id = ?", time.Now(), g.ID).Error)
+	}
+	testutil.NoErr(t, svc.AssignSeat(ctx, g.ID, wid, tid, 1))
+	got, err := svc.Get(ctx, g.ID, wid)
+	testutil.NoErr(t, err)
+	if got.CheckedInAt == nil {
+		t.Fatal("AssignSeat cleared concurrent check-in")
+	}
+
+	concurrent = func(tx *gorm.DB) {
+		testutil.NoErr(t, tx.Exec("UPDATE guest_records SET notes = ? WHERE id = ?", "late note", g.ID).Error)
+	}
+	testutil.NoErr(t, svc.CheckOut(ctx, g.ID, wid))
+	got, err = svc.Get(ctx, g.ID, wid)
+	testutil.NoErr(t, err)
+	if got.CheckedInAt != nil || got.Notes != "late note" || got.TableID == nil {
+		t.Fatalf("checkout must clear only checked_in_at: %+v", got)
+	}
+}
+
+// Seatless guests at a table count toward its capacity on every path: a seat
+// assignment and a capacity cut must not ignore them.
+func TestCapacity_CountsSeatlessGuests(t *testing.T) {
+	svc, _, wid := newGuestSyncService(t)
+	tid := seedTable(t, svc, wid, "T1", 10)
+	party := seedGuest(t, svc, wid, "Party of 8")
+	party.Pax = 8
+	party.TableID = &tid
+	testutil.NoErr(t, svc.db.Save(party).Error)
+
+	five := seedGuest(t, svc, wid, "Party of 5")
+	five.Pax = 5
+	testutil.NoErr(t, svc.db.Save(five).Error)
+	if err := svc.AssignSeat(t.Context(), five.ID, wid, tid, 1); err == nil {
+		t.Fatal("seating 5 at a table of 10 that already holds 8 should fail")
+	}
+
+	ts := NewTableService(svc.tableRepo, svc.guestRepo, nil, svc.db)
+	table, err := ts.Get(t.Context(), tid, wid)
+	testutil.NoErr(t, err)
+	table.Capacity = 2
+	if err := ts.Update(t.Context(), table); !errors.Is(err, repository.ErrCapacityBelowSeats) {
+		t.Fatalf("capacity cut below 8 seatless guests: err = %v, want ErrCapacityBelowSeats", err)
+	}
+}
+
+// An edit based on a row that someone else has since changed (here, a
+// check-in) must be refused instead of overwriting their change.
+func TestUpdateWithSeat_RejectsStaleBase(t *testing.T) {
+	svc, _, wid := newGuestSyncService(t)
+	g := seedGuest(t, svc, wid, "A")
+	loaded, err := svc.Get(t.Context(), g.ID, wid)
+	testutil.NoErr(t, err)
+	base := loaded.UpdatedAt
+
+	time.Sleep(2 * time.Millisecond) // updated_at must move past base
+	testutil.NoErr(t, svc.CheckIn(t.Context(), g.ID, wid, "brought +1"))
+
+	edit := *loaded
+	edit.RSVP = "pending"
+	if err := svc.UpdateWithSeat(t.Context(), &edit, nil, nil, &base); !errors.Is(err, ErrStaleGuest) {
+		t.Fatalf("stale edit: err = %v, want ErrStaleGuest", err)
+	}
+	fresh, err := svc.Get(t.Context(), g.ID, wid)
+	testutil.NoErr(t, err)
+	if fresh.Notes != "brought +1" || fresh.RSVP != "confirmed" {
+		t.Fatalf("check-in was overwritten: notes=%q rsvp=%q", fresh.Notes, fresh.RSVP)
+	}
+	fresh.RSVP = "pending"
+	freshBase := fresh.UpdatedAt
+	testutil.NoErr(t, svc.UpdateWithSeat(t.Context(), fresh, nil, nil, &freshBase))
+}
+
+// Missing rows map to not-found sentinels, so handlers answer 404, not 500.
+func TestMissingRows_ReturnNotFound(t *testing.T) {
+	svc, _, wid := newGuestSyncService(t)
+	if err := svc.CheckOut(t.Context(), uuid.New(), wid); !errors.Is(err, ErrGuestNotFound) {
+		t.Fatalf("check-out of a missing guest: err = %v, want ErrGuestNotFound", err)
+	}
+	ts := NewTableService(svc.tableRepo, svc.guestRepo, nil, svc.db)
+	if err := ts.Delete(t.Context(), uuid.New(), wid); !errors.Is(err, ErrTableNotFound) {
+		t.Fatalf("delete of a missing table: err = %v, want ErrTableNotFound", err)
+	}
+}
+
+// A field edit with no tableId keeps the seat as committed: a seat assigned
+// after the editor read the guest must survive the save.
+func TestUpdateWithSeat_KeepsSeatAssignedAfterRead(t *testing.T) {
+	svc, _, wid := newGuestSyncService(t)
+	tid := seedTable(t, svc, wid, "T1", 10)
+	g := seedGuest(t, svc, wid, "A")
+	loaded, err := svc.Get(t.Context(), g.ID, wid)
+	testutil.NoErr(t, err)
+	testutil.NoErr(t, svc.AssignSeat(t.Context(), g.ID, wid, tid, 3))
+
+	loaded.Notes = "halal"
+	testutil.NoErr(t, svc.UpdateWithSeat(t.Context(), loaded, nil, nil, nil))
+	got, err := svc.Get(t.Context(), g.ID, wid)
+	testutil.NoErr(t, err)
+	if got.TableID == nil || *got.TableID != tid || got.SeatNum == nil || *got.SeatNum != 3 || got.Notes != "halal" {
+		t.Fatalf("table=%v seat=%v notes=%q, want T1 seat 3 and the note", got.TableID, got.SeatNum, got.Notes)
 	}
 }

@@ -14,6 +14,7 @@ function res(body: unknown, status = 200): Response {
 	return { ok: status >= 200 && status < 300, status, json: async () => body } as Response;
 }
 
+const jwtWithExp = (exp: number) => `h.${btoa(JSON.stringify({ exp }))}.s`;
 const REFRESH_OK = { accessToken: 'new-access', refreshToken: 'refresh-2', role: 'admin', name: 'A' };
 
 let fetchMock: ReturnType<typeof vi.fn>;
@@ -27,7 +28,7 @@ beforeEach(async () => {
 	fetchMock = vi.fn();
 	Object.defineProperty(globalThis, 'fetch', { value: fetchMock, configurable: true });
 	const { setAuth } = await import('#lib/stores/index.ts');
-	setAuth('old-access', 'refresh-1', 'admin', 'A');
+	setAuth('old-access', 'refresh-1', 'admin', 'A', 'a@x.com');
 });
 
 afterEach(() => {
@@ -90,5 +91,138 @@ describe('apiFetch refresh recovery', () => {
 		expect(location.href).toBe('/login');
 		expect(getAuth().accessToken).toBeNull();
 		expect(localStorage.getItem('weddingdb_auth')).toBeNull();
+	});
+
+	it('ends the session without refreshing when another tab logged out', async () => {
+		localStorage.removeItem('weddingdb_auth');
+		fetchMock.mockResolvedValueOnce(res({}, 401));
+
+		const { apiFetch } = await import('./client');
+		const { getAuth } = await import('#lib/stores/index.ts');
+		await apiFetch('/api/guests');
+
+		expect(fetchMock).toHaveBeenCalledTimes(1);
+		expect(location.href).toBe('/login');
+		expect(getAuth().refreshToken).toBeNull();
+	});
+
+	it('adopts a token another tab already rotated instead of reusing the stale one', async () => {
+		const tab2Access = jwtWithExp(Date.now() / 1000 + 600);
+		localStorage.setItem('weddingdb_auth', JSON.stringify({ accessToken: tab2Access, refreshToken: 'refresh-2', role: 'admin', name: 'A', user: 'a@x.com' }));
+		fetchMock
+			.mockResolvedValueOnce(res({}, 401))
+			.mockResolvedValueOnce(res({ guests: [] }));
+
+		const { apiFetch } = await import('./client');
+		const { getAuth } = await import('#lib/stores/index.ts');
+		const result = await apiFetch('/api/guests');
+
+		expect(result.status).toBe(200);
+		expect(fetchMock).toHaveBeenCalledTimes(2);
+		expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/auth/refresh'))).toBe(false);
+		expect(fetchMock.mock.calls[1][1].headers.Authorization).toBe(`Bearer ${tab2Access}`);
+		expect(getAuth().refreshToken).toBe('refresh-2');
+	});
+
+	it('refreshes with the adopted token when the other tab\'s access token has expired', async () => {
+		localStorage.setItem('weddingdb_auth', JSON.stringify({ accessToken: jwtWithExp(Date.now() / 1000 - 60), refreshToken: 'refresh-2', role: 'admin', name: 'A', user: 'a@x.com' }));
+		fetchMock
+			.mockResolvedValueOnce(res({}, 401))
+			.mockResolvedValueOnce(res({ ...REFRESH_OK, refreshToken: 'refresh-3' }))
+			.mockResolvedValueOnce(res({ guests: [] }));
+
+		const { apiFetch } = await import('./client');
+		const { getAuth } = await import('#lib/stores/index.ts');
+		const result = await apiFetch('/api/guests');
+
+		expect(result.status).toBe(200);
+		const refreshCall = fetchMock.mock.calls.find(([url]) => String(url).includes('/api/auth/refresh'));
+		expect(JSON.parse(refreshCall![1].body)).toEqual({ refreshToken: 'refresh-2' });
+		expect(fetchMock.mock.calls[2][1].headers.Authorization).toBe('Bearer new-access');
+		expect(getAuth().refreshToken).toBe('refresh-3');
+	});
+
+	it('never adopts tokens of another user who logged in from another tab', async () => {
+		const other = JSON.stringify({ accessToken: 'b-access', refreshToken: 'refresh-b', role: 'staff', name: 'B', user: 'b@x.com' });
+		localStorage.setItem('weddingdb_auth', other);
+		fetchMock.mockResolvedValueOnce(res({}, 401));
+
+		const { apiFetch } = await import('./client');
+		const { getAuth } = await import('#lib/stores/index.ts');
+		const result = await apiFetch('/api/guests');
+
+		expect(result.status).toBe(401);
+		expect(fetchMock).toHaveBeenCalledTimes(1);
+		expect(getAuth()).toMatchObject({ accessToken: null, refreshToken: null });
+		expect(location.href).toBe('/login');
+		expect(localStorage.getItem('weddingdb_auth')).toBe(other);
+	});
+
+	it('re-picks the URL wedding when another tab rescoped the shared token', async () => {
+		const { setAuth, getAuth } = await import('#lib/stores/index.ts');
+		setAuth('scoped-b', 'refresh-1', 'staff', 'S');
+		fetchMock
+			.mockResolvedValueOnce(res({ error: 'Access denied' }, 403))
+			.mockResolvedValueOnce(res({ accessToken: 'scoped-a' }))
+			.mockResolvedValueOnce(res({ guests: [] }));
+
+		const { apiFetch } = await import('./client');
+		const result = await apiFetch('/api/weddings/wA/guests');
+
+		expect(result.status).toBe(200);
+		expect(fetchMock.mock.calls[1][0]).toContain('/api/auth/select-wedding');
+		expect(JSON.parse(fetchMock.mock.calls[1][1].body)).toEqual({ weddingId: 'wA', refreshToken: 'refresh-1' });
+		expect(fetchMock.mock.calls[2][1].headers.Authorization).toBe('Bearer scoped-a');
+		expect(getAuth().accessToken).toBe('scoped-a');
+	});
+
+	it('returns the 403 when the user really has no access', async () => {
+		const { setAuth } = await import('#lib/stores/index.ts');
+		setAuth('scoped-b', 'refresh-1', 'staff', 'S');
+		fetchMock.mockResolvedValueOnce(res({}, 403)).mockResolvedValueOnce(res({ title: 'No access' }, 403));
+
+		const { apiFetch } = await import('./client');
+		const result = await apiFetch('/api/weddings/wA/guests');
+
+		expect(result.status).toBe(403);
+		expect(fetchMock).toHaveBeenCalledTimes(2);
+	});
+
+	it('refreshes with the in-memory token when a failed storage write left a rotated one stored', async () => {
+		const { setAuth, getAuth } = await import('#lib/stores/index.ts');
+		const stale = localStorage.getItem('weddingdb_auth');
+		vi.spyOn(localStorage, 'setItem').mockImplementation(() => { throw new Error('QuotaExceededError'); });
+		setAuth(jwtWithExp(Date.now() / 1000 - 60), 'refresh-2', 'admin', 'A');
+		expect(localStorage.getItem('weddingdb_auth')).toBe(stale);
+		fetchMock
+			.mockResolvedValueOnce(res({}, 401))
+			.mockResolvedValueOnce(res({ ...REFRESH_OK, refreshToken: 'refresh-3' }))
+			.mockResolvedValueOnce(res({ guests: [] }));
+
+		const { apiFetch } = await import('./client');
+		const result = await apiFetch('/api/guests');
+
+		expect(result.status).toBe(200);
+		const refreshCall = fetchMock.mock.calls.find(([url]) => String(url).includes('/api/auth/refresh'));
+		expect(JSON.parse(refreshCall![1].body)).toEqual({ refreshToken: 'refresh-2' });
+		expect(getAuth().refreshToken).toBe('refresh-3');
+	});
+
+	it('rebuilds a body factory after refresh so the retry carries the rotated refresh token', async () => {
+		const { getAuth } = await import('#lib/stores/index.ts');
+		fetchMock
+			.mockResolvedValueOnce(res({}, 401))
+			.mockResolvedValueOnce(res(REFRESH_OK))
+			.mockResolvedValueOnce(res({ accessToken: 'scoped' }));
+
+		const { apiFetch } = await import('./client');
+		const result = await apiFetch('/api/auth/select-wedding', {
+			method: 'POST',
+			body: () => JSON.stringify({ weddingId: 'w1', refreshToken: getAuth().refreshToken })
+		});
+
+		expect(result.status).toBe(200);
+		expect(JSON.parse(fetchMock.mock.calls[0][1].body).refreshToken).toBe('refresh-1');
+		expect(JSON.parse(fetchMock.mock.calls[2][1].body).refreshToken).toBe('refresh-2');
 	});
 });

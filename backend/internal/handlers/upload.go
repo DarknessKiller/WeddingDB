@@ -1,6 +1,8 @@
 package handlers
 
 import (
+	"bytes"
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
@@ -24,8 +26,21 @@ var magicBytes = map[string][]byte{
 	".jpeg": {0xff, 0xd8, 0xff},
 	".png":  {0x89, 0x50, 0x4e, 0x47},
 	".gif":  {0x47, 0x49, 0x46, 0x38},
-	".webp": {0x52, 0x49, 0x46, 0x46},       // RIFF header
-	".svg":  {0x3c, 0x3f, 0x78, 0x6d, 0x6c}, // <?xml
+	".webp": {0x52, 0x49, 0x46, 0x46}, // RIFF header
+}
+
+// matchesMagic reports whether head (the file's first bytes) fits ext. An SVG
+// may open with an XML prolog or straight at <svg (Figma, most exporters).
+func matchesMagic(ext string, head []byte) bool {
+	if ext == ".svg" {
+		head = bytes.TrimLeft(bytes.TrimPrefix(head, []byte("\xef\xbb\xbf")), " \t\r\n")
+		return bytes.HasPrefix(head, []byte("<?xml")) || bytes.HasPrefix(head, []byte("<svg"))
+	}
+	if ext == ".webp" {
+		// RIFF is a generic container (WAV, AVI); WebP adds "WEBP" after the size.
+		return len(head) >= 12 && bytes.HasPrefix(head, magicBytes[ext]) && string(head[8:12]) == "WEBP"
+	}
+	return bytes.HasPrefix(head, magicBytes[ext])
 }
 
 // maxUploadFileBytes is the advertised per-file limit.
@@ -47,8 +62,9 @@ const (
 )
 
 type UploadHandler struct {
-	mu      sync.Mutex
-	windows map[string]*uploadWindow
+	mu        sync.Mutex
+	windows   map[string]*uploadWindow
+	hasAccess func(ctx context.Context, userID, weddingID uuid.UUID) (bool, error)
 }
 
 type uploadWindow struct {
@@ -56,8 +72,9 @@ type uploadWindow struct {
 	count int
 }
 
-func NewUploadHandler() *UploadHandler {
-	return &UploadHandler{windows: make(map[string]*uploadWindow)}
+// NewUploadHandler takes the DB wedding-assignment check (AdminRepo.HasWeddingAccess).
+func NewUploadHandler(hasAccess func(ctx context.Context, userID, weddingID uuid.UUID) (bool, error)) *UploadHandler {
+	return &UploadHandler{windows: make(map[string]*uploadWindow), hasAccess: hasAccess}
 }
 
 // allow applies a fixed-window rate limit per scope so one wedding cannot
@@ -86,15 +103,28 @@ func closeLogged(c io.Closer) {
 }
 
 func (h *UploadHandler) Upload(c fuego.ContextWithBody[any]) (any, error) {
-	// Uploads feed kiosk settings, so only admins or users scoped to a wedding may upload.
-	if RoleFromContext(c.Context()) != "admin" && WeddingIDFromContext(c.Context()) == nil {
-		return nil, fuego.ForbiddenError{Title: "Select a wedding before uploading"}
+	ctx := c.Context()
+	// Uploads feed kiosk settings, so only admins or users scoped to a wedding
+	// may upload, and the user must still be assigned to it: the token's
+	// wedding claim outlives an unassign until it expires.
+	if RoleFromContext(ctx) != "admin" {
+		wid := WeddingIDFromContext(ctx)
+		if wid == nil {
+			return nil, fuego.ForbiddenError{Title: "Select a wedding before uploading"}
+		}
+		allowed, err := h.hasAccess(ctx, AdminIDFromContext(ctx), *wid)
+		if err != nil {
+			return nil, fmt.Errorf("upload access check: %w", err)
+		}
+		if !allowed {
+			return nil, fuego.ForbiddenError{Title: "access denied to this wedding"}
+		}
 	}
-	// Namespace the hash index per caller: a wedding-scoped upload may only
-	// reuse a file from its own wedding, never another tenant's. Admins share
-	// one global namespace.
+	// Namespace the hash index, quota and rate limit per wedding: an upload may
+	// only reuse a file from its own wedding, never another tenant's. Only an
+	// admin with no wedding selected falls back to the shared global scope.
 	scope := "global"
-	if wid := WeddingIDFromContext(c.Context()); RoleFromContext(c.Context()) != "admin" && wid != nil {
+	if wid := WeddingIDFromContext(c.Context()); wid != nil {
 		scope = wid.String()
 	}
 	if !h.allow(scope) {
@@ -130,15 +160,8 @@ func (h *UploadHandler) Upload(c fuego.ContextWithBody[any]) (any, error) {
 	if _, err := file.Seek(0, 0); err != nil {
 		return nil, fuego.InternalServerError{Title: "Failed to read file"}
 	}
-	if n < len(magicBytes[ext]) {
+	if !matchesMagic(ext, headerBuf[:n]) {
 		return nil, fuego.BadRequestError{Title: "File content does not match extension"}
-	}
-	expected := magicBytes[ext]
-	actual := headerBuf[:len(expected)]
-	for i := range expected {
-		if actual[i] != expected[i] {
-			return nil, fuego.BadRequestError{Title: "File content does not match extension"}
-		}
 	}
 
 	// Create uploads directory
@@ -206,13 +229,24 @@ func (h *UploadHandler) Upload(c fuego.ContextWithBody[any]) (any, error) {
 	}
 
 	f, err := os.OpenFile(indexPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
-	if err != nil {
-		// Index write failure is non-critical: the file is already saved.
-	} else {
-		if _, err := fmt.Fprintf(f, "%s %s %s\n", scope, hash, filename); err != nil {
-			slog.Warn("write upload index failed", "err", err)
+	// The index is the quota ledger: a file missing from it is never counted,
+	// so an upload whose index entry cannot be written is removed, not kept.
+	unindexed := func(err error) error {
+		slog.Error("upload index write failed; removing unindexed file", "file", filename, "err", err)
+		if rmErr := os.Remove(filePath); rmErr != nil {
+			slog.Warn("remove unindexed upload failed", "file", filename, "err", rmErr)
 		}
+		return fuego.InternalServerError{Title: "Failed to save file"}
+	}
+	if err != nil {
+		return nil, unindexed(err)
+	}
+	if _, err := fmt.Fprintf(f, "%s %s %s\n", scope, hash, filename); err != nil {
 		closeLogged(f)
+		return nil, unindexed(err)
+	}
+	if err := f.Close(); err != nil {
+		return nil, unindexed(err)
 	}
 
 	c.SetStatus(201)

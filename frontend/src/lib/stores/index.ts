@@ -36,9 +36,12 @@ interface StoredAuth {
   refreshToken: string;
   role: string;
   name: string;
+  // Login email. Lets a tab tell another tab's rotated token (same user) from
+  // another user's login, whose tokens it must never adopt.
+  user: string;
 }
 
-function readStoredAuth(): StoredAuth | null {
+export function readStoredAuth(): StoredAuth | null {
   if (typeof window === 'undefined') return null;
   try {
     const raw = localStorage.getItem(AUTH_KEY);
@@ -49,7 +52,8 @@ function readStoredAuth(): StoredAuth | null {
       accessToken: parsed.accessToken,
       refreshToken: parsed.refreshToken,
       role: parsed.role ?? '',
-      name: parsed.name ?? ''
+      name: parsed.name ?? '',
+      user: parsed.user ?? ''
     };
   } catch {
     return null;
@@ -61,16 +65,28 @@ let _accessToken: string | null = storedAuth?.accessToken ?? null;
 let _refreshToken: string | null = storedAuth?.refreshToken ?? null;
 let _role: string | null = storedAuth?.role ?? null;
 let _name: string | null = storedAuth?.name ?? null;
+let _user: string | null = storedAuth?.user ?? null;
 
 export function getAuth() {
   return { accessToken: _accessToken, refreshToken: _refreshToken, role: _role, name: _name };
 }
 
-export function setAuth(access: string, refresh: string, r: string, n: string) {
+// Refresh tokens this tab already rotated away from. A failed storage write
+// leaves one of them in localStorage; refreshing with it is a replay that
+// revokes the whole family, so it must never be mistaken for another tab's.
+const retiredRefreshTokens = new Set<string>();
+export function isRetiredRefreshToken(token: string): boolean {
+  return retiredRefreshTokens.has(token);
+}
+
+// user defaults to the current one: refresh and wedding selection keep the same user.
+export function setAuth(access: string, refresh: string, r: string, n: string, user = _user) {
+  if (_refreshToken && _refreshToken !== refresh) retiredRefreshTokens.add(_refreshToken);
   _accessToken = access;
   _refreshToken = refresh;
   _role = r;
   _name = n;
+  _user = user;
   writeStoredAuth();
 }
 
@@ -81,17 +97,19 @@ function writeStoredAuth() {
       accessToken: _accessToken,
       refreshToken: _refreshToken,
       role: _role ?? '',
-      name: _name ?? ''
+      name: _name ?? '',
+      user: _user ?? ''
     } satisfies StoredAuth));
   } catch {}
 }
 
-function resetAuthState() {
+function resetAuthState(keepStored = false) {
   _accessToken = null;
   _refreshToken = null;
   _role = null;
   _name = null;
-  if (typeof window !== 'undefined') localStorage.removeItem(AUTH_KEY);
+  _user = null;
+  if (typeof window !== 'undefined' && !keepStored) localStorage.removeItem(AUTH_KEY);
 }
 
 /** Explicit logout: the next person at this device must not inherit data. */
@@ -106,6 +124,20 @@ export function clearAuth() {
  */
 export function expireAuth() {
   resetAuthState();
+  expireStaffOfflineData();
+}
+
+/** True when the stored auth is this tab's user. Auth stored without a user never matches. */
+export function isSameUser(stored: StoredAuth): boolean {
+  return !!stored.user && stored.user === _user;
+}
+
+/**
+ * Another user logged in from another tab. End this tab's session in memory
+ * only: the stored auth and wedding id are theirs now.
+ */
+export function dropForeignSession() {
+  resetAuthState(true);
   expireStaffOfflineData();
 }
 
@@ -125,8 +157,31 @@ export function setShowSeatNumbers(wid: string, value: boolean) {
 	} catch {}
 }
 
+/**
+ * Another tab logged out, its session expired (the stored auth is gone), or
+ * another user logged in. Drop this tab's tokens and roster cache too, or it
+ * keeps showing guest data and later adopts the next user's tokens. Queued
+ * edits stay, as on expiry. Returns true when this tab had a session to end.
+ */
+export function endSessionFromOtherTab(): boolean {
+	if (!_refreshToken) return false;
+	const stored = readStoredAuth();
+	if (!stored) {
+		expireAuth();
+		return true;
+	}
+	if (stored.refreshToken === _refreshToken || isSameUser(stored)) return false;
+	dropForeignSession();
+	return true;
+}
+
 if (typeof window !== 'undefined') {
 	window.addEventListener('storage', (e) => {
 		if (e.key === seatNumbersKey(currentWid)) showSeatNumbers.set(e.newValue !== '0');
+		// key is null when another tab called localStorage.clear().
+		if (e.key !== AUTH_KEY && e.key !== null) return;
+		// The public kiosk never uses the staff session, so it keeps running.
+		if (window.location.pathname.startsWith('/kiosk')) return;
+		if (endSessionFromOtherTab()) window.location.href = '/login';
 	});
 }

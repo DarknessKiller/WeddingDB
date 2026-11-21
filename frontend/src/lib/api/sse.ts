@@ -1,5 +1,5 @@
 import { getAuth } from '#lib/stores/index.ts';
-import { refreshAccessToken } from '#lib/api/client.ts';
+import { refreshAccessToken, reselectWedding } from '#lib/api/client.ts';
 
 export interface GuestEvent {
 	type: 'create' | 'update' | 'delete' | 'checkin' | 'checkout' | 'seat_assign';
@@ -8,6 +8,7 @@ export interface GuestEvent {
 	guest?: {
 		id: string;
 		name: string;
+		pinyin?: string;
 		email: string;
 		pax: number;
 		rsvp: string;
@@ -24,6 +25,10 @@ export interface GuestEvent {
 }
 
 type EventHandler = (event: GuestEvent) => void;
+
+// The server pings every 20s. Silence past this means the connection died
+// without closing (e.g. the phone switched WiFi access point).
+const IDLE_TIMEOUT_MS = 45_000;
 type StatusHandler = (status: 'connected' | 'reconnecting', reconnect: boolean) => void;
 
 class SSEClient {
@@ -49,6 +54,16 @@ class SSEClient {
 	}
 
 	private async stream(weddingId: string, accessToken: string, controller: AbortController) {
+		let idle = false;
+		let idleTimer: ReturnType<typeof setTimeout> | undefined;
+		const resetIdle = () => {
+			clearTimeout(idleTimer);
+			idleTimer = setTimeout(() => {
+				idle = true;
+				controller.abort();
+			}, IDLE_TIMEOUT_MS);
+		};
+		resetIdle();
 		try {
 			const response = await fetch(`/api/weddings/${weddingId}/events`, {
 				headers: { Authorization: `Bearer ${accessToken}` },
@@ -59,16 +74,22 @@ class SSEClient {
 				await refreshAccessToken();
 				throw new Error('SSE unauthorized');
 			}
+			if (response.status === 403) {
+				// Another tab rescoped the shared token to its wedding: re-pick ours, then reconnect.
+				await reselectWedding(weddingId);
+				throw new Error('SSE forbidden');
+			}
 			if (!response.ok || !response.body) throw new Error(`SSE request failed: ${response.status}`);
 
 			const reconnect = this.reconnectDelay > 1000;
-			this.reconnectDelay = 1000;
+			this.openedAt = Date.now();
 			this.statusHandlers.forEach((handler) => handler('connected', reconnect));
 			const reader = response.body.getReader();
 			const decoder = new TextDecoder();
 			let buffer = '';
 			while (true) {
 				const { value, done } = await reader.read();
+				resetIdle();
 				buffer += decoder.decode(value, { stream: !done });
 				const messages = buffer.split(/\r?\n\r?\n/);
 				buffer = messages.pop() ?? '';
@@ -85,15 +106,24 @@ class SSEClient {
 				if (done) break;
 			}
 		} catch {
-			if (controller.signal.aborted) return;
+			// A deliberate abort (disconnect or a new connect) is not a drop; an idle timeout is.
+			if (controller.signal.aborted && !idle) return;
 			this.statusHandlers.forEach((handler) => handler('reconnecting', false));
 		} finally {
+			clearTimeout(idleTimer);
 			if (this.controller === controller) {
 				this.controller = null;
+				if (this.openedAt && Date.now() - this.openedAt >= 30_000) this.reconnectDelay = 1000;
+				this.openedAt = 0;
 				this.scheduleReconnect();
 			}
 		}
 	}
+
+	// When the current stream opened. Backoff only resets once a stream has
+	// stayed up, so a server that accepts then closes (per-user cap eviction)
+	// cannot drive a reconnect every second.
+	private openedAt = 0;
 
 	disconnect() {
 		this.controller?.abort();

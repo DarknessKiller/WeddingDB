@@ -64,16 +64,58 @@ describe('auth storage', () => {
 	it('persists on setAuth and removes the session on clearAuth', async () => {
 		const { getAuth, setAuth, clearAuth } = await import('#lib/stores/index.ts');
 
-		setAuth('new-access', 'refresh-2', 'admin', 'A');
+		setAuth('new-access', 'refresh-2', 'admin', 'A', 'a@x.com');
 		expect(JSON.parse(storage.getItem('weddingdb_auth')!)).toEqual({
 			accessToken: 'new-access',
 			refreshToken: 'refresh-2',
 			role: 'admin',
-			name: 'A'
+			name: 'A',
+			user: 'a@x.com'
 		});
 
 		clearAuth();
 		expect(storage.getItem('weddingdb_auth')).toBeNull();
 		expect(getAuth()).toMatchObject({ accessToken: null, refreshToken: null, role: null, name: null });
+	});
+
+	it('ends this tab session when another tab logs out', async () => {
+		const { getAuth, setAuth } = await import('#lib/stores/index.ts');
+		const w = globalThis.window as any;
+		w.location = { pathname: '/w1/guests', href: '/w1/guests' };
+		setAuth('a', 'refresh-2', 'staff', 'S');
+
+		storage.removeItem('weddingdb_auth');
+		for (const h of listeners.storage) h({ key: 'weddingdb_auth', newValue: null } as StorageEvent);
+
+		expect(getAuth()).toMatchObject({ accessToken: null, refreshToken: null });
+		expect(w.location.href).toBe('/login');
+	});
+
+	it('keeps the session when another tab only rotates the token', async () => {
+		const { getAuth, setAuth } = await import('#lib/stores/index.ts');
+		const w = globalThis.window as any;
+		w.location = { pathname: '/w1/guests', href: '/w1/guests' };
+		setAuth('a', 'refresh-2', 'staff', 'S', 's@x.com');
+
+		storage.setItem('weddingdb_auth', JSON.stringify({ accessToken: 'b', refreshToken: 'refresh-3', role: 'staff', name: 'S', user: 's@x.com' }));
+		for (const h of listeners.storage) h({ key: 'weddingdb_auth', newValue: 'x' } as StorageEvent);
+
+		expect(getAuth().refreshToken).toBe('refresh-2');
+		expect(w.location.href).toBe('/w1/guests');
+	});
+
+	it('ends this tab session when another user logs in, leaving their stored auth', async () => {
+		const { getAuth, setAuth } = await import('#lib/stores/index.ts');
+		const w = globalThis.window as any;
+		w.location = { pathname: '/w1/guests', href: '/w1/guests' };
+		setAuth('a', 'refresh-2', 'staff', 'S', 's@x.com');
+
+		const other = JSON.stringify({ accessToken: 'b', refreshToken: 'refresh-b', role: 'staff', name: 'B', user: 'b@x.com' });
+		storage.setItem('weddingdb_auth', other);
+		for (const h of listeners.storage) h({ key: 'weddingdb_auth', newValue: other } as StorageEvent);
+
+		expect(getAuth()).toMatchObject({ accessToken: null, refreshToken: null });
+		expect(w.location.href).toBe('/login');
+		expect(storage.getItem('weddingdb_auth')).toBe(other);
 	});
 });

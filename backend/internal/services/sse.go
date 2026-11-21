@@ -7,6 +7,7 @@ import (
 	"log"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/google/uuid"
@@ -26,6 +27,7 @@ type GuestEvent struct {
 type GuestEventData struct {
 	ID          string   `json:"id"`
 	Name        string   `json:"name"`
+	Pinyin      string   `json:"pinyin"`
 	Email       string   `json:"email"`
 	Pax         int      `json:"pax"`
 	RSVP        string   `json:"rsvp"`
@@ -44,7 +46,10 @@ type GuestEventData struct {
 const maxClientsPerWedding = 100
 
 // maxClientsPerUser stops one account from taking every slot in a wedding.
-const maxClientsPerUser = 5
+// It is sized for one shared door login on every phone and tablet at the
+// reception: below the device count, each reconnect evicts another device and
+// the streams evict each other forever.
+const maxClientsPerUser = 20
 
 // SSEClient represents a connected SSE client.
 type SSEClient struct {
@@ -54,6 +59,7 @@ type SSEClient struct {
 	Chan      chan []byte
 	Done      chan struct{}
 	doneOnce  sync.Once
+	openedAt  time.Time
 }
 
 // SSEHub manages SSE connections per wedding and Redis pub/sub.
@@ -61,12 +67,15 @@ type SSEHub struct {
 	mu      sync.RWMutex
 	clients map[uuid.UUID]map[string]*SSEClient // weddingID -> clientID -> client
 	redis   *redis.Client
-	pubsub  *redis.PubSub
 	ctx     context.Context
 	cancel  context.CancelFunc
 	// ponytail: closed after PSubscribe ACKs so the first Publish is not lost during Redis warm-up.
 	// Race B (client joins SSE mid-publish) is not addressed here — fix needs a per-wedding replay buffer.
 	ready chan struct{}
+	// pausedUntil (unix nanos) skips publishes for a while after one fails,
+	// so a stalled Redis costs one publishTimeout per pause, not one per row
+	// of an import or sync batch.
+	pausedUntil atomic.Int64
 }
 
 // NewSSEHub creates a new SSEHub and starts the Redis subscriber.
@@ -84,13 +93,20 @@ func NewSSEHub(rdb *redis.Client) *SSEHub {
 
 // subscribeRedis listens on the wildcard Redis channel and fans out to local clients.
 func (h *SSEHub) subscribeRedis() {
-	h.pubsub = h.redis.PSubscribe(h.ctx, "wedding:*:guests")
+	// The subscription lives only in this goroutine, which closes it on exit;
+	// Shutdown may run before PSubscribe returns (Redis slow to dial).
+	pubsub := h.redis.PSubscribe(h.ctx, "wedding:*:guests")
+	defer func() {
+		if err := pubsub.Close(); err != nil {
+			log.Printf("SSE: subscriber close failed: %v", err)
+		}
+	}()
 	// Wait for Redis to confirm the subscription is active
-	if err := h.pubsub.Ping(h.ctx); err != nil {
+	if err := pubsub.Ping(h.ctx); err != nil {
 		log.Printf("SSE: PSubscribe ping failed: %v", err)
 	}
 	close(h.ready)
-	ch := h.pubsub.Channel()
+	ch := pubsub.Channel()
 	for {
 		select {
 		case <-h.ctx.Done():
@@ -122,7 +138,7 @@ func (h *SSEHub) subscribeRedis() {
 }
 
 // Subscribe registers a new SSE client for a wedding. It reports false when the
-// per-wedding or per-user connection cap is reached.
+// per-wedding cap is reached; at the per-user cap it evicts that user's oldest stream.
 func (h *SSEHub) Subscribe(weddingID, ownerID uuid.UUID) (*SSEClient, bool) {
 	h.mu.Lock()
 	clients := h.clients[weddingID]
@@ -130,23 +146,34 @@ func (h *SSEHub) Subscribe(weddingID, ownerID uuid.UUID) (*SSEClient, bool) {
 		h.mu.Unlock()
 		return nil, false
 	}
+	// At the per-user cap, evict that owner's oldest stream: a phone that went
+	// away without closing its socket would otherwise hold a slot for minutes.
 	sameOwner := 0
+	var oldest *SSEClient
 	for _, existing := range clients {
 		if existing.OwnerID == ownerID {
 			sameOwner++
+			if oldest == nil || existing.openedAt.Before(oldest.openedAt) {
+				oldest = existing
+			}
 		}
 	}
+	var evicted *SSEClient
 	if sameOwner >= maxClientsPerUser {
-		h.mu.Unlock()
-		return nil, false
+		delete(clients, oldest.ID)
+		evicted = oldest
 	}
-	client := &SSEClient{ID: uuid.New().String(), WeddingID: weddingID, OwnerID: ownerID, Chan: make(chan []byte, 64), Done: make(chan struct{})}
+	client := &SSEClient{ID: uuid.New().String(), WeddingID: weddingID, OwnerID: ownerID, Chan: make(chan []byte, 64), Done: make(chan struct{}), openedAt: time.Now()}
 	if clients == nil {
 		clients = make(map[string]*SSEClient)
 		h.clients[weddingID] = clients
 	}
 	clients[client.ID] = client
 	h.mu.Unlock()
+	if evicted != nil {
+		evicted.doneOnce.Do(func() { close(evicted.Done) })
+		log.Printf("SSE: client %s evicted from wedding %s (per-user cap)", evicted.ID, weddingID)
+	}
 	log.Printf("SSE: client %s connected for wedding %s", client.ID, weddingID)
 	return client, true
 }
@@ -179,14 +206,18 @@ func (h *SSEHub) Publish(ctx context.Context, weddingID uuid.UUID, event GuestEv
 	return h.redis.Publish(ctx, fmt.Sprintf("wedding:%s:guests", weddingID.String()), data).Err()
 }
 
-// Shutdown gracefully stops the Redis subscriber.
+// Shutdown stops the Redis subscriber and ends every open stream.
 func (h *SSEHub) Shutdown() {
 	h.cancel()
-	if h.pubsub != nil {
-		if err := h.pubsub.Close(); err != nil {
-			log.Printf("SSE: subscriber close failed: %v", err)
+	// End every open stream so a graceful HTTP shutdown is not held open by
+	// connections that would otherwise last until the client leaves.
+	h.mu.Lock()
+	for _, clients := range h.clients {
+		for _, c := range clients {
+			c.doneOnce.Do(func() { close(c.Done) })
 		}
 	}
+	h.mu.Unlock()
 }
 
 func extractWeddingID(channel string) uuid.UUID {

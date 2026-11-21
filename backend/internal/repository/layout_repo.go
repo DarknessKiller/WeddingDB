@@ -2,6 +2,7 @@ package repository
 
 import (
 	"context"
+	"fmt"
 
 	"weddingdb/internal/models"
 
@@ -24,10 +25,15 @@ func (r *LayoutRepo) SaveLayout(
 	weddingID uuid.UUID,
 	hallWidth, hallHeight int,
 	tables []models.TableUpdate,
-	toCreate, toUpdate []models.HallElement,
-	toDelete []uuid.UUID,
+	incoming []models.HallElement,
+	reconcile func(existing, incoming []models.HallElement) (toCreate, toUpdate []models.HallElement, toDelete []uuid.UUID),
 ) error {
 	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		// A layout saved while its wedding is being deleted must not leave
+		// orphan elements behind.
+		if err := lockWedding(tx, weddingID); err != nil {
+			return err
+		}
 		if hallWidth > 0 && hallHeight > 0 {
 			if err := tx.Model(&models.WeddingEvent{}).Where("id = ?", weddingID).
 				Updates(map[string]any{"hall_width": hallWidth, "hall_height": hallHeight}).Error; err != nil {
@@ -35,14 +41,17 @@ func (r *LayoutRepo) SaveLayout(
 			}
 		}
 		for _, t := range tables {
-			if err := NewTableRepo(tx).CheckCapacity(ctx, weddingID, t.ID, t.Capacity); err != nil {
-				return err
+			cols := map[string]any{"x": t.X, "y": t.Y, "degree": t.Degree}
+			if t.Capacity != nil {
+				if err := NewTableRepo(tx).CheckCapacity(ctx, weddingID, t.ID, *t.Capacity); err != nil {
+					return err
+				}
+				cols["capacity"] = *t.Capacity
 			}
-			res := tx.Model(&models.BanquetTable{}).Where("id = ? AND wedding_id = ?", t.ID, weddingID).
-				Updates(map[string]any{
-					"x": t.X, "y": t.Y, "degree": t.Degree,
-					"capacity": t.Capacity, "is_vip": t.IsVip,
-				})
+			if t.IsVip != nil {
+				cols["is_vip"] = *t.IsVip
+			}
+			res := tx.Model(&models.BanquetTable{}).Where("id = ? AND wedding_id = ?", t.ID, weddingID).Updates(cols)
 			if res.Error != nil {
 				return res.Error
 			}
@@ -50,6 +59,13 @@ func (r *LayoutRepo) SaveLayout(
 				return gorm.ErrRecordNotFound
 			}
 		}
+		// Read the stored elements under the wedding lock: read before it, a
+		// concurrent save's elements would be missed and survive this one.
+		existing, err := NewLayoutRepo(tx).ElementsByWedding(ctx, weddingID)
+		if err != nil {
+			return fmt.Errorf("load elements: %w", err)
+		}
+		toCreate, toUpdate, toDelete := reconcile(existing, incoming)
 		for i := range toCreate {
 			toCreate[i].WeddingID = weddingID
 			if err := tx.Create(&toCreate[i]).Error; err != nil {

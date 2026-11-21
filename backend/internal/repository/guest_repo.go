@@ -100,20 +100,53 @@ func (r *GuestRepo) Create(ctx context.Context, g *models.GuestRecord) error {
 func (r *GuestRepo) Update(ctx context.Context, g *models.GuestRecord) error {
 	g.NamePinyin = models.GenerateNamePinyin(g.Name)
 	res := r.db.WithContext(ctx).Model(g).Where("id = ? AND wedding_id = ?", g.ID, g.WeddingID).Updates(map[string]interface{}{
-		"name":          g.Name,
-		"name_pinyin":   g.NamePinyin,
-		"email":         g.Email,
-		"pax":           g.Pax,
-		"table_id":      g.TableID,
-		"seat_num":      g.SeatNum,
-		"rsvp":          g.RSVP,
-		"checked_in_at": g.CheckedInAt,
-		"notes":         g.Notes,
-		"dietary":       g.Dietary,
-		"is_vip":        g.IsVip,
-		"angbao_amt":    g.AngbaoAmt,
-		"gift_item":     g.GiftItem,
+		"name":        g.Name,
+		"name_pinyin": g.NamePinyin,
+		"email":       g.Email,
+		"pax":         g.Pax,
+		"table_id":    g.TableID,
+		"seat_num":    g.SeatNum,
+		"rsvp":        g.RSVP,
+		"notes":       g.Notes,
+		"dietary":     g.Dietary,
+		"is_vip":      g.IsVip,
+		"angbao_amt":  g.AngbaoAmt,
+		"gift_item":   g.GiftItem,
 	})
+	return checkAffected(res)
+}
+
+// SetSeat writes only the seat columns, so a concurrent check-in or notes edit
+// on the same guest survives a seat move.
+func (r *GuestRepo) SetSeat(ctx context.Context, id, weddingID uuid.UUID, tableID *uuid.UUID, seatNum *int) error {
+	res := r.db.WithContext(ctx).Model(&models.GuestRecord{}).Where("id = ? AND wedding_id = ?", id, weddingID).
+		Updates(map[string]any{"table_id": tableID, "seat_num": seatNum})
+	return checkAffected(res)
+}
+
+// CheckOut clears checked_in_at only; checked_in_at is owned by the check-in
+// and check-out writes, never by the full-row Update/SyncUpdate. A guest who
+// is not checked in matches no row (gorm.ErrRecordNotFound), so a double tap
+// does not bump updated_at.
+func (r *GuestRepo) CheckOut(ctx context.Context, id, weddingID uuid.UUID, at time.Time) error {
+	res := r.db.WithContext(ctx).Model(&models.GuestRecord{}).
+		Where("id = ? AND wedding_id = ? AND checked_in_at IS NOT NULL", id, weddingID).
+		Updates(map[string]any{"checked_in_at": nil, "updated_at": at})
+	return checkAffected(res)
+}
+
+// SyncCheckIn writes only the columns an offline check-in carries, so a stale
+// snapshot cannot move the guest back onto a seat someone else now holds.
+func (r *GuestRepo) SyncCheckIn(ctx context.Context, g *models.GuestRecord) error {
+	res := r.db.WithContext(ctx).Model(&models.GuestRecord{}).Where("id = ? AND wedding_id = ?", g.ID, g.WeddingID).
+		Updates(map[string]any{
+			"checked_in_at": g.CheckedInAt,
+			"rsvp":          g.RSVP,
+			"notes":         g.Notes,
+			"angbao_amt":    g.AngbaoAmt,
+			"gift_item":     g.GiftItem,
+			"updated_at":    g.UpdatedAt,
+		})
 	return checkAffected(res)
 }
 
@@ -135,30 +168,23 @@ func (r *GuestRepo) Delete(ctx context.Context, id, weddingID uuid.UUID) error {
 	return checkAffected(res)
 }
 
-// SyncCreate creates a guest with explicit CreatedAt/UpdatedAt for offline sync LWW.
-func (r *GuestRepo) SyncCreate(ctx context.Context, g *models.GuestRecord) error {
-	g.NamePinyin = models.GenerateNamePinyin(g.Name)
-	return r.db.WithContext(ctx).Create(g).Error
-}
-
 // SyncUpdate updates a guest and forces UpdatedAt to the provided time for LWW.
 func (r *GuestRepo) SyncUpdate(ctx context.Context, g *models.GuestRecord) error {
 	g.NamePinyin = models.GenerateNamePinyin(g.Name)
 	res := r.db.WithContext(ctx).Model(g).Where("id = ? AND wedding_id = ?", g.ID, g.WeddingID).Updates(map[string]interface{}{
-		"name":          g.Name,
-		"name_pinyin":   g.NamePinyin,
-		"email":         g.Email,
-		"pax":           g.Pax,
-		"table_id":      g.TableID,
-		"seat_num":      g.SeatNum,
-		"rsvp":          g.RSVP,
-		"checked_in_at": g.CheckedInAt,
-		"notes":         g.Notes,
-		"dietary":       g.Dietary,
-		"is_vip":        g.IsVip,
-		"angbao_amt":    g.AngbaoAmt,
-		"gift_item":     g.GiftItem,
-		"updated_at":    g.UpdatedAt,
+		"name":        g.Name,
+		"name_pinyin": g.NamePinyin,
+		"email":       g.Email,
+		"pax":         g.Pax,
+		"table_id":    g.TableID,
+		"seat_num":    g.SeatNum,
+		"rsvp":        g.RSVP,
+		"notes":       g.Notes,
+		"dietary":     g.Dietary,
+		"is_vip":      g.IsVip,
+		"angbao_amt":  g.AngbaoAmt,
+		"gift_item":   g.GiftItem,
+		"updated_at":  g.UpdatedAt,
 	})
 	return checkAffected(res)
 }

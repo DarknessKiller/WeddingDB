@@ -47,13 +47,30 @@ export function dequeueByIds(wid: string, ids: string[]) {
 	notifyChanged();
 }
 
-export function clearQueue(wid: string) {
-	localStorage.removeItem(qkey(wid));
-	notifyChanged();
-}
-
 export function queuedCount(wid: string): number {
 	return getQueue(wid).length;
+}
+
+/** Weddings whose unsynced edits are still queued on this device. */
+export function weddingsWithQueuedEdits(): string[] {
+	if (typeof window === 'undefined') return [];
+	const ids: string[] = [];
+	for (let i = 0; i < localStorage.length; i++) {
+		const key = localStorage.key(i) ?? '';
+		if (!key.startsWith(QUEUE_PREFIX)) continue;
+		const wid = key.slice(QUEUE_PREFIX.length);
+		if (queuedCount(wid) > 0) ids.push(wid);
+	}
+	return ids;
+}
+
+/**
+ * Tries to send every wedding's queued edits, then reports how many are left.
+ * Call before anything that deletes the queue or strands it (logout).
+ */
+export async function flushAllQueues(): Promise<number> {
+	for (const wid of weddingsWithQueuedEdits()) await syncQueue(wid).catch(() => {});
+	return weddingsWithQueuedEdits().reduce((n, wid) => n + queuedCount(wid), 0);
 }
 
 function writeCache(store: Storage, key: string, guests: unknown[]) {
@@ -88,7 +105,12 @@ const inFlight = new Map<string, Promise<SyncOutcome>>();
 export function syncQueue(wid: string): Promise<SyncOutcome> {
 	const running = inFlight.get(wid);
 	if (running) return running;
-	const run = runSync(wid).finally(() => {
+	// inFlight only covers this tab. A Web Lock also holds off other tabs of
+	// this browser; runSync re-reads the queue inside it, so a second tab
+	// sends only what the first one left.
+	const locks = typeof navigator !== 'undefined' ? navigator.locks : undefined;
+	const sync = locks ? locks.request(`weddingdb-sync-${wid}`, () => runSync(wid)) : runSync(wid);
+	const run = sync.finally(() => {
 		if (inFlight.get(wid) === run) inFlight.delete(wid);
 	});
 	inFlight.set(wid, run);
@@ -100,21 +122,28 @@ async function runSync(wid: string): Promise<SyncOutcome> {
 	if (!q.length) return { applied: 0, skipped: 0, results: [] };
 	const res = await apiFetch(`/api/weddings/${wid}/guests/sync`, {
 		method: 'POST',
-		body: JSON.stringify({ mutations: q })
+		body: JSON.stringify({ mutations: q }),
+		// A full queue replays many edits; a timeout keeps them queued for the next sync.
+		signal: AbortSignal.timeout(60_000)
 	});
 	if (!res.ok) {
 		const t = await res.text().catch(() => '');
 		throw new Error(`sync failed ${res.status} ${t}`);
 	}
-	const data = await res.json() as { results: { guestId: string; status: string; serverRecord?: unknown; reason?: string }[] };
+	const data = await res.json() as { results: { guestId: string; status: string; serverRecord?: unknown; reason?: string; retryable?: boolean }[] };
 	const appliedIds: string[] = [];
 	const failedIds: string[] = [];
 	let applied = 0, skipped = 0;
 	for (let i = 0; i < q.length && i < data.results.length; i++) {
 		const r = data.results[i];
 		if (r.status === 'applied') { applied++; appliedIds.push(q[i].mutationId); }
+		// Skipped but already on the server: an online write that timed out after
+		// landing, then queued and replayed. Nothing was lost.
+		else if (r.status === 'skipped' && alreadyApplied(q[i], r.serverRecord)) { applied++; appliedIds.push(q[i].mutationId); }
 		else if (r.status === 'skipped') { skipped++; appliedIds.push(q[i].mutationId); }
-		else if (r.status === 'failed') failedIds.push(q[i].mutationId);
+		// A retryable failure (server-side outage) stays queued without spending
+		// an attempt; only rejections of the edit itself count toward the limit.
+		else if (r.status === 'failed' && !r.retryable) failedIds.push(q[i].mutationId);
 	}
 	// drop processed (both applied and skipped); the server already holds the newer record
 	dequeueByIds(wid, appliedIds);
@@ -124,6 +153,17 @@ async function runSync(wid: string): Promise<SyncOutcome> {
 	if (dropped) addToast(`${dropped} offline edit(s) failed ${MAX_ATTEMPTS} times and were discarded`, 'error');
 	return { applied, skipped, results: data.results };
 }
+/** True when the server record already holds what the queued mutation would write. */
+function alreadyApplied(m: QueuedMutation, record: unknown): boolean {
+	if (!record || typeof record !== 'object') return false;
+	const r = record as Record<string, unknown>;
+	if (m.op === 'checkin') return r.checkedInAt != null;
+	if (m.op === 'checkout') return r.checkedInAt == null;
+	if (m.op === 'delete' || !m.payload) return false;
+	return Object.entries(m.payload).every(([k, v]) =>
+		k === 'baseUpdatedAt' || JSON.stringify(r[k] ?? null) === JSON.stringify(v ?? null));
+}
+
 
 // bumpAttempts counts a failed server attempt per mutation and drops entries
 // that keep failing with the same validation error, so they cannot retry

@@ -1,13 +1,17 @@
 package handlers
 
 import (
+	"cmp"
 	"errors"
+	"fmt"
 	"log/slog"
 	"net"
 	"net/http"
 	"net/mail"
+	"net/netip"
 	"os"
 	"unicode"
+	"unicode/utf8"
 	"weddingdb/internal/middleware"
 	"weddingdb/internal/models"
 	"weddingdb/internal/repository"
@@ -15,9 +19,18 @@ import (
 	"weddingdb/internal/utils"
 
 	"github.com/go-fuego/fuego"
-	"github.com/google/uuid"
 	"golang.org/x/crypto/bcrypt"
+	"gorm.io/gorm"
 )
+
+// maxLen answers 400 when value has more than limit characters, before the
+// column's varchar limit turns it into an opaque 500.
+func maxLen(field, value string, limit int) error {
+	if utf8.RuneCountInString(value) > limit {
+		return fuego.BadRequestError{Title: fmt.Sprintf("%s must be at most %d characters", field, limit)}
+	}
+	return nil
+}
 
 func validatePassword(password string) error {
 	if len(password) < 8 {
@@ -106,16 +119,22 @@ func (h *AuthHandler) Login(c fuego.ContextWithBody[LoginRequest]) (TokenRespons
 	if err := h.authService.CheckAuthRate(c.Context(), ip); err != nil {
 		return TokenResponse{}, fuego.HTTPError{Status: http.StatusTooManyRequests, Title: err.Error()}
 	}
-	if err := h.authService.CheckCredentialIPRate(c.Context(), ip); err != nil {
-		return TokenResponse{}, fuego.HTTPError{Status: http.StatusTooManyRequests, Title: err.Error()}
-	}
-	if err := h.authService.CheckLoginAccountRate(c.Context(), body.Email, ip); err != nil {
-		return TokenResponse{}, fuego.HTTPError{Status: http.StatusTooManyRequests, Title: err.Error()}
+	if err := h.authService.ReserveLoginAttempt(c.Context(), body.Email, ip); err != nil {
+		return TokenResponse{}, loginLimitError(err)
 	}
 	result, err := h.authService.Login(c.Context(), body.Email, body.Password)
+	if errors.Is(err, services.ErrInvalidCredentials) {
+		// A wrong password keeps its reserved slots and counts against the IP.
+		h.authService.LoginFailed(c.Context(), ip)
+		return TokenResponse{}, fuego.UnauthorizedError{Title: "invalid credentials"}
+	}
+	h.authService.ReleaseLoginAttempt(c.Context(), body.Email, ip)
+	if errors.Is(err, services.ErrSessionsChanged) {
+		return TokenResponse{}, fuego.ConflictError{Title: err.Error()}
+	}
 	if err != nil {
-		h.authService.RecordLoginFailure(c.Context(), body.Email, ip)
-		return TokenResponse{}, fuego.UnauthorizedError{Title: err.Error()}
+		slog.Error("login failed", "err", err)
+		return TokenResponse{}, fuego.InternalServerError{Title: "Login failed"}
 	}
 	return TokenResponse{
 		AccessToken:         result.AccessToken,
@@ -162,8 +181,12 @@ func (h *AuthHandler) Refresh(c fuego.ContextWithBody[RefreshRequest]) (TokenRes
 		return TokenResponse{}, fuego.HTTPError{Status: http.StatusTooManyRequests, Title: err.Error()}
 	}
 	result, err := h.authService.Refresh(c.Context(), body.RefreshToken, oldAccessToken)
+	if errors.Is(err, services.ErrInvalidRefreshToken) || errors.Is(err, services.ErrAdminNotFound) {
+		return TokenResponse{}, fuego.UnauthorizedError{Title: "invalid refresh token"}
+	}
 	if err != nil {
-		return TokenResponse{}, fuego.UnauthorizedError{Title: err.Error()}
+		slog.Error("refresh failed", "err", err)
+		return TokenResponse{}, fuego.InternalServerError{Title: "Refresh failed"}
 	}
 	return TokenResponse{
 		AccessToken:         result.AccessToken,
@@ -215,28 +238,65 @@ func (h *AuthHandler) ChangePassword(c fuego.ContextWithBody[ChangePasswordReque
 	if err != nil {
 		return nil, fuego.NotFoundError{Title: "User not found"}
 	}
-	// A forced change follows an admin reset, so the old password is not known.
-	if !admin.ForcePasswordChange {
+	// A forced change follows an admin reset, so the old password is not
+	// known. Only a token minted under the reset (pwc claim, which needs the
+	// reset password to obtain) may skip the check: a token from before the
+	// reset must still prove the password, or a stolen one could take over
+	// the account. The claim, not the DB flag, decides, so a forced change
+	// whose revoke failed can be retried from the same page.
+	// Same per-account lockout as Login, so a stolen access token cannot
+	// brute-force the current password.
+	forced := ForcePasswordChangeFromContext(ctx)
+	if !forced {
+		ip := clientIP(c.Request())
+		if err := h.authService.ReserveLoginAttempt(ctx, admin.Email, ip); err != nil {
+			return nil, loginLimitError(err)
+		}
 		if err := bcrypt.CompareHashAndPassword([]byte(admin.Password), []byte(body.CurrentPassword)); err != nil {
+			h.authService.LoginFailed(ctx, ip)
 			return nil, fuego.UnauthorizedError{Title: "Current password is incorrect"}
 		}
+		h.authService.ReleaseLoginAttempt(ctx, admin.Email, ip)
 	}
 	hash, err := bcrypt.GenerateFromPassword([]byte(body.Password), bcrypt.DefaultCost)
 	if err != nil {
 		return nil, fuego.InternalServerError{Title: "Failed to hash password"}
 	}
-	admin.Password = string(hash)
-	admin.ForcePasswordChange = false
-	if err := h.adminRepo.Update(ctx, admin); err != nil {
+	if err := h.adminRepo.SetPassword(ctx, admin.ID, string(hash), false); err != nil {
 		return nil, fuego.InternalServerError{Title: "Failed to update password"}
 	}
-	// Revoke all existing sessions so compromised tokens are invalidated
-	// Password was already changed; log but don't fail the request.
-	// ponytail: best-effort revocation — password hash is already updated
+	// Revoke all existing sessions so compromised tokens are invalidated.
+	// The hash is already saved, but reporting success while old sessions
+	// still work would tell the user a stolen session is gone when it isn't.
 	if err := h.authService.RevokeUserTokens(ctx, adminID); err != nil {
-		slog.Warn("revoke tokens after password change failed", "user", adminID, "err", err)
+		slog.Error("revoke tokens after password change failed", "user", adminID, "err", err)
+		if forced {
+			return nil, errRevokeAfterForcedChange
+		}
+		return nil, errRevokeAfterPassword
 	}
 	return map[string]any{"message": "Password updated"}, nil
+}
+
+// errRevokeAfterPassword answers a password write whose session revoke
+// failed. Changing it again, with the new password as current, retries the revoke.
+var errRevokeAfterPassword = fuego.InternalServerError{Title: "Password saved, but signing out other sessions failed. Change it again, entering your new password as the current one, to retry."}
+
+// errRevokeAfterForcedChange is the same for a forced change, whose page
+// asks for no current password: setting it again retries the revoke.
+var errRevokeAfterForcedChange = fuego.InternalServerError{Title: "Password saved, but signing out other sessions failed. Set it again to retry."}
+
+// errRevokeAfterReset answers an admin reset whose session revoke failed.
+// Resetting again retries the revoke.
+var errRevokeAfterReset = fuego.InternalServerError{Title: "Password saved, but signing out the user's sessions failed. Reset it again to retry."}
+
+// loginLimitError maps a failed login rate-limit check: an unreadable limit
+// is an outage (503), anything else is the limit being hit (429).
+func loginLimitError(err error) error {
+	if errors.Is(err, services.ErrRateLimitUnavailable) {
+		return fuego.HTTPError{Status: http.StatusServiceUnavailable, Title: err.Error()}
+	}
+	return fuego.HTTPError{Status: http.StatusTooManyRequests, Title: err.Error()}
 }
 
 func (h *AuthHandler) Register(c fuego.ContextWithBody[RegisterRequest]) (any, error) {
@@ -251,10 +311,14 @@ func (h *AuthHandler) Register(c fuego.ContextWithBody[RegisterRequest]) (any, e
 		return nil, fuego.BadRequestError{Title: "Name, email, and password are required"}
 	}
 	// Validate email format
-	if _, err := mail.ParseAddress(body.Email); err != nil {
+	addr, err := mail.ParseAddress(body.Email)
+	if err != nil {
 		return nil, fuego.BadRequestError{Title: "Invalid email format"}
 	}
-	if err := validatePassword(body.Password); err != nil {
+	// "Bob <bob@x.com>" parses too; keep only the address, or logging in
+	// with bob@x.com would never match the stored value.
+	body.Email = addr.Address
+	if err := cmp.Or(maxLen("Name", body.Name, 255), maxLen("Email", body.Email, 255), validatePassword(body.Password)); err != nil {
 		return nil, err
 	}
 	ctx := c.Context()
@@ -264,16 +328,21 @@ func (h *AuthHandler) Register(c fuego.ContextWithBody[RegisterRequest]) (any, e
 	if err := h.authService.CheckCredentialIPRate(ctx, clientIP(c.Request())); err != nil {
 		return nil, fuego.HTTPError{Status: http.StatusTooManyRequests, Title: err.Error()}
 	}
-	existing, err := h.adminRepo.FindByEmail(ctx, body.Email)
-	if err != nil {
-		slog.Warn("email lookup during registration failed", "err", err)
-	}
-	if existing != nil && existing.ID != uuid.Nil {
-		return nil, fuego.ConflictError{Title: "Email already registered"}
-	}
+	// Hash first, so a taken email costs the same time as a new one.
 	hash, err := bcrypt.GenerateFromPassword([]byte(body.Password), bcrypt.DefaultCost)
 	if err != nil {
 		return nil, fuego.InternalServerError{Title: "Failed to hash password"}
+	}
+	// A taken email gets the same reply as a new account, so this endpoint
+	// cannot be used to probe which emails have accounts.
+	_, err = h.adminRepo.FindByEmail(ctx, body.Email)
+	if err == nil {
+		c.SetStatus(201)
+		return registerReply(), nil
+	}
+	if !errors.Is(err, gorm.ErrRecordNotFound) {
+		slog.Error("email lookup during registration failed", "err", err)
+		return nil, fuego.InternalServerError{Title: "Failed to create account"}
 	}
 	admin := &models.AdminUser{
 		Email:    body.Email,
@@ -282,18 +351,35 @@ func (h *AuthHandler) Register(c fuego.ContextWithBody[RegisterRequest]) (any, e
 		Role:     "user",
 	}
 	if err := h.adminRepo.Create(ctx, admin); err != nil {
+		slog.Error("create account failed", "err", err)
 		return nil, fuego.InternalServerError{Title: "Failed to create account"}
 	}
 	c.SetStatus(201)
-	return map[string]any{"id": admin.ID.String(), "email": admin.Email, "name": admin.Name, "role": admin.Role}, nil
+	return registerReply(), nil
+}
+
+// registerReply is the one answer register gives on success, whether or not
+// the email already had an account.
+func registerReply() map[string]string {
+	return map[string]string{"message": "Registration received. Sign in with your email and password."}
 }
 
 // clientIP strips the port from RemoteAddr (already XFF-normalized by
-// ProxyAwareMiddleware when behind a trusted proxy).
+// ProxyAwareMiddleware when behind a trusted proxy). An IPv6 client is keyed
+// by its /64: one host usually owns the whole prefix and can rotate through
+// it, so a per-address key would never reach any rate limit.
 func clientIP(r *http.Request) string {
 	host, _, err := net.SplitHostPort(r.RemoteAddr)
 	if err != nil {
-		return r.RemoteAddr
+		host = r.RemoteAddr
 	}
-	return host
+	addr, err := netip.ParseAddr(host)
+	if err != nil || !addr.Is6() || addr.Is4In6() {
+		return host
+	}
+	prefix, err := addr.WithZone("").Prefix(64)
+	if err != nil {
+		return host
+	}
+	return prefix.String()
 }

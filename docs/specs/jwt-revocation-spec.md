@@ -4,7 +4,7 @@
 
 Add per-user token versioning + per-token blacklisting to invalidate JWTs without waiting for expiry.
 
-**Strategy:** Embed `tv` (token_version) in every access JWT. Store current `tv` in Redis per user (lazy init: default 0). On every request, middleware compares JWT `tv` against Redis `tv`. On logout, blacklist the specific access token's JTI in Redis with TTL = remaining token life.
+**Strategy:** Embed `tv` (token_version) in every access JWT. The current `tv` lives in Postgres (`admin_users.token_version`, the source of truth) and is cached in Redis per user. On every request, middleware compares JWT `tv` against the cached `tv`, reloading it from Postgres on a cache miss, so a Redis restart without persistence cannot resurrect revoked tokens. On logout, blacklist the specific access token's JTI in Redis with TTL = remaining token life.
 
 ---
 
@@ -65,10 +65,10 @@ Store `redisClient` in struct.
 func (s *AuthService) GetTokenVersion(ctx context.Context, userID uuid.UUID) (int, error)
 ```
 
-- Redis key: `"user:" + userID.String() + ":tv"`
-- `GET` the key. If key doesn't exist (redis.Nil), return `0, nil`.
-- Parse value as int. Return it.
-- On error, return `0, err` (fail-closed: caller rejects the request).
+- Redis key: `"user:" + userID.String() + ":tv"` (cache).
+- `GET` the key. On a hit, return it.
+- On a miss (redis.Nil), load `token_version` from Postgres (`AdminRepo.TokenVersion`), write it back to the cache with a raise-only Lua script (`SET` only if absent or lower, so a stale fill racing a revoke never lowers it), and return it.
+- On any Redis or Postgres error — including an unknown (deleted) user — return `0, err` (fail-closed: caller rejects the request). A miss never means "never revoked".
 
 ### 1f. Add `BlacklistAccessToken` method
 
@@ -96,10 +96,10 @@ func (s *AuthService) IsTokenBlacklisted(ctx context.Context, jti string) (bool,
 func (s *AuthService) RevokeUserTokens(ctx context.Context, userID uuid.UUID) error
 ```
 
-- Call `s.tokenRepo.DeleteByAdminID(ctx, userID)` to nuke all refresh tokens in Postgres first (closes TOCTOU race).
-- Redis key: `"user:" + userID.String() + ":tv"`
-- `INCR` the key (creates with value 1 if absent — satisfies lazy init).
-- Return first error encountered.
+- Read the cached version as a floor (best-effort; 0 on error). It covers versions that lived only in Redis before Postgres stored them.
+- Call `s.tokenRepo.DeleteByAdminID(ctx, userID, floor)`: in one transaction holding the admin row lock, delete all refresh tokens and set `token_version = max(token_version, floor) + 1`. Postgres is written first and is durable.
+- Read the new version back and raise the Redis cache to it with the raise-only script (3 attempts).
+- Return first error encountered. A failed cache write returns an error even though the Postgres bump stuck.
 
 ### 1i. Modify `generateAccessToken` signature
 
@@ -341,10 +341,10 @@ authService := services.NewAuthService(adminRepo, weddingRepo, tokenRepo, env.JW
 ### 7a. Add `DeleteByAdminID` method
 
 ```go
-func (r *TokenRepo) DeleteByAdminID(ctx context.Context, adminID uuid.UUID) error
+func (r *TokenRepo) DeleteByAdminID(ctx context.Context, adminID uuid.UUID, minVersion int) error
 ```
 
-- `WHERE admin_id = ?`, delete all matching `RefreshToken` rows.
+- In one transaction: lock the admin row (`FOR UPDATE`), delete all `RefreshToken` rows `WHERE admin_id = ?`, and set `admin_users.token_version = max(token_version, minVersion) + 1`.
 - Add import for `"github.com/google/uuid"` and `"context"`.
 
 ---
@@ -353,7 +353,7 @@ func (r *TokenRepo) DeleteByAdminID(ctx context.Context, adminID uuid.UUID) erro
 
 - `backend/internal/middleware/nonce.go` — reference only, no changes.
 - `backend/internal/handlers/helpers.go` — no changes needed.
-- `backend/internal/models/admin_user.go` — no schema change (token_version lives in Redis only).
+- `backend/internal/models/admin_user.go` — adds `TokenVersion int` (`token_version`, `not null default 0`), created by the existing `AutoMigrate`.
 - `backend/internal/models/refresh_token.go` — no schema change.
 
 ---
@@ -363,7 +363,7 @@ func (r *TokenRepo) DeleteByAdminID(ctx context.Context, adminID uuid.UUID) erro
 | Key pattern | Type | TTL | Purpose |
 |---|---|---|---|
 | `blacklist:jti:{jti}` | string `"1"` | Remaining token lifetime | Per-token blacklist (logout) |
-| `user:{id}:tv` | string (integer) | None (persists) | Per-user token version (admin revoke) |
+| `user:{id}:tv` | string (integer) | None | Cache of `admin_users.token_version`; refilled from Postgres on a miss |
 
 ---
 
@@ -391,8 +391,9 @@ Client → PUT /api/users/{id}/revoke + Authorization: Bearer <admin-token>
     → requireAdmin(ctx) guard
     → DecodeID, prevent self-revoke, verify user exists
     → authService.RevokeUserTokens(ctx, userID)
-      → tokenRepo.DeleteByAdminID(ctx, userID)  [Postgres, nukes all refresh tokens first]
-      → INCR user:{id}:tv  [Redis, creates if absent]
+      → GET user:{id}:tv as floor  [Redis, best-effort]
+      → tokenRepo.DeleteByAdminID(ctx, userID, floor)  [Postgres tx: lock admin row, delete refresh tokens, token_version = max(token_version, floor)+1]
+      → raise user:{id}:tv to the new token_version  [Redis cache]
   → 200 {"message": "User tokens revoked"}
 ```
 
@@ -407,7 +408,7 @@ Request → AuthMiddleware
       → EXISTS blacklist:jti:{jti}
       → if exists → reject "token has been revoked"
     → GetTokenVersion(ctx, claims.AdminID)
-      → GET user:{id}:tv → parse int (default 0)
+      → GET user:{id}:tv → on miss load admin_users.token_version and refill cache
       → if currentTV > claims.TokenVersion → reject "token version is stale"
   → set context values → next handler
 ```
@@ -420,13 +421,15 @@ Request → AuthMiddleware
 
 2. **Redis down during blacklist write (logout):** `BlacklistAccessToken` returns error. Logout still proceeds (refresh token deleted from Postgres). Access token lives until 15min expiry. Acceptable tradeoff.
 
-3. **Redis down during admin revoke:** `INCR` fails. RevokeUserTokens returns error. Handler returns 500. Admin retries.
+3. **Redis down during admin revoke:** Postgres is bumped, the cache write fails. RevokeUserTokens returns error. Handler returns 500 and leaves role/delete unchanged. Admin retries once Redis is back.
 
 4. **Token already expired at logout time:** `BlacklistAccessToken` checks `ttl <= 0`, returns nil. No-op. Fine.
 
-5. **First-ever request for a user (no tv in Redis):** `GetTokenVersion` returns `0`. JWT with `tv=0` passes. Correct — lazy init means no write until first revoke.
+5. **No tv in Redis (first request, or Redis lost its data):** `GetTokenVersion` loads `token_version` from Postgres and refills the cache. A revoked token stays rejected. A deleted user has no row, so their tokens are rejected.
 
-6. **Race between revoke and in-flight requests:** Requests already past middleware are unaffected. Requests hitting middleware during revoke will see the INCR on next Redis read (sub-ms propagation in single Redis instance).
+6. **Migration from Redis-only versions:** `AutoMigrate` adds `token_version` as 0 for existing users. The Redis cache still holds older bumps and keeps being read. The next revoke uses it as a floor, so Postgres overtakes it. Only if Redis loses data before that revoke do tokens revoked before the deploy work again, and only until they expire (≤15 min).
+
+7. **Race between revoke and in-flight requests:** Requests already past middleware are unaffected. Requests hitting middleware during revoke see the raised cache value on the next Redis read (sub-ms propagation in single Redis instance).
 
 ---
 
@@ -443,10 +446,14 @@ A consumed token stays in the table with `rotated_at` + `replaced_by` set. For
 same successor — a response lost in transit, or a second tab replaying the
 token it still holds, no longer ends the session. Each such reuse is logged, so
 a repeated pattern is visible even though it cannot be told apart from an
-honest retry. Past the window the token is treated as stolen: `RevokeUserTokens`
-deletes the family's refresh tokens and bumps the token version, killing the
-attacker's access tokens too. An honest client retrying a tab left open for
-more than a minute is logged out; that is the intended cost of detecting reuse.
+honest retry. Past the window the same successor is still returned while it
+has never been used itself: that is a client whose rotation response was lost
+(venue WiFi dropped) and which retries minutes later. Once the successor has
+been used, or is gone, a replay of the old token is treated as stolen:
+`RevokeUserTokens` deletes the family's refresh tokens and bumps the token
+version, killing the attacker's access tokens too. A replay that mints an
+access token re-reads the successor afterwards and fails if a concurrent
+revoke deleted it.
 
 Consumed rows are reclaimed by `TokenRepo.DeleteExpired` once `expires_at`
 passes. Migration is two nullable columns via the existing `AutoMigrate` in

@@ -12,10 +12,11 @@ import (
 // The access token carries the user's force-password-change flag so the auth
 // middleware can enforce it without a DB lookup per request.
 func TestAccessToken_CarriesForcePasswordChange(t *testing.T) {
-	svc, _, _ := newIntegrationAuthService(t, "test-secret")
+	svc, _, db := newIntegrationAuthService(t, "test-secret")
 
 	for _, flagged := range []bool{true, false} {
 		admin := &models.AdminUser{ID: uuid.New(), Role: "user", ForcePasswordChange: flagged}
+		seedAdmin(t, db, admin.ID, "user")
 		token, err := svc.generateAccessToken(t.Context(), admin, nil)
 		testutil.NoErr(t, err)
 
@@ -35,6 +36,7 @@ func TestCheckRevoked(t *testing.T) {
 
 	mint := func(id uuid.UUID) *AccessClaims {
 		t.Helper()
+		seedAdmin(t, db, id, "user")
 		token, err := svc.generateAccessToken(ctx, &models.AdminUser{ID: id, Role: "user"}, nil)
 		testutil.NoErr(t, err)
 		claims, err := svc.ValidateToken(ctx, token)
@@ -54,7 +56,6 @@ func TestCheckRevoked(t *testing.T) {
 	}
 
 	userID := uuid.New()
-	seedAdmin(t, db, userID, "user")
 	stale := mint(userID)
 	testutil.NoErr(t, svc.RevokeUserTokens(ctx, userID))
 	if svc.CheckRevoked(ctx, stale) == nil {

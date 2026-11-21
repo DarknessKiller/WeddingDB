@@ -1,7 +1,9 @@
 <script lang="ts">
   import { page } from '$app/state';
   import { goto } from '$app/navigation';
-  import { addToast, getAuth } from '#lib/stores/index.ts';
+  import { addToast, getAuth, expireAuth } from '#lib/stores/index.ts';
+  import { setWeddingId } from '#lib/stores/weddingId.ts';
+  import { withTimeout } from '#lib/utils/index.ts';
   import Eye from 'lucide-svelte/icons/eye';
 import EyeOff from 'lucide-svelte/icons/eye-off';
 import KeyRound from 'lucide-svelte/icons/key-round';
@@ -36,15 +38,19 @@ import KeyRound from 'lucide-svelte/icons/key-round';
           'Content-Type': 'application/json',
           Authorization: `Bearer ${accessToken}`
         },
-        body: JSON.stringify({ password, ...(forced ? {} : { currentPassword }) })
+        body: JSON.stringify({ password, ...(forced ? {} : { currentPassword }) }),
+        signal: withTimeout()
       });
       if (!res.ok) {
         const err = await res.json().catch(() => ({ title: 'Failed to change password' }));
         addToast(err.title || 'Failed to change password', 'error');
         return;
       }
-      addToast('Password changed successfully', 'success');
-      goto('/', { replaceState: true });
+      // The server revoked every session. Expire, not clear: unsynced edits stay for re-login.
+      expireAuth();
+      setWeddingId('');
+      addToast('Password changed — please sign in again', 'success');
+      goto('/login', { replaceState: true });
     } catch {
       addToast('Network error', 'error');
     } finally {

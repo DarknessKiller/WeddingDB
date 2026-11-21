@@ -4,6 +4,7 @@
   import { weddingId, setWeddingId } from '#lib/stores/weddingId.ts';
   import { claimStaffOfflineData } from '#lib/offline/storage.ts';
   import { get } from 'svelte/store';
+  import { withTimeout } from '#lib/utils/index.ts';
   import Eye from 'lucide-svelte/icons/eye';
 import EyeOff from 'lucide-svelte/icons/eye-off';
 import LogIn from 'lucide-svelte/icons/log-in';
@@ -21,6 +22,7 @@ import ChevronRight from 'lucide-svelte/icons/chevron-right';
   let loginName = $state('');
   let loginAccessToken = $state('');
   let loginRefreshToken = $state('');
+  let loginUser = '';
 
   let showCreate = $state(false);
   let newName = $state('');
@@ -37,7 +39,8 @@ import ChevronRight from 'lucide-svelte/icons/chevron-right';
           'Content-Type': 'application/json',
           Authorization: `Bearer ${loginAccessToken}`
         },
-        body: JSON.stringify({ name: newName, date: newDate })
+        body: JSON.stringify({ name: newName, date: newDate }),
+        signal: withTimeout()
       });
       if (!res.ok) {
         const err = await res.json().catch(() => ({ title: 'Failed to create wedding' }));
@@ -61,7 +64,8 @@ import ChevronRight from 'lucide-svelte/icons/chevron-right';
       const res = await fetch('/api/auth/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, password })
+        body: JSON.stringify({ email, password }),
+        signal: withTimeout()
       });
       if (!res.ok) {
         const err = await res.json().catch(() => ({ title: 'Login failed' }));
@@ -76,9 +80,10 @@ import ChevronRight from 'lucide-svelte/icons/chevron-right';
       loginRefreshToken = data.refreshToken;
       loginRole = data.role ?? '';
       loginName = data.name ?? '';
+      loginUser = email.trim().toLowerCase();
 
       if (data.forcePasswordChange) {
-        setAuth(loginAccessToken, loginRefreshToken, loginRole, loginName);
+        setAuth(loginAccessToken, loginRefreshToken, loginRole, loginName, loginUser);
         goto('/change-password?forced=1', { replaceState: true });
         return;
       }
@@ -115,7 +120,8 @@ import ChevronRight from 'lucide-svelte/icons/chevron-right';
           'Content-Type': 'application/json',
           Authorization: `Bearer ${loginAccessToken}`
         },
-        body: JSON.stringify({ weddingId: weddingIdValue, refreshToken: loginRefreshToken })
+        body: JSON.stringify({ weddingId: weddingIdValue, refreshToken: loginRefreshToken }),
+        signal: withTimeout()
       });
       if (!res.ok) {
         const err = await res.json().catch(() => ({ title: 'Failed to select wedding' }));
@@ -123,7 +129,7 @@ import ChevronRight from 'lucide-svelte/icons/chevron-right';
         return;
       }
       const data = await res.json();
-      setAuth(data.accessToken, loginRefreshToken, loginRole, loginName);
+      setAuth(data.accessToken, loginRefreshToken, loginRole, loginName, loginUser);
       setWeddingId(weddingIdValue);
       addToast('Login successful', 'success');
       goto(`/${weddingIdValue}/dashboard`, { replaceState: true });

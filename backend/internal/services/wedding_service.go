@@ -25,8 +25,8 @@ func (s *WeddingService) Get(ctx context.Context, id uuid.UUID) (*models.Wedding
 	return s.weddingRepo.FindByID(ctx, id)
 }
 
-func (s *WeddingService) Create(ctx context.Context, w *models.WeddingEvent) error {
-	return s.weddingRepo.Create(ctx, w)
+func (s *WeddingService) Create(ctx context.Context, w *models.WeddingEvent, ownerID uuid.UUID) error {
+	return s.weddingRepo.Create(ctx, w, ownerID)
 }
 
 func (s *WeddingService) UpdateBasic(ctx context.Context, w *models.WeddingEvent) error {

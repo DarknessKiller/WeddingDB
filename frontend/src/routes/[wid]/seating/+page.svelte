@@ -10,6 +10,7 @@
   import { getLayout, saveLayout } from '#lib/api/layout.ts';
   import Badge from '#lib/components/ui/Badge.svelte';
   import { cn } from '#lib/utils/index.ts';
+  import { layoutTablesPayload } from '#lib/utils/layout.ts';
   import { page } from '$app/state';
   import { onMount, onDestroy } from 'svelte';
   import Users from 'lucide-svelte/icons/users';
@@ -200,30 +201,38 @@ import Pencil from 'lucide-svelte/icons/pencil';
     showCheckinModal = true;
   }
 
+  let checkingIn = $state(false);
   async function confirmCheckIn(notes: string) {
-    if (!checkinGuest) return;
+    // A second click or Enter while the first request runs would check in twice.
+    if (!checkinGuest || checkingIn) return;
+    // Capture before the await: checkinGuest may point at another guest by the time it resolves.
+    const { id, name } = checkinGuest;
+    const closeIfSame = () => { if (checkinGuest?.id === id) showCheckinModal = false; };
+    checkingIn = true;
     const wid = get(weddingId);
     try {
-      await checkInGuest(wid, checkinGuest.id, notes);
+      await checkInGuest(wid, id, notes);
       // Notes come back from the server via SSE (or offline optimisticPatch);
       // appending them here too duplicated the input.
-      allGuests = allGuests.map(g => g.id === checkinGuest!.id ? {
+      allGuests = allGuests.map(g => g.id === id ? {
         ...g,
         checkedIn: true,
         checkedInAt: new Date(),
         rsvp: 'confirmed' as const,
       } : g);
-      showCheckinModal = false;
-      addToast(`${checkinGuest.name} checked in`, 'success');
+      closeIfSame();
+      addToast(`${name} checked in`, 'success');
     } catch (e: any) {
       if (e instanceof ConflictError) {
         // Another receptionist checked the guest in first.
-        allGuests = allGuests.map(g => g.id === checkinGuest!.id ? { ...g, checkedIn: true, rsvp: 'confirmed' as const } : g);
-        showCheckinModal = false;
-        addToast(`${checkinGuest.name} was already checked in by another receptionist`, 'error');
+        allGuests = allGuests.map(g => g.id === id ? { ...g, checkedIn: true, rsvp: 'confirmed' as const } : g);
+        closeIfSame();
+        addToast(`${name} was already checked in by another receptionist`, 'error');
         return;
       }
       addToast(e.message ?? 'Check-in failed', 'error');
+    } finally {
+      checkingIn = false;
     }
   }
 
@@ -244,7 +253,7 @@ import Pencil from 'lucide-svelte/icons/pencil';
       await saveLayout(wid, {
         hallWidth: hw,
         hallHeight: hh,
-        tables: editTables.map(t => ({ id: t.id, x: t.x, y: t.y, degree: t.degree, capacity: t.capacity, isVip: t.isVip })),
+        tables: layoutTablesPayload(editTables, allTables),
         elements: editElements,
       });
       addToast('Layout saved', 'success');
@@ -570,6 +579,7 @@ import Pencil from 'lucide-svelte/icons/pencil';
   <CheckInModal
     guestName={checkinGuest.name}
     onConfirm={confirmCheckIn}
+    loading={checkingIn}
     onClose={() => showCheckinModal = false}
   />
 {/if}

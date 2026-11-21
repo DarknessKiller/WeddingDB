@@ -7,18 +7,23 @@ vi.mock('#lib/stores/index.ts', () => ({
 	getAuth: () => ({ accessToken: 'test-token' })
 }));
 
+const widState = vi.hoisted(() => ({ value: 'w1' }));
+
 vi.mock('#lib/stores/weddingId.ts', () => ({
-	// subscribe must invoke the callback so svelte's get() returns 'w1'
-	weddingId: { get: () => 'w1', subscribe: vi.fn((run: (v: string) => void) => { run('w1'); return () => {}; }), set: vi.fn(), update: vi.fn() }
+	// subscribe must invoke the callback so svelte's get() returns the active id
+	weddingId: { get: () => widState.value, subscribe: vi.fn((run: (v: string) => void) => { run(widState.value); return () => {}; }), set: vi.fn(), update: vi.fn() }
 }));
 
 // Captures the SSE event handler so tests can drive handleGuestEvent.
-const sseState = vi.hoisted(() => ({ eventHandler: undefined as ((e: unknown) => void) | undefined }));
+const sseState = vi.hoisted(() => ({ eventHandler: undefined as ((e: unknown) => void) | undefined, statusHandler: undefined as ((s: string, reconnect: boolean) => void) | undefined }));
+const syncQueue = vi.hoisted(() => vi.fn(async () => ({ applied: 0, skipped: 0, results: [] })));
+
+vi.mock('#lib/offline/queue.ts', () => ({ cacheGuests: vi.fn(), syncQueue }));
 
 vi.mock('#lib/api/sse.ts', () => ({
 	connectSSE: vi.fn(() => ({
 		onEvent: vi.fn((cb: (e: unknown) => void) => { sseState.eventHandler = cb; return () => {}; }),
-		onStatus: vi.fn(() => () => {}),
+		onStatus: vi.fn((cb: (s: string, reconnect: boolean) => void) => { sseState.statusHandler = cb; return () => {}; }),
 		disconnect: vi.fn()
 	})),
 	disconnectSSE: vi.fn()
@@ -47,16 +52,16 @@ function makeGuest(overrides: Partial<Guest> = {}): Guest {
 /** Import the module fresh and reset all stores to empty. */
 async function freshModule() {
 	vi.resetModules();
+	widState.value = 'w1';
 	const mod = await import('./guestEvents');
 	mod.guestList.set([]);
-	mod.guestMap.set(new Map());
 	mod.tableOccupancy.set(new Map());
 	return mod;
 }
 
 describe('guestEvents store', () => {
-	it('seedGuests populates guestList and guestMap', async () => {
-		const { seedGuests, guestList, guestMap } = await freshModule();
+	it('seedGuests populates guestList', async () => {
+		const { seedGuests, guestList } = await freshModule();
 		const guests = [
 			makeGuest({ id: 'g1', name: 'Alice' }),
 			makeGuest({ id: 'g2', name: 'Bob', tableId: 't2' })
@@ -67,11 +72,18 @@ describe('guestEvents store', () => {
 		const list = get(guestList);
 		expect(list).toHaveLength(2);
 		expect(list[0].name).toBe('Alice');
+	});
 
-		const map = get(guestMap);
-		expect(map.size).toBe(2);
-		expect(map.get('g1')?.name).toBe('Alice');
-		expect(map.get('g2')?.name).toBe('Bob');
+	it('refreshGuests drops a roster that resolves after the wedding changed', async () => {
+		const { refreshGuests, guestList } = await freshModule();
+		let resolve!: (g: Guest[]) => void;
+		const pending = refreshGuests(() => new Promise<Guest[]>((r) => { resolve = r; }));
+
+		widState.value = 'w2';
+		resolve([makeGuest({ id: 'old-wedding-guest' })]);
+		await pending;
+
+		expect(get(guestList)).toEqual([]);
 	});
 
 	it('seedGuests calculates occupancy', async () => {
@@ -158,5 +170,78 @@ describe('guestEvents store', () => {
 		sseState.eventHandler!(makeEvent({ type: 'create', guest: { id: 'g9', name: 'Zoe', email: '', pax: 4, rsvp: 'confirmed', isVip: false, notes: '', dietary: [], tableId: 't2', seatNum: 1, checkedInAt: null, angbaoAmt: null, giftItem: null } }));
 
 		expect(get(tableOccupancy).get('t2')).toBe(4);
+	});
+
+	it('ignores events for another wedding', async () => {
+		const { initializeSSE, seedGuests, guestList } = await freshModule();
+		initializeSSE(() => Promise.resolve([]));
+		seedGuests([]);
+
+		sseState.eventHandler!(makeEvent({ type: 'create', weddingId: 'w-other' }));
+
+		expect(get(guestList)).toEqual([]);
+	});
+
+	it('matches the UUID in events against the base64url wedding id', async () => {
+		const { initializeSSE, seedGuests, guestList } = await freshModule();
+		widState.value = 'ABEiM0RVZneImaq7zN3u_w';
+		initializeSSE(() => Promise.resolve([]));
+		seedGuests([]);
+
+		sseState.eventHandler!(makeEvent({ type: 'create', weddingId: '00112233-4455-6677-8899-aabbccddeeff' }));
+
+		expect(get(guestList).map(g => g.id)).toEqual(['g1']);
+	});
+
+	it('update events keep the loaded pinyin', async () => {
+		const { initializeSSE, seedGuests, guestList } = await freshModule();
+		initializeSSE(() => Promise.resolve([]));
+		seedGuests([{ ...makeGuest({ id: 'g1', name: '张伟' }), pinyin: 'zhangwei' }]);
+
+		sseState.eventHandler!(makeEvent());
+
+		expect(get(guestList)[0].pinyin).toBe('zhangwei');
+	});
+
+	it('a rename event takes the new pinyin from the event', async () => {
+		const { initializeSSE, seedGuests, guestList } = await freshModule();
+		initializeSSE(() => Promise.resolve([]));
+		seedGuests([{ ...makeGuest({ id: 'g1', name: '王伟' }), pinyin: 'wangwei' }]);
+
+		sseState.eventHandler!(makeEvent({ type: 'update', guest: { id: 'g1', name: '李娜', pinyin: 'lina', email: '', pax: 1, rsvp: 'confirmed', isVip: false, notes: '', dietary: [], tableId: null, seatNum: null, checkedInAt: null, angbaoAmt: null, giftItem: null } }));
+
+		expect(get(guestList)[0].pinyin).toBe('lina');
+	});
+});
+
+describe('refreshGuests overlap', () => {
+	it('lets only the newest of two overlapping refreshes seed', async () => {
+		const mod = await freshModule();
+		let releaseOld: (g: Guest[]) => void = () => {};
+		const older = mod.refreshGuests(() => new Promise<Guest[]>(r => { releaseOld = r; }));
+		const newer = mod.refreshGuests(async () => [makeGuest({ id: 'g1', name: 'Fresh' })]);
+		await newer;
+		releaseOld([makeGuest({ id: 'g1', name: 'Stale' })]);
+		await older;
+		expect(get(mod.guestList).map(g => g.name)).toEqual(['Fresh']);
+	});
+});
+
+describe('SSE reconnect', () => {
+	it('flushes the offline queue before reseeding from the server', async () => {
+		const mod = await freshModule();
+		const order: string[] = [];
+		syncQueue.mockImplementationOnce(async () => { order.push('sync'); return { applied: 1, skipped: 0, results: [] }; });
+		const resync = vi.fn(async () => { order.push('fetch'); return [makeGuest({ id: 'g1', checkedIn: true })]; });
+		mod.initializeSSE(resync);
+		mod.seedGuests([makeGuest({ id: 'g1' })]);
+
+		sseState.statusHandler!('connected', true);
+		await vi.waitFor(() => expect(resync).toHaveBeenCalled());
+		await Promise.resolve();
+
+		expect(syncQueue).toHaveBeenCalledWith('w1');
+		expect(order).toEqual(['sync', 'fetch']);
+		expect(get(mod.guestList)[0].checkedIn).toBe(true);
 	});
 });

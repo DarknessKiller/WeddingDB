@@ -22,14 +22,15 @@ type BanquetTable struct {
 	UpdatedAt time.Time `json:"updatedAt"`
 }
 
-// TableUpdate is the part of a table a layout save may change.
+// TableUpdate is the part of a table a layout save may change. A nil
+// Capacity or IsVip leaves the stored value alone.
 type TableUpdate struct {
 	ID       uuid.UUID
 	X        float64
 	Y        float64
 	Degree   float64
-	Capacity int
-	IsVip    bool
+	Capacity *int
+	IsVip    *bool
 }
 
 func (t BanquetTable) MarshalJSON() ([]byte, error) {

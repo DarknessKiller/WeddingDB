@@ -4,23 +4,23 @@ import { connectSSE, disconnectSSE, type GuestEvent } from '#lib/api/sse.ts';
 import { weddingId } from '#lib/stores/weddingId.ts';
 import type { Guest, RSVPStatus } from '#lib/types/index.ts';
 import type { GuestResponse } from '#lib/api/guests.ts';
-import { cacheGuests } from '#lib/offline/queue.ts';
+import { cacheGuests, syncQueue } from '#lib/offline/queue.ts';
 
 // All guests for the current wedding, kept in sync via SSE.
 export const guestList = writable<Guest[]>([]);
 
-// Quick lookup by guest ID.
-export const guestMap = writable<Map<string, Guest>>(new Map());
-
 // Table occupancy: tableId -> total pax seated.
 export const tableOccupancy = writable<Map<string, number>>(new Map());
 
-// Whether the SSE connection is active.
-export const sseConnected = writable(false);
-
 let initialized = false;
+// True once the stores hold the wedding's full roster (seedGuests), false
+// after clearGuests. Only a full roster may overwrite the offline cache.
+let seeded = false;
 let syncing = false;
 let queuedEvents: GuestEvent[] = [];
+// Bumped by every refreshGuests call; only the newest may seed or close the
+// syncing window, so an older snapshot landing late cannot overwrite events.
+let refreshGen = 0;
 let resync: (() => Promise<Guest[]>) | undefined;
 
 /**
@@ -42,10 +42,11 @@ export function initializeSSE(onResync?: () => Promise<Guest[]>): (() => void) |
 
 	const client = connectSSE(wid);
 	const unsubscribeStatus = client.onStatus((status, reconnect) => {
-		sseConnected.set(status === 'connected');
 		if (status === 'connected' && reconnect && resync) {
-			syncing = true;
-			resync().then(seedGuests).catch(() => { syncing = false; });
+			// Send edits queued while offline first, so the reseed shows them.
+			syncQueue(wid).catch(() => {}).then(() => {
+				if (resync && get(weddingId) === wid) return refreshGuests(resync);
+			}).catch(() => {});
 		}
 	});
 	const unsubscribe = client.onEvent((event: GuestEvent) => {
@@ -57,7 +58,6 @@ export function initializeSSE(onResync?: () => Promise<Guest[]>): (() => void) |
 		unsubscribe();
 		unsubscribeStatus();
 		disconnectSSE();
-		sseConnected.set(false);
 		initialized = false;
 		syncing = false;
 		queuedEvents = [];
@@ -72,12 +72,21 @@ export function initializeSSE(onResync?: () => Promise<Guest[]>): (() => void) |
  * (e.g. the wedding layout's online/visibility sync).
  */
 export async function refreshGuests(fetchFn: () => Promise<Guest[]>): Promise<Guest[]> {
+	const wid = get(weddingId);
+	const gen = ++refreshGen;
 	syncing = true;
 	try {
 		const guests = await fetchFn();
+		// A newer refresh started after this one: its snapshot is fresher and it
+		// owns the syncing window, so this one must not seed.
+		if (gen !== refreshGen) return guests;
+		// The wedding changed mid-fetch: this roster belongs to the old one, so it
+		// must not be shown or cached under the new id. The new wedding's own load seeds.
+		if (get(weddingId) !== wid) return guests;
 		seedGuests(guests);
 		return guests;
 	} catch (e) {
+		if (gen !== refreshGen) throw e;
 		// Abandon the window; replay anything that queued up meanwhile.
 		syncing = false;
 		const pending = queuedEvents;
@@ -92,11 +101,7 @@ export async function refreshGuests(fetchFn: () => Promise<Guest[]>): Promise<Gu
  */
 export function seedGuests(guests: Guest[]) {
 	guestList.set(guests);
-	const map = new Map<string, Guest>();
-	for (const g of guests) {
-		map.set(g.id, g);
-	}
-	guestMap.set(map);
+	seeded = true;
 	recalculateOccupancy();
 	// cache for offline reads
 	try {
@@ -116,16 +121,27 @@ export function seedGuests(guests: Guest[]) {
  * empty list here would overwrite the next wedding's offline cache.
  */
 export function clearGuests() {
+	seeded = false;
 	guestList.set([]);
-	guestMap.set(new Map());
 	tableOccupancy.set(new Map());
+}
+
+// Events carry the canonical UUID; the app holds the base64url form the REST API uses.
+function sameWedding(eventWid: string, wid: string): boolean {
+	if (eventWid === wid) return true;
+	const hex = eventWid.replace(/-/g, '');
+	if (!/^[0-9a-f]{32}$/i.test(hex)) return false;
+	const bytes = String.fromCharCode(...hex.match(/../g)!.map((h) => parseInt(h, 16)));
+	return btoa(bytes).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '') === wid;
 }
 
 function handleGuestEvent(event: GuestEvent) {
 	const { type, guest: guestData } = event;
 	if (!guestData) return;
+	// A stream left over from another wedding must not touch this roster.
+	if (!sameWedding(event.weddingId, get(weddingId))) return;
 
-	const guest = eventGuestToGuest(guestData, event.timestamp);
+	const guest = toGuest(guestData, event.timestamp > 0 ? new Date(event.timestamp) : new Date());
 
 	guestList.update((list) => {
 		const idx = list.findIndex((g) => g.id === guest.id);
@@ -137,20 +153,12 @@ function handleGuestEvent(event: GuestEvent) {
 		if (idx >= 0) {
 			const newList = [...list];
 			guest.createdAt = list[idx].createdAt;
+			// Older servers send no pinyin in events; keep the REST one so search still works.
+			guest.pinyin ??= list[idx].pinyin;
 			newList[idx] = guest;
 			return newList;
 		}
 		return [...list, guest];
-	});
-
-	guestMap.update((map) => {
-		const newMap = new Map(map);
-		if (type === 'delete') {
-			newMap.delete(guest.id);
-		} else {
-			newMap.set(guest.id, guest);
-		}
-		return newMap;
 	});
 
 	// 'create'/'update' events also carry table/seat/pax changes, so occupancy
@@ -165,6 +173,20 @@ function handleGuestEvent(event: GuestEvent) {
 	if (current?.id === guest.id) {
 		selectedGuest.set(guest);
 	}
+	cacheGuestList();
+}
+
+/**
+ * Re-cache the live roster after a local or SSE change, so a reload while
+ * offline shows it. Skipped until a full roster is seeded: caching a partial
+ * list would overwrite the wedding's offline copy.
+ */
+export function cacheGuestList() {
+	if (!seeded) return;
+	try {
+		const wid = get(weddingId);
+		if (wid) cacheGuests(wid, get(guestList));
+	} catch {}
 }
 
 function recalculateOccupancy() {
@@ -185,25 +207,7 @@ function recalculateOccupancy() {
  * (SSE hiccup, reconnect race) instead of waiting for a manual refresh.
  */
 export function applyGuestResponse(resp: GuestResponse) {
-	const guest: Guest = {
-		id: resp.id,
-		name: resp.name,
-		pinyin: resp.pinyin,
-		email: resp.email,
-		rsvp: resp.rsvp as RSVPStatus,
-		pax: resp.pax,
-		tableId: resp.tableId,
-		seatNumber: resp.seatNum,
-		checkedIn: !!resp.checkedInAt,
-		checkedInAt: resp.checkedInAt ? new Date(resp.checkedInAt) : undefined,
-		notes: resp.notes,
-		dietaryRequirements: resp.dietary,
-		isVip: resp.isVip,
-		angbaoAmount: resp.angbaoAmt ?? undefined,
-		giftItem: resp.giftItem ?? undefined,
-		createdAt: new Date(resp.createdAt),
-		updatedAt: new Date(resp.updatedAt)
-	};
+	const guest = toGuest(resp);
 
 	guestList.update((list) => {
 		const idx = list.findIndex((g) => g.id === guest.id);
@@ -213,31 +217,46 @@ export function applyGuestResponse(resp: GuestResponse) {
 		newList[idx] = guest;
 		return newList;
 	});
-	guestMap.update((map) => new Map(map).set(guest.id, guest));
 	recalculateOccupancy();
 
 	const current = get(selectedGuest);
 	if (current?.id === guest.id) selectedGuest.set(guest);
+	cacheGuestList();
 }
 
-function eventGuestToGuest(d: NonNullable<GuestEvent['guest']>, eventTimestamp: number): Guest {
-	const updatedAt = eventTimestamp > 0 ? new Date(eventTimestamp) : new Date();
+// A guest as the server sends it: REST responses carry timestamps, SSE events do not.
+type GuestWire = Omit<GuestResponse, 'weddingId' | 'createdAt' | 'updatedAt'> & { createdAt?: string; updatedAt?: string };
+
+/** The one server-to-Guest mapper for staff data. Go sends an empty list as null. */
+export function toGuest(r: GuestWire, fallbackTime = new Date()): Guest {
+	const createdAt = r.createdAt ? new Date(r.createdAt) : fallbackTime;
 	return {
-		id: d.id,
-		name: d.name,
-		email: d.email,
-		rsvp: d.rsvp as RSVPStatus,
-		pax: d.pax,
-		tableId: d.tableId,
-		seatNumber: d.seatNum,
-		checkedIn: !!d.checkedInAt,
-		checkedInAt: d.checkedInAt ? new Date(d.checkedInAt) : undefined,
-		notes: d.notes,
-		dietaryRequirements: d.dietary,
-		isVip: d.isVip,
-		angbaoAmount: d.angbaoAmt ?? undefined,
-		giftItem: d.giftItem ?? undefined,
-		createdAt: updatedAt,
-		updatedAt
+		id: r.id,
+		name: r.name,
+		pinyin: r.pinyin,
+		email: r.email || undefined,
+		rsvp: r.rsvp as RSVPStatus,
+		pax: r.pax,
+		tableId: r.tableId ?? null,
+		seatNumber: r.seatNum ?? null,
+		checkedIn: !!r.checkedInAt,
+		checkedInAt: r.checkedInAt ? new Date(r.checkedInAt) : undefined,
+		notes: r.notes ?? '',
+		dietaryRequirements: r.dietary ?? [],
+		isVip: r.isVip,
+		angbaoAmount: r.angbaoAmt ?? undefined,
+		giftItem: r.giftItem ?? undefined,
+		createdAt,
+		updatedAt: r.updatedAt ? new Date(r.updatedAt) : createdAt
+	};
+}
+
+/** Restore a roster read back from the offline cache: JSON turned its dates into strings. */
+export function reviveCachedGuest(g: Guest): Guest {
+	return {
+		...g,
+		checkedInAt: g.checkedInAt ? new Date(g.checkedInAt) : undefined,
+		createdAt: new Date(g.createdAt),
+		updatedAt: g.updatedAt ? new Date(g.updatedAt) : undefined
 	};
 }

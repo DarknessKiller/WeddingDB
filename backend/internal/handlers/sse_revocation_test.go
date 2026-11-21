@@ -24,15 +24,19 @@ const sseTestSecret = "test-secret"
 
 // newFastSSEServer is newTestSSEServer with a 20ms keepalive, so the
 // revocation re-check runs quickly. It returns the auth service for revoking.
+var sseTestAdmin = uuid.MustParse("00000000-0000-0000-0000-0000000000aa")
+
 func newFastSSEServer(t *testing.T) (*httptest.Server, *services.AuthService) {
 	t.Helper()
 	mr := miniredis.RunT(t)
 	rdb := redis.NewClient(&redis.Options{Addr: mr.Addr()})
+	// No database here: pre-cache the token version of sseTestAdmin.
+	testutil.NoErr(t, mr.Set("user:"+sseTestAdmin.String()+":tv", "0"))
 	hub := services.NewSSEHub(rdb)
 	t.Cleanup(hub.Shutdown)
 
 	auth := services.NewAuthService(nil, nil, nil, sseTestSecret, rdb)
-	h := NewSSEHandler(hub, auth)
+	h := NewSSEHandler(hub, auth, nil)
 	h.keepalive = 20 * time.Millisecond
 
 	widStr := utils.EncodeUUID(uuid.New())
@@ -52,7 +56,7 @@ func mintSSEToken(t *testing.T, pwc bool) (string, *services.AccessClaims) {
 func mintSSETokenWithExpiry(t *testing.T, pwc bool, expiry time.Time) (string, *services.AccessClaims) {
 	t.Helper()
 	claims := &services.AccessClaims{
-		AdminID:             uuid.New(),
+		AdminID:             sseTestAdmin,
 		Role:                "admin",
 		ForcePasswordChange: pwc,
 		RegisteredClaims: jwt.RegisteredClaims{

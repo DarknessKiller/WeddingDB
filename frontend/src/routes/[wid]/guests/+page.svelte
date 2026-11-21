@@ -4,16 +4,18 @@
   import { weddingTitle } from '#lib/stores/weddingTitle.ts';
   import { selectedGuest, isDrawerOpen, drawerStartEditing, drawerCreateMode, addToast, showSeatNumbers } from '#lib/stores/index.ts';
   import { weddingId } from '#lib/stores/weddingId.ts';
-  import { guestList } from '#lib/stores/guestEvents.ts';
+  import { guestList, toGuest } from '#lib/stores/guestEvents.ts';
   import { goto } from '$app/navigation';
-  import { deleteGuest as apiDeleteGuest, searchGuests, assignSeat, unassignSeat, bulkImportGuests } from '#lib/api/guests.ts';
-  import type { GuestResponse, GuestImportData } from '#lib/api/guests.ts';
+  import { deleteGuest as apiDeleteGuest, searchGuests, assignSeat, unassignSeat, bulkImportGuests, isNetworkError } from '#lib/api/guests.ts';
+  import { rankGuests } from '#lib/utils/guestSearch.ts';
+  import type { GuestImportData } from '#lib/api/guests.ts';
   import { listTables } from '#lib/api/tables.ts';
   import type { BanquetTable } from '#lib/types/index.ts';
   import Badge from '#lib/components/ui/Badge.svelte';
   import ConfirmDialog from '#lib/components/ui/ConfirmDialog.svelte';
   import MoveGuestDrawer from '#lib/components/ui/MoveGuestDrawer.svelte';
   import { getInitials } from '#lib/utils/index.ts';
+  import { parseGuestCSV } from '#lib/utils/csv.ts';
   import Search from 'lucide-svelte/icons/search';
 import Download from 'lucide-svelte/icons/download';
 import Upload from 'lucide-svelte/icons/upload';
@@ -63,11 +65,19 @@ import Users from 'lucide-svelte/icons/users';
     try {
       const results = await searchGuests(wid, q);
       if (seq !== searchSeq) return; // stale — discard
-      searchResults = results.map(toGuest);
+      searchResults = results.map((r) => toGuest(r));
       searchError = null;
       currentPage = 0;
     } catch (cause) {
       if (seq !== searchSeq) return;
+      // Offline, the full roster is still on the phone: search it locally
+      // (name and pinyin), as the reception Search page does.
+      if (isNetworkError(cause)) {
+        searchResults = rankGuests(allGuests, q);
+        searchError = null;
+        currentPage = 0;
+        return;
+      }
       searchResults = [];
       searchError = cause instanceof Error ? cause.message : 'Failed to search guests';
     } finally {
@@ -189,26 +199,6 @@ import Users from 'lucide-svelte/icons/users';
   let displayTotal = $derived(filtered.length);
   let totalPages = $derived(Math.ceil(displayTotal / pageSize));
 
-  function toGuest(r: GuestResponse): Guest {
-    return {
-      id: r.id,
-      name: r.name,
-      email: r.email || undefined,
-      rsvp: r.rsvp as RSVPStatus,
-      pax: r.pax,
-      tableId: r.tableId ?? null,
-      seatNumber: r.seatNum,
-      checkedIn: !!r.checkedInAt,
-      checkedInAt: r.checkedInAt ? new Date(r.checkedInAt) : undefined,
-      notes: r.notes,
-      dietaryRequirements: r.dietary ?? [],
-      isVip: r.isVip,
-      angbaoAmount: r.angbaoAmt ?? undefined,
-      giftItem: r.giftItem ?? undefined,
-      createdAt: new Date(r.createdAt),
-    };
-  }
-
   const allColumns = [
     { key: 'name', label: 'Name' },
     { key: 'rsvp', label: 'RSVP' },
@@ -250,7 +240,8 @@ import Users from 'lucide-svelte/icons/users';
       ].map(csvField);
     });
     const csv = [headers.map(csvField), ...rows].map(r => r.join(',')).join('\n');
-    const blob = new Blob([csv], { type: 'text/csv' });
+    // BOM: without it Excel on Windows reads UTF-8 as the local code page and garbles Chinese names.
+    const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
@@ -368,37 +359,6 @@ import Users from 'lucide-svelte/icons/users';
     }
   }
 
-  function parseCSV(text: string): GuestImportData[] {
-    const lines = text.trim().split('\n');
-    if (lines.length < 2) return [];
-    const headers = lines[0].split(',').map(h => h.trim().toLowerCase());
-    const nameIdx = headers.findIndex(h => h === 'name');
-    if (nameIdx === -1) return [];
-    const emailIdx = headers.findIndex(h => h === 'email');
-    const paxIdx = headers.findIndex(h => h === 'pax');
-    const rsvpIdx = headers.findIndex(h => h === 'rsvp');
-    const vipIdx = headers.findIndex(h => h === 'vip' || h === 'isvip');
-    const notesIdx = headers.findIndex(h => h === 'notes');
-    const dietaryIdx = headers.findIndex(h => h === 'dietary');
-    const tableIdx = headers.findIndex(h => h === 'table' || h === 'tablename');
-    const seatIdx = headers.findIndex(h => h === 'seat' || h === 'seatnum' || h === 'seat_number');
-
-    return lines.slice(1).filter(l => l.trim()).map(line => {
-      const cols = line.split(',').map(c => c.trim().replace(/^"|"$/g, ''));
-      return {
-        name: cols[nameIdx] || '',
-        email: emailIdx >= 0 ? cols[emailIdx] : undefined,
-        pax: paxIdx >= 0 ? parseInt(cols[paxIdx]) || 1 : 1,
-        rsvp: rsvpIdx >= 0 ? cols[rsvpIdx] : 'no_response',
-        isVip: vipIdx >= 0 ? cols[vipIdx]?.toLowerCase() === 'yes' || cols[vipIdx] === '1' || cols[vipIdx]?.toLowerCase() === 'true' : false,
-        notes: notesIdx >= 0 ? cols[notesIdx] : undefined,
-        dietary: dietaryIdx >= 0 ? cols[dietaryIdx]?.split(';').map(d => d.trim()).filter(Boolean) : [],
-        table: tableIdx >= 0 ? cols[tableIdx] : undefined,
-        seat: seatIdx >= 0 ? parseInt(cols[seatIdx]) || undefined : undefined,
-      };
-    }).filter(g => g.name);
-  }
-
   function handleImportFile(e: Event) {
     const input = e.target as HTMLInputElement;
     const file = input.files?.[0];
@@ -408,7 +368,13 @@ import Users from 'lucide-svelte/icons/users';
     const reader = new FileReader();
     reader.onload = () => {
       try {
-        const guests = parseCSV(reader.result as string);
+        const text = reader.result as string;
+        // U+FFFD means the bytes were not UTF-8, e.g. Excel's default GBK "CSV" on Chinese Windows.
+        if (text.includes('\uFFFD')) {
+          importError = 'This file is not UTF-8, so names would import garbled. In Excel, save it as "CSV UTF-8 (Comma delimited)" and try again.';
+          return;
+        }
+        const guests = parseGuestCSV(text);
         if (guests.length === 0) {
           importError = 'No valid guests found. Make sure CSV has a "name" column.';
           return;
@@ -425,11 +391,14 @@ import Users from 'lucide-svelte/icons/users';
     if (importPreview.length === 0) return;
     importing = true;
     try {
-      // Resolve table names to IDs
+      // Resolve table names to IDs. A name with no matching table imports the
+      // guest without a table, and a seat is meaningless without one.
+      const missing = new Set<string>();
       const resolved = importPreview.map(g => {
-        if (!g.table) return g;
+        if (!g.table) return { ...g, seat: undefined };
         const match = tables.find(t => t.name.toLowerCase() === g.table!.toLowerCase());
-        return { ...g, tableId: match?.id };
+        if (!match) missing.add(g.table);
+        return { ...g, tableId: match?.id, seat: match ? g.seat : undefined };
       });
       const result = await bulkImportGuests(resolved.map(g => ({
         name: g.name,
@@ -441,7 +410,11 @@ import Users from 'lucide-svelte/icons/users';
         dietary: g.dietary,
         tableId: g.tableId,
         seatNum: g.seat,
+        row: g.row,
       })));
+      if (missing.size > 0) {
+        addToast(`No table named ${[...missing].map(n => `"${n}"`).join(', ')}; those guests were imported without a table`, 'error');
+      }
       addToast(`Imported ${result.imported} guests`, 'success');
       showImportModal = false;
       importPreview = [];
@@ -482,7 +455,8 @@ import Users from 'lucide-svelte/icons/users';
   function getNextBulkSeatNum(): number {
     if (!bulkMoveTableId) return 1;
     const cap = getBulkTableCapacity();
-    const occ = filtered.filter(g => g.tableId === bulkMoveTableId && !selectedIds.has(g.id) && g.seatNumber != null)
+    // The whole roster, not the filtered view: hidden guests still hold seats.
+    const occ = allGuests.filter(g => g.tableId === bulkMoveTableId && !selectedIds.has(g.id) && g.seatNumber != null)
       .flatMap(g => Array.from({ length: g.pax }, (_, i) => g.seatNumber! + i));
     for (let s = 1; s <= cap; s++) {
       if (!occ.includes(s)) return s;
@@ -493,7 +467,7 @@ import Users from 'lucide-svelte/icons/users';
   let bulkOccupiedSeats = $derived.by((): Set<number> => {
     if (!bulkMoveTableId) return new Set();
     return new Set(
-      filtered
+      allGuests
         .filter(g => g.tableId === bulkMoveTableId && !selectedIds.has(g.id) && g.seatNumber != null)
         .flatMap(g => {
           const start = g.seatNumber!;
@@ -513,7 +487,7 @@ import Users from 'lucide-svelte/icons/users';
     const capacity = getBulkTableCapacity();
     const ids = [...selectedIds];
     const seatsNeeded = ids.reduce((sum, id) => {
-      const g = filtered.find(g => g.id === id);
+      const g = allGuests.find(g => g.id === id);
       return sum + (g?.pax ?? 1);
     }, 0);
     // reject unless every pax fits after the starting seat
@@ -531,16 +505,19 @@ import Users from 'lucide-svelte/icons/users';
     bulkMoveSaving = true;
     try {
       let seat = bulkMoveSeatStart;
+      let moved = 0;
       for (const id of ids) {
-        const g = filtered.find(gg => gg.id === id);
-        if (!g) continue;
+        // Selected guests stay selected when a filter hides them; move them too.
+        const g = allGuests.find(gg => gg.id === id);
+        if (!g) continue; // deleted on another device meanwhile
         await assignSeat(wid, id, bulkMoveTableId, seat);
         // Push through the store so off-page rows and the next loop
         // iterations see the new seat even if the SSE echo is slow.
         guestList.update(list => list.map(gg => gg.id === id ? { ...gg, tableId: bulkMoveTableId, seatNumber: seat } : gg));
         seat += g.pax;
+        moved++;
       }
-      addToast(`Moved ${ids.length} guests to table`, 'success');
+      addToast(`Moved ${moved} guests to table`, 'success');
       selectedIds = new Set();
       showBulkMoveModal = false;
     } catch (e: any) {

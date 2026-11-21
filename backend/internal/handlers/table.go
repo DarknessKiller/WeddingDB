@@ -8,6 +8,7 @@ import (
 	"weddingdb/internal/services"
 
 	"github.com/go-fuego/fuego"
+	"gorm.io/gorm"
 )
 
 type TableHandler struct{ tableService *services.TableService }
@@ -51,8 +52,15 @@ func (h *TableHandler) Create(c fuego.ContextWithBody[TableRequest]) (any, error
 	if strings.TrimSpace(body.Name) == "" {
 		return nil, fuego.BadRequestError{Title: "Name is required"}
 	}
+	if err := maxLen("Name", body.Name, 100); err != nil { // banquet_tables.name is varchar(100)
+		return nil, err
+	}
 	if body.Capacity < 1 || body.Capacity > 200 {
 		return nil, fuego.BadRequestError{Title: "Capacity must be between 1 and 200"}
+	}
+	// Same bounds as layout save, or one bad table blocks every later save.
+	if body.X < 0 || body.X > 100 || body.Y < 0 || body.Y > 100 {
+		return nil, fuego.BadRequestError{Title: "Table X/Y must be 0–100"}
 	}
 	table := &models.BanquetTable{
 		WeddingID: wid,
@@ -86,23 +94,29 @@ func (h *TableHandler) Update(c fuego.ContextWithBody[TableRequest]) (any, error
 	}
 	table, err := h.tableService.Get(ctx, id, wid)
 	if err != nil {
-		return nil, fuego.NotFoundError{Title: "Table not found"}
+		return nil, notFoundOr(err, "Table not found")
 	}
 	if strings.TrimSpace(body.Name) == "" {
 		return nil, fuego.BadRequestError{Title: "Name is required"}
+	}
+	if err := maxLen("Name", body.Name, 100); err != nil { // banquet_tables.name is varchar(100)
+		return nil, err
 	}
 	if body.Capacity < 1 || body.Capacity > 200 {
 		return nil, fuego.BadRequestError{Title: "Capacity must be between 1 and 200"}
 	}
 	table.Name = body.Name
 	table.Capacity = body.Capacity
-	table.X = body.X
-	table.Y = body.Y
-	table.Degree = body.Degree
+	// Position belongs to the layout editor's save: writing it here from the
+	// dialog's copy would undo a move made in an editor since it opened.
 	table.IsVip = body.IsVip
 	if err := h.tableService.Update(ctx, table); err != nil {
 		if errors.Is(err, repository.ErrCapacityBelowSeats) {
 			return nil, fuego.ConflictError{Title: "Capacity is below seats already assigned; move those guests first"}
+		}
+		// Deleted after the Get above.
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, fuego.NotFoundError{Title: "Table not found"}
 		}
 		return nil, err
 	}
@@ -120,6 +134,9 @@ func (h *TableHandler) Delete(c fuego.ContextWithBody[any]) (any, error) {
 		return nil, fuego.BadRequestError{Title: "Invalid ID"}
 	}
 	if err := h.tableService.Delete(ctx, id, wid); err != nil {
+		if errors.Is(err, services.ErrTableNotFound) {
+			return nil, fuego.NotFoundError{Title: "Table not found"}
+		}
 		return nil, err
 	}
 	c.SetStatus(204)

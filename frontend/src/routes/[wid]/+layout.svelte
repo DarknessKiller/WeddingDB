@@ -8,19 +8,20 @@
   import { weddingId, setWeddingId } from '#lib/stores/weddingId.ts';
   import { weddingTitle } from '#lib/stores/weddingTitle.ts';
   import { validateToken } from '#lib/utils/auth.ts';
-  import { fetchAllGuests } from '#lib/api/guests.ts';
-  import { syncQueue, loadCachedGuests } from '#lib/offline/queue.ts';
+  import { fetchAllGuests, isNetworkError, withQueuedEdits } from '#lib/api/guests.ts';
+  import { syncQueue, loadCachedGuests, queuedCount } from '#lib/offline/queue.ts';
   import { getWedding } from '#lib/api/weddings.ts';
   import { listTables } from '#lib/api/tables.ts';
-  import { initializeSSE, refreshGuests, clearGuests } from '#lib/stores/guestEvents.ts';
-  import type { BanquetTable } from '#lib/types/index.ts';
+  import { initializeSSE, refreshGuests, clearGuests, guestList, toGuest, reviveCachedGuest } from '#lib/stores/guestEvents.ts';
+  import type { BanquetTable, Guest } from '#lib/types/index.ts';
 
   let { children } = $props();
 
   let currentPath = $derived(page.url.pathname);
   let wid = $derived(page.params.wid ?? '');
   let authChecked = $state(false);
-  let guestCount = $state(0);
+  // Follows the live list, so SSE creates, deletes and imports update the badge.
+  let guestCount = $derived($guestList.length);
   let tables = $state<BanquetTable[]>([]);
   let cleanupSSE: (() => void) | undefined;
   let offline = $state(typeof navigator !== 'undefined' ? !navigator.onLine : false);
@@ -28,33 +29,23 @@
 
   function refreshQueued() {
     if (typeof window === 'undefined' || !wid) return;
-    try { queued = JSON.parse(localStorage.getItem(`offline_queue_${wid}`) || '[]').length; } catch { queued = 0; }
+    queued = queuedCount(wid);
   }
-
-  const toGuest = (g: any) => {
-    const createdAt = g.createdAt ? new Date(g.createdAt) : new Date();
-    return {
-      id: g.id, name: g.name, email: g.email,
-      pinyin: g.pinyin,
-      rsvp: g.rsvp as any, pax: g.pax, tableId: g.tableId, seatNumber: g.seatNum,
-      checkedIn: !!g.checkedInAt, checkedInAt: g.checkedInAt ? new Date(g.checkedInAt) : undefined,
-      notes: g.notes, dietaryRequirements: g.dietary ?? [], isVip: g.isVip,
-      angbaoAmount: g.angbaoAmt ?? undefined, giftItem: g.giftItem ?? undefined,
-      createdAt, updatedAt: g.updatedAt ? new Date(g.updatedAt) : createdAt,
-    };
-  };
 
   const loadGuests = async (w: string) => {
     try {
-      const guests = (await fetchAllGuests(w)).map(toGuest);
-      return guests;
-    } catch {
-      // Only a genuinely offline fetch may fall back to cached data. An HTTP
+      // Edits still queued (sync failed or skipped) stay visible over the server copy.
+      return withQueuedEdits(w, (await fetchAllGuests(w)).map((g) => toGuest(g)));
+    } catch (e) {
+      // Only an unreachable server may fall back to cached data. An HTTP
       // rejection (401/403/404) means the server denied access; serving a
-      // cached roster would leak a wedding the user can no longer open.
-      if (typeof navigator !== 'undefined' && !navigator.onLine) {
-        const cached = loadCachedGuests<any>(w);
-        if (cached) return (cached as any[]).map(toGuest);
+      // cached roster would leak a wedding the user can no longer open. Venue
+      // wifi without internet still reports onLine, so a failed or timed-out
+      // fetch counts as offline too.
+      if (isNetworkError(e)) {
+        // The cache holds Guest objects, not server records: only revive the dates.
+        const cached = loadCachedGuests<Guest>(w);
+        if (cached) return cached.map(reviveCachedGuest);
       }
       throw new Error('offline');
     }
@@ -67,27 +58,43 @@
     selectedGuest.set(null);
     isDrawerOpen.set(false);
     drawerCreateMode.set(false);
-    guestCount = 0;
     tables = [];
+    weddingTitle.set('');
+    showSeatNumbers.set(false);
   }
 
-  async function startWedding(w: string) {
+  // Bumped per startWedding; only the newest call may subscribe or set state,
+  // even when an A->B->A switch leaves two calls for the same wedding in flight.
+  let startGen = 0;
+  function stopSSE() {
     cleanupSSE?.();
+    cleanupSSE = undefined;
+  }
+  async function startWedding(w: string) {
+    const gen = ++startGen;
+    const stale = () => destroyed || gen !== startGen;
+    stopSSE();
     setWeddingId(w);
     resetWeddingState();
+    // Banner count and queue belong to this wedding now; send its edits before the snapshot.
+    refreshQueued();
+    if (navigator.onLine) await syncQueue(w).catch(() => {});
+    if (stale()) return;
     // Subscribe before the snapshot; guestEvents queues mutations until seeding completes.
+    stopSSE();
     cleanupSSE = initializeSSE(() => loadGuests(w));
     try {
       // refreshGuests keeps the syncing window open across fetch+seed even if
       // initializeSSE early-returned, so mid-fetch SSE events can't be clobbered.
-      const guests = await refreshGuests(() => loadGuests(w));
-      guestCount = guests.length;
+      await refreshGuests(() => loadGuests(w));
     } catch {}
-    if (destroyed) return;
+    // Another startWedding took over while this one loaded; its own calls own the UI.
+    if (stale()) return;
     listTables(w).then((t) => {
-      tables = t;
+      if (!stale()) tables = t;
     }).catch(() => {});
     getWedding(w).then((wedding) => {
+      if (stale()) return;
       weddingTitle.set(wedding.name || '');
       setShowSeatNumbers(w, wedding.showSeatNumbers ?? false);
     }).catch(() => {});
@@ -95,6 +102,8 @@
 
   let destroyed = false;
   let activeWid = '';
+  // Set in onMount; the banner's "Sync now" runs the same sync-and-reseed path.
+  let syncNow: () => Promise<void> = async () => {};
   let cleanupListeners: (() => void) | undefined;
   onMount(async () => {
     if (!await validateToken() || destroyed) return;
@@ -105,12 +114,13 @@
         await syncQueue(wid);
         // Refresh inside the syncing window so SSE events arriving mid-fetch
         // are queued and replayed after the seed instead of being clobbered.
-        const guests = await refreshGuests(() => loadGuests(wid));
-        guestCount = guests.length;
+        const w = wid;
+        await refreshGuests(() => loadGuests(w));
         refreshQueued();
       } catch {}
     }
 
+    syncNow = doSync;
     const onOnline = () => { offline = false; refreshQueued(); doSync(); };
     const onOffline = () => { offline = true; };
     const onVis = () => { if (document.visibilityState === 'visible' && navigator.onLine) doSync(); };
@@ -129,10 +139,6 @@
     };
     refreshQueued();
 
-    // initial sync before seed
-    if (wid && navigator.onLine) { try { await syncQueue(wid); } catch {} }
-
-    if (destroyed) return;
     if (wid) {
       activeWid = wid;
       await startWedding(wid);
@@ -188,7 +194,7 @@
       {#if offline}
         <div class="offline-banner">Offline — changes queued{queued ? ` (${queued})` : ''}</div>
       {:else if queued}
-        <div class="offline-banner queued">{queued} queued — syncing on reconnect <button onclick={async () => { await syncQueue(wid); refreshQueued(); }}>Sync now</button></div>
+        <div class="offline-banner queued">{queued} queued — syncing on reconnect <button onclick={() => syncNow()}>Sync now</button></div>
       {/if}
       <Header />
       <main class="main-content">

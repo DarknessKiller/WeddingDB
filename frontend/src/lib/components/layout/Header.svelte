@@ -2,6 +2,8 @@
   import { page } from '$app/state';
   import { sidebarCollapsed, getAuth, clearAuth } from '#lib/stores/index.ts';
   import { setWeddingId } from '#lib/stores/weddingId.ts';
+  import { flushAllQueues } from '#lib/offline/queue.ts';
+  import { withTimeout } from '#lib/utils/index.ts';
   import { goto } from '$app/navigation';
   import Menu from 'lucide-svelte/icons/menu';
 import X from 'lucide-svelte/icons/x';
@@ -26,6 +28,10 @@ import LogOut from 'lucide-svelte/icons/log-out';
   );
 
   async function handleLogout() {
+    // Logout deletes this device's unsynced offline edits (check-ins, angbao).
+    // Send them first, and ask before throwing away any that could not go.
+    const unsynced = await flushAllQueues();
+    if (unsynced > 0 && !confirm(`${unsynced} offline edit(s) have not reached the server yet. Logging out deletes them. Log out anyway?`)) return;
     const { refreshToken, accessToken } = getAuth();
     if (refreshToken) {
       try {
@@ -35,7 +41,8 @@ import LogOut from 'lucide-svelte/icons/log-out';
             'Content-Type': 'application/json',
             ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {})
           },
-          body: JSON.stringify({ refreshToken })
+          body: JSON.stringify({ refreshToken }),
+          signal: withTimeout()
         });
       } catch { /* ignore */ }
     }

@@ -1,7 +1,7 @@
 import { apiFetch } from './client';
 
 export async function exportAngpaoReport(weddingId: string, format: 'csv' | 'xlsx'): Promise<void> {
-	const res = await apiFetch(`/api/weddings/${weddingId}/reports/angpao?format=${format}`);
+	const res = await apiFetch(`/api/weddings/${weddingId}/reports/angpao?format=${format}`, { signal: AbortSignal.timeout(120_000) });
 	if (!res.ok) {
 		const err = await res.text().catch(() => 'Export failed');
 		throw new Error(err || 'Export failed');

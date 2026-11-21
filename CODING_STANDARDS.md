@@ -60,7 +60,7 @@ Canonical implementation: `frontend/src/routes/[wid]/guests/+page.svelte`. Copy 
 - UI layer: filter and sort the full list first, then slice it for display. `currentPage` is 0-based `$state`; `pageSize` is 20; `hasNextPage` and `totalPages` are `$derived` (`(currentPage + 1) * pageSize < filtered.length`, `Math.ceil(filtered.length / pageSize)`), never stored copies.
 - Reset `currentPage = 0` when search text, filters, sort order, or the row drawer change the visible set.
 - Footer sits inside the table card's bottom border: `Page {currentPage + 1} of {totalPages} · {n} guests` on the left, icon-only prev/next buttons on the right with `aria-label="Previous page"` / `aria-label="Next page"` and `disabled` at both bounds. No numbered page list, no page-size selector, no "load more" button.
-- Drain the cursor on any unbounded list. `frontend/src/lib/api/dashboard.ts` still requests `?limit=500` in one shot and drops the rest past 500 guests; fix it when you touch it, and do not copy it.
+- Drain the cursor on any unbounded list; never request one large page and drop the rest.
 
 ### Verify
 

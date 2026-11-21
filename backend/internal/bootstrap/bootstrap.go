@@ -118,24 +118,9 @@ func Init(env config.Env, version string) *App {
 	db.Exec("CREATE INDEX IF NOT EXISTS idx_refresh_tokens_wedding_id ON refresh_tokens (wedding_id)")
 	db.Exec("CREATE INDEX IF NOT EXISTS idx_refresh_tokens_expires_at ON refresh_tokens (expires_at)")
 
-	// Expired refresh tokens are unusable; drop them so the table does not grow
-	// forever. Keep a week for debugging.
-	db.Where("expires_at < ?", time.Now().AddDate(0, 0, -7)).Delete(&models.RefreshToken{})
-
 	if db.Migrator().HasColumn(&models.HallElement{}, "label") {
 		if err := db.Migrator().DropColumn(&models.HallElement{}, "label"); err != nil {
 			log.Printf("warning: could not drop legacy hall_elements.label: %v", err)
-		}
-	}
-	// Seed default elements for weddings that have none — one query, not one
-	// COUNT per wedding on every boot.
-	var missingHall []uuid.UUID
-	db.Model(&models.WeddingEvent{}).
-		Where("NOT EXISTS (SELECT 1 FROM hall_elements WHERE hall_elements.wedding_id = wedding_events.id)").
-		Pluck("id", &missingHall)
-	for _, wid := range missingHall {
-		if err := db.Create(models.DefaultElements(wid)).Error; err != nil {
-			log.Println("Warning: seed default elements for wedding", wid, ":", err)
 		}
 	}
 
@@ -147,6 +132,9 @@ func Init(env config.Env, version string) *App {
 	if err != nil {
 		log.Fatal("Invalid REDIS_URL:", err)
 	}
+	// Honor context deadlines on every call: without this go-redis waits out
+	// its own read timeout and retries, so bounds like publishTimeout never apply.
+	redisOpts.ContextTimeoutEnabled = true
 	rdb := redis.NewClient(redisOpts)
 	if err := rdb.Ping(context.Background()).Err(); err != nil {
 		log.Fatal("Failed to connect to Redis:", err)
@@ -157,6 +145,10 @@ func Init(env config.Env, version string) *App {
 	tableRepo := repository.NewTableRepo(db)
 	guestRepo := repository.NewGuestRepo(db)
 	tokenRepo := repository.NewTokenRepo(db)
+	if err := tokenRepo.DeleteLegacyPlaintext(context.Background()); err != nil {
+		log.Println("Warning: delete plaintext refresh tokens:", err)
+	}
+	go pruneRefreshTokens(tokenRepo)
 	layoutRepo := repository.NewLayoutRepo(db)
 
 	sseHub := services.NewSSEHub(rdb)
@@ -168,7 +160,9 @@ func Init(env config.Env, version string) *App {
 	layoutService := services.NewLayoutService(layoutRepo)
 	reportService := services.NewReportService(guestRepo, tableRepo, weddingRepo)
 
-	server := config.NewFuegoServer(env, version)
+	// CORS wraps the router: a preflight OPTIONS matches no method-specific
+	// route, so as a route middleware it never ran and the mux answered 405.
+	server := config.NewFuegoServer(env, version, fuego.WithGlobalMiddlewares(middleware.CORSMiddleware))
 
 	// ProxyAware must run outside tracing: it rewrites RemoteAddr in place, and
 	// both fuego's logger and the tracing span read RemoteAddr afterwards.
@@ -178,7 +172,6 @@ func Init(env config.Env, version string) *App {
 	if tracingEnabled {
 		fuego.Use(server, tracing.Middleware)
 	}
-	fuego.Use(server, middleware.CORSMiddleware)
 
 	// Serve uploaded files (block directory listing)
 	server.Mux.HandleFunc("GET /uploads/{file}", func(w http.ResponseWriter, r *http.Request) {
@@ -203,37 +196,12 @@ func Init(env config.Env, version string) *App {
 	handlers.RegisterRoutes(server, authService, guestService, tableService, weddingService, layoutService, reportService, adminRepo)
 
 	// SSE endpoint for real-time guest event streaming (raw handler, bypasses Fuego).
-	sseHandler := handlers.NewSSEHandler(sseHub, authService)
+	sseHandler := handlers.NewSSEHandler(sseHub, authService, adminRepo)
 	server.Mux.HandleFunc("GET /api/weddings/{wid}/events", sseHandler.StreamHandler())
 
 	// Serve static frontend (SPA fallback to index.html)
 	staticDir := getEnv("STATIC_DIR", "./static")
-	server.Mux.HandleFunc("GET /{path...}", func(w http.ResponseWriter, r *http.Request) {
-		// Raw mux route: Fuego middleware does not run here, so set the
-		// baseline headers by hand (uploads have their own, stronger set).
-		middleware.SetSecurityHeaders(w)
-		path := r.PathValue("path")
-		if path == "" {
-			path = "index.html"
-		}
-		filePath := filepath.Join(staticDir, path)
-		if info, err := os.Stat(filePath); err == nil && !info.IsDir() {
-			stripped := strings.TrimPrefix(path, "/")
-			if strings.HasPrefix(stripped, "_app/") || strings.HasPrefix(stripped, "assets/") {
-				w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
-			} else if stripped == "index.html" {
-				w.Header().Set("Cache-Control", "no-cache")
-			}
-			if path == "favicon.svg" {
-				w.Header().Set("Cache-Control", "public, max-age=86400, s-maxage=604800, stale-while-revalidate=86400")
-			}
-			http.ServeFile(w, r, filePath)
-			return
-		}
-		// SPA fallback: serve index.html for client-side routing
-		w.Header().Set("Cache-Control", "no-cache") // deep links land here with a non-file path: mark no-cache so browser heuristics never serve stale chunk URLs after a redeploy
-		http.ServeFile(w, r, filepath.Join(staticDir, "index.html"))
-	})
+	server.Mux.HandleFunc("GET /{path...}", staticHandler(staticDir))
 
 	// Seed default admin if none exists
 	var count int64
@@ -275,9 +243,58 @@ func Init(env config.Env, version string) *App {
 	}
 }
 
+// staticHandler serves the built frontend from dir, falling back to index.html
+// so client-side routes load on a deep link.
+func staticHandler(dir string) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		// Raw mux route: Fuego middleware does not run here, so set the
+		// baseline headers by hand (uploads have their own, stronger set).
+		middleware.SetSecurityHeaders(w)
+		path := r.PathValue("path")
+		// An unknown API path is a client bug: answer 404, not the SPA shell
+		// with 200, which the caller would then fail to parse as JSON.
+		if path == "api" || strings.HasPrefix(path, "api/") {
+			http.NotFound(w, r)
+			return
+		}
+		if path == "" {
+			path = "index.html"
+		}
+		filePath := filepath.Join(dir, path)
+		if info, err := os.Stat(filePath); err == nil && !info.IsDir() {
+			stripped := strings.TrimPrefix(path, "/")
+			if strings.HasPrefix(stripped, "_app/") || strings.HasPrefix(stripped, "assets/") {
+				w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
+			} else if stripped == "index.html" {
+				w.Header().Set("Cache-Control", "no-cache")
+			}
+			if path == "favicon.svg" {
+				w.Header().Set("Cache-Control", "public, max-age=86400, s-maxage=604800, stale-while-revalidate=86400")
+			}
+			http.ServeFile(w, r, filePath)
+			return
+		}
+		// SPA fallback: serve index.html for client-side routing
+		w.Header().Set("Cache-Control", "no-cache") // deep links land here with a non-file path: mark no-cache so browser heuristics never serve stale chunk URLs after a redeploy
+		http.ServeFile(w, r, filepath.Join(dir, "index.html"))
+	}
+}
+
 func getEnv(key, fallback string) string {
 	if v := os.Getenv(key); v != "" {
 		return v
 	}
 	return fallback
+}
+
+// pruneRefreshTokens drops expired refresh tokens now and every hour after.
+// Every refresh rotates a row, so a server that only pruned at boot grew the
+// table for as long as it stayed up. Expired rows are kept a week for debugging.
+func pruneRefreshTokens(tokenRepo *repository.TokenRepo) {
+	for {
+		if err := tokenRepo.DeleteExpired(context.Background(), time.Now().AddDate(0, 0, -7)); err != nil {
+			log.Println("Warning: prune expired refresh tokens:", err)
+		}
+		<-time.After(time.Hour)
+	}
 }

@@ -1,19 +1,21 @@
 package handlers
 
 import (
+	"context"
 	"errors"
 	"strconv"
+	"weddingdb/internal/models"
 	"weddingdb/internal/repository"
 	"weddingdb/internal/services"
 	"weddingdb/internal/utils"
 
 	"github.com/go-fuego/fuego"
+	"github.com/google/uuid"
 )
 
 type publicGuest struct {
 	ID      string  `json:"id"`
 	Name    string  `json:"name"`
-	Rsvp    string  `json:"rsvp"`
 	TableID *string `json:"tableId"`
 	SeatNum *int    `json:"seatNum"`
 	Pax     int     `json:"pax"`
@@ -22,11 +24,43 @@ type publicGuest struct {
 }
 
 type PublicGuestHandler struct {
-	guestService *services.GuestService
+	guestService   *services.GuestService
+	weddingService *services.WeddingService
 }
 
-func NewPublicGuestHandler(guestService *services.GuestService) *PublicGuestHandler {
-	return &PublicGuestHandler{guestService: guestService}
+func NewPublicGuestHandler(guestService *services.GuestService, weddingService *services.WeddingService) *PublicGuestHandler {
+	return &PublicGuestHandler{guestService: guestService, weddingService: weddingService}
+}
+
+// toPublicGuests maps guests to the public payload, dropping seat numbers
+// when the wedding hides them from the kiosk.
+func (h *PublicGuestHandler) toPublicGuests(ctx context.Context, wid uuid.UUID, guests []models.GuestRecord) ([]publicGuest, error) {
+	w, err := h.weddingService.Get(ctx, wid)
+	if err != nil {
+		return nil, notFoundOr(err, "Wedding not found")
+	}
+	out := make([]publicGuest, 0, len(guests))
+	for _, g := range guests {
+		var tid *string
+		if g.TableID != nil {
+			s := utils.EncodeUUID(*g.TableID)
+			tid = &s
+		}
+		seat := g.SeatNum
+		if !w.ShowSeatNumbers {
+			seat = nil
+		}
+		out = append(out, publicGuest{
+			ID:      utils.EncodeUUID(g.ID),
+			Name:    g.Name,
+			TableID: tid,
+			SeatNum: seat,
+			Pax:     g.Pax,
+			IsVip:   g.IsVip,
+			Pinyin:  g.NamePinyin,
+		})
+	}
+	return out, nil
 }
 
 func (h *PublicGuestHandler) List(c fuego.ContextNoBody) (any, error) {
@@ -57,23 +91,9 @@ func (h *PublicGuestHandler) List(c fuego.ContextNoBody) (any, error) {
 		nextCursor = utils.EncodeUUID(guests[limit-1].ID)
 		guests = guests[:limit]
 	}
-	out := make([]publicGuest, 0, len(guests))
-	for _, g := range guests {
-		var tid *string
-		if g.TableID != nil {
-			s := utils.EncodeUUID(*g.TableID)
-			tid = &s
-		}
-		out = append(out, publicGuest{
-			ID:      utils.EncodeUUID(g.ID),
-			Name:    g.Name,
-			Rsvp:    g.RSVP,
-			TableID: tid,
-			SeatNum: g.SeatNum,
-			Pax:     g.Pax,
-			IsVip:   g.IsVip,
-			Pinyin:  g.NamePinyin,
-		})
+	out, err := h.toPublicGuests(ctx, wid, guests)
+	if err != nil {
+		return nil, err
 	}
 	return map[string]any{"guests": out, "nextCursor": nextCursor}, nil
 }
@@ -94,7 +114,7 @@ func (h *PublicKioskHandler) GetKioskSettings(c fuego.ContextNoBody) (any, error
 	}
 	w, err := h.weddingService.Get(ctx, wid)
 	if err != nil {
-		return nil, fuego.NotFoundError{Title: "Wedding not found"}
+		return nil, notFoundOr(err, "Wedding not found")
 	}
 	return map[string]any{
 		"venueName":             w.VenueName,
@@ -131,23 +151,9 @@ func (h *PublicGuestHandler) Search(c fuego.ContextNoBody) (any, error) {
 	if len(guests) > 50 {
 		guests = guests[:50]
 	}
-	out := make([]publicGuest, 0, len(guests))
-	for _, g := range guests {
-		var tid *string
-		if g.TableID != nil {
-			s := utils.EncodeUUID(*g.TableID)
-			tid = &s
-		}
-		out = append(out, publicGuest{
-			ID:      utils.EncodeUUID(g.ID),
-			Name:    g.Name,
-			Rsvp:    g.RSVP,
-			TableID: tid,
-			SeatNum: g.SeatNum,
-			Pax:     g.Pax,
-			IsVip:   g.IsVip,
-			Pinyin:  g.NamePinyin,
-		})
+	out, err := h.toPublicGuests(ctx, wid, guests)
+	if err != nil {
+		return nil, err
 	}
 	return out, nil
 }

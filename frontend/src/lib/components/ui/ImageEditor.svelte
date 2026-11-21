@@ -5,6 +5,7 @@ import Move from 'lucide-svelte/icons/move';
 import Maximize2 from 'lucide-svelte/icons/maximize-2';
   import { uploadFile } from '#lib/api/client.ts';
   import { addToast } from '#lib/stores/index.ts';
+  import { backgroundStyle, cssPosition } from '#lib/utils/index.ts';
 
   let {
     value = $bindable(''),
@@ -40,7 +41,8 @@ import Maximize2 from 'lucide-svelte/icons/maximize-2';
       value = window.location.origin + result.url;
       addToast(`${label} uploaded`, 'success');
     } catch (err: any) {
-      addToast(err.message || 'Upload failed', 'error');
+      // fetch rejects with TypeError offline and DOMException on timeout.
+      addToast(err instanceof TypeError || err instanceof DOMException ? 'Network error' : err.message || 'Upload failed', 'error');
     } finally {
       uploading = false;
       input.value = '';
@@ -63,11 +65,11 @@ import Maximize2 from 'lucide-svelte/icons/maximize-2';
       <!-- Preview -->
       <div class="relative {aspect === 'square' ? 'aspect-square' : aspect === 'portrait' ? 'aspect-[9/16]' : 'aspect-video'} overflow-hidden bg-gray-100">
         {#if aspect === 'square'}
-          <img src={value} alt={label} class="absolute inset-0 w-full h-full object-cover" style={`object-position: ${posX} ${posY};`} />
+          <img src={value} alt={label} class="absolute inset-0 w-full h-full object-cover" style={`object-position: ${cssPosition(posX)} ${cssPosition(posY)};`} />
         {:else}
           <div
             class="absolute inset-0 bg-cover bg-no-repeat transition-all duration-300"
-            style={`background-image: url(${value}); background-size: ${size}; background-position: ${posX} ${posY}; filter: blur(${blur}px); transform: scale(${blur > 0 ? 1.1 : 1});`}
+            style={`${backgroundStyle(value, size, posX, posY)} filter: blur(${Number(blur) || 0}px); transform: scale(${blur > 0 ? 1.1 : 1});`}
           ></div>
         {/if}
         <!-- Remove button -->

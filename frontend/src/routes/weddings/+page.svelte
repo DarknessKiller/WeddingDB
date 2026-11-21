@@ -14,6 +14,7 @@ import ChevronRight from 'lucide-svelte/icons/chevron-right';
   import dayjs from 'dayjs';
   import { validateToken } from '#lib/utils/auth.ts';
   import { apiFetch } from '#lib/api/client.ts';
+  import { queuedCount, syncQueue } from '#lib/offline/queue.ts';
 
   let weddings = $state<Wedding[]>([]);
   let loading = $state(true);
@@ -54,9 +55,19 @@ import ChevronRight from 'lucide-svelte/icons/chevron-right';
     selecting = w.id;
     let targetUrl = '';
     try {
+      // Only the open wedding's queue syncs, so leaving it with edits queued
+      // would strand them. Send them first; stay if any are still waiting.
+      const prev = currentWeddingId;
+      if (prev && prev !== w.id && queuedCount(prev) > 0) {
+        await syncQueue(prev).catch(() => {});
+        if (queuedCount(prev) > 0) {
+          addToast(`${queuedCount(prev)} offline edit(s) for the current wedding have not synced yet. Reconnect and try again.`, 'error');
+          return;
+        }
+      }
       const res = await apiFetch('/api/auth/select-wedding', {
         method: 'POST',
-        body: JSON.stringify({ weddingId: w.id, refreshToken: getAuth().refreshToken ?? '' })
+        body: () => JSON.stringify({ weddingId: w.id, refreshToken: getAuth().refreshToken ?? '' })
       });
       if (!res.ok) {
         const err = await res.json().catch(() => ({ title: 'Failed to select wedding' }));

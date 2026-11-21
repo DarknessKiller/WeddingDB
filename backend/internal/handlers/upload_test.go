@@ -55,7 +55,7 @@ func doUpload(t *testing.T, ctx context.Context, filename string, content []byte
 	req.Header.Set("Content-Type", mw.FormDataContentType())
 	rec := httptest.NewRecorder()
 
-	handler := fuego.HTTPHandler[any, any, any](s, NewUploadHandler().Upload, fuego.BaseRoute{Path: "/upload", Method: http.MethodPost})
+	handler := fuego.HTTPHandler[any, any, any](s, NewUploadHandler(allowAllWeddings).Upload, fuego.BaseRoute{Path: "/upload", Method: http.MethodPost})
 	handler(rec, req)
 	return rec
 }
@@ -170,8 +170,39 @@ func TestUpload_ScopeQuotaRejected(t *testing.T) {
 	}
 }
 
+// An admin working inside a wedding uses that wedding's quota, not the shared
+// global one, so a full global namespace never blocks kiosk setup.
+func TestUpload_AdminInWeddingUsesWeddingQuota(t *testing.T) {
+	t.Chdir(t.TempDir())
+	uploadDir := "./uploads"
+	if err := os.MkdirAll(uploadDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	filler, err := os.Create(filepath.Join(uploadDir, "filler.jpg"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := filler.Truncate(uploadQuotaPerScope); err != nil {
+		t.Fatal(err)
+	}
+	if err := filler.Close(); err != nil {
+		t.Fatal(err)
+	}
+	index := "global " + strings.Repeat("0", 64) + " filler.jpg\n"
+	if err := os.WriteFile(filepath.Join(uploadDir, ".hash-index"), []byte(index), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	wid := uuid.MustParse("00000000-0000-0000-0000-000000000002")
+	ctx := context.WithValue(context.WithValue(context.Background(), middleware.RoleKey, "admin"), middleware.WeddingIDKey, &wid)
+	rec := doUpload(t, ctx, "a.jpg", []byte{0xff, 0xd8, 0xff})
+	if rec.Code < 200 || rec.Code >= 300 {
+		t.Fatalf("status = %d, want 2xx, body = %s", rec.Code, rec.Body.String())
+	}
+}
+
 func TestUpload_RateLimitedPerScope(t *testing.T) {
-	h := NewUploadHandler()
+	h := NewUploadHandler(allowAllWeddings)
 	for range uploadRateLimit {
 		if !h.allow("w1") {
 			t.Fatal("upload within the limit was rejected")
@@ -223,5 +254,89 @@ func TestUpload_ConcurrentSameContentDedupes(t *testing.T) {
 	}
 	if files != 1 {
 		t.Fatalf("stored %d files for identical content, want 1", files)
+	}
+}
+
+// The index is the quota ledger: if the entry cannot be written, the stored
+// file must not stay behind uncounted.
+func TestUpload_IndexWriteFailureRemovesFile(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("root ignores file permissions")
+	}
+	t.Chdir(t.TempDir())
+	if err := os.MkdirAll("uploads", 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join("uploads", ".hash-index"), nil, 0o444); err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.WithValue(context.Background(), middleware.RoleKey, "admin")
+	rec := doUpload(t, ctx, "a.png", []byte{0x89, 0x50, 0x4e, 0x47, 1, 2, 3})
+	if rec.Code != http.StatusInternalServerError {
+		t.Fatalf("status = %d, want 500", rec.Code)
+	}
+	matches, err := filepath.Glob(filepath.Join("uploads", "*.png"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(matches) != 0 {
+		t.Fatalf("unindexed upload left on disk: %v", matches)
+	}
+}
+
+// SVGs without an XML prolog are the common case; wrong content still fails.
+func TestUpload_SVGMagic(t *testing.T) {
+	for name, tc := range map[string]struct {
+		body string
+		ok   bool
+	}{
+		"prolog":      {`<?xml version="1.0"?><svg/>`, true},
+		"bare svg":    {`<svg xmlns="http://www.w3.org/2000/svg"/>`, true},
+		"bom + space": {"\xef\xbb\xbf\n  <svg/>", true},
+		"html":        {`<html><script>x</script>`, false},
+	} {
+		t.Run(name, func(t *testing.T) {
+			rec := runUpload(t, "logo.svg", []byte(tc.body))
+			if got := rec.Code == http.StatusCreated; got != tc.ok {
+				t.Fatalf("status = %d, want accepted=%v", rec.Code, tc.ok)
+			}
+		})
+	}
+}
+
+func TestUpload_WebPMagic(t *testing.T) {
+	for name, tc := range map[string]struct {
+		body string
+		ok   bool
+	}{
+		"webp":      {"RIFF\x10\x00\x00\x00WEBPVP8 ", true},
+		"wav":       {"RIFF\x10\x00\x00\x00WAVEfmt ", false},
+		"bare riff": {"RIFF", false},
+	} {
+		t.Run(name, func(t *testing.T) {
+			rec := runUpload(t, "bg.webp", []byte(tc.body))
+			if got := rec.Code == http.StatusCreated; got != tc.ok {
+				t.Fatalf("status = %d, want accepted=%v", rec.Code, tc.ok)
+			}
+		})
+	}
+}
+
+func allowAllWeddings(context.Context, uuid.UUID, uuid.UUID) (bool, error) { return true, nil }
+
+// A user unassigned from a wedding still holds a token naming it until it
+// expires; upload must re-check the assignment, not trust the claim.
+func TestUpload_UnassignedUserRefused(t *testing.T) {
+	s := fuego.NewServer(fuego.WithoutStartupMessages())
+	deny := func(context.Context, uuid.UUID, uuid.UUID) (bool, error) { return false, nil }
+	handler := fuego.HTTPHandler[any, any, any](s, NewUploadHandler(deny).Upload, fuego.BaseRoute{Path: "/upload", Method: http.MethodPost})
+	wid := uuid.New()
+	ctx := context.WithValue(context.Background(), middleware.RoleKey, "user")
+	ctx = context.WithValue(ctx, middleware.WeddingIDKey, &wid)
+	req := httptest.NewRequest(http.MethodPost, "/upload", strings.NewReader("")).WithContext(ctx)
+	rec := httptest.NewRecorder()
+	handler(rec, req)
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("got %d, want 403", rec.Code)
 	}
 }

@@ -1,7 +1,7 @@
 services:
   app:
     # Pinned tag, not :latest: a redeploy must run the version you tested.
-    image: ghcr.io/darknesskiller/weddingdb:v0.14.6
+    image: ghcr.io/darknesskiller/weddingdb:0.14.6
     ports:
       # Terminate TLS at a reverse proxy on this host.
       - "127.0.0.1:8080:8080"
@@ -13,11 +13,14 @@ services:
       ADMIN_BOOTSTRAP_PASSWORD: "${ADMIN_BOOTSTRAP_PASSWORD:-}"
       # Self-registration at /register is off unless set to "true"; admins create accounts instead.
       ALLOW_REGISTRATION: "${ALLOW_REGISTRATION:-}"
+      # Set to "true" to stop serving the OpenAPI spec and Swagger UI.
+      DISABLE_API_DOCS: "${DISABLE_API_DOCS:-}"
       # Rate limits key on the client IP from X-Forwarded-For. Without this the
       # proxy's own address is used for every request and one client can lock
-      # everyone out. Loopback for a host proxy, the Docker bridge range for a
-      # containerized one reaching the app through the published port.
-      TRUSTED_PROXIES: "127.0.0.1/32,::1/128,172.16.0.0/12"
+      # everyone out. A host proxy reaches the published port through this
+      # network's gateway (pinned below). Trust only that address: trusting a
+      # whole private range lets a client on a 172.16-31.x LAN spoof its IP.
+      TRUSTED_PROXIES: "127.0.0.1/32,::1/128,172.30.255.1/32"
       STATIC_DIR: "./static"
       # Opt-in tracing: uncomment + run `docker compose --profile tracing up` to enable.
       # OTEL_ENABLED: true
@@ -86,3 +89,11 @@ volumes:
     name: weddingdb_redisdata
   jgdata:
     name: weddingdb_jgdata
+
+networks:
+  default:
+    ipam:
+      # Pinned so TRUSTED_PROXIES can name the gateway (172.30.255.1). Change
+      # both together if this range clashes with a network on the host.
+      config:
+        - subnet: 172.30.255.0/24

@@ -55,7 +55,7 @@ func newIntegrationAuthService(t *testing.T, secret string) (*AuthService, *mini
 		password TEXT NOT NULL,
 		name TEXT,
 		role TEXT NOT NULL,
-		force_password_change INTEGER DEFAULT 0,
+		force_password_change INTEGER DEFAULT 0, token_version INTEGER NOT NULL DEFAULT 0,
 		created_at DATETIME,
 		updated_at DATETIME
 	)`)
@@ -125,7 +125,7 @@ func seedRefreshToken(t *testing.T, db *gorm.DB, adminID uuid.UUID, weddingID *u
 		ID:        uuid.New(),
 		AdminID:   adminID,
 		WeddingID: weddingID,
-		Token:     tokenStr,
+		Token:     repository.HashToken(tokenStr),
 		ExpiresAt: time.Now().Add(7 * 24 * time.Hour),
 	}
 	if err := db.Create(rt).Error; err != nil {
@@ -347,7 +347,7 @@ func TestSelectWedding_PersistsWeddingScopeForUser(t *testing.T) {
 
 	// The refresh token row must now carry the selected wedding.
 	var rt models.RefreshToken
-	if err := db.Where("token = ?", refreshStr).First(&rt).Error; err != nil {
+	if err := db.Where("token = ?", repository.HashToken(refreshStr)).First(&rt).Error; err != nil {
 		t.Fatalf("failed to load refresh token: %v", err)
 	}
 	if rt.WeddingID == nil || *rt.WeddingID != wid {
@@ -383,7 +383,7 @@ func TestSelectWedding_AdminKeepsUnscopedRefreshToken(t *testing.T) {
 	}
 
 	var rt models.RefreshToken
-	if err := db.Where("token = ?", refreshStr).First(&rt).Error; err != nil {
+	if err := db.Where("token = ?", repository.HashToken(refreshStr)).First(&rt).Error; err != nil {
 		t.Fatalf("failed to load refresh token: %v", err)
 	}
 	if rt.WeddingID != nil {
@@ -396,6 +396,7 @@ func TestSelectWedding_AdminKeepsUnscopedRefreshToken(t *testing.T) {
 func TestRevokeUserTokens_DeletesRefreshTokensAndBumpsTV(t *testing.T) {
 	svc, _, db := newIntegrationAuthService(t, "test-secret")
 	adminID := uuid.New()
+	seedAdmin(t, db, adminID, "admin")
 	wid := uuid.New()
 
 	seedRefreshToken(t, db, adminID, &wid, "token-1")
@@ -428,6 +429,7 @@ func TestRevokeUserTokens_DeletesRefreshTokensAndBumpsTV(t *testing.T) {
 func TestRevokeUserTokens_InvalidatesExistingTokens(t *testing.T) {
 	svc, _, db := newIntegrationAuthService(t, "test-secret")
 	adminID := uuid.New()
+	seedAdmin(t, db, adminID, "admin")
 	wid := uuid.New()
 
 	tok := signTestToken(t, "test-secret", AccessClaims{
@@ -461,6 +463,7 @@ func TestRevokeUserTokens_InvalidatesExistingTokens(t *testing.T) {
 func TestRevokeUserTokens_DeleteBeforeIncrOrdering(t *testing.T) {
 	svc, _, db := newIntegrationAuthService(t, "test-secret")
 	adminID := uuid.New()
+	seedAdmin(t, db, adminID, "admin")
 
 	seedRefreshToken(t, db, adminID, nil, "orphan-token")
 
@@ -487,6 +490,32 @@ func TestRevokeUserTokens_DeleteBeforeIncrOrdering(t *testing.T) {
 	}
 }
 
+// Postgres holds the token version, so losing the Redis cache (restart
+// without persistence) must not resurrect a revoked access token, including
+// one stamped with a version that so far lived only in Redis.
+func TestRevokeUserTokens_SurvivesRedisDataLoss(t *testing.T) {
+	svc, mr, db := newIntegrationAuthService(t, "test-secret")
+	ctx := t.Context()
+	adminID := uuid.New()
+	seedAdmin(t, db, adminID, "admin")
+	// A version cached before Postgres held it must still be exceeded.
+	testutil.NoErr(t, mr.Set("user:"+adminID.String()+":tv", "5"))
+
+	old, err := svc.generateAccessToken(ctx, &models.AdminUser{ID: adminID, Role: "admin"}, nil)
+	testutil.NoErr(t, err)
+	testutil.NoErr(t, svc.RevokeUserTokens(ctx, adminID))
+	mr.FlushAll()
+
+	if _, err := svc.ValidateToken(ctx, old); err == nil {
+		t.Fatal("revoked token accepted after Redis lost the token version")
+	}
+	fresh, err := svc.generateAccessToken(ctx, &models.AdminUser{ID: adminID, Role: "admin"}, nil)
+	testutil.NoErr(t, err)
+	if _, err := svc.ValidateToken(ctx, fresh); err != nil {
+		t.Fatalf("token minted after revoke rejected: %v", err)
+	}
+}
+
 // Selecting a wedding on one device must not rescope the user's other devices.
 func TestSelectWedding_LeavesOtherDeviceScope(t *testing.T) {
 	svc, _, db := newIntegrationAuthService(t, "test-secret")
@@ -505,7 +534,7 @@ func TestSelectWedding_LeavesOtherDeviceScope(t *testing.T) {
 		t.Fatalf("SelectWedding failed: %v", err)
 	}
 	var phone models.RefreshToken
-	if err := db.Where("token = ?", "phone-token").First(&phone).Error; err != nil {
+	if err := db.Where("token = ?", repository.HashToken("phone-token")).First(&phone).Error; err != nil {
 		t.Fatalf("load phone token: %v", err)
 	}
 	if phone.WeddingID == nil || *phone.WeddingID != widX {

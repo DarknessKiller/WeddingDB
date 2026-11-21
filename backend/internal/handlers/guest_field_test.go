@@ -35,3 +35,24 @@ func TestCreateGuest_RejectsOversizedName(t *testing.T) {
 		t.Fatalf("oversized name status = %d, want %d", rec.Code, http.StatusBadRequest)
 	}
 }
+
+// An import error names the spreadsheet row the client sent, not the guest's
+// position after blank and nameless rows were skipped.
+func TestBulkImport_ErrorNamesSpreadsheetRow(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("sqlite open: %v", err)
+	}
+	svc := services.NewGuestService(repository.NewGuestRepo(db), nil, nil, db)
+	s := fuego.NewServer(fuego.WithoutStartupMessages())
+	fuego.Post(s, "/api/weddings/{wid}/guests/import", NewGuestHandler(svc).BulkImport)
+
+	body := `{"guests":[{"name":"Ann","pax":1,"row":2},{"name":"Big","pax":101,"row":7}]}`
+	rec := serveGuest(t, s, http.MethodPost, "/api/weddings/"+uuid.New().String()+"/guests/import", body)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want %d", rec.Code, http.StatusBadRequest)
+	}
+	if !strings.Contains(rec.Body.String(), "row 7") {
+		t.Errorf("error %q does not name row 7", rec.Body.String())
+	}
+}

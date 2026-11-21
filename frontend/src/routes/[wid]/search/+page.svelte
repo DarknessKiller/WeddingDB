@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { listTables } from '#lib/api/search.ts';
+  import { listTables } from '#lib/api/tables.ts';
   import { weddingTitle } from '#lib/stores/weddingTitle.ts';
   import { getLayout } from '#lib/api/layout.ts';
   import { addToast, selectedGuest, isDrawerOpen } from '#lib/stores/index.ts';
@@ -90,7 +90,7 @@ import CheckCircle2 from 'lucide-svelte/icons/check-circle-2';
       // Guest list is already seeded by the layout via SSE store.
       // Only fetch tables and layout here.
       const [t, layout] = await Promise.all([
-        listTables().catch(() => [] as BanquetTable[]),
+        listTables(get(weddingId)).catch(() => [] as BanquetTable[]),
         getLayout(get(weddingId)).catch(() => null),
       ]);
       tables = t;

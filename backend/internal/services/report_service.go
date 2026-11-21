@@ -2,10 +2,11 @@ package services
 
 import (
 	"bytes"
+	"cmp"
 	"context"
 	"encoding/csv"
 	"fmt"
-	"sort"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -46,11 +47,16 @@ type angpaoRow struct {
 	CheckedIn string
 }
 
+type tableTotal struct {
+	Name   string
+	Amount int
+}
+
 type angpaoSummary struct {
 	TotalAngbao     int
-	TotalByTable    map[string]int
-	TotalGuests     int
-	CheckedInGuests int
+	TotalByTable    []tableTotal // sorted by name; keyed by table ID so same-named tables stay apart
+	TotalGuests     int          // people (sum of pax), as on the dashboard, not entries
+	CheckedInGuests int          // people in checked-in parties
 	GiftItems       []string
 }
 
@@ -92,6 +98,8 @@ func (s *ReportService) GenerateCSV(ctx context.Context, weddingID uuid.UUID) ([
 // through csvText so the file is safe to open in a spreadsheet app.
 func (s *ReportService) writeCSV(rows []angpaoRow, summary angpaoSummary) ([]byte, error) {
 	var buf bytes.Buffer
+	// UTF-8 BOM so Excel decodes Chinese names instead of guessing a codepage.
+	buf.WriteString("\xEF\xBB\xBF")
 	w := csv.NewWriter(&buf)
 
 	// Header
@@ -99,7 +107,11 @@ func (s *ReportService) writeCSV(rows []angpaoRow, summary angpaoSummary) ([]byt
 
 	// Data rows
 	for _, r := range rows {
-		w.Write([]string{csvText(r.GuestName), csvText(r.TableName), r.SeatStr, r.AngbaoStr, csvText(r.GiftItem), r.CheckedIn})
+		gift := r.GiftItem
+		if gift != noGift {
+			gift = csvText(gift)
+		}
+		w.Write([]string{csvText(r.GuestName), csvText(r.TableName), r.SeatStr, r.AngbaoStr, gift, r.CheckedIn})
 	}
 
 	// Blank row separator
@@ -114,9 +126,8 @@ func (s *ReportService) writeCSV(rows []angpaoRow, summary angpaoSummary) ([]byt
 
 	// Per-table totals
 	w.Write([]string{"TABLE TOTALS", "Angbao (RM)", "", "", "", ""})
-	sortedTableNames := s.sortedTableKeys(summary.TotalByTable)
-	for _, tName := range sortedTableNames {
-		w.Write([]string{csvText(tName), fmt.Sprintf("RM %d", summary.TotalByTable[tName]), "", "", "", ""})
+	for _, t := range summary.TotalByTable {
+		w.Write([]string{csvText(t.Name), fmt.Sprintf("RM %d", t.Amount), "", "", "", ""})
 	}
 
 	// Gift items
@@ -192,97 +203,123 @@ func (s *ReportService) GenerateXLSX(ctx context.Context, weddingID uuid.UUID) (
 		return nil, "", fmt.Errorf("summary header style: %w", err)
 	}
 
+	// The first write error sticks and later writes are skipped, so the sheet
+	// code reads straight through and one check below reports it.
+	var werr error
+	set := func(sheet, cell string, v any) {
+		if werr == nil {
+			werr = f.SetCellValue(sheet, cell, v)
+		}
+	}
+	style := func(sheet, from, to string, id int) {
+		if werr == nil {
+			werr = f.SetCellStyle(sheet, from, to, id)
+		}
+	}
+	width := func(sheet, from, to string, w float64) {
+		if werr == nil {
+			werr = f.SetColWidth(sheet, from, to, w)
+		}
+	}
+
 	// ── Sheet 1: Guest Details ──
 	detailSheet := "Guest Details"
-	f.SetSheetName("Sheet1", detailSheet)
+	if err := f.SetSheetName("Sheet1", detailSheet); err != nil {
+		return nil, "", fmt.Errorf("name detail sheet: %w", err)
+	}
 
 	detailHeaders := []string{"Guest Name", "Table", "Seat", "Angbao (RM)", "Gift Item", "Checked In"}
 	for i, h := range detailHeaders {
-		f.SetCellValue(detailSheet, cellName(i+1, 1), h)
+		set(detailSheet, cellName(i+1, 1), h)
 	}
 	for i := range detailHeaders {
 		cell := cellName(i+1, 1)
-		f.SetCellStyle(detailSheet, cell, cell, headerStyle)
+		style(detailSheet, cell, cell, headerStyle)
 	}
 
 	for ri, r := range rows {
 		rowNum := ri + 2
-		f.SetCellValue(detailSheet, cellName(1, rowNum), r.GuestName)
-		f.SetCellValue(detailSheet, cellName(2, rowNum), r.TableName)
+		set(detailSheet, cellName(1, rowNum), r.GuestName)
+		set(detailSheet, cellName(2, rowNum), r.TableName)
 		if r.SeatNum > 0 {
-			f.SetCellValue(detailSheet, cellName(3, rowNum), r.SeatNum)
+			set(detailSheet, cellName(3, rowNum), r.SeatNum)
 		} else {
-			f.SetCellValue(detailSheet, cellName(3, rowNum), "-")
+			set(detailSheet, cellName(3, rowNum), "-")
 		}
 		if r.AngbaoAmt > 0 {
-			f.SetCellValue(detailSheet, cellName(4, rowNum), r.AngbaoAmt)
-			f.SetCellStyle(detailSheet, cellName(4, rowNum), cellName(4, rowNum), currencyStyle)
+			set(detailSheet, cellName(4, rowNum), r.AngbaoAmt)
+			style(detailSheet, cellName(4, rowNum), cellName(4, rowNum), currencyStyle)
 		} else {
-			f.SetCellValue(detailSheet, cellName(4, rowNum), "-")
+			set(detailSheet, cellName(4, rowNum), "-")
 		}
-		f.SetCellValue(detailSheet, cellName(5, rowNum), r.GiftItem)
-		f.SetCellValue(detailSheet, cellName(6, rowNum), r.CheckedIn)
+		set(detailSheet, cellName(5, rowNum), r.GiftItem)
+		set(detailSheet, cellName(6, rowNum), r.CheckedIn)
 	}
 
-	f.SetColWidth(detailSheet, "A", "A", 30)
-	f.SetColWidth(detailSheet, "B", "B", 15)
-	f.SetColWidth(detailSheet, "C", "C", 8)
-	f.SetColWidth(detailSheet, "D", "D", 15)
-	f.SetColWidth(detailSheet, "E", "E", 30)
-	f.SetColWidth(detailSheet, "F", "F", 22)
+	width(detailSheet, "A", "A", 30)
+	width(detailSheet, "B", "B", 15)
+	width(detailSheet, "C", "C", 8)
+	width(detailSheet, "D", "D", 15)
+	width(detailSheet, "E", "E", 30)
+	width(detailSheet, "F", "F", 22)
 
 	// ── Sheet 2: Summary ──
 	summarySheet := "Summary"
-	f.NewSheet(summarySheet)
+	if _, err := f.NewSheet(summarySheet); err != nil {
+		return nil, "", fmt.Errorf("add summary sheet: %w", err)
+	}
 
-	f.SetCellValue(summarySheet, "A1", "Angpao Report Summary")
-	f.SetCellStyle(summarySheet, "A1", "A1", summaryBold)
+	set(summarySheet, "A1", "Angpao Report Summary")
+	style(summarySheet, "A1", "A1", summaryBold)
 
-	f.SetCellValue(summarySheet, "A3", "Total Angbao (RM)")
-	f.SetCellValue(summarySheet, "B3", summary.TotalAngbao)
-	f.SetCellStyle(summarySheet, "A3", "A3", summaryBold)
-	f.SetCellStyle(summarySheet, "B3", "B3", currencyStyle)
+	set(summarySheet, "A3", "Total Angbao (RM)")
+	set(summarySheet, "B3", summary.TotalAngbao)
+	style(summarySheet, "A3", "A3", summaryBold)
+	style(summarySheet, "B3", "B3", currencyStyle)
 
-	f.SetCellValue(summarySheet, "A4", "Total Guests")
-	f.SetCellValue(summarySheet, "B4", summary.TotalGuests)
-	f.SetCellStyle(summarySheet, "A4", "A4", summaryBold)
+	set(summarySheet, "A4", "Total Guests")
+	set(summarySheet, "B4", summary.TotalGuests)
+	style(summarySheet, "A4", "A4", summaryBold)
 
-	f.SetCellValue(summarySheet, "A5", "Checked In")
-	f.SetCellValue(summarySheet, "B5", summary.CheckedInGuests)
-	f.SetCellStyle(summarySheet, "A5", "A5", summaryBold)
+	set(summarySheet, "A5", "Checked In")
+	set(summarySheet, "B5", summary.CheckedInGuests)
+	style(summarySheet, "A5", "A5", summaryBold)
 
 	// Per-table totals
-	f.SetCellValue(summarySheet, "A7", "Table")
-	f.SetCellValue(summarySheet, "B7", "Angbao (RM)")
-	f.SetCellStyle(summarySheet, "A7", "B7", summaryHeader)
+	set(summarySheet, "A7", "Table")
+	set(summarySheet, "B7", "Angbao (RM)")
+	style(summarySheet, "A7", "B7", summaryHeader)
 
-	sortedTableNames := s.sortedTableKeys(summary.TotalByTable)
 	rowNum := 8
-	for _, tName := range sortedTableNames {
-		f.SetCellValue(summarySheet, cellName(1, rowNum), tName)
-		f.SetCellValue(summarySheet, cellName(2, rowNum), summary.TotalByTable[tName])
-		f.SetCellStyle(summarySheet, cellName(2, rowNum), cellName(2, rowNum), currencyStyle)
+	for _, t := range summary.TotalByTable {
+		set(summarySheet, cellName(1, rowNum), t.Name)
+		set(summarySheet, cellName(2, rowNum), t.Amount)
+		style(summarySheet, cellName(2, rowNum), cellName(2, rowNum), currencyStyle)
 		rowNum++
 	}
 
 	// Gift items
 	if len(summary.GiftItems) > 0 {
 		rowNum++
-		f.SetCellValue(summarySheet, cellName(1, rowNum), "Gift Items")
-		f.SetCellStyle(summarySheet, cellName(1, rowNum), cellName(1, rowNum), summaryHeader)
+		set(summarySheet, cellName(1, rowNum), "Gift Items")
+		style(summarySheet, cellName(1, rowNum), cellName(1, rowNum), summaryHeader)
 		rowNum++
 		for _, g := range summary.GiftItems {
-			f.SetCellValue(summarySheet, cellName(1, rowNum), g)
+			set(summarySheet, cellName(1, rowNum), g)
 			rowNum++
 		}
 	}
 
-	f.SetColWidth(summarySheet, "A", "A", 30)
-	f.SetColWidth(summarySheet, "B", "B", 15)
+	width(summarySheet, "A", "A", 30)
+	width(summarySheet, "B", "B", 15)
+
+	if werr != nil {
+		return nil, "", fmt.Errorf("write xlsx cells: %w", werr)
+	}
 
 	var buf bytes.Buffer
 	if err := f.Write(&buf); err != nil {
-		return nil, "", err
+		return nil, "", fmt.Errorf("write xlsx: %w", err)
 	}
 
 	filename := fmt.Sprintf("report-%s-%s.xlsx",
@@ -292,16 +329,21 @@ func (s *ReportService) GenerateXLSX(ctx context.Context, weddingID uuid.UUID) (
 	return buf.Bytes(), filename, nil
 }
 
+// noGift is the gift cell of a guest with no gift. It is ours, not user text,
+// so CSV export leaves it as is instead of escaping it like a formula.
+const noGift = "-"
+
 func (s *ReportService) buildRows(guests []models.GuestRecord, tableMap map[uuid.UUID]string) ([]angpaoRow, angpaoSummary) {
 	rows := make([]angpaoRow, 0, len(guests))
-	summary := angpaoSummary{
-		TotalByTable: make(map[string]int),
-	}
+	summary := angpaoSummary{}
+	byTable := make(map[uuid.UUID]int) // uuid.Nil = unassigned
 
 	for _, g := range guests {
 		tableName := ""
+		tableID := uuid.Nil
 		if g.TableID != nil {
-			tableName = tableMap[*g.TableID]
+			tableID = *g.TableID
+			tableName = tableMap[tableID]
 		}
 
 		seatNum := 0
@@ -317,10 +359,10 @@ func (s *ReportService) buildRows(guests []models.GuestRecord, tableMap map[uuid
 			angbaoAmt = *g.AngbaoAmt
 			angbaoStr = strconv.Itoa(*g.AngbaoAmt)
 			summary.TotalAngbao += *g.AngbaoAmt
-			summary.TotalByTable[tableName] += *g.AngbaoAmt
+			byTable[tableID] += *g.AngbaoAmt
 		}
 
-		giftStr := "-"
+		giftStr := noGift
 		if g.GiftItem != nil && *g.GiftItem != "" {
 			giftStr = *g.GiftItem
 			summary.GiftItems = append(summary.GiftItems, fmt.Sprintf("%s: %s", g.Name, giftStr))
@@ -329,8 +371,9 @@ func (s *ReportService) buildRows(guests []models.GuestRecord, tableMap map[uuid
 		checkedInStr := "No"
 		if g.CheckedInAt != nil {
 			checkedInStr = "Yes (" + g.CheckedInAt.Local().Format("2006-01-02 15:04") + ")"
-			summary.CheckedInGuests++
+			summary.CheckedInGuests += g.Pax
 		}
+		summary.TotalGuests += g.Pax
 
 		rows = append(rows, angpaoRow{
 			GuestName: g.Name,
@@ -344,27 +387,26 @@ func (s *ReportService) buildRows(guests []models.GuestRecord, tableMap map[uuid
 		})
 	}
 
-	summary.TotalGuests = len(guests)
+	for id, amt := range byTable {
+		name := tableMap[id]
+		if id == uuid.Nil {
+			name = "Unassigned"
+		}
+		summary.TotalByTable = append(summary.TotalByTable, tableTotal{Name: name, Amount: amt})
+	}
+	slices.SortFunc(summary.TotalByTable, func(a, b tableTotal) int { return cmp.Compare(a.Name, b.Name) })
+
 	return rows, summary
 }
 
-func (s *ReportService) sortedTableKeys(m map[string]int) []string {
-	keys := make([]string, 0, len(m))
-	for k := range m {
-		keys = append(keys, k)
-	}
-	sort.Strings(keys)
-	return keys
-}
-
+// sanitizeFilename keeps a wedding name safe inside filename="...": quotes
+// and backslashes would end or escape the quoted value, so they are dropped.
+// It cuts by character, so a Chinese name never ends mid-character.
 func (s *ReportService) sanitizeFilename(name string) string {
-	name = strings.ReplaceAll(name, `\`, `\\`)
-	name = strings.ReplaceAll(name, `"`, `\"`)
-	name = strings.ReplaceAll(name, `/`, `-`)
-	name = strings.ReplaceAll(name, `\n`, `-`)
+	name = strings.NewReplacer(`\`, "", `"`, "", "/", "-").Replace(name)
 	name = strings.TrimSpace(name)
-	if len(name) > 50 {
-		name = name[:50]
+	if r := []rune(name); len(r) > 50 {
+		name = string(r[:50])
 	}
 	return name
 }
