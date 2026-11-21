@@ -47,6 +47,28 @@ export function clearQueue(wid: string) {
 	notifyChanged();
 }
 
+function offlineKeys(): string[] {
+	const keys: string[] = [];
+	for (let i = 0; i < localStorage.length; i++) {
+		const k = localStorage.key(i);
+		if (k?.startsWith('offline_')) keys.push(k);
+	}
+	return keys;
+}
+
+/** Unsynced changes across every wedding in this browser. */
+export function pendingChangeCount(): number {
+	if (typeof window === 'undefined') return 0;
+	return offlineKeys().filter(k => k.startsWith('offline_queue_')).reduce((n, k) => n + getQueue(k.slice('offline_queue_'.length)).length, 0);
+}
+
+/** Explicit logout: drop every queue and guest cache this browser holds. */
+export function clearOfflineData() {
+	if (typeof window === 'undefined') return;
+	offlineKeys().forEach(k => localStorage.removeItem(k));
+	notifyChanged();
+}
+
 export function cacheGuests(wid: string, guests: unknown[]) {
 	try { localStorage.setItem(ckey(wid), JSON.stringify(guests)); } catch {}
 }

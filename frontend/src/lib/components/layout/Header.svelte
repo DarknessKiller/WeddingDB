@@ -3,6 +3,8 @@
   import { sidebarCollapsed, getAuth, clearAuth } from '#lib/stores/index.ts';
   import { setWeddingId } from '#lib/stores/weddingId.ts';
   import { goto } from '$app/navigation';
+  import { pendingChangeCount, clearOfflineData } from '#lib/offline/queue.ts';
+  import ConfirmDialog from '#lib/components/ui/ConfirmDialog.svelte';
   import Menu from 'lucide-svelte/icons/menu';
 import X from 'lucide-svelte/icons/x';
 import LogOut from 'lucide-svelte/icons/log-out';
@@ -25,7 +27,16 @@ import LogOut from 'lucide-svelte/icons/log-out';
     (auth.name || 'A').split(' ').map((w: string) => w[0]).join('').toUpperCase().slice(0, 2)
   );
 
-  async function handleLogout() {
+  let unsynced = $state(0);
+
+  // Logging out wipes this browser's offline data, so unsynced edits need an explicit discard.
+  function handleLogout() {
+    unsynced = pendingChangeCount();
+    if (unsynced === 0) logout();
+  }
+
+  async function logout() {
+    unsynced = 0;
     const { refreshToken, accessToken } = getAuth();
     if (refreshToken) {
       try {
@@ -39,11 +50,23 @@ import LogOut from 'lucide-svelte/icons/log-out';
         });
       } catch { /* ignore */ }
     }
+    clearOfflineData();
     clearAuth();
     setWeddingId('');
     goto('/login', { replaceState: true });
   }
 </script>
+
+<ConfirmDialog
+  open={unsynced > 0}
+  title="Unsynced offline changes"
+  message={`${unsynced} offline change${unsynced === 1 ? ' has' : 's have'} not reached the server. Reconnect and press Sync now to keep ${unsynced === 1 ? 'it' : 'them'}, or discard ${unsynced === 1 ? 'it' : 'them'} and log out.`}
+  confirmLabel="Discard and log out"
+  cancelLabel="Keep changes"
+  variant="danger"
+  onConfirm={logout}
+  onCancel={() => { unsynced = 0; }}
+/>
 
 <header class="app-header material-glass" class:sidebar-open={!$sidebarCollapsed}>
   <button

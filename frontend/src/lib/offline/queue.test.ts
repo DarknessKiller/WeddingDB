@@ -12,7 +12,9 @@ function memoryStorage() {
 		getItem: (k: string) => map.get(k) ?? null,
 		setItem: (k: string, v: string) => void map.set(k, String(v)),
 		removeItem: (k: string) => void map.delete(k),
-		clear: () => map.clear()
+		clear: () => map.clear(),
+		key: (i: number) => [...map.keys()][i] ?? null,
+		get length() { return map.size; }
 	};
 }
 
@@ -92,5 +94,23 @@ describe('syncQueue', () => {
 		expect(getQueue('w1')).toHaveLength(500);
 		expect(getQueue('w1')[0].mutationId).toBe('m1');
 		expect(addToast).toHaveBeenCalledWith(expect.stringContaining('oldest unsynced change was dropped'), 'error');
+	});
+});
+
+describe('logout data', () => {
+	it('counts unsynced changes across weddings and clears only offline keys', async () => {
+		const { enqueue, pendingChangeCount, clearOfflineData, cacheGuests } = await import('./queue');
+		enqueue('w1', mutation('a'));
+		enqueue('w2', mutation('b'));
+		enqueue('w2', mutation('c'));
+		cacheGuests('w1', [{ id: 'g1' }]);
+		localStorage.setItem('weddingdb_show_seat_numbers_w1', '1');
+
+		expect(pendingChangeCount()).toBe(3);
+		clearOfflineData();
+
+		expect(pendingChangeCount()).toBe(0);
+		expect(localStorage.getItem('offline_cache_w1')).toBeNull();
+		expect(localStorage.getItem('weddingdb_show_seat_numbers_w1')).toBe('1');
 	});
 });
