@@ -1,4 +1,4 @@
-import { writable, get } from 'svelte/store';
+import { writable, derived, get } from 'svelte/store';
 import { selectedGuest } from '#lib/stores/index.ts';
 import { connectSSE, disconnectSSE, type GuestEvent } from '#lib/api/sse.ts';
 import { weddingId } from '#lib/stores/weddingId.ts';
@@ -11,8 +11,15 @@ export const guestList = writable<Guest[]>([]);
 // Quick lookup by guest ID.
 export const guestMap = writable<Map<string, Guest>>(new Map());
 
-// Table occupancy: tableId -> total pax seated.
-export const tableOccupancy = writable<Map<string, number>>(new Map());
+// Table occupancy: tableId -> total pax seated. Derived so every guestList
+// write (seed, SSE, optimistic offline patch) keeps it current.
+export const tableOccupancy = derived(guestList, (guests) => {
+	const occ = new Map<string, number>();
+	for (const g of guests) {
+		if (g.tableId) occ.set(g.tableId, (occ.get(g.tableId) || 0) + g.pax);
+	}
+	return occ;
+});
 
 // Whether the SSE connection is active.
 export const sseConnected = writable(false);
@@ -96,7 +103,6 @@ export function seedGuests(guests: Guest[]) {
 		map.set(g.id, g);
 	}
 	guestMap.set(map);
-	recalculateOccupancy();
 	if (syncing) {
 		syncing = false;
 		const pending = queuedEvents;
@@ -140,29 +146,11 @@ function handleGuestEvent(event: GuestEvent) {
 		return newMap;
 	});
 
-	// 'create'/'update' events also carry table/seat/pax changes, so occupancy
-	// must be recalculated for them too — otherwise $tableOccupancy goes stale
-	// after REST updates or unassigns (the server publishes those as 'update').
-	if (type === 'create' || type === 'update' || type === 'seat_assign' || type === 'checkin' || type === 'checkout' || type === 'delete') {
-		recalculateOccupancy();
-	}
-
 	// If the drawer is showing this guest, update it live.
 	const current = get(selectedGuest);
 	if (current?.id === guest.id) {
 		selectedGuest.set(guest);
 	}
-}
-
-function recalculateOccupancy() {
-	const guests = get(guestList);
-	const occ = new Map<string, number>();
-	for (const g of guests) {
-		if (g.tableId) {
-			occ.set(g.tableId, (occ.get(g.tableId) || 0) + g.pax);
-		}
-	}
-	tableOccupancy.set(occ);
 }
 
 /**
@@ -201,7 +189,6 @@ export function applyGuestResponse(resp: GuestResponse) {
 		return newList;
 	});
 	guestMap.update((map) => new Map(map).set(guest.id, guest));
-	recalculateOccupancy();
 
 	const current = get(selectedGuest);
 	if (current?.id === guest.id) selectedGuest.set(guest);
@@ -238,5 +225,4 @@ export function removeGuest(id: string) {
 		return next;
 	});
 	if (get(selectedGuest)?.id === id) selectedGuest.set(null);
-	recalculateOccupancy();
 }

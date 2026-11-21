@@ -50,7 +50,6 @@ async function freshModule() {
 	const mod = await import('./guestEvents');
 	mod.guestList.set([]);
 	mod.guestMap.set(new Map());
-	mod.tableOccupancy.set(new Map());
 	return mod;
 }
 
@@ -158,6 +157,16 @@ describe('guestEvents store', () => {
 		sseState.eventHandler!(makeEvent({ type: 'create', guest: { id: 'g9', name: 'Zoe', email: '', pax: 4, rsvp: 'confirmed', isVip: false, notes: '', dietary: [], tableId: 't2', seatNum: 1, checkedInAt: null, angbaoAmt: null, giftItem: null } }));
 
 		expect(get(tableOccupancy).get('t2')).toBe(4);
+	});
+
+	it('occupancy follows direct guestList writes (optimistic offline patches)', async () => {
+		const { seedGuests, guestList, tableOccupancy } = await freshModule();
+		seedGuests([makeGuest({ id: 'g1', tableId: 't1', pax: 2 })]);
+
+		guestList.update((l) => l.map((g) => ({ ...g, tableId: 't2' })));
+
+		expect(get(tableOccupancy).has('t1')).toBe(false);
+		expect(get(tableOccupancy).get('t2')).toBe(2);
 	});
 
 	it('a failed reconnect resync keeps the current list', async () => {
