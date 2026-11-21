@@ -2,17 +2,26 @@ package handlers
 
 import (
 	"bytes"
+	"context"
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 
+	"weddingdb/internal/middleware"
+
 	"github.com/go-fuego/fuego"
+	"github.com/google/uuid"
 )
 
 // runUpload drives the upload controller via fuego's HTTPHandler, isolated in a
 // temp CWD so ./uploads stays out of the repo tree.
 func runUpload(t *testing.T, filename string, content []byte) *httptest.ResponseRecorder {
+	t.Helper()
+	return runUploadAs(t, filename, content, "admin", nil)
+}
+
+func runUploadAs(t *testing.T, filename string, content []byte, role string, wid *uuid.UUID) *httptest.ResponseRecorder {
 	t.Helper()
 	t.Chdir(t.TempDir())
 
@@ -33,6 +42,11 @@ func runUpload(t *testing.T, filename string, content []byte) *httptest.Response
 
 	req := httptest.NewRequest(http.MethodPost, "/upload", &body)
 	req.Header.Set("Content-Type", mw.FormDataContentType())
+	ctx := context.WithValue(req.Context(), middleware.RoleKey, role)
+	if wid != nil {
+		ctx = context.WithValue(ctx, middleware.WeddingIDKey, wid)
+	}
+	req = req.WithContext(ctx)
 	rec := httptest.NewRecorder()
 
 	handler := fuego.HTTPHandler[any, any, any](s, NewUploadHandler().Upload, fuego.BaseRoute{Path: "/upload", Method: http.MethodPost})
@@ -69,5 +83,13 @@ func TestUpload_RejectsUnknownExtension(t *testing.T) {
 	rec := runUpload(t, "x.exe", []byte("MZ"))
 	if rec.Code != http.StatusBadRequest {
 		t.Fatalf("status = %d, want 400, body = %s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestUpload_RequiresWeddingAccess(t *testing.T) {
+	// A freshly self-registered account has no wedding scope yet.
+	rec := runUploadAs(t, "a.jpg", []byte{0xff, 0xd8, 0xff}, "user", nil)
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("status = %d, want 403; body = %s", rec.Code, rec.Body.String())
 	}
 }

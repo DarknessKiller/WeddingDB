@@ -48,6 +48,11 @@ func closeLogged(c io.Closer) {
 
 func (h *UploadHandler) Upload(c fuego.ContextWithBody[any]) (any, error) {
 	r := c.Request()
+	// Self-registered accounts have no wedding until an admin assigns one; they
+	// must not be able to write files to the server.
+	if RoleFromContext(c.Context()) != "admin" && WeddingIDFromContext(c.Context()) == nil {
+		return nil, fuego.ForbiddenError{Title: "Upload requires wedding access"}
+	}
 	r.Body = http.MaxBytesReader(c.Response(), r.Body, maxUploadBytes)
 	file, header, err := r.FormFile("file")
 	if err != nil {
