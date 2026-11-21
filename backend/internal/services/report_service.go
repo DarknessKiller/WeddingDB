@@ -2,10 +2,12 @@ package services
 
 import (
 	"bytes"
+	"cmp"
 	"context"
 	"encoding/csv"
 	"fmt"
-	"sort"
+	"maps"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -48,7 +50,8 @@ type angpaoRow struct {
 
 type angpaoSummary struct {
 	TotalAngbao     int
-	TotalByTable    map[string]int
+	// TotalByTable is keyed by table ID: two tables may share a name.
+	TotalByTable    map[uuid.UUID]int
 	TotalGuests     int
 	CheckedInGuests int
 	GiftItems       []string
@@ -100,9 +103,8 @@ func (s *ReportService) GenerateCSV(ctx context.Context, weddingID uuid.UUID) ([
 
 	// Per-table totals
 	w.Write([]string{"TABLE TOTALS", "Angbao (RM)", "", "", "", ""})
-	sortedTableNames := s.sortedTableKeys(summary.TotalByTable)
-	for _, tName := range sortedTableNames {
-		w.Write([]string{csvSafe(tName), fmt.Sprintf("RM %d", summary.TotalByTable[tName]), "", "", "", ""})
+	for _, tid := range s.sortedTableKeys(summary.TotalByTable, tableMap) {
+		w.Write([]string{csvSafe(tableMap[tid]), fmt.Sprintf("RM %d", summary.TotalByTable[tid]), "", "", "", ""})
 	}
 
 	// Gift items
@@ -247,11 +249,10 @@ func (s *ReportService) GenerateXLSX(ctx context.Context, weddingID uuid.UUID) (
 	f.SetCellValue(summarySheet, "B7", "Angbao (RM)")
 	f.SetCellStyle(summarySheet, "A7", "B7", summaryHeader)
 
-	sortedTableNames := s.sortedTableKeys(summary.TotalByTable)
 	rowNum := 8
-	for _, tName := range sortedTableNames {
-		f.SetCellValue(summarySheet, cellName(1, rowNum), tName)
-		f.SetCellValue(summarySheet, cellName(2, rowNum), summary.TotalByTable[tName])
+	for _, tid := range s.sortedTableKeys(summary.TotalByTable, tableMap) {
+		f.SetCellValue(summarySheet, cellName(1, rowNum), tableMap[tid])
+		f.SetCellValue(summarySheet, cellName(2, rowNum), summary.TotalByTable[tid])
 		f.SetCellStyle(summarySheet, cellName(2, rowNum), cellName(2, rowNum), currencyStyle)
 		rowNum++
 	}
@@ -286,13 +287,15 @@ func (s *ReportService) GenerateXLSX(ctx context.Context, weddingID uuid.UUID) (
 func (s *ReportService) buildRows(guests []models.GuestRecord, tableMap map[uuid.UUID]string) ([]angpaoRow, angpaoSummary) {
 	rows := make([]angpaoRow, 0, len(guests))
 	summary := angpaoSummary{
-		TotalByTable: make(map[string]int),
+		TotalByTable: make(map[uuid.UUID]int),
 	}
 
 	for _, g := range guests {
 		tableName := ""
+		tableID := uuid.Nil // unassigned guests total under the empty name
 		if g.TableID != nil {
 			tableName = tableMap[*g.TableID]
+			tableID = *g.TableID
 		}
 
 		seatNum := 0
@@ -308,7 +311,7 @@ func (s *ReportService) buildRows(guests []models.GuestRecord, tableMap map[uuid
 			angbaoAmt = *g.AngbaoAmt
 			angbaoStr = strconv.Itoa(*g.AngbaoAmt)
 			summary.TotalAngbao += *g.AngbaoAmt
-			summary.TotalByTable[tableName] += *g.AngbaoAmt
+			summary.TotalByTable[tableID] += *g.AngbaoAmt
 		}
 
 		giftStr := "-"
@@ -339,13 +342,11 @@ func (s *ReportService) buildRows(guests []models.GuestRecord, tableMap map[uuid
 	return rows, summary
 }
 
-func (s *ReportService) sortedTableKeys(m map[string]int) []string {
-	keys := make([]string, 0, len(m))
-	for k := range m {
-		keys = append(keys, k)
-	}
-	sort.Strings(keys)
-	return keys
+// sortedTableKeys orders table IDs by table name, then ID for equal names.
+func (s *ReportService) sortedTableKeys(m map[uuid.UUID]int, names map[uuid.UUID]string) []uuid.UUID {
+	return slices.SortedFunc(maps.Keys(m), func(a, b uuid.UUID) int {
+		return cmp.Or(cmp.Compare(names[a], names[b]), cmp.Compare(a.String(), b.String()))
+	})
 }
 
 func (s *ReportService) sanitizeFilename(name string) string {

@@ -80,11 +80,11 @@ func TestBuildRows_FullData(t *testing.T) {
 	if summary.CheckedInGuests != 1 {
 		t.Errorf("checked in: got %d, want 1", summary.CheckedInGuests)
 	}
-	if summary.TotalByTable["Table A"] != 200 {
-		t.Errorf("Table A total: got %d", summary.TotalByTable["Table A"])
+	if summary.TotalByTable[t1] != 200 {
+		t.Errorf("Table A total: got %d", summary.TotalByTable[t1])
 	}
-	if summary.TotalByTable["Table B"] != 100 {
-		t.Errorf("Table B total: got %d", summary.TotalByTable["Table B"])
+	if summary.TotalByTable[t2] != 100 {
+		t.Errorf("Table B total: got %d", summary.TotalByTable[t2])
 	}
 	if len(summary.GiftItems) != 1 || summary.GiftItems[0] != "Alice: Red Packet" {
 		t.Errorf("gift items: got %v", summary.GiftItems)
@@ -124,16 +124,34 @@ func TestSanitizeFilename(t *testing.T) {
 
 func TestSortedTableKeys(t *testing.T) {
 	svc := &ReportService{}
-	m := map[string]int{"Banana": 2, "Apple": 1, "Cherry": 3}
-	keys := svc.sortedTableKeys(m)
+	b, a, c := uuid.New(), uuid.New(), uuid.New()
+	names := map[uuid.UUID]string{b: "Banana", a: "Apple", c: "Cherry"}
+	keys := svc.sortedTableKeys(map[uuid.UUID]int{b: 2, a: 1, c: 3}, names)
 	expected := []string{"Apple", "Banana", "Cherry"}
 	if len(keys) != len(expected) {
 		t.Fatalf("got %v, want %v", keys, expected)
 	}
 	for i, k := range keys {
-		if k != expected[i] {
-			t.Errorf("keys[%d] = %q, want %q", i, k, expected[i])
+		if names[k] != expected[i] {
+			t.Errorf("keys[%d] = %q, want %q", i, names[k], expected[i])
 		}
+	}
+}
+
+// Two tables sharing a name keep separate angbao totals.
+func TestBuildRows_SameNameTablesTotalSeparately(t *testing.T) {
+	svc := &ReportService{}
+	t1, t2 := uuid.New(), uuid.New()
+	tableMap := map[uuid.UUID]string{t1: "Family", t2: "Family"}
+	_, summary := svc.buildRows([]models.GuestRecord{
+		{Name: "A", TableID: &t1, AngbaoAmt: intPtr(100)},
+		{Name: "B", TableID: &t2, AngbaoAmt: intPtr(50)},
+	}, tableMap)
+	if summary.TotalByTable[t1] != 100 || summary.TotalByTable[t2] != 50 {
+		t.Fatalf("totals = %v, want 100 and 50 apart", summary.TotalByTable)
+	}
+	if keys := svc.sortedTableKeys(summary.TotalByTable, tableMap); len(keys) != 2 {
+		t.Fatalf("sorted keys = %v, want both tables", keys)
 	}
 }
 
@@ -258,10 +276,9 @@ func TestXLSXOutputStructure(t *testing.T) {
 	f.SetCellValue(summarySheet, "A7", "Table")
 	f.SetCellValue(summarySheet, "B7", "Angbao (RM)")
 	rowNum := 8
-	sortedTableNames := svc.sortedTableKeys(summary.TotalByTable)
-	for _, tName := range sortedTableNames {
-		f.SetCellValue(summarySheet, cellName(1, rowNum), tName)
-		f.SetCellValue(summarySheet, cellName(2, rowNum), summary.TotalByTable[tName])
+	for _, tid := range svc.sortedTableKeys(summary.TotalByTable, tableMap) {
+		f.SetCellValue(summarySheet, cellName(1, rowNum), tableMap[tid])
+		f.SetCellValue(summarySheet, cellName(2, rowNum), summary.TotalByTable[tid])
 		rowNum++
 	}
 
