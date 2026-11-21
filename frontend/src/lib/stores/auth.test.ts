@@ -76,4 +76,30 @@ describe('auth storage', () => {
 		expect(storage.getItem('weddingdb_auth')).toBeNull();
 		expect(getAuth()).toMatchObject({ accessToken: null, refreshToken: null, role: null, name: null });
 	});
+
+	it('ends this tab session when another tab logs out', async () => {
+		const { getAuth, setAuth } = await import('#lib/stores/index.ts');
+		const w = globalThis.window as any;
+		w.location = { pathname: '/w1/guests', href: '/w1/guests' };
+		setAuth('a', 'refresh-2', 'staff', 'S');
+
+		storage.removeItem('weddingdb_auth');
+		for (const h of listeners.storage) h({ key: 'weddingdb_auth', newValue: null } as StorageEvent);
+
+		expect(getAuth()).toMatchObject({ accessToken: null, refreshToken: null });
+		expect(w.location.href).toBe('/login');
+	});
+
+	it('keeps the session when another tab only rotates the token', async () => {
+		const { getAuth, setAuth } = await import('#lib/stores/index.ts');
+		const w = globalThis.window as any;
+		w.location = { pathname: '/w1/guests', href: '/w1/guests' };
+		setAuth('a', 'refresh-2', 'staff', 'S');
+
+		storage.setItem('weddingdb_auth', JSON.stringify({ accessToken: 'b', refreshToken: 'refresh-3', role: 'staff', name: 'S' }));
+		for (const h of listeners.storage) h({ key: 'weddingdb_auth', newValue: 'x' } as StorageEvent);
+
+		expect(getAuth().refreshToken).toBe('refresh-2');
+		expect(w.location.href).toBe('/w1/guests');
+	});
 });

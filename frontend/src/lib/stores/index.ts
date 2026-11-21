@@ -125,8 +125,25 @@ export function setShowSeatNumbers(wid: string, value: boolean) {
 	} catch {}
 }
 
+/**
+ * Another tab logged out or its session expired (the stored auth is gone).
+ * Drop this tab's tokens and roster cache too, or it keeps showing guest data
+ * and later adopts the next user's tokens. Queued edits stay, as on expiry.
+ * Returns true when this tab had a session to end.
+ */
+export function endSessionFromOtherTab(): boolean {
+	if (!_refreshToken || readStoredAuth()) return false;
+	expireAuth();
+	return true;
+}
+
 if (typeof window !== 'undefined') {
 	window.addEventListener('storage', (e) => {
 		if (e.key === seatNumbersKey(currentWid)) showSeatNumbers.set(e.newValue !== '0');
+		// key is null when another tab called localStorage.clear().
+		if (e.key !== AUTH_KEY && e.key !== null) return;
+		// The public kiosk never uses the staff session, so it keeps running.
+		if (window.location.pathname.startsWith('/kiosk')) return;
+		if (endSessionFromOtherTab()) window.location.href = '/login';
 	});
 }

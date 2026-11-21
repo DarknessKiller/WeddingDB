@@ -13,7 +13,14 @@ async function doRefresh(): Promise<boolean> {
 	// Another tab already rotated the token. Reusing our stale one would make the
 	// server revoke the whole token family and log out every tab.
 	const stored = readStoredAuth();
-	if (stored && stored.refreshToken !== refreshToken) {
+	// Another tab logged out or expired the session: end ours, never refresh it.
+	if (!stored) {
+		expireAuth();
+		setWeddingId('');
+		if (typeof window !== 'undefined') window.location.href = '/login';
+		return false;
+	}
+	if (stored.refreshToken !== refreshToken) {
 		setAuth(stored.accessToken, stored.refreshToken, stored.role, stored.name);
 		return true;
 	}

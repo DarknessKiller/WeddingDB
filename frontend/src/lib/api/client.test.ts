@@ -92,6 +92,19 @@ describe('apiFetch refresh recovery', () => {
 		expect(localStorage.getItem('weddingdb_auth')).toBeNull();
 	});
 
+	it('ends the session without refreshing when another tab logged out', async () => {
+		localStorage.removeItem('weddingdb_auth');
+		fetchMock.mockResolvedValueOnce(res({}, 401));
+
+		const { apiFetch } = await import('./client');
+		const { getAuth } = await import('#lib/stores/index.ts');
+		await apiFetch('/api/guests');
+
+		expect(fetchMock).toHaveBeenCalledTimes(1);
+		expect(location.href).toBe('/login');
+		expect(getAuth().refreshToken).toBeNull();
+	});
+
 	it('adopts a token another tab already rotated instead of reusing the stale one', async () => {
 		localStorage.setItem('weddingdb_auth', JSON.stringify({ accessToken: 'tab2-access', refreshToken: 'refresh-2', role: 'admin', name: 'A' }));
 		fetchMock
