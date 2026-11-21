@@ -13,6 +13,7 @@ Files: `backend/**/*.go`.
 - For optional sort orders, compare only present values.
 - Language and stdlib idioms come from the `use-modern-go` skill, at the version in `backend/go.mod` (Go 1.27).
 - Handle every error: return it wrapped with context (`fmt.Errorf("assign seat: %w", err)`), or log it when the work is best-effort and the request must still succeed. An error nothing can act on carries a one-line reason beside `//nolint:errcheck`; tests fail on it (`testutil.NoErr(t, err)`) rather than discarding it.
+- Error strings start lowercase and carry no trailing punctuation: `fmt.Errorf("assign seat: %w", err)`, never `fmt.Errorf("Assign seat: %w", err)`. Acronyms and proper nouns keep their case (`invalid UUID`, `upstream returned 502`). staticcheck `ST1005` enforces this through `golangci-lint` in the verify block.
 
 ### Replacements
 
