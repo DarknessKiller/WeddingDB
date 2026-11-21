@@ -309,7 +309,7 @@ import ArrowUpDown from 'lucide-svelte/icons/arrow-up-down';
 </script>
 
 <!-- svelte-ignore a11y_no_static_element_interactions -->
-<svelte:window onkeydown={(e) => { if (e.key === 'Escape') onClose(); }} />
+<svelte:window onkeydown={(e) => { if (e.key === 'Escape' && !showUnassignConfirm && !showCheckInModal) onClose(); }} />
 <div class="drawer-overlay" onclick={onClose} role="presentation">
   <div class="drawer-backdrop" style="opacity: {dragging ? Math.max(0, 1 - dragY / 400) : 1}" aria-hidden="true" transition:fade={{ duration: 250 }}></div>
   <!-- svelte-ignore a11y_no_static_element_interactions -->
