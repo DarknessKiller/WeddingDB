@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"cmp"
 	"errors"
 	"log"
 	"weddingdb/internal/middleware"
@@ -109,6 +110,11 @@ func (h *LayoutHandler) Save(c fuego.ContextWithBody[LayoutRequest]) (any, error
 		}
 		if e.Width <= 0 || e.Height <= 0 {
 			return nil, fuego.BadRequestError{Title: "Element Width/Height must be > 0"}
+		}
+		// Column limits of hall_elements: over them Postgres refuses the whole save.
+		if err := cmp.Or(maxLen("Element name", e.Name, 255), maxLen("Element color", e.Color, 20),
+			maxLen("Element text color", e.TextColor, 20), maxLen("Element stroke color", e.StrokeColor, 20)); err != nil {
+			return nil, err
 		}
 	}
 	tables := make([]models.TableUpdate, 0, len(body.Tables))

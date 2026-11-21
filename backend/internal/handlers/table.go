@@ -51,6 +51,9 @@ func (h *TableHandler) Create(c fuego.ContextWithBody[TableRequest]) (any, error
 	if strings.TrimSpace(body.Name) == "" {
 		return nil, fuego.BadRequestError{Title: "Name is required"}
 	}
+	if err := maxLen("Name", body.Name, 100); err != nil { // banquet_tables.name is varchar(100)
+		return nil, err
+	}
 	if body.Capacity < 1 || body.Capacity > 200 {
 		return nil, fuego.BadRequestError{Title: "Capacity must be between 1 and 200"}
 	}
@@ -90,6 +93,9 @@ func (h *TableHandler) Update(c fuego.ContextWithBody[TableRequest]) (any, error
 	}
 	if strings.TrimSpace(body.Name) == "" {
 		return nil, fuego.BadRequestError{Title: "Name is required"}
+	}
+	if err := maxLen("Name", body.Name, 100); err != nil { // banquet_tables.name is varchar(100)
+		return nil, err
 	}
 	if body.Capacity < 1 || body.Capacity > 200 {
 		return nil, fuego.BadRequestError{Title: "Capacity must be between 1 and 200"}
