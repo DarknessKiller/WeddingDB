@@ -392,11 +392,31 @@ func (s *GuestService) UnassignSeat(ctx context.Context, guestID, weddingID uuid
 // UpdateWithSeat saves edited fields and, when tableID is set, moves the guest
 // to that table in the same transaction — a failed seat check leaves the
 // fields untouched and a failed field write leaves the seat where it was.
-// A nil tableID preserves the current seat assignment. A non-nil base refuses
-// the write with ErrStaleGuest if the row changed after the editor loaded it.
+// A nil tableID keeps the current seat assignment and uuid.Nil clears it. A
+// non-nil base refuses the write with ErrStaleGuest if the row changed after
+// the editor loaded it.
 func (s *GuestService) UpdateWithSeat(ctx context.Context, g *models.GuestRecord, tableID *uuid.UUID, seatNum *int, base *time.Time) error {
 	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		if tableID != nil {
+		switch {
+		case tableID == nil:
+			// Keep the seat as committed, not as the caller read it before this
+			// transaction: a seat move in between must survive. Wedding lock
+			// first keeps the lock order of every other guest write.
+			if _, err := guestCountLocked(tx, g.WeddingID); err != nil {
+				return err
+			}
+			var cur models.GuestRecord
+			q := tx.Select("table_id", "seat_num").Where("id = ? AND wedding_id = ?", g.ID, g.WeddingID)
+			if tx.Name() == "postgres" {
+				q = q.Clauses(clause.Locking{Strength: "UPDATE"})
+			}
+			if err := q.First(&cur).Error; err != nil {
+				return err
+			}
+			g.TableID, g.SeatNum = cur.TableID, cur.SeatNum
+		case *tableID == uuid.Nil:
+			g.TableID, g.SeatNum = nil, nil
+		default:
 			g.TableID = tableID
 			g.SeatNum = seatNum
 		}

@@ -180,13 +180,13 @@ func (h *GuestHandler) Update(c fuego.ContextWithBody[GuestCreateRequest]) (any,
 	guest.Dietary = body.Dietary
 	guest.AngbaoAmt = body.AngbaoAmt
 	guest.GiftItem = body.GiftItem
-	// tableId not provided — preserve the existing seat assignment.
+	// tableId not provided — the service keeps the seat as committed, read
+	// under the row lock, not as read above.
 	var tid *uuid.UUID
 	if body.TableID != nil {
 		if *body.TableID == "" {
 			// Explicitly clearing seat
-			guest.TableID = nil
-			guest.SeatNum = nil
+			tid = new(uuid.Nil)
 		} else {
 			id, err := DecodeID(*body.TableID)
 			if err != nil {

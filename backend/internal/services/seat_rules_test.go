@@ -292,3 +292,22 @@ func TestMissingRows_ReturnNotFound(t *testing.T) {
 		t.Fatalf("delete of a missing table: err = %v, want ErrTableNotFound", err)
 	}
 }
+
+// A field edit with no tableId keeps the seat as committed: a seat assigned
+// after the editor read the guest must survive the save.
+func TestUpdateWithSeat_KeepsSeatAssignedAfterRead(t *testing.T) {
+	svc, _, wid := newGuestSyncService(t)
+	tid := seedTable(t, svc, wid, "T1", 10)
+	g := seedGuest(t, svc, wid, "A")
+	loaded, err := svc.Get(t.Context(), g.ID, wid)
+	testutil.NoErr(t, err)
+	testutil.NoErr(t, svc.AssignSeat(t.Context(), g.ID, wid, tid, 3))
+
+	loaded.Notes = "halal"
+	testutil.NoErr(t, svc.UpdateWithSeat(t.Context(), loaded, nil, nil, nil))
+	got, err := svc.Get(t.Context(), g.ID, wid)
+	testutil.NoErr(t, err)
+	if got.TableID == nil || *got.TableID != tid || got.SeatNum == nil || *got.SeatNum != 3 || got.Notes != "halal" {
+		t.Fatalf("table=%v seat=%v notes=%q, want T1 seat 3 and the note", got.TableID, got.SeatNum, got.Notes)
+	}
+}
