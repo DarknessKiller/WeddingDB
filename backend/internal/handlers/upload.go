@@ -220,24 +220,26 @@ func (h *UploadHandler) Upload(c fuego.ContextWithBody[any]) (any, error) {
 	}
 	defer closeLogged(dst)
 
-	// Reset file pointer to beginning for writing
-	if _, err := file.Seek(0, 0); err != nil {
-		return nil, fuego.InternalServerError{Title: "Failed to save file"}
-	}
-	if _, err := dst.ReadFrom(file); err != nil {
-		return nil, fuego.InternalServerError{Title: "Failed to save file"}
-	}
-
-	f, err := os.OpenFile(indexPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 	// The index is the quota ledger: a file missing from it is never counted,
-	// so an upload whose index entry cannot be written is removed, not kept.
+	// so a partial write, or an upload whose index entry cannot be written, is
+	// removed, not kept.
 	unindexed := func(err error) error {
-		slog.Error("upload index write failed; removing unindexed file", "file", filename, "err", err)
+		slog.Error("upload save failed; removing unindexed file", "file", filename, "err", err)
 		if rmErr := os.Remove(filePath); rmErr != nil {
 			slog.Warn("remove unindexed upload failed", "file", filename, "err", rmErr)
 		}
 		return fuego.InternalServerError{Title: "Failed to save file"}
 	}
+
+	// Reset file pointer to beginning for writing
+	if _, err := file.Seek(0, 0); err != nil {
+		return nil, unindexed(err)
+	}
+	if _, err := dst.ReadFrom(file); err != nil {
+		return nil, unindexed(err)
+	}
+
+	f, err := os.OpenFile(indexPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 	if err != nil {
 		return nil, unindexed(err)
 	}
