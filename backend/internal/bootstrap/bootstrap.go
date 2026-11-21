@@ -142,6 +142,9 @@ func Init(env config.Env, version string) *App {
 	tableRepo := repository.NewTableRepo(db)
 	guestRepo := repository.NewGuestRepo(db)
 	tokenRepo := repository.NewTokenRepo(db)
+	if err := tokenRepo.DeleteLegacyPlaintext(context.Background()); err != nil {
+		log.Println("Warning: delete plaintext refresh tokens:", err)
+	}
 	go pruneRefreshTokens(tokenRepo)
 	layoutRepo := repository.NewLayoutRepo(db)
 

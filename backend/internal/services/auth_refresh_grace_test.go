@@ -33,7 +33,7 @@ func TestRefresh_MintFailureKeepsTokenUsable(t *testing.T) {
 	}
 
 	var live int64
-	db.Model(&models.RefreshToken{}).Where("token = ? AND rotated_at IS NULL", refreshStr).Count(&live)
+	db.Model(&models.RefreshToken{}).Where("token = ? AND rotated_at IS NULL", repository.HashToken(refreshStr)).Count(&live)
 	if live != 1 {
 		t.Fatalf("failed Refresh consumed the token: %d unrotated rows left", live)
 	}
@@ -103,7 +103,7 @@ func TestRefresh_ReplayAfterGraceRejected(t *testing.T) {
 		t.Fatalf("first Refresh failed: %v", err)
 	}
 
-	db.Model(&models.RefreshToken{}).Where("token = ?", refreshStr).
+	db.Model(&models.RefreshToken{}).Where("token = ?", repository.HashToken(refreshStr)).
 		Update("rotated_at", time.Now().Add(-refreshGraceWindow-time.Minute))
 
 	if _, err := svc.Refresh(context.Background(), refreshStr, ""); err == nil {
@@ -142,12 +142,12 @@ func TestTokenRotate_SecondClaimRejected(t *testing.T) {
 	}
 
 	var stored int64
-	db.Model(&models.RefreshToken{}).Where("token = ?", "claim-loser").Count(&stored)
+	db.Model(&models.RefreshToken{}).Where("token = ?", repository.HashToken("claim-loser")).Count(&stored)
 	if stored != 0 {
 		t.Errorf("loser's replacement was stored: %d rows", stored)
 	}
 	var live int64
-	db.Model(&models.RefreshToken{}).Where("token = ? AND rotated_at IS NULL", "claim-successor").Count(&live)
+	db.Model(&models.RefreshToken{}).Where("token = ? AND rotated_at IS NULL", repository.HashToken("claim-successor")).Count(&live)
 	if live != 1 {
 		t.Errorf("winner's replacement missing: %d rows", live)
 	}

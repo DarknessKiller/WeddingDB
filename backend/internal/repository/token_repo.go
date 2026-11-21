@@ -2,6 +2,8 @@ package repository
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/base64"
 	"errors"
 	"fmt"
 	"time"
@@ -18,8 +20,34 @@ func NewTokenRepo(db *gorm.DB) *TokenRepo {
 	return &TokenRepo{db: db}
 }
 
+// HashToken is the stored form of a refresh token. The database never holds
+// the secret itself, so a leaked dump or backup cannot resume a session.
+func HashToken(raw string) string {
+	sum := sha256.Sum256([]byte(raw))
+	return base64.RawURLEncoding.EncodeToString(sum[:])
+}
+
+// hashedTokenLen is len(HashToken(x)). Rows of any other length predate
+// hashing and still hold the raw secret.
+var hashedTokenLen = base64.RawURLEncoding.EncodedLen(sha256.Size)
+
+// hashed returns a copy of token with its secret replaced by its hash, so the
+// caller keeps the raw value to hand to the client.
+func hashed(token *models.RefreshToken) *models.RefreshToken {
+	stored := *token
+	stored.Token = HashToken(token.Token)
+	return &stored
+}
+
+// Save stores token. token.Token is the raw secret; only its hash is written.
 func (r *TokenRepo) Save(ctx context.Context, token *models.RefreshToken) error {
-	return r.db.WithContext(ctx).Create(token).Error
+	return r.db.WithContext(ctx).Create(hashed(token)).Error
+}
+
+// DeleteLegacyPlaintext removes refresh tokens stored before hashing. Their
+// owners log in again once.
+func (r *TokenRepo) DeleteLegacyPlaintext(ctx context.Context) error {
+	return r.db.WithContext(ctx).Where("LENGTH(token) <> ?", hashedTokenLen).Delete(&models.RefreshToken{}).Error
 }
 
 // ErrTokenClaimed reports that another caller rotated the token first.
@@ -51,26 +79,28 @@ func (r *TokenRepo) Rotate(ctx context.Context, token string, replacement *model
 			return err
 		}
 		res := tx.Model(&models.RefreshToken{}).
-			Where("token = ? AND rotated_at IS NULL", token).
-			Updates(map[string]any{"rotated_at": time.Now(), "replaced_by": replacement.Token})
+			Where("token = ? AND rotated_at IS NULL", HashToken(token)).
+			Updates(map[string]any{"rotated_at": time.Now(), "replaced_by": HashToken(replacement.Token)})
 		if res.Error != nil {
 			return res.Error
 		}
 		if res.RowsAffected != 1 {
 			return ErrTokenClaimed
 		}
-		return tx.Create(replacement).Error
+		return tx.Create(hashed(replacement)).Error
 	})
 }
 
+// FindByToken looks up a live token by its raw secret. The returned row's
+// Token and ReplacedBy hold hashes, never raw secrets.
 func (r *TokenRepo) FindByToken(ctx context.Context, token string) (*models.RefreshToken, error) {
 	var t models.RefreshToken
-	err := r.db.WithContext(ctx).Where("token = ? AND expires_at > ?", token, time.Now()).First(&t).Error
+	err := r.db.WithContext(ctx).Where("token = ? AND expires_at > ?", HashToken(token), time.Now()).First(&t).Error
 	return &t, err
 }
 
 func (r *TokenRepo) DeleteByToken(ctx context.Context, token string) (int64, error) {
-	res := r.db.WithContext(ctx).Where("token = ?", token).Delete(&models.RefreshToken{})
+	res := r.db.WithContext(ctx).Where("token = ?", HashToken(token)).Delete(&models.RefreshToken{})
 	return res.RowsAffected, res.Error
 }
 
@@ -79,7 +109,7 @@ func (r *TokenRepo) DeleteByToken(ctx context.Context, token string) (int64, err
 // the same user keep their own scope. Reports whether a row matched.
 func (r *TokenRepo) UpdateWeddingScope(ctx context.Context, adminID uuid.UUID, token string, weddingID uuid.UUID) (bool, error) {
 	res := r.db.WithContext(ctx).Model(&models.RefreshToken{}).
-		Where("admin_id = ? AND token = ? AND rotated_at IS NULL AND expires_at > ?", adminID, token, time.Now()).
+		Where("admin_id = ? AND token = ? AND rotated_at IS NULL AND expires_at > ?", adminID, HashToken(token), time.Now()).
 		Update("wedding_id", weddingID)
 	return res.RowsAffected > 0, res.Error
 }

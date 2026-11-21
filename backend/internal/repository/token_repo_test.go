@@ -64,7 +64,7 @@ func TestTokenRepo_RevokeDuringRotateDeletesSuccessor(t *testing.T) {
 
 	inserted, resume := make(chan struct{}), make(chan struct{})
 	testutil.NoErr(t, db.Callback().Create().After("gorm:create").Register("test:park", func(tx *gorm.DB) {
-		if tx.Statement.Table == "refresh_tokens" && tx.Statement.Dest.(*models.RefreshToken).Token == "t2" {
+		if tx.Statement.Table == "refresh_tokens" && tx.Statement.Dest.(*models.RefreshToken).Token == HashToken("t2") {
 			close(inserted)
 			<-resume
 		}
@@ -100,11 +100,54 @@ func TestTokenRepo_UpdateWeddingScopeSkipsRotatedToken(t *testing.T) {
 	testutil.NoErr(t, db.Exec(`CREATE TABLE refresh_tokens (id TEXT PRIMARY KEY, admin_id TEXT NOT NULL, wedding_id TEXT,
 		token TEXT NOT NULL UNIQUE, expires_at DATETIME, created_at DATETIME, rotated_at DATETIME, replaced_by TEXT)`).Error)
 	adminID, now := uuid.New(), time.Now()
-	testutil.NoErr(t, db.Create(&models.RefreshToken{ID: uuid.New(), AdminID: adminID, Token: "used", ExpiresAt: now.Add(time.Hour), RotatedAt: &now}).Error)
+	testutil.NoErr(t, db.Create(&models.RefreshToken{ID: uuid.New(), AdminID: adminID, Token: HashToken("used"), ExpiresAt: now.Add(time.Hour), RotatedAt: &now}).Error)
 
 	found, err := NewTokenRepo(db).UpdateWeddingScope(t.Context(), adminID, "used", uuid.New())
 	testutil.NoErr(t, err)
 	if found {
 		t.Fatal("rescoped a rotated token")
+	}
+}
+
+// The database holds only hashes: a leaked dump must not carry a usable
+// refresh token, either as a live row or as a rotated row's successor.
+func TestTokenRepo_StoresOnlyHashes(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	testutil.NoErr(t, err)
+	testutil.NoErr(t, db.Exec(`CREATE TABLE refresh_tokens (id TEXT PRIMARY KEY, admin_id TEXT NOT NULL, wedding_id TEXT,
+		token TEXT NOT NULL UNIQUE, expires_at DATETIME, created_at DATETIME, rotated_at DATETIME, replaced_by TEXT)`).Error)
+	repo := NewTokenRepo(db)
+	adminID, exp := uuid.New(), time.Now().Add(time.Hour)
+	testutil.NoErr(t, repo.Save(t.Context(), &models.RefreshToken{ID: uuid.New(), AdminID: adminID, Token: "raw-first", ExpiresAt: exp}))
+	next := &models.RefreshToken{ID: uuid.New(), AdminID: adminID, Token: "raw-second", ExpiresAt: exp}
+	testutil.NoErr(t, repo.Rotate(t.Context(), "raw-first", next))
+	if next.Token != "raw-second" {
+		t.Errorf("Rotate changed the caller's raw token to %q", next.Token)
+	}
+
+	var stored []string
+	testutil.NoErr(t, db.Raw(`SELECT token FROM refresh_tokens UNION ALL
+		SELECT replaced_by FROM refresh_tokens WHERE replaced_by IS NOT NULL`).Scan(&stored).Error)
+	for _, v := range stored {
+		if strings.HasPrefix(v, "raw-") {
+			t.Errorf("raw refresh token stored: %q", v)
+		}
+	}
+	if _, err := repo.FindByToken(t.Context(), "raw-second"); err != nil {
+		t.Errorf("FindByToken(raw successor): %v", err)
+	}
+
+	// A row from before hashing holds the 64-char hex secret itself.
+	legacy := strings.Repeat("ab", 32)
+	testutil.NoErr(t, db.Create(&models.RefreshToken{ID: uuid.New(), AdminID: adminID, Token: legacy, ExpiresAt: exp}).Error)
+	testutil.NoErr(t, repo.DeleteLegacyPlaintext(t.Context()))
+	var left int64
+	testutil.NoErr(t, db.Model(&models.RefreshToken{}).Where("token = ?", legacy).Count(&left).Error)
+	if left != 0 {
+		t.Error("legacy plaintext token survived DeleteLegacyPlaintext")
+	}
+	testutil.NoErr(t, db.Model(&models.RefreshToken{}).Count(&left).Error)
+	if left != 2 {
+		t.Errorf("rows left = %d, want the 2 hashed rows", left)
 	}
 }
