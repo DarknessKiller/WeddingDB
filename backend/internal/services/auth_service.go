@@ -514,45 +514,66 @@ func (s *AuthService) IsTokenBlacklisted(ctx context.Context, jti string) (bool,
 	return exists > 0, nil
 }
 
-// GetTokenVersion returns the current token version for a user from Redis.
-// Returns 0 if the key doesn't exist (lazy init: default tv=0).
+// tvKey is the Redis cache key for a user's token version.
+func tvKey(userID uuid.UUID) string { return fmt.Sprintf("user:%s:tv", userID.String()) }
+
+// raiseTV sets the cached token version only if it raises it, so a stale
+// cache fill racing a revoke can never move the version backwards.
+var raiseTV = redis.NewScript(`
+local cur = tonumber(redis.call('GET', KEYS[1]))
+if cur == nil or cur < tonumber(ARGV[1]) then
+	redis.call('SET', KEYS[1], ARGV[1])
+end
+return 0`)
+
+// GetTokenVersion returns the user's token version. Postgres holds the truth
+// and Redis caches it: a cache miss (e.g. Redis restarted without
+// persistence) reloads from Postgres, so a revoke is never forgotten. Any
+// error, including an unknown user, is returned so callers fail closed.
 func (s *AuthService) GetTokenVersion(ctx context.Context, userID uuid.UUID) (int, error) {
-	key := fmt.Sprintf("user:%s:tv", userID.String())
+	key := tvKey(userID)
 	val, err := s.redisClient.Get(ctx, key).Int()
-	if errors.Is(err, redis.Nil) {
-		// Key doesn't exist — user has never been revoked, tv=0
-		return 0, nil
+	if err == nil {
+		return val, nil
 	}
+	if !errors.Is(err, redis.Nil) {
+		return 0, fmt.Errorf("read cached token version: %w", err)
+	}
+	tv, err := s.adminRepo.TokenVersion(ctx, userID)
 	if err != nil {
 		return 0, err
 	}
-	return val, nil
+	if err := raiseTV.Run(ctx, s.redisClient, []string{key}, tv).Err(); err != nil {
+		return 0, fmt.Errorf("cache token version: %w", err)
+	}
+	return tv, nil
 }
 
-// RevokeUserTokens bumps the token version in Redis and deletes all refresh tokens for the user.
-// Delete first, then INCR — closes the TOCTOU race where an attacker refreshes between INCR and delete.
+// RevokeUserTokens deletes the user's refresh tokens and bumps their token
+// version in Postgres (one transaction), then raises the Redis cache to match.
 func (s *AuthService) RevokeUserTokens(ctx context.Context, userID uuid.UUID) error {
-	// Step 1: Delete refresh tokens from Postgres first.
-	// Any concurrent Refresh call after this point will fail at FindByToken.
-	if err := s.tokenRepo.DeleteByAdminID(ctx, userID); err != nil {
-		return fmt.Errorf("failed to delete refresh tokens: %w", err)
+	// A cached version ahead of Postgres (set before versions were persisted)
+	// must still be exceeded. A cache error leaves the floor at 0: Postgres
+	// still bumps, and the cache write below reports the outage.
+	floor, err := s.redisClient.Get(ctx, tvKey(userID)).Int()
+	if err != nil && !errors.Is(err, redis.Nil) {
+		slog.Warn("read cached token version before revoke", "user", userID, "err", err)
 	}
-	// Step 2: Bump token version. Any existing access token with old tv is now rejected by middleware.
-	// Retry on transient Redis failures — can't undo the Postgres delete.
-	key := fmt.Sprintf("user:%s:tv", userID.String())
+	if err := s.tokenRepo.DeleteByAdminID(ctx, userID, floor); err != nil {
+		return fmt.Errorf("failed to revoke tokens: %w", err)
+	}
+	tv, err := s.adminRepo.TokenVersion(ctx, userID)
+	if err != nil {
+		return fmt.Errorf("failed to read token version: %w", err)
+	}
+	// Retry on transient Redis failures — the Postgres bump is already durable.
 	var lastErr error
-	for attempt := 0; attempt < 3; attempt++ {
-		if err := s.redisClient.Incr(ctx, key).Err(); err != nil {
-			lastErr = err
-			continue
+	for range 3 {
+		if lastErr = raiseTV.Run(ctx, s.redisClient, []string{tvKey(userID)}, tv).Err(); lastErr == nil {
+			return nil
 		}
-		lastErr = nil
-		break
 	}
-	if lastErr != nil {
-		return fmt.Errorf("failed to increment token version after retries: %w", lastErr)
-	}
-	return nil
+	return fmt.Errorf("failed to cache token version after retries: %w", lastErr)
 }
 
 // parseTokenClaims parses a JWT without blacklist/tv checks — used only for extracting claims during logout.

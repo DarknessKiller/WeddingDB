@@ -24,6 +24,8 @@ func newTestSSEServer(t *testing.T) (*httptest.Server, *services.SSEHub, string,
 	t.Helper()
 	mr := miniredis.RunT(t)
 	rdb := redis.NewClient(&redis.Options{Addr: mr.Addr()})
+	// No database here: pre-cache the token version the JWT below carries.
+	testutil.NoErr(t, mr.Set("user:00000000-0000-0000-0000-000000000001:tv", "1"))
 	hub := services.NewSSEHub(rdb)
 	t.Cleanup(hub.Shutdown)
 

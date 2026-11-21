@@ -30,8 +30,9 @@ func signTestToken(t *testing.T, secret string, claims AccessClaims) string {
 }
 
 func TestValidateToken_Valid(t *testing.T) {
-	svc, _ := newTestAuthService(t, "test-secret-123")
+	svc, mr := newTestAuthService(t, "test-secret-123")
 	adminID := uuid.New()
+	testutil.NoErr(t, mr.Set("user:"+adminID.String()+":tv", "0"))
 	wid := uuid.New()
 	now := time.Now()
 
@@ -111,8 +112,9 @@ func TestValidateToken_Malformed(t *testing.T) {
 }
 
 func TestValidateToken_NilWeddingID(t *testing.T) {
-	svc, _ := newTestAuthService(t, "test-secret-123")
+	svc, mr := newTestAuthService(t, "test-secret-123")
 	adminID := uuid.New()
+	testutil.NoErr(t, mr.Set("user:"+adminID.String()+":tv", "0"))
 	now := time.Now()
 
 	tok := signTestToken(t, "test-secret-123", AccessClaims{
@@ -240,19 +242,6 @@ func TestBlacklistAccessToken_SkipsExpiredToken(t *testing.T) {
 		if k == "blacklist:jti:"+claims.ID {
 			t.Error("should not blacklist an already-expired token")
 		}
-	}
-}
-
-func TestGetTokenVersion_MissingReturnsZero(t *testing.T) {
-	svc, _ := newTestAuthService(t, "test-secret-123")
-	adminID := uuid.New()
-
-	tv, err := svc.GetTokenVersion(context.Background(), adminID)
-	if err != nil {
-		t.Fatalf("GetTokenVersion failed: %v", err)
-	}
-	if tv != 0 {
-		t.Errorf("expected tv=0 for missing key, got %d", tv)
 	}
 }
 

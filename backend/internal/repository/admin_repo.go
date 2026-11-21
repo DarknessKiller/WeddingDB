@@ -32,6 +32,15 @@ func (r *AdminRepo) FindByID(ctx context.Context, id uuid.UUID) (*models.AdminUs
 	return &admin, err
 }
 
+// TokenVersion returns the user's persisted token version.
+func (r *AdminRepo) TokenVersion(ctx context.Context, id uuid.UUID) (int, error) {
+	var admin models.AdminUser
+	if err := r.db.WithContext(ctx).Select("token_version").First(&admin, id).Error; err != nil {
+		return 0, fmt.Errorf("load token version: %w", err)
+	}
+	return admin.TokenVersion, nil
+}
+
 func (r *AdminRepo) Create(ctx context.Context, admin *models.AdminUser) error {
 	return r.db.WithContext(ctx).Create(admin).Error
 }

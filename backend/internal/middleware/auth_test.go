@@ -33,9 +33,13 @@ func signToken(t *testing.T, secret string, adminID uuid.UUID, role string, wid 
 	return s
 }
 
-func newAuthService(t *testing.T, secret string) *services.AuthService {
+// newAuthService has no database, so it pre-caches token version 0 for users.
+func newAuthService(t *testing.T, secret string, users ...uuid.UUID) *services.AuthService {
 	t.Helper()
 	mr := miniredis.RunT(t)
+	for _, id := range users {
+		testutil.NoErr(t, mr.Set("user:"+id.String()+":tv", "0"))
+	}
 	rdb := redis.NewClient(&redis.Options{Addr: mr.Addr()})
 	return services.NewAuthService(nil, nil, nil, secret, rdb)
 }
@@ -93,7 +97,7 @@ func TestAuthMiddleware_ValidToken(t *testing.T) {
 	secret := "test-secret"
 	adminID := uuid.New()
 	wid := uuid.New()
-	mw := AuthMiddleware(newAuthService(t, secret))
+	mw := AuthMiddleware(newAuthService(t, secret, adminID))
 
 	var capturedAdminID uuid.UUID
 	handler := mw(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

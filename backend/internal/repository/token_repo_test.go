@@ -79,7 +79,7 @@ func TestTokenRepo_RevokeDuringRotateDeletesSuccessor(t *testing.T) {
 	}()
 	<-inserted
 	revoked := make(chan error, 1)
-	go func() { revoked <- repo.DeleteByAdminID(t.Context(), adminID) }()
+	go func() { revoked <- repo.DeleteByAdminID(t.Context(), adminID, 0) }()
 	time.Sleep(100 * time.Millisecond) // let the DELETE start and block before the rotation commits
 	close(resume)
 	testutil.NoErr(t, <-rotated)

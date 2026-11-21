@@ -13,11 +13,13 @@ import (
 	"github.com/google/uuid"
 )
 
+var flaggedAdmin = uuid.MustParse("00000000-0000-0000-0000-0000000000bb")
+
 func signFlaggedToken(t *testing.T, secret string, pwc bool) string {
 	t.Helper()
 	now := time.Now()
 	claims := services.AccessClaims{
-		AdminID:             uuid.New(),
+		AdminID:             flaggedAdmin,
 		Role:                "admin",
 		ForcePasswordChange: pwc,
 		RegisteredClaims: jwt.RegisteredClaims{
@@ -35,7 +37,7 @@ func signFlaggedToken(t *testing.T, secret string, pwc bool) string {
 // change-password route; unflagged tokens are unaffected.
 func TestAuthMiddleware_ForcePasswordChange(t *testing.T) {
 	const secret = "test-secret"
-	handler := AuthMiddleware(newAuthService(t, secret))(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	handler := AuthMiddleware(newAuthService(t, secret, flaggedAdmin))(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	}))
 

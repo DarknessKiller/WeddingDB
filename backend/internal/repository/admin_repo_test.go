@@ -18,7 +18,7 @@ import (
 )
 
 const adminUsersDDL = `CREATE TABLE admin_users (id TEXT PRIMARY KEY, email TEXT, password TEXT, name TEXT,
-	role TEXT, force_password_change BOOLEAN, created_at TIMESTAMP, updated_at TIMESTAMP)`
+	role TEXT, force_password_change BOOLEAN, token_version INTEGER NOT NULL DEFAULT 0, created_at TIMESTAMP, updated_at TIMESTAMP)`
 
 func seedAdmins(t *testing.T, db *gorm.DB, n int) []uuid.UUID {
 	t.Helper()

@@ -119,12 +119,22 @@ func (r *TokenRepo) DeleteExpired(ctx context.Context, cutoff time.Time) error {
 	return r.db.WithContext(ctx).Where("expires_at < ?", cutoff).Delete(&models.RefreshToken{}).Error
 }
 
-// DeleteByAdminID deletes all refresh tokens for the given admin user.
-func (r *TokenRepo) DeleteByAdminID(ctx context.Context, adminID uuid.UUID) error {
+// DeleteByAdminID deletes all refresh tokens for the given admin user and,
+// under the same admin row lock, sets their token version to
+// max(token_version, minVersion)+1. minVersion carries a cached version that
+// may be ahead of the row (versions once lived only in Redis).
+func (r *TokenRepo) DeleteByAdminID(ctx context.Context, adminID uuid.UUID, minVersion int) error {
 	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if err := lockAdmin(tx, adminID, "UPDATE"); err != nil {
 			return err
 		}
-		return tx.Where("admin_id = ?", adminID).Delete(&models.RefreshToken{}).Error
+		if err := tx.Where("admin_id = ?", adminID).Delete(&models.RefreshToken{}).Error; err != nil {
+			return fmt.Errorf("delete refresh tokens: %w", err)
+		}
+		if err := tx.Model(&models.AdminUser{}).Where("id = ?", adminID).
+			UpdateColumn("token_version", gorm.Expr("CASE WHEN token_version < ? THEN ? ELSE token_version END + 1", minVersion, minVersion)).Error; err != nil {
+			return fmt.Errorf("bump token version: %w", err)
+		}
+		return nil
 	})
 }
