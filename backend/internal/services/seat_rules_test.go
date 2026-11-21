@@ -133,7 +133,7 @@ func TestUpdateWithSeat_FailedSeatLeavesFieldsUntouched(t *testing.T) {
 	}
 
 	g.Name = "Renamed"
-	err := svc.UpdateWithSeat(context.Background(), g, &tid, 2, nil)
+	err := svc.UpdateWithSeat(context.Background(), g, &tid, new(2), nil)
 	if !errors.Is(err, ErrSeatOverlap) {
 		t.Fatalf("error = %v, want ErrSeatOverlap", err)
 	}
@@ -157,7 +157,7 @@ func TestUpdateWithSeat_AppliesBoth(t *testing.T) {
 	g := seedGuest(t, svc, wid, "Alice")
 
 	g.Name = "Renamed"
-	if err := svc.UpdateWithSeat(context.Background(), g, &tid, 4, nil); err != nil {
+	if err := svc.UpdateWithSeat(context.Background(), g, &tid, new(4), nil); err != nil {
 		t.Fatalf("update: %v", err)
 	}
 	stored, err := repository.NewGuestRepo(svc.db).FindByID(context.Background(), g.ID, wid)
@@ -268,7 +268,7 @@ func TestUpdateWithSeat_RejectsStaleBase(t *testing.T) {
 
 	edit := *loaded
 	edit.RSVP = "pending"
-	if err := svc.UpdateWithSeat(t.Context(), &edit, nil, 0, &base); !errors.Is(err, ErrStaleGuest) {
+	if err := svc.UpdateWithSeat(t.Context(), &edit, nil, nil, &base); !errors.Is(err, ErrStaleGuest) {
 		t.Fatalf("stale edit: err = %v, want ErrStaleGuest", err)
 	}
 	fresh, err := svc.Get(t.Context(), g.ID, wid)
@@ -278,7 +278,7 @@ func TestUpdateWithSeat_RejectsStaleBase(t *testing.T) {
 	}
 	fresh.RSVP = "pending"
 	freshBase := fresh.UpdatedAt
-	testutil.NoErr(t, svc.UpdateWithSeat(t.Context(), fresh, nil, 0, &freshBase))
+	testutil.NoErr(t, svc.UpdateWithSeat(t.Context(), fresh, nil, nil, &freshBase))
 }
 
 // Missing rows map to not-found sentinels, so handlers answer 404, not 500.

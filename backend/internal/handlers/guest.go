@@ -119,12 +119,9 @@ func (h *GuestHandler) Create(c fuego.ContextWithBody[GuestCreateRequest]) (any,
 		if err != nil {
 			return nil, fuego.BadRequestError{Title: "Invalid table ID"}
 		}
-		seatNum := 1
-		if body.SeatNum != nil {
-			seatNum = *body.SeatNum
-		}
+		// No seat number means a table-only assignment, as import and sync allow.
 		guest.TableID = &tid
-		guest.SeatNum = &seatNum
+		guest.SeatNum = body.SeatNum
 	}
 	// One transaction creates the guest and checks the seat, so a refused seat
 	// leaves no guest behind and no create/delete events go out.
@@ -184,7 +181,6 @@ func (h *GuestHandler) Update(c fuego.ContextWithBody[GuestCreateRequest]) (any,
 	guest.GiftItem = body.GiftItem
 	// tableId not provided — preserve the existing seat assignment.
 	var tid *uuid.UUID
-	seatNum := 0
 	if body.TableID != nil {
 		if *body.TableID == "" {
 			// Explicitly clearing seat
@@ -196,13 +192,9 @@ func (h *GuestHandler) Update(c fuego.ContextWithBody[GuestCreateRequest]) (any,
 				return nil, fuego.BadRequestError{Title: "Invalid table ID"}
 			}
 			tid = &id
-			seatNum = 1
-			if body.SeatNum != nil {
-				seatNum = *body.SeatNum
-			}
 		}
 	}
-	if err := h.guestService.UpdateWithSeat(ctx, guest, tid, seatNum, body.BaseUpdatedAt); err != nil {
+	if err := h.guestService.UpdateWithSeat(ctx, guest, tid, body.SeatNum, body.BaseUpdatedAt); err != nil {
 		if isGuestRuleError(err) {
 			return nil, fuego.BadRequestError{Title: err.Error()}
 		}

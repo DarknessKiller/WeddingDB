@@ -393,11 +393,11 @@ func (s *GuestService) UnassignSeat(ctx context.Context, guestID, weddingID uuid
 // fields untouched and a failed field write leaves the seat where it was.
 // A nil tableID preserves the current seat assignment. A non-nil base refuses
 // the write with ErrStaleGuest if the row changed after the editor loaded it.
-func (s *GuestService) UpdateWithSeat(ctx context.Context, g *models.GuestRecord, tableID *uuid.UUID, seatNum int, base *time.Time) error {
+func (s *GuestService) UpdateWithSeat(ctx context.Context, g *models.GuestRecord, tableID *uuid.UUID, seatNum *int, base *time.Time) error {
 	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if tableID != nil {
 			g.TableID = tableID
-			g.SeatNum = &seatNum
+			g.SeatNum = seatNum
 		}
 		return s.updateGuestTx(ctx, tx, g, false, base)
 	})

@@ -16,9 +16,10 @@ import (
 	"gorm.io/gorm"
 )
 
-// Creating a guest with a seat is one write: a refused seat leaves no guest
-// behind, and the angbao and gift in the body are kept.
-func TestCreateGuest_SeatAndGiftInOneWrite(t *testing.T) {
+// newGuestCreateServer serves guest create on sqlite with one table of the
+// given capacity.
+func newGuestCreateServer(t *testing.T, capacity int) (*fuego.Server, *gorm.DB, string, string) {
+	t.Helper()
 	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
 	testutil.NoErr(t, err)
 	testutil.NoErr(t, db.Exec(`CREATE TABLE guest_records (id TEXT PRIMARY KEY, wedding_id TEXT NOT NULL, name TEXT NOT NULL,
@@ -28,13 +29,35 @@ func TestCreateGuest_SeatAndGiftInOneWrite(t *testing.T) {
 	testutil.NoErr(t, db.Exec(`CREATE TABLE banquet_tables (id TEXT PRIMARY KEY, wedding_id TEXT NOT NULL, name TEXT NOT NULL,
 		capacity INTEGER, x REAL, y REAL, degree REAL, is_vip INTEGER, created_at DATETIME, updated_at DATETIME)`).Error)
 	wid, tid := uuid.New(), uuid.New()
-	testutil.NoErr(t, db.Create(&models.BanquetTable{ID: tid, WeddingID: wid, Name: "T1", Capacity: 2}).Error)
+	testutil.NoErr(t, db.Create(&models.BanquetTable{ID: tid, WeddingID: wid, Name: "T1", Capacity: capacity}).Error)
 
 	svc := services.NewGuestService(repository.NewGuestRepo(db), repository.NewTableRepo(db), nil, db)
 	s := fuego.NewServer(fuego.WithoutStartupMessages())
 	fuego.Post(s, "/api/weddings/{wid}/guests", NewGuestHandler(svc).Create)
-	path := "/api/weddings/" + wid.String() + "/guests"
-	table := utils.EncodeUUID(tid)
+	return s, db, "/api/weddings/" + wid.String() + "/guests", utils.EncodeUUID(tid)
+}
+
+// A table with room but seat 1 taken accepts a guest sent without a seat
+// number, the same as import and sync: no seat is invented.
+func TestCreateGuest_TableWithoutSeatNum(t *testing.T) {
+	s, db, path, table := newGuestCreateServer(t, 10)
+	if rec := serveGuest(t, s, http.MethodPost, path, `{"name":"Ann","pax":1,"tableId":"`+table+`","seatNum":1}`); rec.Code != http.StatusCreated {
+		t.Fatalf("seat 1: status = %d, body = %s", rec.Code, rec.Body.String())
+	}
+	if rec := serveGuest(t, s, http.MethodPost, path, `{"name":"Bo","pax":1,"tableId":"`+table+`"}`); rec.Code != http.StatusCreated {
+		t.Fatalf("table only: status = %d, body = %s", rec.Code, rec.Body.String())
+	}
+	var g models.GuestRecord
+	testutil.NoErr(t, db.Where("name = ?", "Bo").First(&g).Error)
+	if g.TableID == nil || g.SeatNum != nil {
+		t.Fatalf("table = %v seat = %v, want table set and no seat", g.TableID, g.SeatNum)
+	}
+}
+
+// Creating a guest with a seat is one write: a refused seat leaves no guest
+// behind, and the angbao and gift in the body are kept.
+func TestCreateGuest_SeatAndGiftInOneWrite(t *testing.T) {
+	s, db, path, table := newGuestCreateServer(t, 2)
 
 	if rec := serveGuest(t, s, http.MethodPost, path, `{"name":"Big","pax":3,"tableId":"`+table+`","seatNum":1}`); rec.Code != http.StatusBadRequest {
 		t.Fatalf("party of 3 at a table of 2: status = %d, want 400", rec.Code)
