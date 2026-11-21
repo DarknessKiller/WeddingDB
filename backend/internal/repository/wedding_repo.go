@@ -2,6 +2,7 @@ package repository
 
 import (
 	"context"
+	"errors"
 
 	"weddingdb/internal/models"
 
@@ -63,6 +64,14 @@ func (r *WeddingRepo) UpdateKiosk(ctx context.Context, w *models.WeddingEvent, i
 
 func (r *WeddingRepo) Delete(ctx context.Context, id uuid.UUID) error {
 	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		// Lock the wedding row first, the way every guest, table and layout
+		// write does: a write racing this delete then waits and fails on the
+		// missing row instead of inserting an orphan after the cascade.
+		if err := lockWedding(tx, id); errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil // already gone: delete stays idempotent
+		} else if err != nil {
+			return err
+		}
 		// Cascade: remove guests, tables, hall elements, and user associations
 		if err := tx.Where("wedding_id = ?", id).Delete(&models.GuestRecord{}).Error; err != nil {
 			return err

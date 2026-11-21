@@ -88,3 +88,32 @@ func TestAssignSeat_PostgresUsesPaxCommittedWhileWaiting(t *testing.T) {
 		t.Fatalf("AssignSeat err = %v, want ErrSeatRange", err)
 	}
 }
+
+// A guest created while its wedding is being deleted must not outlive the
+// wedding: the delete waits for the wedding lock and then removes the guest.
+func TestWeddingDelete_PostgresLeavesNoOrphanGuest(t *testing.T) {
+	_, db := openGuestPG(t)
+	drop := func() { db.Exec("DROP TABLE IF EXISTS hall_elements, user_weddings CASCADE") }
+	drop()
+	t.Cleanup(drop)
+	testutil.NoErr(t, db.AutoMigrate(&models.HallElement{}, &models.UserWedding{}))
+	wid := uuid.New()
+	testutil.NoErr(t, db.Create(&models.WeddingEvent{ID: wid, Name: "W"}).Error)
+
+	// A guest create holds the wedding lock, as guestCountLocked takes it.
+	tx := db.Begin()
+	_, err := guestCountLocked(tx, wid)
+	testutil.NoErr(t, err)
+	testutil.NoErr(t, tx.Create(&models.GuestRecord{ID: uuid.New(), WeddingID: wid, Name: "Late", Pax: 1}).Error)
+	deleted := make(chan error, 1)
+	go func() { deleted <- repository.NewWeddingRepo(db).Delete(t.Context(), wid) }()
+	time.Sleep(100 * time.Millisecond) // let Delete block on the wedding lock
+	testutil.NoErr(t, tx.Commit().Error)
+	testutil.NoErr(t, <-deleted)
+
+	var n int64
+	testutil.NoErr(t, db.Model(&models.GuestRecord{}).Where("wedding_id = ?", wid).Count(&n).Error)
+	if n != 0 {
+		t.Fatalf("%d guest rows outlived their wedding", n)
+	}
+}

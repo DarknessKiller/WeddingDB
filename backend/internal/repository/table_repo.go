@@ -69,8 +69,26 @@ func (r *TableRepo) FindByID(ctx context.Context, id, weddingID uuid.UUID) (*mod
 	return &t, err
 }
 
+// Create inserts t under the wedding row lock, so a table cannot be added to
+// a wedding that a concurrent delete is removing.
 func (r *TableRepo) Create(ctx context.Context, t *models.BanquetTable) error {
-	return r.db.WithContext(ctx).Create(t).Error
+	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := lockWedding(tx, t.WeddingID); err != nil {
+			return err
+		}
+		return tx.Create(t).Error
+	})
+}
+
+// lockWedding takes the wedding row lock every write to a wedding's rows
+// takes first. Postgres-only; sqlite (tests) has one writer. A missing
+// wedding returns gorm.ErrRecordNotFound.
+func lockWedding(tx *gorm.DB, weddingID uuid.UUID) error {
+	if tx.Name() != "postgres" {
+		return nil
+	}
+	return tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+		Select("id").Where("id = ?", weddingID).First(&models.WeddingEvent{}).Error
 }
 
 func (r *TableRepo) Update(ctx context.Context, t *models.BanquetTable) error {

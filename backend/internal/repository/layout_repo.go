@@ -28,6 +28,11 @@ func (r *LayoutRepo) SaveLayout(
 	toDelete []uuid.UUID,
 ) error {
 	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		// A layout saved while its wedding is being deleted must not leave
+		// orphan elements behind.
+		if err := lockWedding(tx, weddingID); err != nil {
+			return err
+		}
 		if hallWidth > 0 && hallHeight > 0 {
 			if err := tx.Model(&models.WeddingEvent{}).Where("id = ?", weddingID).
 				Updates(map[string]any{"hall_width": hallWidth, "hall_height": hallHeight}).Error; err != nil {
