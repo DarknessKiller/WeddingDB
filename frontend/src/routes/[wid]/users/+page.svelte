@@ -17,6 +17,7 @@ import LogOut from 'lucide-svelte/icons/log-out';
   import { weddingTitle } from '#lib/stores/weddingTitle.ts';
   import PasswordRequirements from '#lib/components/ui/PasswordRequirements.svelte';
   import { trapFocus } from '#lib/utils/focus.ts';
+  import { ACCOUNT_EMAIL_MAXLEN, ACCOUNT_NAME_MAXLEN, PASSWORD_MAXLEN } from '#lib/utils/limits.ts';
 
   let admins = $state<User[]>([]);
   let weddings = $state<Wedding[]>([]);
@@ -378,20 +379,20 @@ import LogOut from 'lucide-svelte/icons/log-out';
       <div class="p-5 space-y-4">
         <div>
           <label for="create-name" class="text-sm font-semibold text-gray-700 mb-1.5 block">Name</label>
-          <input id="create-name" bind:value={formName} class="w-full px-4 py-2.5 border border-black/[0.08] rounded-xl text-sm bg-white/80 focus:border-red focus:ring-2 focus:ring-red/10 outline-none transition-all min-h-[44px]" placeholder="Full name" />
+          <input id="create-name" bind:value={formName} maxlength={ACCOUNT_NAME_MAXLEN} class="w-full px-4 py-2.5 border border-black/[0.08] rounded-xl text-sm bg-white/80 focus:border-red focus:ring-2 focus:ring-red/10 outline-none transition-all min-h-[44px]" placeholder="Full name" />
         </div>
         <div>
           <label for="create-email" class="text-sm font-semibold text-gray-700 mb-1.5 block">Email</label>
-          <input id="create-email" type="email" bind:value={formEmail} class="w-full px-4 py-2.5 border border-black/[0.08] rounded-xl text-sm bg-white/80 focus:border-red focus:ring-2 focus:ring-red/10 outline-none transition-all min-h-[44px]" placeholder="email@example.com" />
+          <input id="create-email" type="email" bind:value={formEmail} maxlength={ACCOUNT_EMAIL_MAXLEN} class="w-full px-4 py-2.5 border border-black/[0.08] rounded-xl text-sm bg-white/80 focus:border-red focus:ring-2 focus:ring-red/10 outline-none transition-all min-h-[44px]" placeholder="email@example.com" />
         </div>
         <div>
           <label for="create-password" class="text-sm font-semibold text-gray-700 mb-1.5 block">Password</label>
-          <input id="create-password" type="password" bind:value={formPassword} minlength="8" class="w-full px-4 py-2.5 border border-black/[0.08] rounded-xl text-sm bg-white/80 focus:border-red focus:ring-2 focus:ring-red/10 outline-none transition-all min-h-[44px]" placeholder="Min 8 characters" />
+          <input id="create-password" type="password" bind:value={formPassword} minlength="8" maxlength={PASSWORD_MAXLEN} class="w-full px-4 py-2.5 border border-black/[0.08] rounded-xl text-sm bg-white/80 focus:border-red focus:ring-2 focus:ring-red/10 outline-none transition-all min-h-[44px]" placeholder="Min 8 characters" />
           <PasswordRequirements password={formPassword} />
         </div>
         <div>
           <label for="create-confirm-password" class="text-sm font-semibold text-gray-700 mb-1.5 block">Confirm Password</label>
-          <input id="create-confirm-password" type="password" bind:value={formConfirmPassword} minlength="8"
+          <input id="create-confirm-password" type="password" bind:value={formConfirmPassword} minlength="8" maxlength={PASSWORD_MAXLEN}
             class="w-full px-4 py-2.5 border border-black/[0.08] rounded-xl text-sm bg-white/80 focus:border-red focus:ring-2 focus:ring-red/10 outline-none transition-all min-h-[44px] {createPasswordMismatch ? 'border-red !shadow-[0_0_0_3px_rgba(239,68,68,0.1)]' : ''}"
             placeholder="Repeat password" />
           {#if createPasswordMismatch}
@@ -477,14 +478,14 @@ import LogOut from 'lucide-svelte/icons/log-out';
         <p class="text-sm text-gray-600">Set new password for <strong>{resetTarget.name}</strong></p>
         <div>
           <label for="reset-password" class="text-sm font-semibold text-gray-700 mb-1.5 block">New Password</label>
-          <input id="reset-password" type="password" bind:value={resetPassword_} minlength="8"
+          <input id="reset-password" type="password" bind:value={resetPassword_} minlength="8" maxlength={PASSWORD_MAXLEN}
             class="w-full px-4 py-2.5 border border-black/[0.08] rounded-xl text-sm bg-white/80 focus:border-red focus:ring-2 focus:ring-red/10 outline-none transition-all min-h-[44px]"
             placeholder="Min 8 characters" />
           <PasswordRequirements password={resetPassword_} />
         </div>
         <div>
           <label for="reset-confirm-password" class="text-sm font-semibold text-gray-700 mb-1.5 block">Confirm Password</label>
-          <input id="reset-confirm-password" type="password" bind:value={resetConfirmPassword} minlength="8"
+          <input id="reset-confirm-password" type="password" bind:value={resetConfirmPassword} minlength="8" maxlength={PASSWORD_MAXLEN}
             class="w-full px-4 py-2.5 border border-black/[0.08] rounded-xl text-sm bg-white/80 focus:border-red focus:ring-2 focus:ring-red/10 outline-none transition-all min-h-[44px] {resetPasswordMismatch ? 'border-red !shadow-[0_0_0_3px_rgba(239,68,68,0.1)]' : ''}"
             placeholder="Repeat password" />
           {#if resetPasswordMismatch}

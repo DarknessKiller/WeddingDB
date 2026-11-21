@@ -8,6 +8,7 @@
 import EyeOff from 'lucide-svelte/icons/eye-off';
 import KeyRound from 'lucide-svelte/icons/key-round';
   import PasswordRequirements from '#lib/components/ui/PasswordRequirements.svelte';
+  import { PASSWORD_MAXLEN } from '#lib/utils/limits.ts';
 
   let forced = $derived(page.url.searchParams.get('forced') === '1');
   let currentPassword = $state('');
@@ -83,6 +84,7 @@ import KeyRound from 'lucide-svelte/icons/key-round';
             bind:value={password}
             required
             minlength="8"
+            maxlength={PASSWORD_MAXLEN}
             class="form-input password-input"
             placeholder="Min 8 chars, letter + number + symbol"
           />
@@ -101,6 +103,7 @@ import KeyRound from 'lucide-svelte/icons/key-round';
           bind:value={confirmPassword}
           required
           minlength="8"
+          maxlength={PASSWORD_MAXLEN}
           class="form-input"
           class:input-error={passwordMismatch}
           placeholder="Repeat password"

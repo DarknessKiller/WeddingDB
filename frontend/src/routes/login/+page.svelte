@@ -10,6 +10,7 @@
 import EyeOff from 'lucide-svelte/icons/eye-off';
 import LogIn from 'lucide-svelte/icons/log-in';
 import Calendar from 'lucide-svelte/icons/calendar';
+  import { WEDDING_NAME_MAXLEN } from '#lib/utils/limits.ts';
 import ChevronRight from 'lucide-svelte/icons/chevron-right';
 
   let email = $state('');
@@ -232,7 +233,7 @@ import ChevronRight from 'lucide-svelte/icons/chevron-right';
             <div class="form-grid">
               <div class="form-field">
                 <label for="wedding-name" class="form-label">Wedding Name</label>
-                <input id="wedding-name" type="text" bind:value={newName} placeholder="e.g. John & Jane's Wedding" class="form-input" />
+                <input id="wedding-name" type="text" bind:value={newName} maxlength={WEDDING_NAME_MAXLEN} placeholder="e.g. John & Jane's Wedding" class="form-input" />
               </div>
               <div class="form-field">
                 <label for="wedding-date" class="form-label">Date</label>

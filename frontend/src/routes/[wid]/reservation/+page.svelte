@@ -8,6 +8,7 @@
   import CheckCircle2 from 'lucide-svelte/icons/check-circle-2';
 import AlertCircle from 'lucide-svelte/icons/alert-circle';
   import { fetchAllGuests, createGuest, MAX_GUEST_NOTES_LEN, type GuestResponse } from '#lib/api/guests.ts';
+  import { GUEST_EMAIL_MAXLEN, GUEST_NAME_MAXLEN } from '#lib/utils/limits.ts';
   import { listTables } from '#lib/api/tables.ts';
   import { getLayout } from '#lib/api/layout.ts';
   import { weddingId } from '#lib/stores/weddingId.ts';
@@ -281,6 +282,7 @@ import AlertCircle from 'lucide-svelte/icons/alert-circle';
               id="name"
               type="text"
               bind:value={form.name}
+              maxlength={GUEST_NAME_MAXLEN}
               class={cn("w-full px-4 py-2.5 border rounded-xl text-sm bg-white outline-none transition-all",
                 errors.name ? "border-red focus:ring-2 focus:ring-red/15" : "border-gray-200 focus:border-gold focus:ring-2 focus:ring-gold/15"
               )}
@@ -300,6 +302,7 @@ import AlertCircle from 'lucide-svelte/icons/alert-circle';
               id="email"
               type="email"
               bind:value={form.email}
+              maxlength={GUEST_EMAIL_MAXLEN}
               class="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm bg-white focus:border-gold focus:ring-2 focus:ring-gold/15 outline-none transition-all"
               placeholder="Optional"
             />

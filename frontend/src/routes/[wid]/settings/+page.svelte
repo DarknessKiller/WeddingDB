@@ -16,6 +16,7 @@ import FileText from 'lucide-svelte/icons/file-text';
 import Upload from 'lucide-svelte/icons/upload';
 import MapPin from 'lucide-svelte/icons/map-pin';
   import ImageEditor from '#lib/components/ui/ImageEditor.svelte';
+  import { KIOSK_DESCRIPTION_MAXLEN, VENUE_ADDRESS_MAXLEN, VENUE_NAME_MAXLEN, WEDDING_NAME_MAXLEN } from '#lib/utils/limits.ts';
   import { uploadFile } from '#lib/api/client.ts';
 
   let wedding = $state<Wedding | null>(null);
@@ -176,7 +177,7 @@ import MapPin from 'lucide-svelte/icons/map-pin';
               <Type class="w-4 h-4 text-gray-500" /> Wedding Name
             </label>
             <input id="wedding-name" type="text" bind:value={weddingNameEdit}
-              placeholder="e.g. Sarah & John's Wedding" required maxlength="255"
+              placeholder="e.g. Sarah & John's Wedding" required maxlength={WEDDING_NAME_MAXLEN}
               class="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm bg-white focus:border-red focus:ring-2 focus:ring-red/15 outline-none transition-all" />
             <p class="text-xs text-gray-500 mt-1">Name displayed in the kiosk header</p>
           </div>
@@ -187,7 +188,7 @@ import MapPin from 'lucide-svelte/icons/map-pin';
               <MapPin class="w-4 h-4 text-gray-500" /> Venue Name
             </label>
             <input id="venue-name" type="text" bind:value={venueName}
-              placeholder="e.g. Grand Ballroom" maxlength="255"
+              placeholder="e.g. Grand Ballroom" maxlength={VENUE_NAME_MAXLEN}
               class="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm bg-white focus:border-red focus:ring-2 focus:ring-red/15 outline-none transition-all" />
             <p class="text-xs text-gray-500 mt-1">Name of the venue or hall</p>
           </div>
@@ -198,7 +199,7 @@ import MapPin from 'lucide-svelte/icons/map-pin';
               <MapPin class="w-4 h-4 text-gray-500" /> Venue Address
             </label>
             <input id="venue-address" type="text" bind:value={venueAddress}
-              placeholder="e.g. 123 Main Street, City" maxlength="500"
+              placeholder="e.g. 123 Main Street, City" maxlength={VENUE_ADDRESS_MAXLEN}
               class="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm bg-white focus:border-red focus:ring-2 focus:ring-red/15 outline-none transition-all" />
             <p class="text-xs text-gray-500 mt-1">Address shown on the kiosk screen</p>
           </div>
@@ -208,7 +209,7 @@ import MapPin from 'lucide-svelte/icons/map-pin';
             <label for="kiosk-desc" class="flex items-center gap-1.5 text-sm font-semibold text-gray-700 mb-1.5">
               <FileText class="w-4 h-4 text-gray-500" /> Description
             </label>
-            <textarea id="kiosk-desc" bind:value={kioskDescription} rows="2"
+            <textarea id="kiosk-desc" bind:value={kioskDescription} rows="2" maxlength={KIOSK_DESCRIPTION_MAXLEN}
               placeholder="e.g. Enter your name to find your table and seat"
               class="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm bg-white focus:border-red focus:ring-2 focus:ring-red/15 outline-none transition-all resize-none"></textarea>
           </div>

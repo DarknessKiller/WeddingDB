@@ -21,6 +21,7 @@ import ArrowUpDown from 'lucide-svelte/icons/arrow-up-down';
   import { weddingId } from '#lib/stores/weddingId.ts';
   import { guestList } from '#lib/stores/guestEvents.ts';
   import { updateGuest, createGuest, checkInGuest, checkOutGuest, unassignSeat, getGuest, ConflictError, MAX_GUEST_NOTES_LEN, type GuestResponse } from '#lib/api/guests.ts';
+  import { GUEST_EMAIL_MAXLEN, GUEST_GIFT_MAXLEN, GUEST_NAME_MAXLEN } from '#lib/utils/limits.ts';
   import { untrack } from 'svelte';
   import { get } from 'svelte/store';
   import { fade } from 'svelte/transition';
@@ -423,11 +424,11 @@ import ArrowUpDown from 'lucide-svelte/icons/arrow-up-down';
         <div class="form-grid">
           <div class="form-field">
             <label for="guest-name" class="form-label">Name</label>
-            <input id="guest-name" bind:value={form.name} class="form-input" />
+            <input id="guest-name" bind:value={form.name} maxlength={GUEST_NAME_MAXLEN} class="form-input" />
           </div>
           <div class="form-field">
             <label for="guest-email" class="form-label">Email</label>
-            <input id="guest-email" bind:value={form.email} class="form-input" />
+            <input id="guest-email" bind:value={form.email} maxlength={GUEST_EMAIL_MAXLEN} class="form-input" />
           </div>
           <div class="form-row-2">
             <div class="form-field">
@@ -470,7 +471,7 @@ import ArrowUpDown from 'lucide-svelte/icons/arrow-up-down';
           </div>
           <div class="form-field">
             <label for="guest-gift" class="form-label">Gift Item</label>
-            <input id="guest-gift" bind:value={form.giftItem} placeholder="e.g. Kitchenware set" class="form-input" />
+            <input id="guest-gift" bind:value={form.giftItem} maxlength={GUEST_GIFT_MAXLEN} placeholder="e.g. Kitchenware set" class="form-input" />
           </div>
         </div>
       {:else if localGuest}

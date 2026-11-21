@@ -5,13 +5,14 @@ import { applyGuestResponse } from '#lib/stores/guestEvents.ts';
 import { enqueue, getQueue } from '#lib/offline/queue.ts';
 import type { Guest } from '#lib/types/index.ts';
 import { guestList, cacheGuestList } from '#lib/stores/guestEvents.ts';
+import { GUEST_NOTES_MAXLEN } from '#lib/utils/limits.ts';
 
 function isOffline() {
 	return typeof navigator !== 'undefined' && !navigator.onLine;
 }
 // Matches the server's MaxGuestNotesLen (characters), so a note is never
 // refused after the form was filled in.
-export const MAX_GUEST_NOTES_LEN = 2000;
+export const MAX_GUEST_NOTES_LEN = GUEST_NOTES_MAXLEN;
 
 // noteRoom is how many characters a check-in note can add to existing notes
 // (joined with a newline) without passing MAX_GUEST_NOTES_LEN.

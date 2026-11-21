@@ -63,6 +63,23 @@ Files: `backend/internal/services/guest_service.go` (`Sync*`, `syncCheckIn`), `b
 cd backend && CGO_ENABLED=1 go test -run 'Sync' ./internal/services/
 ```
 
+## Frontend input limits
+
+Files: `frontend/src/lib/utils/limits.ts`, every `<input>`/`<textarea>` whose value the API validates, `backend/internal/services/guest_service.go` (`Max*` constants), `backend/internal/handlers/*.go` (`maxLen`).
+
+- Every backend character cap has a matching `maxlength` on the input that feeds it, and both read the same number from `#lib/utils/limits.ts`. Never type the number into a template.
+- A field the API rejects is not a field the form may accept: online the whole submit fails, offline the edit retries until the queue drops it.
+- HTML `maxlength` counts UTF-16 units and Go counts runes, so HTML is stricter for emoji, never looser. Passwords are the exception: `validatePassword` caps 72 bytes, so a multi-byte password can still be refused by the server.
+
+### Verify
+
+```sh
+rg -n "maxLen\(|Max[A-Za-z]+Len" backend/internal/services backend/internal/handlers
+rg -n "maxlength" frontend/src
+```
+
+Every cap on the first line has an input on the second. Adding a cap or a form input means changing both.
+
 ## Frontend pagination
 
 Files: `frontend/src/lib/api/*.ts`, `frontend/src/routes/[wid]/**/+page.svelte`.

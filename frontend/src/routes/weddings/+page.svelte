@@ -4,6 +4,7 @@
   import { addToast, getAuth, setAuth } from '#lib/stores/index.ts';
   import { weddingId, setWeddingId } from '#lib/stores/weddingId.ts';
   import { listWeddings, createWedding, updateWedding, deleteWedding, type Wedding } from '#lib/api/weddings.ts';
+  import { WEDDING_NAME_MAXLEN } from '#lib/utils/limits.ts';
   import Plus from 'lucide-svelte/icons/plus';
 import Pencil from 'lucide-svelte/icons/pencil';
 import Trash2 from 'lucide-svelte/icons/trash-2';
@@ -228,7 +229,7 @@ import ChevronRight from 'lucide-svelte/icons/chevron-right';
       <div class="p-5 space-y-4">
         <div>
           <label for="wedding-name" class="text-sm font-semibold text-gray-700 mb-1.5 block">Wedding Name</label>
-          <input id="wedding-name" type="text" bind:value={formName} placeholder="e.g. John & Jane's Wedding"
+          <input id="wedding-name" type="text" bind:value={formName} maxlength={WEDDING_NAME_MAXLEN} placeholder="e.g. John & Jane's Wedding"
             class="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm bg-white focus:border-gold focus:ring-2 focus:ring-gold/15 transition-all" />
         </div>
         <div>

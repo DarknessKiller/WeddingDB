@@ -19,6 +19,7 @@ import AlignEndHorizontal from 'lucide-svelte/icons/align-end-horizontal';
 import AlignHorizontalDistributeCenter from 'lucide-svelte/icons/align-horizontal-distribute-center';
 import AlignVerticalDistributeCenter from 'lucide-svelte/icons/align-vertical-distribute-center';
   import type { HallElement, ElementType } from '#lib/types/index.ts';
+  import { ELEMENT_NAME_MAXLEN } from '#lib/utils/limits.ts';
 
   type AlignOp = 'left' | 'centerX' | 'right' | 'top' | 'middle' | 'bottom' | 'distX' | 'distY';
 
@@ -309,6 +310,7 @@ import AlignVerticalDistributeCenter from 'lucide-svelte/icons/align-vertical-di
         <input
           id="sel-name"
           type="text"
+          maxlength={ELEMENT_NAME_MAXLEN}
           value={selectedItem.name ?? ''}
           oninput={(e) => onUpdateSelected({ name: e.currentTarget.value })}
           class="w-24 px-1.5 py-1 border border-gray-200 rounded-lg"
