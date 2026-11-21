@@ -82,16 +82,12 @@ import Pencil from 'lucide-svelte/icons/pencil';
     const wid = get(weddingId);
     const [rawOcc, layout] = await Promise.all([
       getOccupancy(wid).catch(() => []),
-      getLayout(wid).catch(() => null),
+      getLayout(wid),
     ]);
-    if (layout) {
-      allTables = layout.tables ?? [];
-      elements = layout.elements ?? [];
-      hallWidth = layout.hallWidth ?? 860;
-      hallHeight = layout.hallHeight ?? 1000;
-    } else {
-      allTables = await listTables(wid).catch(() => []);
-    }
+    allTables = layout.tables ?? [];
+    elements = layout.elements ?? [];
+    hallWidth = layout.hallWidth ?? 860;
+    hallHeight = layout.hallHeight ?? 1000;
     const occMap: Record<string, number> = {};
     for (const o of rawOcc) occMap[o.TableID] = o.Pax;
     occupancyData = occMap;
