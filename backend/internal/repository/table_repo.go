@@ -92,12 +92,10 @@ func lockWedding(tx *gorm.DB, weddingID uuid.UUID) error {
 }
 
 func (r *TableRepo) Update(ctx context.Context, t *models.BanquetTable) error {
-	res := r.db.WithContext(ctx).Model(t).Where("id = ? AND wedding_id = ?", t.ID, t.WeddingID).Updates(map[string]interface{}{
+	// Position is left alone: only a layout save moves a table.
+	res := r.db.WithContext(ctx).Model(t).Where("id = ? AND wedding_id = ?", t.ID, t.WeddingID).Updates(map[string]any{
 		"name":     t.Name,
 		"capacity": t.Capacity,
-		"x":        t.X,
-		"y":        t.Y,
-		"degree":   t.Degree,
 		"is_vip":   t.IsVip,
 	})
 	return checkAffected(res)

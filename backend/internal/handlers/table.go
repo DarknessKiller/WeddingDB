@@ -58,6 +58,10 @@ func (h *TableHandler) Create(c fuego.ContextWithBody[TableRequest]) (any, error
 	if body.Capacity < 1 || body.Capacity > 200 {
 		return nil, fuego.BadRequestError{Title: "Capacity must be between 1 and 200"}
 	}
+	// Same bounds as layout save, or one bad table blocks every later save.
+	if body.X < 0 || body.X > 100 || body.Y < 0 || body.Y > 100 {
+		return nil, fuego.BadRequestError{Title: "Table X/Y must be 0–100"}
+	}
 	table := &models.BanquetTable{
 		WeddingID: wid,
 		Name:      body.Name,
@@ -103,9 +107,8 @@ func (h *TableHandler) Update(c fuego.ContextWithBody[TableRequest]) (any, error
 	}
 	table.Name = body.Name
 	table.Capacity = body.Capacity
-	table.X = body.X
-	table.Y = body.Y
-	table.Degree = body.Degree
+	// Position belongs to the layout editor's save: writing it here from the
+	// dialog's copy would undo a move made in an editor since it opened.
 	table.IsVip = body.IsVip
 	if err := h.tableService.Update(ctx, table); err != nil {
 		if errors.Is(err, repository.ErrCapacityBelowSeats) {
