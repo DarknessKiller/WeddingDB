@@ -58,7 +58,23 @@ export function loadCachedGuests<T>(wid: string): T[] | null {
 	} catch { return null; }
 }
 
-export async function syncQueue(wid: string): Promise<{ applied: number; skipped: number; results: unknown[] }> {
+type SyncSummary = { applied: number; skipped: number; results: unknown[] };
+const inflight = new Map<string, Promise<SyncSummary>>();
+
+// One sync per wedding at a time: a second caller joins the running one
+// instead of sending the same queue again. Web Locks extend that across tabs.
+export function syncQueue(wid: string): Promise<SyncSummary> {
+	let p = inflight.get(wid);
+	if (!p) {
+		const locks = typeof navigator !== 'undefined' ? navigator.locks : undefined;
+		p = (locks ? locks.request(`offline-sync-${wid}`, () => runSync(wid)) : runSync(wid))
+			.finally(() => inflight.delete(wid));
+		inflight.set(wid, p);
+	}
+	return p;
+}
+
+async function runSync(wid: string): Promise<SyncSummary> {
 	const q = getQueue(wid);
 	if (!q.length) return { applied: 0, skipped: 0, results: [] };
 	const res = await apiFetch(`/api/weddings/${wid}/guests/sync`, {
