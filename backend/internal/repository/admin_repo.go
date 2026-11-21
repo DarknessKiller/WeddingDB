@@ -37,8 +37,10 @@ func (r *AdminRepo) List(ctx context.Context) ([]models.AdminUser, error) {
 	return admins, err
 }
 
-func (r *AdminRepo) Update(ctx context.Context, admin *models.AdminUser) error {
-	return r.db.WithContext(ctx).Save(admin).Error
+// UpdateFields writes only the given columns of one account, so a role change
+// cannot write back a password hash read before a concurrent reset.
+func (r *AdminRepo) UpdateFields(ctx context.Context, id uuid.UUID, fields map[string]any) error {
+	return r.db.WithContext(ctx).Model(&models.AdminUser{}).Where("id = ?", id).Updates(fields).Error
 }
 
 // CountByRole returns the number of admins with the given role.

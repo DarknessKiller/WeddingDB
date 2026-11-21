@@ -232,7 +232,7 @@ func (h *AdminHandler) ResetPassword(c fuego.ContextWithBody[ResetPasswordReques
 	}
 	admin.Password = string(hash)
 	admin.ForcePasswordChange = true
-	if err := h.adminRepo.Update(ctx, admin); err != nil {
+	if err := h.adminRepo.UpdateFields(ctx, admin.ID, map[string]any{"password": admin.Password, "force_password_change": true}); err != nil {
 		return nil, fuego.InternalServerError{Title: "Failed to update password"}
 	}
 	// Kill sessions minted under the old password. Password is already
@@ -285,7 +285,7 @@ func (h *AdminHandler) UpdateRole(c fuego.ContextWithBody[UpdateRoleRequest]) (a
 		}
 	}
 	admin.Role = body.Role
-	if err := h.adminRepo.Update(ctx, admin); err != nil {
+	if err := h.adminRepo.UpdateFields(ctx, admin.ID, map[string]any{"role": body.Role}); err != nil {
 		return nil, fuego.InternalServerError{Title: "Failed to update role"}
 	}
 	// Force re-login so role claims in live tokens update. Role is already

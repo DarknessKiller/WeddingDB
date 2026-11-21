@@ -228,9 +228,7 @@ func (h *AuthHandler) ChangePassword(c fuego.ContextWithBody[ChangePasswordReque
 	if err != nil {
 		return nil, fuego.InternalServerError{Title: "Failed to hash password"}
 	}
-	admin.Password = string(hash)
-	admin.ForcePasswordChange = false
-	if err := h.adminRepo.Update(ctx, admin); err != nil {
+	if err := h.adminRepo.UpdateFields(ctx, adminID, map[string]any{"password": string(hash), "force_password_change": false}); err != nil {
 		return nil, fuego.InternalServerError{Title: "Failed to update password"}
 	}
 	// Revoke all existing sessions so compromised tokens are invalidated
