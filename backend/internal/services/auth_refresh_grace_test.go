@@ -157,10 +157,10 @@ func TestRefreshToken_StoredHashed(t *testing.T) {
 
 	issued, err := svc.generateRefreshToken(t.Context(), adminID, nil)
 	testutil.NoErr(t, err)
-	res, err := svc.Refresh(t.Context(), issued, "")
+	res, err := svc.Refresh(t.Context(), issued.Token, "")
 	testutil.NoErr(t, err)
 
-	for _, plain := range []string{issued, res.RefreshToken} {
+	for _, plain := range []string{issued.Token, res.RefreshToken} {
 		var n int64
 		testutil.NoErr(t, db.Model(&models.RefreshToken{}).Where("token = ? OR replaced_by = ?", plain, plain).Count(&n).Error)
 		if n != 0 {
@@ -168,7 +168,7 @@ func TestRefreshToken_StoredHashed(t *testing.T) {
 		}
 	}
 	var hashedRows int64
-	testutil.NoErr(t, db.Model(&models.RefreshToken{}).Where("token IN ?", []string{repository.HashToken(issued), repository.HashToken(res.RefreshToken)}).Count(&hashedRows).Error)
+	testutil.NoErr(t, db.Model(&models.RefreshToken{}).Where("token IN ?", []string{repository.HashToken(issued.Token), repository.HashToken(res.RefreshToken)}).Count(&hashedRows).Error)
 	if hashedRows != 2 {
 		t.Fatalf("hashed rows = %d, want 2", hashedRows)
 	}

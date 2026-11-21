@@ -13,6 +13,7 @@ const (
 	AdminIDKey   contextKey = "adminId"
 	WeddingIDKey contextKey = "weddingId"
 	RoleKey      contextKey = "role"
+	SessionIDKey contextKey = "sessionId"
 )
 
 func AuthMiddleware(authService *services.AuthService) func(http.Handler) http.Handler {
@@ -36,6 +37,7 @@ func AuthMiddleware(authService *services.AuthService) func(http.Handler) http.H
 			ctx := context.WithValue(r.Context(), AdminIDKey, claims.AdminID)
 			ctx = context.WithValue(ctx, WeddingIDKey, claims.WeddingID)
 			ctx = context.WithValue(ctx, RoleKey, claims.Role)
+			ctx = context.WithValue(ctx, SessionIDKey, claims.SessionID)
 			next.ServeHTTP(w, r.WithContext(ctx))
 		})
 	}

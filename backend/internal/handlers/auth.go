@@ -145,7 +145,7 @@ func (h *AuthHandler) SelectWedding(c fuego.ContextWithBody[SelectWeddingRequest
 		return SelectWeddingResponse{}, fuego.BadRequestError{Title: "Invalid wedding ID"}
 	}
 	adminID := AdminIDFromContext(c.Context())
-	accessToken, err := h.authService.SelectWedding(c.Context(), adminID, weddingID)
+	accessToken, err := h.authService.SelectWedding(c.Context(), adminID, SessionIDFromContext(c.Context()), weddingID)
 	if err != nil {
 		switch {
 		case errors.Is(err, services.ErrNoWeddingAccess):

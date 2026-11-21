@@ -118,7 +118,7 @@ func seedAdmin(t *testing.T, db *gorm.DB, adminID uuid.UUID, role string) {
 }
 
 // seedRefreshToken inserts a refresh token.
-func seedRefreshToken(t *testing.T, db *gorm.DB, adminID uuid.UUID, weddingID *uuid.UUID, tokenStr string) {
+func seedRefreshToken(t *testing.T, db *gorm.DB, adminID uuid.UUID, weddingID *uuid.UUID, tokenStr string) uuid.UUID {
 	t.Helper()
 	rt := &models.RefreshToken{
 		ID:        uuid.New(),
@@ -130,6 +130,7 @@ func seedRefreshToken(t *testing.T, db *gorm.DB, adminID uuid.UUID, weddingID *u
 	if err := db.Create(rt).Error; err != nil {
 		t.Fatalf("failed to seed refresh token: %v", err)
 	}
+	return rt.ID
 }
 
 // seedWedding inserts a wedding event.
@@ -338,10 +339,19 @@ func TestSelectWedding_PersistsWeddingScopeForUser(t *testing.T) {
 	seedAdmin(t, db, adminID, "user")
 	seedWedding(t, db, wid)
 	seedUserWedding(t, db, adminID, wid)
-	seedRefreshToken(t, db, adminID, nil, refreshStr) // login mints nil wedding scope
+	session := seedRefreshToken(t, db, adminID, nil, refreshStr) // login mints nil wedding scope
+	otherStr := "user-other-device"
+	seedRefreshToken(t, db, adminID, nil, otherStr)
 
-	if _, err := svc.SelectWedding(context.Background(), adminID, wid); err != nil {
+	if _, err := svc.SelectWedding(context.Background(), adminID, session, wid); err != nil {
 		t.Fatalf("SelectWedding failed: %v", err)
+	}
+
+	// Another device of the same user keeps its own scope.
+	var other models.RefreshToken
+	testutil.NoErr(t, db.Where("token = ?", repository.HashToken(otherStr)).First(&other).Error)
+	if other.WeddingID != nil {
+		t.Fatalf("SelectWedding re-scoped another session to %v", *other.WeddingID)
 	}
 
 	// The refresh token row must now carry the selected wedding.
@@ -365,6 +375,11 @@ func TestSelectWedding_PersistsWeddingScopeForUser(t *testing.T) {
 	if claims.WeddingID == nil || *claims.WeddingID != wid {
 		t.Errorf("expected scoped access token with wedding_id=%s, got %v", wid, claims.WeddingID)
 	}
+	var successor models.RefreshToken
+	testutil.NoErr(t, db.Where("token = ?", repository.HashToken(result.RefreshToken)).First(&successor).Error)
+	if claims.SessionID != successor.ID {
+		t.Errorf("access token sid = %s, want successor row %s", claims.SessionID, successor.ID)
+	}
 }
 
 func TestSelectWedding_AdminKeepsUnscopedRefreshToken(t *testing.T) {
@@ -375,9 +390,9 @@ func TestSelectWedding_AdminKeepsUnscopedRefreshToken(t *testing.T) {
 
 	seedAdmin(t, db, adminID, "admin")
 	seedWedding(t, db, wid)
-	seedRefreshToken(t, db, adminID, nil, refreshStr)
+	session := seedRefreshToken(t, db, adminID, nil, refreshStr)
 
-	if _, err := svc.SelectWedding(context.Background(), adminID, wid); err != nil {
+	if _, err := svc.SelectWedding(context.Background(), adminID, session, wid); err != nil {
 		t.Fatalf("SelectWedding failed: %v", err)
 	}
 

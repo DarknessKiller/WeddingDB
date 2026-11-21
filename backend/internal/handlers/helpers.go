@@ -16,6 +16,12 @@ func AdminIDFromContext(ctx context.Context) uuid.UUID {
 	return v
 }
 
+// SessionIDFromContext extracts the caller's refresh session ID from the request context.
+func SessionIDFromContext(ctx context.Context) uuid.UUID {
+	v, _ := ctx.Value(middleware.SessionIDKey).(uuid.UUID)
+	return v
+}
+
 // WeddingIDFromContext extracts wedding ID from the request context.
 func WeddingIDFromContext(ctx context.Context) *uuid.UUID {
 	v, _ := ctx.Value(middleware.WeddingIDKey).(*uuid.UUID)

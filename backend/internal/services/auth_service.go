@@ -27,6 +27,9 @@ type AccessClaims struct {
 	WeddingID    *uuid.UUID `json:"wid,omitempty"`
 	Role         string     `json:"role"`
 	TokenVersion int        `json:"tv"`
+	// SessionID is the refresh token row this access token was minted with, so
+	// a session-level change (wedding scope) touches only that session.
+	SessionID uuid.UUID `json:"sid,omitzero"`
 	jwt.RegisteredClaims
 }
 
@@ -85,15 +88,15 @@ func (s *AuthService) Login(ctx context.Context, email, password string) (*Login
 	if err := compareHash([]byte(admin.Password), []byte(password)); err != nil {
 		return nil, errors.New("invalid credentials")
 	}
-	accessToken, err := s.generateAccessToken(ctx, admin, nil)
-	if err != nil {
-		return nil, err
-	}
 	refreshToken, err := s.generateRefreshToken(ctx, admin.ID, nil)
 	if err != nil {
 		return nil, err
 	}
-	return s.sessionResult(ctx, admin, accessToken, refreshToken)
+	accessToken, err := s.generateAccessToken(ctx, admin, nil, refreshToken.ID)
+	if err != nil {
+		return nil, err
+	}
+	return s.sessionResult(ctx, admin, accessToken, refreshToken.Token)
 }
 
 // sessionResult assembles the token payload shared by Login and Refresh.
@@ -124,7 +127,8 @@ func (s *AuthService) sessionResult(ctx context.Context, admin *models.AdminUser
 }
 
 // SelectWedding generates a new access token with the selected wedding embedded.
-func (s *AuthService) SelectWedding(ctx context.Context, adminID uuid.UUID, weddingID uuid.UUID) (string, error) {
+// sessionID is the caller's refresh token row; only that session is re-scoped.
+func (s *AuthService) SelectWedding(ctx context.Context, adminID, sessionID, weddingID uuid.UUID) (string, error) {
 	admin, err := s.adminRepo.FindByID(ctx, adminID)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -141,15 +145,15 @@ func (s *AuthService) SelectWedding(ctx context.Context, adminID uuid.UUID, wedd
 		if !hasAccess {
 			return "", ErrNoWeddingAccess
 		}
-		// Persist the wedding scope onto the caller's refresh token(s) so that
+		// Persist the wedding scope onto the caller's refresh token so that
 		// Refresh re-mints a scoped access token. Without this, the first
 		// refresh after SelectWedding drops the wedding and the user gets 403
 		// until they log in again. Admins keep a nil scope (all weddings).
-		if err := s.tokenRepo.UpdateWeddingScope(ctx, adminID, weddingID); err != nil {
+		if err := s.tokenRepo.UpdateWeddingScope(ctx, adminID, sessionID, weddingID); err != nil {
 			return "", fmt.Errorf("failed to persist wedding scope: %w", err)
 		}
 	}
-	return s.generateAccessToken(ctx, admin, &weddingID)
+	return s.generateAccessToken(ctx, admin, &weddingID, sessionID)
 }
 
 // refreshGraceWindow is how long after a rotation a retry of the consumed token
@@ -190,15 +194,15 @@ func (s *AuthService) Refresh(ctx context.Context, refreshTokenStr string, oldAc
 	if err != nil {
 		return nil, err
 	}
-	accessToken, err := s.generateAccessToken(ctx, admin, weddingID)
-	if err != nil {
-		return nil, err
-	}
 	replacement, err := s.buildRefreshToken(admin.ID, weddingID)
 	if err != nil {
 		return nil, err
 	}
 	replacement.Token = s.successorToken(refreshTokenStr)
+	accessToken, err := s.generateAccessToken(ctx, admin, weddingID, replacement.ID)
+	if err != nil {
+		return nil, err
+	}
 
 	err = s.tokenRepo.Rotate(ctx, refreshTokenStr, replacement)
 	if err == nil {
@@ -255,7 +259,7 @@ func (s *AuthService) resumeRotation(ctx context.Context, presented string, cons
 	if err != nil {
 		return nil, err
 	}
-	accessToken, err := s.generateAccessToken(ctx, admin, weddingID)
+	accessToken, err := s.generateAccessToken(ctx, admin, weddingID, replacement.ID)
 	if err != nil {
 		return nil, err
 	}
@@ -539,7 +543,7 @@ func (s *AuthService) parseTokenClaims(tokenStr string) (*AccessClaims, error) {
 	return claims, nil
 }
 
-func (s *AuthService) generateAccessToken(ctx context.Context, admin *models.AdminUser, weddingID *uuid.UUID) (string, error) {
+func (s *AuthService) generateAccessToken(ctx context.Context, admin *models.AdminUser, weddingID *uuid.UUID, sessionID uuid.UUID) (string, error) {
 	tv, err := s.GetTokenVersion(ctx, admin.ID)
 	if err != nil {
 		return "", fmt.Errorf("failed to read token version: %w", err)
@@ -552,6 +556,7 @@ func (s *AuthService) generateAccessToken(ctx context.Context, admin *models.Adm
 		WeddingID:    weddingID,
 		Role:         admin.Role,
 		TokenVersion: tv,
+		SessionID:    sessionID,
 		RegisteredClaims: jwt.RegisteredClaims{
 			ID:        uuid.New().String(),
 			IssuedAt:  jwt.NewNumericDate(now),
@@ -577,13 +582,13 @@ func (s *AuthService) buildRefreshToken(adminID uuid.UUID, weddingID *uuid.UUID)
 	}, nil
 }
 
-func (s *AuthService) generateRefreshToken(ctx context.Context, adminID uuid.UUID, weddingID *uuid.UUID) (string, error) {
+func (s *AuthService) generateRefreshToken(ctx context.Context, adminID uuid.UUID, weddingID *uuid.UUID) (*models.RefreshToken, error) {
 	token, err := s.buildRefreshToken(adminID, weddingID)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 	if err := s.tokenRepo.Save(ctx, token); err != nil {
-		return "", err
+		return nil, err
 	}
-	return token.Token, nil
+	return token, nil
 }
