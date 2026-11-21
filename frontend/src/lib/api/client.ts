@@ -113,12 +113,15 @@ export async function reselectWedding(wid: string): Promise<boolean> {
 	}
 }
 
-export async function apiFetch(path: string, opts: RequestInit = {}): Promise<Response> {
+// body may be a function, built per attempt, for a body carrying the refresh
+// token: a 401 retry after rotation must not resend the spent one.
+export async function apiFetch(path: string, opts: Omit<RequestInit, 'body'> & { body?: BodyInit | null | (() => BodyInit) } = {}): Promise<Response> {
 	const isDelete = opts.method === 'DELETE';
 	const send = () => {
 		const { accessToken } = getAuth();
 		return fetch(`${BASE}${path}`, {
 			...opts,
+			body: typeof opts.body === 'function' ? opts.body() : opts.body,
 			// A caller passing its own signal owns the deadline (long imports, exports, sync).
 			signal: opts.signal ?? withTimeout(),
 			headers: {

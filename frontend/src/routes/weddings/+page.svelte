@@ -67,7 +67,7 @@ import ChevronRight from 'lucide-svelte/icons/chevron-right';
       }
       const res = await apiFetch('/api/auth/select-wedding', {
         method: 'POST',
-        body: JSON.stringify({ weddingId: w.id, refreshToken: getAuth().refreshToken ?? '' })
+        body: () => JSON.stringify({ weddingId: w.id, refreshToken: getAuth().refreshToken ?? '' })
       });
       if (!res.ok) {
         const err = await res.json().catch(() => ({ title: 'Failed to select wedding' }));
