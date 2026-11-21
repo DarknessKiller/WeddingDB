@@ -336,13 +336,7 @@ func (s *GuestService) CheckIn(ctx context.Context, id, weddingID uuid.UUID, not
 		}
 		return err
 	}
-	guest, err := s.guestRepo.FindByID(ctx, id, weddingID)
-	if err != nil {
-		log.Printf("guest lookup after check-in failed: %v", err)
-	}
-	if guest != nil {
-		s.publishEvent("checkin", guest, weddingID)
-	}
+	s.publishFresh(ctx, "checkin", id, weddingID)
 	return nil
 }
 
