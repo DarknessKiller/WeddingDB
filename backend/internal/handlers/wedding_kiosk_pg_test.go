@@ -131,4 +131,34 @@ func TestUpdateKioskSettings_PostgresRoundTrip(t *testing.T) {
 			t.Errorf("error body does not name kioskBackgroundPosY: %s", rec.Body.String())
 		}
 	})
+
+	t.Run("kiosk description is capped at 2000 characters", func(t *testing.T) {
+		rec := do(http.MethodPut, `{"kioskDescription":"`+strings.Repeat("a", 2001)+`"}`)
+		if rec.Code != http.StatusBadRequest {
+			t.Fatalf("status = %d, want 400; body %s", rec.Code, rec.Body.String())
+		}
+	})
+
+	t.Run("background URL must be an upload or a plain http(s) URL", func(t *testing.T) {
+		for _, bad := range []string{"javascript:alert(1)", "https://evil.test/x.png\\\");color:red", "https://evil.test/a b.png", "//evil.test/x.png", "/uploads/.hash-index", "/uploads/a/b.png", "/api/x.png", "/uploads/a.png?x=1"} {
+			if rec := do(http.MethodPut, `{"kioskBackgroundUrl":"`+bad+`"}`); rec.Code != http.StatusBadRequest {
+				t.Errorf("%q: status = %d, want 400", bad, rec.Code)
+			}
+		}
+		rec := do(http.MethodPut, `{"kioskBackgroundUrl":"https://venue.test/uploads/ab12cd34-ef567890.png"}`)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("status = %d, body %s", rec.Code, rec.Body.String())
+		}
+		if got := decode(t, rec)["kioskBackgroundUrl"]; got != "/uploads/ab12cd34-ef567890.png" {
+			t.Errorf("kioskBackgroundUrl = %v, want /uploads/ab12cd34-ef567890.png", got)
+		}
+		ext := "https://cdn.example.com/hall.jpg?w=1920"
+		rec = do(http.MethodPut, `{"kioskBackgroundUrl":"`+ext+`"}`)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("external URL: status = %d, body %s", rec.Code, rec.Body.String())
+		}
+		if got := decode(t, rec)["kioskBackgroundUrl"]; got != ext {
+			t.Errorf("kioskBackgroundUrl = %v, want %s", got, ext)
+		}
+	})
 }

@@ -2,6 +2,8 @@ package handlers
 
 import (
 	"cmp"
+	"net/url"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -178,17 +180,21 @@ func (h *WeddingHandler) UpdateKioskSettings(c fuego.ContextWithBody[KioskSettin
 	if body.VenueAddress != nil {
 		w.VenueAddress = strings.TrimSpace(*body.VenueAddress)
 	}
-	if err := cmp.Or(maxLen("Name", w.Name, 255), maxLen("Venue name", w.VenueName, 255), maxLen("Venue address", w.VenueAddress, 500)); err != nil {
-		return nil, err
-	}
 	if body.KioskDescription != nil {
 		w.KioskDescription = strings.TrimSpace(*body.KioskDescription)
+	}
+	if err := cmp.Or(maxLen("Name", w.Name, 255), maxLen("Venue name", w.VenueName, 255), maxLen("Venue address", w.VenueAddress, 500), maxLen("Kiosk description", w.KioskDescription, 2000)); err != nil {
+		return nil, err
 	}
 	if body.KioskLogoUrl != nil {
 		w.KioskLogoUrl = sanitizeURL(*body.KioskLogoUrl)
 	}
 	if body.KioskBackgroundUrl != nil {
-		w.KioskBackgroundUrl = sanitizeURL(*body.KioskBackgroundUrl)
+		bg, ok := backgroundURL(*body.KioskBackgroundUrl)
+		if !ok {
+			return nil, fuego.BadRequestError{Title: "kioskBackgroundUrl must be an uploaded image or an http(s) URL"}
+		}
+		w.KioskBackgroundUrl = bg
 	}
 	if body.KioskBackgroundBlur != nil {
 		w.KioskBackgroundBlur = max(0, min(20, *body.KioskBackgroundBlur))
@@ -245,6 +251,47 @@ func (h *WeddingHandler) Delete(c fuego.ContextWithBody[any]) (any, error) {
 	}
 	c.SetStatus(204)
 	return nil, nil
+}
+
+// uploadName matches file names the upload handler writes; no leading dot,
+// so the upload index itself is never a valid target.
+var uploadName = regexp.MustCompile(`^[A-Za-z0-9_-][A-Za-z0-9._-]*$`)
+
+// uploadPath returns the /uploads/<file> path s points at, or "" for empty
+// input. It accepts the absolute form the settings page sends (origin + the
+// upload URL) and drops the origin, so the kiosk's CSS url() only ever loads
+// our own uploads. ok is false for anything else.
+func uploadPath(s string) (string, bool) {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return "", true
+	}
+	u, err := url.Parse(s)
+	if err != nil || u.User != nil || u.RawQuery != "" || u.Fragment != "" ||
+		(u.Scheme != "" && u.Scheme != "http" && u.Scheme != "https") {
+		return "", false
+	}
+	name, ok := strings.CutPrefix(u.Path, "/uploads/")
+	if !ok || !uploadName.MatchString(name) {
+		return "", false
+	}
+	return "/uploads/" + name, true
+}
+
+// backgroundURL accepts our own uploads (normalised by uploadPath) or an
+// external http(s) image URL. Characters that could end a CSS url("...") or
+// open a new declaration are refused, since the kiosk renders it in a style.
+func backgroundURL(s string) (string, bool) {
+	if p, ok := uploadPath(s); ok {
+		return p, true
+	}
+	s = strings.TrimSpace(s)
+	u, err := url.Parse(s)
+	if err != nil || u.User != nil || u.Host == "" || (u.Scheme != "http" && u.Scheme != "https") ||
+		strings.ContainsAny(s, "\"'\\()<>; \t\r\n") {
+		return "", false
+	}
+	return s, true
 }
 
 // sanitizeURL strips any value that isn't a safe URL prefix or a relative path.
