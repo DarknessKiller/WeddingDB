@@ -66,7 +66,6 @@ type SSEHub struct {
 	mu      sync.RWMutex
 	clients map[uuid.UUID]map[string]*SSEClient // weddingID -> clientID -> client
 	redis   *redis.Client
-	pubsub  *redis.PubSub
 	ctx     context.Context
 	cancel  context.CancelFunc
 	// ponytail: closed after PSubscribe ACKs so the first Publish is not lost during Redis warm-up.
@@ -89,13 +88,20 @@ func NewSSEHub(rdb *redis.Client) *SSEHub {
 
 // subscribeRedis listens on the wildcard Redis channel and fans out to local clients.
 func (h *SSEHub) subscribeRedis() {
-	h.pubsub = h.redis.PSubscribe(h.ctx, "wedding:*:guests")
+	// The subscription lives only in this goroutine, which closes it on exit;
+	// Shutdown may run before PSubscribe returns (Redis slow to dial).
+	pubsub := h.redis.PSubscribe(h.ctx, "wedding:*:guests")
+	defer func() {
+		if err := pubsub.Close(); err != nil {
+			log.Printf("SSE: subscriber close failed: %v", err)
+		}
+	}()
 	// Wait for Redis to confirm the subscription is active
-	if err := h.pubsub.Ping(h.ctx); err != nil {
+	if err := pubsub.Ping(h.ctx); err != nil {
 		log.Printf("SSE: PSubscribe ping failed: %v", err)
 	}
 	close(h.ready)
-	ch := h.pubsub.Channel()
+	ch := pubsub.Channel()
 	for {
 		select {
 		case <-h.ctx.Done():
@@ -207,11 +213,6 @@ func (h *SSEHub) Shutdown() {
 		}
 	}
 	h.mu.Unlock()
-	if h.pubsub != nil {
-		if err := h.pubsub.Close(); err != nil {
-			log.Printf("SSE: subscriber close failed: %v", err)
-		}
-	}
 }
 
 func extractWeddingID(channel string) uuid.UUID {

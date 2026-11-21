@@ -3,6 +3,7 @@ package services
 import (
 	"context"
 	"encoding/json"
+	"net"
 	"strconv"
 	"strings"
 	"testing"
@@ -436,5 +437,26 @@ func TestSSEHub_ShutdownClosesStreams(t *testing.T) {
 	case <-client.Done:
 	case <-time.After(time.Second):
 		t.Fatal("open stream was not closed by Shutdown")
+	}
+}
+
+// Shutdown can run while the subscriber goroutine is still dialing Redis
+// (NewSSEHub gives up waiting after 5s). Run with -race: the subscriber must
+// not share its PubSub with Shutdown unsynchronised.
+func TestSSEHub_ShutdownWhileDialing(t *testing.T) {
+	t.Parallel()
+	rdb := redis.NewClient(&redis.Options{
+		Addr: "redis.invalid:6379",
+		Dialer: func(ctx context.Context, _, _ string) (net.Conn, error) {
+			<-ctx.Done() // a dial that hangs until the hub is shut down
+			return nil, ctx.Err()
+		},
+	})
+	hub := NewSSEHub(rdb)
+	hub.Shutdown()
+	select {
+	case <-hub.ready: // the subscriber has finished touching its PubSub
+	case <-time.After(5 * time.Second):
+		t.Fatal("subscriber did not stop after Shutdown")
 	}
 }
