@@ -34,6 +34,11 @@ func NewGuestService(guestRepo *repository.GuestRepo, tableRepo *repository.Tabl
 // guest entry with pax 2 counts as two guests.
 const MaxGuestsPerWedding = 1000
 
+// MaxGuestPartySize bounds one guest entry's pax. Without a bound, huge values
+// overflow the cap arithmetic and break every later guest count and occupancy
+// query for the wedding.
+const MaxGuestPartySize = 50
+
 // ErrGuestCapExceeded is returned when adding guests would cross the cap.
 var ErrGuestCapExceeded = errors.New("guest limit exceeded")
 
@@ -64,6 +69,9 @@ func (s *GuestService) createGuestTx(ctx context.Context, tx *gorm.DB, g *models
 	if g.Pax < 1 {
 		g.Pax = 1
 	}
+	if g.Pax > MaxGuestPartySize {
+		return fmt.Errorf("party size must be at most %d", MaxGuestPartySize)
+	}
 	// Wedding row first, table row second: every write path locks in this
 	// order, so the two lock sets cannot deadlock.
 	total, err := s.guestCountLocked(tx, g.WeddingID)
@@ -86,6 +94,9 @@ func (s *GuestService) createGuestTx(ctx context.Context, tx *gorm.DB, g *models
 func (s *GuestService) updateGuestTx(ctx context.Context, tx *gorm.DB, g *models.GuestRecord, syncWrite bool) error {
 	if g.Pax < 1 {
 		g.Pax = 1
+	}
+	if g.Pax > MaxGuestPartySize {
+		return fmt.Errorf("party size must be at most %d", MaxGuestPartySize)
 	}
 	total, err := s.guestCountLocked(tx, g.WeddingID)
 	if err != nil {
@@ -320,6 +331,9 @@ func (s *GuestService) BulkCreate(ctx context.Context, guests []models.GuestReco
 	for i := range guests {
 		if guests[i].Pax < 1 {
 			guests[i].Pax = 1
+		}
+		if guests[i].Pax > MaxGuestPartySize {
+			return 0, fmt.Errorf("party size must be at most %d", MaxGuestPartySize)
 		}
 		incoming += guests[i].Pax
 	}

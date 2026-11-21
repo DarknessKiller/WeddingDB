@@ -495,3 +495,13 @@ func TestSync_PartialPayloadPreservesFields(t *testing.T) {
 		t.Fatalf("seat not applied: table=%v seat=%v", got.TableID, got.SeatNum)
 	}
 }
+
+func TestCreate_RejectsOversizedParty(t *testing.T) {
+	svc, _, wid := newGuestSyncService(t)
+	err := svc.Create(context.Background(), &models.GuestRecord{
+		ID: uuid.New(), WeddingID: wid, Name: "Big", Pax: MaxGuestPartySize + 1,
+	})
+	if err == nil {
+		t.Fatal("expected oversized party size to be rejected")
+	}
+}
