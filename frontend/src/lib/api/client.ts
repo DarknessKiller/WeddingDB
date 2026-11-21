@@ -26,7 +26,9 @@ async function doRefresh(): Promise<boolean> {
 		return false;
 	}
 	if (refreshRes.ok) {
-		const data = await refreshRes.json();
+		// An unreadable body is a server fault, not a dead token: keep the session.
+		const data = await refreshRes.json().catch(() => null);
+		if (!data) return false;
 		if (data.forcePasswordChange) {
 			setAuth(data.accessToken, data.refreshToken, data.role ?? getAuth().role ?? '', data.name ?? getAuth().name ?? '');
 			if (typeof window !== 'undefined') window.location.href = '/change-password?forced=1';
@@ -51,31 +53,22 @@ async function refreshIfNeeded(): Promise<boolean> {
 }
 
 export async function apiFetch(path: string, opts: RequestInit = {}): Promise<Response> {
-	const { accessToken } = getAuth();
 	const isDelete = opts.method === 'DELETE';
-	let res = await fetch(`${BASE}${path}`, {
-		...opts,
-		headers: {
-			...(!isDelete ? { 'Content-Type': 'application/json' } : {}),
-			...opts.headers,
-			...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {})
-		}
-	});
+	// The retry after a refresh sends the same headers as the first attempt.
+	const send = () => {
+		const { accessToken } = getAuth();
+		return fetch(`${BASE}${path}`, {
+			...opts,
+			headers: {
+				...(!isDelete ? { 'Content-Type': 'application/json' } : {}),
+				...opts.headers,
+				...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {})
+			}
+		});
+	};
+	let res = await send();
 
-	if (res.status === 401) {
-		const refreshed = await refreshIfNeeded();
-		if (refreshed) {
-			const { accessToken: newToken } = getAuth();
-			res = await fetch(`${BASE}${path}`, {
-				...opts,
-				headers: {
-					'Content-Type': 'application/json',
-					...opts.headers,
-					Authorization: `Bearer ${newToken}`
-				}
-			});
-		}
-	}
+	if (res.status === 401 && await refreshIfNeeded()) res = await send();
 	return res;
 }
 

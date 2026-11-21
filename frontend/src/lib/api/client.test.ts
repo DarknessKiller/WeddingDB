@@ -93,4 +93,45 @@ describe('apiFetch refresh recovery', () => {
 		expect(getAuth().accessToken).toBeNull();
 		expect(localStorage.getItem('weddingdb_refresh_token')).toBeNull();
 	});
+
+	it('retries a DELETE with the same headers it first sent', async () => {
+		fetchMock
+			.mockResolvedValueOnce(res({}, 401))
+			.mockResolvedValueOnce(res(REFRESH_OK))
+			.mockResolvedValueOnce(res({}, 204));
+
+		const { apiFetch } = await import('./client');
+		await apiFetch('/api/guests/g1', { method: 'DELETE' });
+
+		const first = fetchMock.mock.calls[0][1].headers as Record<string, string>;
+		const retry = fetchMock.mock.calls[2][1].headers as Record<string, string>;
+		expect(retry).toEqual({ ...first, Authorization: 'Bearer new-access' });
+		expect(retry['Content-Type']).toBeUndefined();
+	});
+
+	it('keeps the session when the refresh body is unreadable', async () => {
+		fetchMock
+			.mockResolvedValueOnce(res({}, 401))
+			.mockResolvedValueOnce({ ok: true, status: 200, json: async () => { throw new SyntaxError('bad json'); } } as unknown as Response);
+
+		const { apiFetch } = await import('./client');
+		const { getAuth } = await import('#lib/stores/index.ts');
+		const result = await apiFetch('/api/guests');
+
+		expect(result.status).toBe(401);
+		expect(location.href).toBe('');
+		expect(getAuth()).toMatchObject({ accessToken: 'old-access', refreshToken: 'refresh-1' });
+	});
+
+	it('does not refresh or log out on 403', async () => {
+		fetchMock.mockResolvedValueOnce(res({ title: 'forbidden' }, 403));
+
+		const { apiFetch } = await import('./client');
+		const { getAuth } = await import('#lib/stores/index.ts');
+		const result = await apiFetch('/api/users');
+
+		expect(result.status).toBe(403);
+		expect(fetchMock).toHaveBeenCalledTimes(1);
+		expect(getAuth().accessToken).toBe('old-access');
+	});
 });
