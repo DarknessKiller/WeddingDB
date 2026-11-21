@@ -43,8 +43,8 @@ export function initializeSSE(onResync?: () => Promise<Guest[]>): (() => void) |
 	const unsubscribeStatus = client.onStatus((status, reconnect) => {
 		sseConnected.set(status === 'connected');
 		if (status === 'connected' && reconnect && resync) {
-			syncing = true;
-			resync().then(seedGuests).catch(() => { syncing = false; });
+			// On failure keep the current list; refreshGuests replays queued events.
+			refreshGuests(resync).catch(() => {});
 		}
 	});
 	const unsubscribe = client.onEvent((event: GuestEvent) => {
@@ -97,11 +97,6 @@ export function seedGuests(guests: Guest[]) {
 	}
 	guestMap.set(map);
 	recalculateOccupancy();
-	// cache for offline reads
-	try {
-		const wid = get(weddingId);
-		if (wid) localStorage.setItem(`offline_cache_${wid}`, JSON.stringify(guests));
-	} catch {}
 	if (syncing) {
 		syncing = false;
 		const pending = queuedEvents;

@@ -13,12 +13,12 @@ vi.mock('#lib/stores/weddingId.ts', () => ({
 }));
 
 // Captures the SSE event handler so tests can drive handleGuestEvent.
-const sseState = vi.hoisted(() => ({ eventHandler: undefined as ((e: unknown) => void) | undefined }));
+const sseState = vi.hoisted(() => ({ eventHandler: undefined as ((e: unknown) => void) | undefined, statusHandler: undefined as ((s: string, reconnect: boolean) => void) | undefined }));
 
 vi.mock('#lib/api/sse.ts', () => ({
 	connectSSE: vi.fn(() => ({
 		onEvent: vi.fn((cb: (e: unknown) => void) => { sseState.eventHandler = cb; return () => {}; }),
-		onStatus: vi.fn(() => () => {}),
+		onStatus: vi.fn((cb: (s: string, reconnect: boolean) => void) => { sseState.statusHandler = cb; return () => {}; }),
 		disconnect: vi.fn()
 	})),
 	disconnectSSE: vi.fn()
@@ -158,5 +158,16 @@ describe('guestEvents store', () => {
 		sseState.eventHandler!(makeEvent({ type: 'create', guest: { id: 'g9', name: 'Zoe', email: '', pax: 4, rsvp: 'confirmed', isVip: false, notes: '', dietary: [], tableId: 't2', seatNum: 1, checkedInAt: null, angbaoAmt: null, giftItem: null } }));
 
 		expect(get(tableOccupancy).get('t2')).toBe(4);
+	});
+
+	it('a failed reconnect resync keeps the current list', async () => {
+		const { initializeSSE, seedGuests, guestList } = await freshModule();
+		initializeSSE(() => Promise.reject(new Error('offline')));
+		seedGuests([makeGuest({ id: 'g1', dietaryRequirements: ['vegan'] })]);
+
+		sseState.statusHandler!('connected', true);
+		await new Promise((r) => setTimeout(r, 0));
+
+		expect(get(guestList).map((g) => g.dietaryRequirements)).toEqual([['vegan']]);
 	});
 });

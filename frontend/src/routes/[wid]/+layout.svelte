@@ -8,8 +8,8 @@
   import { weddingId, setWeddingId } from '#lib/stores/weddingId.ts';
   import { weddingTitle } from '#lib/stores/weddingTitle.ts';
   import { validateToken } from '#lib/utils/auth.ts';
-  import { fetchAllGuests } from '#lib/api/guests.ts';
-  import { syncQueue } from '#lib/offline/queue.ts';
+  import { fetchAllGuests, type GuestResponse } from '#lib/api/guests.ts';
+  import { syncQueue, cacheGuests, loadCachedGuests } from '#lib/offline/queue.ts';
   import { getWedding } from '#lib/api/weddings.ts';
   import { listTables } from '#lib/api/tables.ts';
   import { initializeSSE, refreshGuests, guestList, guestMap, tableOccupancy } from '#lib/stores/guestEvents.ts';
@@ -43,15 +43,19 @@
       createdAt, updatedAt: g.updatedAt ? new Date(g.updatedAt) : createdAt,
     };
   };
+  // Cache the raw server rows: toGuest reads the server field names.
+  const fetchGuests = async () => {
+    const raw = await fetchAllGuests($weddingId);
+    cacheGuests($weddingId, raw);
+    return raw.map(toGuest);
+  };
+  // Only the first load falls back to the cache; later refreshes keep the live list.
   const loadGuests = async () => {
     try {
-      const guests = (await fetchAllGuests($weddingId)).map(toGuest);
-      return guests;
+      return await fetchGuests();
     } catch {
-      try {
-        const cached = JSON.parse(localStorage.getItem(`offline_cache_${$weddingId}`) || 'null');
-        if (cached) return (cached as any[]).map(toGuest);
-      } catch {}
+      const cached = loadCachedGuests<GuestResponse>($weddingId);
+      if (cached) return cached.map(toGuest);
       throw new Error('offline');
     }
   };
@@ -78,7 +82,7 @@
         await syncQueue(wid);
         // Refresh inside the syncing window so SSE events arriving mid-fetch
         // are queued and replayed after the seed instead of being clobbered.
-        const guests = await refreshGuests(loadGuests);
+        const guests = await refreshGuests(fetchGuests);
         guestCount = guests.length;
         refreshQueued();
       } catch {}
@@ -107,7 +111,7 @@
 
     if (destroyed) return;
     // Subscribe before the snapshot; guestEvents queues mutations until seeding completes.
-    cleanupSSE = initializeSSE(loadGuests);
+    cleanupSSE = initializeSSE(fetchGuests);
     try {
       // refreshGuests keeps the syncing window open across fetch+seed even if
       // initializeSSE early-returned, so mid-fetch SSE events can't be clobbered.
@@ -162,7 +166,7 @@
       {#if offline}
         <div class="offline-banner">Offline — changes queued{queued ? ` (${queued})` : ''}</div>
       {:else if queued}
-        <div class="offline-banner queued">{queued} queued — syncing on reconnect <button onclick={async () => { try { await syncQueue(wid); } catch { addToast('Could not sync yet; changes stay queued', 'error'); } refreshQueued(); refreshGuests(loadGuests).catch(() => {}); }}>Sync now</button></div>
+        <div class="offline-banner queued">{queued} queued — syncing on reconnect <button onclick={async () => { try { await syncQueue(wid); } catch { addToast('Could not sync yet; changes stay queued', 'error'); } refreshQueued(); refreshGuests(fetchGuests).catch(() => {}); }}>Sync now</button></div>
       {/if}
       <Header />
       <main class="main-content">

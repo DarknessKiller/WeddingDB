@@ -80,7 +80,7 @@ import X from 'lucide-svelte/icons/x';
     try {
       allGuests = await publicListGuests({ signal });
       if (req !== guestsRequest) return;
-      cacheGuests(wid, allGuests);
+      cacheGuests(`kiosk_${wid}`, allGuests); // own key: the public list lacks staff fields
       showingCachedGuests = false;
       guestsLoaded = true;
       guestsError = false;
@@ -89,7 +89,7 @@ import X from 'lucide-svelte/icons/x';
       guestsError = true;
       showingCachedGuests = guestsLoaded;
       if (!allGuests.length) {
-        const cached = loadCachedGuests<Guest>(wid);
+        const cached = loadCachedGuests<Guest>(`kiosk_${wid}`);
         if (cached?.length) {
           allGuests = cached;
           showingCachedGuests = true;
