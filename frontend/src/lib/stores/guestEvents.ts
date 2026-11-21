@@ -127,7 +127,7 @@ function handleGuestEvent(event: GuestEvent) {
 	const { type, guest: guestData } = event;
 	if (!guestData) return;
 
-	const guest = eventGuestToGuest(guestData, event.timestamp);
+	const guest = toGuest(guestData, event.timestamp > 0 ? new Date(event.timestamp) : new Date());
 
 	guestList.update((list) => {
 		const idx = list.findIndex((g) => g.id === guest.id);
@@ -193,25 +193,7 @@ function recalculateOccupancy() {
  * (SSE hiccup, reconnect race) instead of waiting for a manual refresh.
  */
 export function applyGuestResponse(resp: GuestResponse) {
-	const guest: Guest = {
-		id: resp.id,
-		name: resp.name,
-		pinyin: resp.pinyin,
-		email: resp.email,
-		rsvp: resp.rsvp as RSVPStatus,
-		pax: resp.pax,
-		tableId: resp.tableId,
-		seatNumber: resp.seatNum,
-		checkedIn: !!resp.checkedInAt,
-		checkedInAt: resp.checkedInAt ? new Date(resp.checkedInAt) : undefined,
-		notes: resp.notes,
-		dietaryRequirements: resp.dietary,
-		isVip: resp.isVip,
-		angbaoAmount: resp.angbaoAmt ?? undefined,
-		giftItem: resp.giftItem ?? undefined,
-		createdAt: new Date(resp.createdAt),
-		updatedAt: new Date(resp.updatedAt)
-	};
+	const guest = toGuest(resp);
 
 	guestList.update((list) => {
 		const idx = list.findIndex((g) => g.id === guest.id);
@@ -228,24 +210,39 @@ export function applyGuestResponse(resp: GuestResponse) {
 	cacheGuestList();
 }
 
-function eventGuestToGuest(d: NonNullable<GuestEvent['guest']>, eventTimestamp: number): Guest {
-	const updatedAt = eventTimestamp > 0 ? new Date(eventTimestamp) : new Date();
+// A guest as the server sends it: REST responses carry timestamps, SSE events do not.
+type GuestWire = Omit<GuestResponse, 'weddingId' | 'createdAt' | 'updatedAt'> & { createdAt?: string; updatedAt?: string };
+
+/** The one server-to-Guest mapper for staff data. Go sends an empty list as null. */
+export function toGuest(r: GuestWire, fallbackTime = new Date()): Guest {
+	const createdAt = r.createdAt ? new Date(r.createdAt) : fallbackTime;
 	return {
-		id: d.id,
-		name: d.name,
-		email: d.email,
-		rsvp: d.rsvp as RSVPStatus,
-		pax: d.pax,
-		tableId: d.tableId,
-		seatNumber: d.seatNum,
-		checkedIn: !!d.checkedInAt,
-		checkedInAt: d.checkedInAt ? new Date(d.checkedInAt) : undefined,
-		notes: d.notes,
-		dietaryRequirements: d.dietary,
-		isVip: d.isVip,
-		angbaoAmount: d.angbaoAmt ?? undefined,
-		giftItem: d.giftItem ?? undefined,
-		createdAt: updatedAt,
-		updatedAt
+		id: r.id,
+		name: r.name,
+		pinyin: r.pinyin,
+		email: r.email || undefined,
+		rsvp: r.rsvp as RSVPStatus,
+		pax: r.pax,
+		tableId: r.tableId ?? null,
+		seatNumber: r.seatNum ?? null,
+		checkedIn: !!r.checkedInAt,
+		checkedInAt: r.checkedInAt ? new Date(r.checkedInAt) : undefined,
+		notes: r.notes ?? '',
+		dietaryRequirements: r.dietary ?? [],
+		isVip: r.isVip,
+		angbaoAmount: r.angbaoAmt ?? undefined,
+		giftItem: r.giftItem ?? undefined,
+		createdAt,
+		updatedAt: r.updatedAt ? new Date(r.updatedAt) : createdAt
+	};
+}
+
+/** Restore a roster read back from the offline cache: JSON turned its dates into strings. */
+export function reviveCachedGuest(g: Guest): Guest {
+	return {
+		...g,
+		checkedInAt: g.checkedInAt ? new Date(g.checkedInAt) : undefined,
+		createdAt: new Date(g.createdAt),
+		updatedAt: g.updatedAt ? new Date(g.updatedAt) : undefined
 	};
 }

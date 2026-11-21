@@ -8,12 +8,12 @@
   import { weddingId, setWeddingId } from '#lib/stores/weddingId.ts';
   import { weddingTitle } from '#lib/stores/weddingTitle.ts';
   import { validateToken } from '#lib/utils/auth.ts';
-  import { fetchAllGuests } from '#lib/api/guests.ts';
+  import { fetchAllGuests, isNetworkError } from '#lib/api/guests.ts';
   import { syncQueue, loadCachedGuests, queuedCount } from '#lib/offline/queue.ts';
   import { getWedding } from '#lib/api/weddings.ts';
   import { listTables } from '#lib/api/tables.ts';
-  import { initializeSSE, refreshGuests, clearGuests, guestList } from '#lib/stores/guestEvents.ts';
-  import type { BanquetTable } from '#lib/types/index.ts';
+  import { initializeSSE, refreshGuests, clearGuests, guestList, toGuest, reviveCachedGuest } from '#lib/stores/guestEvents.ts';
+  import type { BanquetTable, Guest } from '#lib/types/index.ts';
 
   let { children } = $props();
 
@@ -32,32 +32,20 @@
     queued = queuedCount(wid);
   }
 
-  const toGuest = (g: any) => {
-    const createdAt = g.createdAt ? new Date(g.createdAt) : new Date();
-    return {
-      id: g.id, name: g.name, email: g.email,
-      pinyin: g.pinyin,
-      rsvp: g.rsvp as any, pax: g.pax, tableId: g.tableId, seatNumber: g.seatNum,
-      checkedIn: !!g.checkedInAt, checkedInAt: g.checkedInAt ? new Date(g.checkedInAt) : undefined,
-      notes: g.notes, dietaryRequirements: g.dietary ?? [], isVip: g.isVip,
-      angbaoAmount: g.angbaoAmt ?? undefined, giftItem: g.giftItem ?? undefined,
-      createdAt, updatedAt: g.updatedAt ? new Date(g.updatedAt) : createdAt,
-    };
-  };
-
   const loadGuests = async (w: string) => {
     try {
-      const guests = (await fetchAllGuests(w)).map(toGuest);
+      const guests = (await fetchAllGuests(w)).map((g) => toGuest(g));
       return guests;
     } catch (e) {
       // Only an unreachable server may fall back to cached data. An HTTP
       // rejection (401/403/404) means the server denied access; serving a
       // cached roster would leak a wedding the user can no longer open. Venue
-      // wifi without internet still reports onLine, so a failed fetch
-      // (TypeError) counts as offline too.
-      if (e instanceof TypeError || (typeof navigator !== 'undefined' && !navigator.onLine)) {
-        const cached = loadCachedGuests<any>(w);
-        if (cached) return (cached as any[]).map(toGuest);
+      // wifi without internet still reports onLine, so a failed or timed-out
+      // fetch counts as offline too.
+      if (isNetworkError(e)) {
+        // The cache holds Guest objects, not server records: only revive the dates.
+        const cached = loadCachedGuests<Guest>(w);
+        if (cached) return cached.map(reviveCachedGuest);
       }
       throw new Error('offline');
     }

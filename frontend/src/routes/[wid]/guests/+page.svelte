@@ -4,11 +4,11 @@
   import { weddingTitle } from '#lib/stores/weddingTitle.ts';
   import { selectedGuest, isDrawerOpen, drawerStartEditing, drawerCreateMode, addToast, showSeatNumbers } from '#lib/stores/index.ts';
   import { weddingId } from '#lib/stores/weddingId.ts';
-  import { guestList } from '#lib/stores/guestEvents.ts';
+  import { guestList, toGuest } from '#lib/stores/guestEvents.ts';
   import { goto } from '$app/navigation';
   import { deleteGuest as apiDeleteGuest, searchGuests, assignSeat, unassignSeat, bulkImportGuests, isNetworkError } from '#lib/api/guests.ts';
   import { rankGuests } from '#lib/utils/guestSearch.ts';
-  import type { GuestResponse, GuestImportData } from '#lib/api/guests.ts';
+  import type { GuestImportData } from '#lib/api/guests.ts';
   import { listTables } from '#lib/api/tables.ts';
   import type { BanquetTable } from '#lib/types/index.ts';
   import Badge from '#lib/components/ui/Badge.svelte';
@@ -65,7 +65,7 @@ import Users from 'lucide-svelte/icons/users';
     try {
       const results = await searchGuests(wid, q);
       if (seq !== searchSeq) return; // stale — discard
-      searchResults = results.map(toGuest);
+      searchResults = results.map((r) => toGuest(r));
       searchError = null;
       currentPage = 0;
     } catch (cause) {
@@ -198,26 +198,6 @@ import Users from 'lucide-svelte/icons/users';
   let displayGuests = $derived(guests);
   let displayTotal = $derived(filtered.length);
   let totalPages = $derived(Math.ceil(displayTotal / pageSize));
-
-  function toGuest(r: GuestResponse): Guest {
-    return {
-      id: r.id,
-      name: r.name,
-      email: r.email || undefined,
-      rsvp: r.rsvp as RSVPStatus,
-      pax: r.pax,
-      tableId: r.tableId ?? null,
-      seatNumber: r.seatNum,
-      checkedIn: !!r.checkedInAt,
-      checkedInAt: r.checkedInAt ? new Date(r.checkedInAt) : undefined,
-      notes: r.notes,
-      dietaryRequirements: r.dietary ?? [],
-      isVip: r.isVip,
-      angbaoAmount: r.angbaoAmt ?? undefined,
-      giftItem: r.giftItem ?? undefined,
-      createdAt: new Date(r.createdAt),
-    };
-  }
 
   const allColumns = [
     { key: 'name', label: 'Name' },

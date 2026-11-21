@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { get } from 'svelte/store';
-import { seedGuests, applyGuestResponse, guestList } from './guestEvents';
+import { seedGuests, applyGuestResponse, guestList, toGuest, reviveCachedGuest } from './guestEvents';
 import type { GuestResponse } from '#lib/api/guests.ts';
 
 vi.mock('#lib/stores/index.ts', () => ({
@@ -42,3 +42,17 @@ describe('applyGuestResponse', () => {
 		expect(list[0].name).toBe('Alicia');
 	});
 });
+
+describe('toGuest', () => {
+	it('maps a null dietary list (Go nil slice) to an empty array', () => {
+		const g = toGuest({ ...resp('g1'), dietary: null as unknown as string[] });
+		expect(g.dietaryRequirements).toEqual([]);
+	});
+
+	it('round-trips a cached roster without losing seat or angbao', () => {
+		const g = toGuest({ ...resp('g1'), tableId: 't1', seatNum: 3, angbaoAmt: 200, checkedInAt: '2026-01-01T10:00:00Z' });
+		const back = reviveCachedGuest(JSON.parse(JSON.stringify(g)));
+		expect(back).toEqual(g);
+	});
+});
+
