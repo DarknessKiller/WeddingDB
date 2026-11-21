@@ -124,7 +124,7 @@ func guestCountLocked(tx *gorm.DB, weddingID uuid.UUID) (int, error) {
 	return total, nil
 }
 
-func (s *GuestService) createGuestTx(ctx context.Context, tx *gorm.DB, g *models.GuestRecord, syncWrite bool) error {
+func (s *GuestService) createGuestTx(ctx context.Context, tx *gorm.DB, g *models.GuestRecord) error {
 	if err := validateGuestFields(g); err != nil {
 		return err
 	}
@@ -146,11 +146,7 @@ func (s *GuestService) createGuestTx(ctx context.Context, tx *gorm.DB, g *models
 	if total+g.Pax > MaxGuestsPerWedding {
 		return guestCapError(total, g.Pax)
 	}
-	repo := repository.NewGuestRepo(tx)
-	if syncWrite {
-		return repo.SyncCreate(ctx, g)
-	}
-	return repo.Create(ctx, g)
+	return repository.NewGuestRepo(tx).Create(ctx, g)
 }
 
 // updateGuestTx writes a full guest row. A non-nil base is the updated_at the
@@ -205,7 +201,7 @@ func (s *GuestService) Get(ctx context.Context, id, weddingID uuid.UUID) (*model
 
 func (s *GuestService) Create(ctx context.Context, g *models.GuestRecord) error {
 	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		return s.createGuestTx(ctx, tx, g, false)
+		return s.createGuestTx(ctx, tx, g)
 	})
 	if err != nil {
 		return err
@@ -763,7 +759,7 @@ func (s *GuestService) applySyncMutation(ctx context.Context, weddingID uuid.UUI
 			g.SeatNum = m.Payload.SeatNum
 		}
 		if err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-			return s.createGuestTx(ctx, tx, g, true)
+			return s.createGuestTx(ctx, tx, g)
 		}); err != nil {
 			return syncFailed(m, err)
 		}

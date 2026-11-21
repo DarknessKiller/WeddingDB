@@ -165,12 +165,6 @@ func (r *GuestRepo) Delete(ctx context.Context, id, weddingID uuid.UUID) error {
 	return checkAffected(res)
 }
 
-// SyncCreate creates a guest with explicit CreatedAt/UpdatedAt for offline sync LWW.
-func (r *GuestRepo) SyncCreate(ctx context.Context, g *models.GuestRecord) error {
-	g.NamePinyin = models.GenerateNamePinyin(g.Name)
-	return r.db.WithContext(ctx).Create(g).Error
-}
-
 // SyncUpdate updates a guest and forces UpdatedAt to the provided time for LWW.
 func (r *GuestRepo) SyncUpdate(ctx context.Context, g *models.GuestRecord) error {
 	g.NamePinyin = models.GenerateNamePinyin(g.Name)
