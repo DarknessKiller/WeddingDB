@@ -37,7 +37,7 @@ func RegisterRoutes(
 
 	// ── Public guest endpoints (kiosk, no auth) ──
 	pubApi := fuego.Group(s, "/api/public")
-	pubGuestHandler := NewPublicGuestHandler(guestService)
+	pubGuestHandler := NewPublicGuestHandler(guestService, weddingService)
 	pubKioskHandler := NewPublicKioskHandler(weddingService)
 	fuego.Use(pubApi, PublicRateMiddleware(authService))
 	pubScoped := fuego.Group(pubApi, "/weddings/{wid}")
