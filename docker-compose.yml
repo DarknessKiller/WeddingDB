@@ -13,6 +13,8 @@ services:
       ADMIN_BOOTSTRAP_PASSWORD: "${ADMIN_BOOTSTRAP_PASSWORD:-}"
       # Self-registration at /register is off unless set to "true"; admins create accounts instead.
       ALLOW_REGISTRATION: "${ALLOW_REGISTRATION:-}"
+      # Set to "true" to stop serving the OpenAPI spec and Swagger UI.
+      DISABLE_API_DOCS: "${DISABLE_API_DOCS:-}"
       # Rate limits key on the client IP from X-Forwarded-For. Without this the
       # proxy's own address is used for every request and one client can lock
       # everyone out. A host proxy reaches the published port through this

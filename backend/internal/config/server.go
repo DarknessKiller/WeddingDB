@@ -26,6 +26,7 @@ func NewFuegoServer(env Env, version string, opts ...fuego.ServerOption) *fuego.
 		fuego.WithMaxBodySize(1024 * 1024),
 		fuego.WithEngineOptions(
 			fuego.WithOpenAPIConfig(fuego.OpenAPIConfig{
+				Disabled: env.DisableAPIDocs,
 				Info: &openapi3.Info{
 					Title:       "WeddingDB API",
 					Description: "Wedding guest management and seating API",

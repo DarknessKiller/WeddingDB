@@ -13,6 +13,8 @@ type Env struct {
 	JWTSecret   string
 	Port        string
 	PublicURL   string
+	// DisableAPIDocs turns off the OpenAPI spec and Swagger UI routes.
+	DisableAPIDocs bool
 }
 
 func LoadEnv() Env {
@@ -37,6 +39,8 @@ func LoadEnv() Env {
 		JWTSecret:   secret,
 		Port:        port,
 		PublicURL:   publicURL,
+		// DISABLE_API_DOCS=true hides the public map of every API route.
+		DisableAPIDocs: os.Getenv("DISABLE_API_DOCS") == "true",
 	}
 }
 
