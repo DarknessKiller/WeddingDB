@@ -214,6 +214,7 @@ import X from 'lucide-svelte/icons/x';
     document.addEventListener('pointerdown', onKioskActivity, { passive: true });
     document.addEventListener('keydown', onKioskActivity);
     document.addEventListener('visibilitychange', onKioskVisible);
+    document.addEventListener('fullscreenchange', onFullscreenChange);
   });
 
   onDestroy(() => {
@@ -226,19 +227,24 @@ import X from 'lucide-svelte/icons/x';
     pageAbort.abort(); // cancel any in-flight initial fetches
     pageAbort = new AbortController(); // fresh controller if component remounts
     document.removeEventListener('visibilitychange', onKioskVisible);
+    document.removeEventListener('fullscreenchange', onFullscreenChange);
     if (mqHandler) {
       const mq = window.matchMedia('(prefers-reduced-motion: reduce)');
       mq.removeEventListener('change', mqHandler);
     }
   });
 
+  // The browser is the source of truth: Esc/F11 exits fullscreen without
+  // calling toggleFullscreen, so the button state follows fullscreenchange.
+  function onFullscreenChange() {
+    isFullscreen = !!document.fullscreenElement;
+  }
+
   function toggleFullscreen() {
     if (!document.fullscreenElement) {
-      document.documentElement.requestFullscreen();
-      isFullscreen = true;
+      document.documentElement.requestFullscreen().catch(() => {});
     } else {
-      document.exitFullscreen();
-      isFullscreen = false;
+      document.exitFullscreen().catch(() => {});
     }
   }
 
