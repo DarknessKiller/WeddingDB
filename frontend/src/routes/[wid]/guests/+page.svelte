@@ -14,6 +14,7 @@
   import ConfirmDialog from '#lib/components/ui/ConfirmDialog.svelte';
   import MoveGuestDrawer from '#lib/components/ui/MoveGuestDrawer.svelte';
   import { getInitials } from '#lib/utils/index.ts';
+  import { trapFocus } from '#lib/utils/focus.ts';
   import { parseGuestCSV, type ImportProblem } from '#lib/utils/csv.ts';
   import Search from 'lucide-svelte/icons/search';
 import Download from 'lucide-svelte/icons/download';
@@ -524,6 +525,11 @@ import Users from 'lucide-svelte/icons/users';
   }
 </script>
 
+<svelte:window onkeydown={(e) => {
+  if (e.key !== 'Escape' || showDeleteConfirm || showUnassignConfirm) return;
+  if (showImportModal) showImportModal = false;
+  else if (showBulkMoveModal) showBulkMoveModal = false;
+}} />
 <svelte:head> <title>{$weddingTitle ? `${$weddingTitle} – Guests` : 'Guests – WeddingDB'}</title></svelte:head>
 <!-- svelte-ignore a11y_no_static_element_interactions -->
 <!-- svelte-ignore a11y_click_events_have_key_events -->
@@ -622,10 +628,12 @@ import Users from 'lucide-svelte/icons/users';
               </th>
               {#each columns as col}
                 <th
-                  class="px-4 py-3 text-left text-[12px] font-semibold uppercase tracking-wider text-gray-500 cursor-pointer select-none hover:text-gray-700"
-                  onclick={() => toggleSort(col.key)}
+                  class="px-4 py-3 text-left text-[12px] font-semibold uppercase tracking-wider text-gray-500"
+                  aria-sort={sortCol === col.key ? (sortDir === 'asc' ? 'ascending' : 'descending') : 'none'}
                 >
-                  <span class="inline-flex items-center gap-1">{col.label} <ArrowUpDown class="w-3 h-3" /></span>
+                  <button type="button" class="inline-flex items-center gap-1 uppercase tracking-wider cursor-pointer select-none hover:text-gray-700" onclick={() => toggleSort(col.key)}>
+                    {col.label} <ArrowUpDown class="w-3 h-3" aria-hidden="true" />
+                  </button>
                 </th>
               {/each}
               <th class="px-4 py-3 text-left text-[12px] font-semibold uppercase tracking-wider text-gray-500">Notes</th>
@@ -646,7 +654,8 @@ import Users from 'lucide-svelte/icons/users';
                 <td class="px-4 py-3.5">
                   <div class="flex items-center gap-3">
                     <div class="w-8 h-8 rounded-full bg-red-50 flex items-center justify-center text-red text-xs font-bold flex-shrink-0">{getInitials(guest.name)}</div>
-                    <span class="font-semibold text-gray-900">{guest.name}</span>
+                    <!-- The row click is mouse-only; this button is the keyboard way in. -->
+                    <button type="button" class="font-semibold text-gray-900 text-left hover:underline" onclick={(e) => { e.stopPropagation(); openGuest(guest); }}>{guest.name}</button>
                   </div>
                 </td>
                 <td class="px-4 py-3.5"><Badge status={guest.rsvp as RSVPStatus} /></td>
@@ -703,8 +712,9 @@ import Users from 'lucide-svelte/icons/users';
   <div class="fixed inset-0 z-[700] flex items-center justify-center bg-black/30 backdrop-blur-md" onclick={() => showBulkMoveModal = false}>
     <!-- svelte-ignore a11y_no_static_element_interactions -->
     <!-- svelte-ignore a11y_click_events_have_key_events -->
-    <div class="bg-white/95 backdrop-blur-xl rounded-2xl shadow-2xl w-full max-w-md p-6" onclick={(e) => e.stopPropagation()}>
-      <h3 class="text-lg font-semibold text-gray-900 mb-4">Move {selectedIds.size} Guests</h3>
+    <div class="bg-white/95 backdrop-blur-xl rounded-2xl shadow-2xl w-full max-w-md p-6" onclick={(e) => e.stopPropagation()}
+      role="dialog" aria-modal="true" aria-labelledby="bulk-move-title" tabindex="-1" use:trapFocus>
+      <h3 id="bulk-move-title" class="text-lg font-semibold text-gray-900 mb-4">Move {selectedIds.size} Guests</h3>
       <div class="space-y-3 mb-6">
         <div>
           <label for="bulk-move-table" class="block text-xs font-medium text-gray-500 mb-1">New Table</label>
@@ -782,18 +792,20 @@ import Users from 'lucide-svelte/icons/users';
 <!-- svelte-ignore a11y_click_events_have_key_events -->
 <!-- svelte-ignore a11y_no_static_element_interactions -->
     <div class="absolute inset-0 bg-black/30 backdrop-blur-md" onclick={() => showImportModal = false} role="presentation"></div>
-    <div class="relative bg-white/95 backdrop-blur-xl rounded-2xl shadow-2xl w-full max-w-lg overflow-hidden">
+    <div class="relative bg-white/95 backdrop-blur-xl rounded-2xl shadow-2xl w-full max-w-lg overflow-hidden"
+      role="dialog" aria-modal="true" aria-labelledby="import-title" tabindex="-1" use:trapFocus>
       <div class="flex items-center justify-between p-5 border-b border-gray-100">
-        <h3 class="font-bold text-gray-900">Import Guests from CSV</h3>
-        <button onclick={() => showImportModal = false} class="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-gray-100 transition-colors">
+        <h3 id="import-title" class="font-bold text-gray-900">Import Guests from CSV</h3>
+        <button onclick={() => showImportModal = false} aria-label="Close import dialog" class="w-11 h-11 rounded-lg flex items-center justify-center hover:bg-gray-100 transition-colors">
           <X class="w-4 h-4 text-gray-500" />
         </button>
       </div>
       <div class="p-5 space-y-4">
         <p class="text-sm text-gray-600">Upload a CSV file with columns: <strong>name</strong> (required), email, pax, rsvp, vip, notes, dietary, table, seat</p>
 
-        <div class="border-2 border-dashed border-gray-200 rounded-xl p-6 text-center hover:border-red/50 transition-colors">
-          <input type="file" accept=".csv" onchange={handleImportFile} class="hidden" id="csv-input" />
+        <div class="border-2 border-dashed border-gray-200 rounded-xl p-6 text-center hover:border-red/50 transition-colors has-focus-visible:outline-2 has-focus-visible:outline-offset-2 has-focus-visible:outline-red">
+          <!-- sr-only, not hidden: the file input stays in the tab order -->
+          <input type="file" accept=".csv" onchange={handleImportFile} class="sr-only" id="csv-input" />
           <label for="csv-input" class="cursor-pointer">
             <FileText class="w-8 h-8 text-gray-500 mx-auto mb-2" />
             {#if importFile}
