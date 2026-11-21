@@ -350,55 +350,102 @@ func (s *AuthService) CheckAuthRate(ctx context.Context, ip string) error {
 	return s.rateLimit(ctx, key, 25, time.Second)
 }
 
-// CheckLoginAccountRate locks one account after 25 failed logins per 15 min,
-// scaled to the 25/s per-IP allowance.
-func (s *AuthService) CheckLoginAccountRate(ctx context.Context, email, ip string) error {
-	return s.checkRateLimit(ctx, loginFailKey(email, ip), 25, 15*time.Minute)
-}
+// Password-guess limits. A check against one account reserves a slot in
+// that account's windows before bcrypt runs, so a burst of parallel guesses
+// cannot all pass a read-only check; a check that proves the password gives
+// its slots back. The per-IP window counts only wrong passwords, so staff
+// behind one venue NAT can all sign in at once.
+const (
+	loginIPLimit    = 10 // wrong passwords per IP per minute, shared with register
+	loginAcctLimit  = 25 // per email+IP per 15 minutes
+	loginEmailLimit = 50 // per email across all IPs per 15 minutes
+)
 
-// loginFailKey scopes lockout to email+IP so an attacker cannot lock a victim out from elsewhere.
-func loginFailKey(email, ip string) string {
-	return "login:acct:" + strings.ToLower(strings.TrimSpace(email)) + ":" + ip
-}
+func normEmail(email string) string { return strings.ToLower(strings.TrimSpace(email)) }
+
+// loginFailKey scopes one lockout to email+IP, so guesses from one place
+// lock that place out well before the per-email cap is reached.
+func loginFailKey(email, ip string) string { return "login:acct:" + normEmail(email) + ":" + ip }
+
+// loginEmailKey caps guesses against one account from many IPs. Anyone can
+// spend it, so it is set well above what a real user mistypes.
+func loginEmailKey(email string) string { return "login:email:" + normEmail(email) }
 
 // CheckCredentialIPRate caps register attempts at 10 per minute per IP. It
-// shares its counter with failed logins (RecordLoginFailure).
+// shares its counter with wrong passwords (LoginFailed).
 func (s *AuthService) CheckCredentialIPRate(ctx context.Context, ip string) error {
-	return s.rateLimit(ctx, credIPKey(ip), 10, time.Minute)
-}
-
-// CheckLoginIPRate blocks an IP after 10 failed logins per minute without
-// counting this attempt: staff behind one venue NAT can all log in at once.
-func (s *AuthService) CheckLoginIPRate(ctx context.Context, ip string) error {
-	return s.checkRateLimit(ctx, credIPKey(ip), 10, time.Minute)
+	return s.rateLimit(ctx, credIPKey(ip), loginIPLimit, time.Minute)
 }
 
 func credIPKey(ip string) string { return "cred:ip:" + ip }
 
-// RecordLoginFailure counts a failed password against the account lockout
-// and the per-IP credential limit.
-func (s *AuthService) RecordLoginFailure(ctx context.Context, email, ip string) {
-	s.recordFailure(ctx, loginFailKey(email, ip), 15*time.Minute)
-	s.recordFailure(ctx, credIPKey(ip), time.Minute)
+type loginSlot struct {
+	key    string
+	limit  int64
+	window time.Duration
 }
 
-func (s *AuthService) checkRateLimit(ctx context.Context, key string, limit int64, window time.Duration) error {
-	n, err := s.redisClient.Get(ctx, "ratelimit:"+key).Int64()
-	if err != nil { // redis.Nil = under limit; any other error = fail open
-		if !errors.Is(err, redis.Nil) {
-			slog.Warn("rate limit unavailable, failing open", "key", key, "err", err)
-		}
-		return nil
+func loginSlots(email, ip string) []loginSlot {
+	return []loginSlot{
+		{loginFailKey(email, ip), loginAcctLimit, 15 * time.Minute},
+		{loginEmailKey(email), loginEmailLimit, 15 * time.Minute},
 	}
-	if n >= limit {
-		return errors.New("too many attempts, please try again later")
+}
+
+var errTooManyAttempts = errors.New("too many attempts, try again later")
+
+// ReserveLoginAttempt checks the per-IP failure count, then counts this
+// password check against the account's limits before it runs. It fails
+// closed: an open Redis outage would allow unlimited guesses (and a correct
+// one already fails then, since minting needs Redis). A refused attempt
+// stays counted.
+func (s *AuthService) ReserveLoginAttempt(ctx context.Context, email, ip string) error {
+	n, err := s.redisClient.Get(ctx, "ratelimit:"+credIPKey(ip)).Int64()
+	if err != nil && !errors.Is(err, redis.Nil) {
+		slog.Warn("rate limit unavailable, failing closed", "key", credIPKey(ip), "err", err)
+		return ErrRateLimitUnavailable
+	}
+	if n >= loginIPLimit {
+		return errTooManyAttempts
+	}
+	for _, sl := range loginSlots(email, ip) {
+		n, err := s.incrWindow(ctx, sl.key, sl.window)
+		if err != nil {
+			slog.Warn("rate limit unavailable, failing closed", "key", sl.key, "err", err)
+			return ErrRateLimitUnavailable
+		}
+		if n > sl.limit {
+			return errTooManyAttempts
+		}
 	}
 	return nil
 }
 
-func (s *AuthService) recordFailure(ctx context.Context, key string, window time.Duration) {
-	if _, err := s.incrWindow(ctx, key, window); err != nil {
-		slog.Warn("record login failure failed", "key", key, "err", err)
+// LoginFailed records a wrong password against the per-IP window. The
+// account slots it reserved stay spent.
+func (s *AuthService) LoginFailed(ctx context.Context, ip string) {
+	if _, err := s.incrWindow(ctx, credIPKey(ip), time.Minute); err != nil {
+		slog.Warn("record login failure failed", "ip", ip, "err", err)
+	}
+}
+
+// releaseSlot decrements a live, positive window only: DECR on an expired
+// key would create it at -1 with no TTL, and a release that outlived its own
+// window must not push the next window below zero.
+var releaseSlot = redis.NewScript(`
+local n = tonumber(redis.call('GET', KEYS[1]))
+if n ~= nil and n > 0 then
+	redis.call('DECR', KEYS[1])
+end
+return 0`)
+
+// ReleaseLoginAttempt gives back the account slots of a check that did not
+// end in a wrong password.
+func (s *AuthService) ReleaseLoginAttempt(ctx context.Context, email, ip string) {
+	for _, sl := range loginSlots(email, ip) {
+		if err := releaseSlot.Run(ctx, s.redisClient, []string{"ratelimit:" + sl.key}).Err(); err != nil {
+			slog.Warn("release login attempt failed", "key", sl.key, "err", err)
+		}
 	}
 }
 

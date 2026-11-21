@@ -119,17 +119,16 @@ func (h *AuthHandler) Login(c fuego.ContextWithBody[LoginRequest]) (TokenRespons
 	if err := h.authService.CheckAuthRate(c.Context(), ip); err != nil {
 		return TokenResponse{}, fuego.HTTPError{Status: http.StatusTooManyRequests, Title: err.Error()}
 	}
-	if err := h.authService.CheckLoginIPRate(c.Context(), ip); err != nil {
-		return TokenResponse{}, fuego.HTTPError{Status: http.StatusTooManyRequests, Title: err.Error()}
-	}
-	if err := h.authService.CheckLoginAccountRate(c.Context(), body.Email, ip); err != nil {
-		return TokenResponse{}, fuego.HTTPError{Status: http.StatusTooManyRequests, Title: err.Error()}
+	if err := h.authService.ReserveLoginAttempt(c.Context(), body.Email, ip); err != nil {
+		return TokenResponse{}, loginLimitError(err)
 	}
 	result, err := h.authService.Login(c.Context(), body.Email, body.Password)
 	if errors.Is(err, services.ErrInvalidCredentials) {
-		h.authService.RecordLoginFailure(c.Context(), body.Email, ip)
+		// A wrong password keeps its reserved slots and counts against the IP.
+		h.authService.LoginFailed(c.Context(), ip)
 		return TokenResponse{}, fuego.UnauthorizedError{Title: "invalid credentials"}
 	}
+	h.authService.ReleaseLoginAttempt(c.Context(), body.Email, ip)
 	if errors.Is(err, services.ErrSessionsChanged) {
 		return TokenResponse{}, fuego.ConflictError{Title: err.Error()}
 	}
@@ -250,13 +249,14 @@ func (h *AuthHandler) ChangePassword(c fuego.ContextWithBody[ChangePasswordReque
 	forced := ForcePasswordChangeFromContext(ctx)
 	if !forced {
 		ip := clientIP(c.Request())
-		if err := h.authService.CheckLoginAccountRate(ctx, admin.Email, ip); err != nil {
-			return nil, fuego.HTTPError{Status: http.StatusTooManyRequests, Title: err.Error()}
+		if err := h.authService.ReserveLoginAttempt(ctx, admin.Email, ip); err != nil {
+			return nil, loginLimitError(err)
 		}
 		if err := bcrypt.CompareHashAndPassword([]byte(admin.Password), []byte(body.CurrentPassword)); err != nil {
-			h.authService.RecordLoginFailure(ctx, admin.Email, ip)
+			h.authService.LoginFailed(ctx, ip)
 			return nil, fuego.UnauthorizedError{Title: "Current password is incorrect"}
 		}
+		h.authService.ReleaseLoginAttempt(ctx, admin.Email, ip)
 	}
 	hash, err := bcrypt.GenerateFromPassword([]byte(body.Password), bcrypt.DefaultCost)
 	if err != nil {
