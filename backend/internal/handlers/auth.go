@@ -8,6 +8,7 @@ import (
 	"net"
 	"net/http"
 	"net/mail"
+	"net/netip"
 	"os"
 	"unicode"
 	"unicode/utf8"
@@ -318,11 +319,21 @@ func (h *AuthHandler) Register(c fuego.ContextWithBody[RegisterRequest]) (any, e
 }
 
 // clientIP strips the port from RemoteAddr (already XFF-normalized by
-// ProxyAwareMiddleware when behind a trusted proxy).
+// ProxyAwareMiddleware when behind a trusted proxy). An IPv6 client is keyed
+// by its /64: one host usually owns the whole prefix and can rotate through
+// it, so a per-address key would never reach any rate limit.
 func clientIP(r *http.Request) string {
 	host, _, err := net.SplitHostPort(r.RemoteAddr)
 	if err != nil {
-		return r.RemoteAddr
+		host = r.RemoteAddr
 	}
-	return host
+	addr, err := netip.ParseAddr(host)
+	if err != nil || !addr.Is6() || addr.Is4In6() {
+		return host
+	}
+	prefix, err := addr.WithZone("").Prefix(64)
+	if err != nil {
+		return host
+	}
+	return prefix.String()
 }
