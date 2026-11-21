@@ -240,7 +240,8 @@ import Users from 'lucide-svelte/icons/users';
       ].map(csvField);
     });
     const csv = [headers.map(csvField), ...rows].map(r => r.join(',')).join('\n');
-    const blob = new Blob([csv], { type: 'text/csv' });
+    // BOM: without it Excel on Windows reads UTF-8 as the local code page and garbles Chinese names.
+    const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
@@ -367,7 +368,13 @@ import Users from 'lucide-svelte/icons/users';
     const reader = new FileReader();
     reader.onload = () => {
       try {
-        const guests = parseGuestCSV(reader.result as string);
+        const text = reader.result as string;
+        // U+FFFD means the bytes were not UTF-8, e.g. Excel's default GBK "CSV" on Chinese Windows.
+        if (text.includes('\uFFFD')) {
+          importError = 'This file is not UTF-8, so names would import garbled. In Excel, save it as "CSV UTF-8 (Comma delimited)" and try again.';
+          return;
+        }
+        const guests = parseGuestCSV(text);
         if (guests.length === 0) {
           importError = 'No valid guests found. Make sure CSV has a "name" column.';
           return;
