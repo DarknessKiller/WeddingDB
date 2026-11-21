@@ -49,8 +49,13 @@ input without a server round trip.
 ### Backend
 
 **`backend/internal/services/guest_service.go`** — `Sync(ctx, weddingID,
-mutations)` applies each mutation in order. A missing guest is skipped unless
-the op is `create`. Older mutations are skipped and return the server record.
+mutations)` applies each mutation in order. A missing guest is created by
+`create` and skipped by `update`, `checkin` and `checkout`; `delete` of a
+missing guest reports applied, since the guest is already gone. Older mutations
+are skipped and return the server record; an older `delete` fails and stays
+queued. An `update` or `delete` whose `baseUpdatedAt` no longer matches the row
+fails without retry. An `update` the row already reflects reports applied, so a
+replay from a fast-clocked device is not refused as stale.
 Applied check-in/check-out mutations publish SSE events. Check-in notes are
 appended with `appendNote`.
 
@@ -119,7 +124,7 @@ keystroke    -> rankGuests(allGuests, query) in memory
              -> exact name, name prefix, pinyin prefix, name substring, pinyin substring
 ```
 
-No request is made while typing. A failed load falls back to `offline_cache_{wid}`.
+No request is made while typing. A failed load falls back to `kiosk_cache_{wid}`.
 
 ## Data flow: kiosk idle reset
 

@@ -18,9 +18,10 @@ using it.
 ## Decision
 
 1. **Guest data is local-first at the door.** The staff layout caches the guest
-   list in `localStorage`; the kiosk caches the public guest list under the same
-   per-wedding key. A failed fetch falls back to the cache instead of an empty
-   screen.
+   list in `sessionStorage`, so a closed tab leaves no roster behind; the kiosk
+   caches the public guest list in `localStorage` under its own per-wedding key
+   (`kiosk_cache_{wid}`). A failed fetch falls back to the cache instead of an
+   empty screen.
 2. **Search runs on the device.** The public guest payload includes the
    server-generated `namePinyin`. The kiosk and staff search rank exact name,
    name prefix, pinyin prefix, name substring, then pinyin substring, with no
