@@ -34,7 +34,7 @@ type AdminRequest struct {
 func (h *AdminHandler) List(c fuego.ContextNoBody) (any, error) {
 	ctx := c.Context()
 	if err := requireAdmin(ctx); err != nil {
-		return nil, fuego.UnauthorizedError{Title: err.Error()}
+		return nil, err
 	}
 	return h.adminRepo.List(ctx)
 }
@@ -42,7 +42,7 @@ func (h *AdminHandler) List(c fuego.ContextNoBody) (any, error) {
 func (h *AdminHandler) Create(c fuego.ContextWithBody[AdminRequest]) (any, error) {
 	ctx := c.Context()
 	if err := requireAdmin(ctx); err != nil {
-		return nil, fuego.UnauthorizedError{Title: err.Error()}
+		return nil, err
 	}
 	body, err := c.Body()
 	if err != nil {
@@ -95,7 +95,7 @@ func (h *AdminHandler) Create(c fuego.ContextWithBody[AdminRequest]) (any, error
 func (h *AdminHandler) Delete(c fuego.ContextWithBody[any]) (any, error) {
 	ctx := c.Context()
 	if err := requireAdmin(ctx); err != nil {
-		return nil, fuego.UnauthorizedError{Title: err.Error()}
+		return nil, err
 	}
 	adminID := AdminIDFromContext(ctx)
 	id, err := DecodeID(c.PathParam("id"))
@@ -143,7 +143,7 @@ type AssignWeddingsRequest struct {
 func (h *AdminHandler) AssignWeddings(c fuego.ContextWithBody[AssignWeddingsRequest]) (any, error) {
 	ctx := c.Context()
 	if err := requireAdmin(ctx); err != nil {
-		return nil, fuego.UnauthorizedError{Title: err.Error()}
+		return nil, err
 	}
 	body, err := c.Body()
 	if err != nil {
@@ -194,7 +194,7 @@ func (h *AdminHandler) AssignWeddings(c fuego.ContextWithBody[AssignWeddingsRequ
 func (h *AdminHandler) GetUserWeddings(c fuego.ContextNoBody) (any, error) {
 	ctx := c.Context()
 	if err := requireAdmin(ctx); err != nil {
-		return nil, fuego.UnauthorizedError{Title: err.Error()}
+		return nil, err
 	}
 	id, err := DecodeID(c.PathParam("id"))
 	if err != nil {
@@ -214,7 +214,7 @@ type ResetPasswordRequest struct {
 func (h *AdminHandler) ResetPassword(c fuego.ContextWithBody[ResetPasswordRequest]) (any, error) {
 	ctx := c.Context()
 	if err := requireAdmin(ctx); err != nil {
-		return nil, fuego.UnauthorizedError{Title: err.Error()}
+		return nil, err
 	}
 	body, err := c.Body()
 	if err != nil {
@@ -260,7 +260,7 @@ type UpdateRoleRequest struct {
 func (h *AdminHandler) UpdateRole(c fuego.ContextWithBody[UpdateRoleRequest]) (any, error) {
 	ctx := c.Context()
 	if err := requireAdmin(ctx); err != nil {
-		return nil, fuego.UnauthorizedError{Title: err.Error()}
+		return nil, err
 	}
 	body, err := c.Body()
 	if err != nil {
@@ -314,7 +314,7 @@ func (h *AdminHandler) UpdateRole(c fuego.ContextWithBody[UpdateRoleRequest]) (a
 // RevokeUser bumps the target user's token version in Redis, invalidating all their active tokens.
 func (h *AdminHandler) RevokeUser(c fuego.ContextNoBody) (any, error) {
 	if err := requireAdmin(c.Context()); err != nil {
-		return nil, fuego.UnauthorizedError{Title: err.Error()}
+		return nil, err
 	}
 
 	callerID := AdminIDFromContext(c.Context())

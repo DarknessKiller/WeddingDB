@@ -60,7 +60,7 @@ func (h *WeddingHandler) Get(c fuego.ContextNoBody) (any, error) {
 func (h *WeddingHandler) Create(c fuego.ContextWithBody[WeddingRequest]) (any, error) {
 	ctx := c.Context()
 	if err := requireAdmin(ctx); err != nil {
-		return nil, fuego.UnauthorizedError{Title: err.Error()}
+		return nil, err
 	}
 	body, err := c.Body()
 	if err != nil {
@@ -234,7 +234,7 @@ func (h *WeddingHandler) UpdateKioskSettings(c fuego.ContextWithBody[KioskSettin
 func (h *WeddingHandler) Delete(c fuego.ContextWithBody[any]) (any, error) {
 	ctx := c.Context()
 	if err := requireAdmin(ctx); err != nil {
-		return nil, fuego.UnauthorizedError{Title: err.Error()}
+		return nil, err
 	}
 	id, err := DecodeID(c.PathParam("id"))
 	if err != nil {

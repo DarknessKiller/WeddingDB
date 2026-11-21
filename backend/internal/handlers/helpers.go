@@ -39,10 +39,11 @@ func DecodeID(s string) (uuid.UUID, error) {
 	return middleware.DecodeWIDString(s)
 }
 
-// requireAdmin returns an error if the caller is not admin.
+// requireAdmin answers 403 when the caller is signed in but not an admin. Not
+// 401: the client reads 401 as an expired session and rotates its tokens.
 func requireAdmin(ctx context.Context) error {
 	if RoleFromContext(ctx) != "admin" {
-		return errUnauthorized("admin role required")
+		return fuego.ForbiddenError{Title: "admin role required"}
 	}
 	return nil
 }
@@ -72,9 +73,3 @@ func requireWeddingAccess(ctx context.Context, adminRepo *repository.AdminRepo, 
 	}
 	return nil
 }
-
-type unauthorizedError struct{ msg string }
-
-func (e unauthorizedError) Error() string { return e.msg }
-
-func errUnauthorized(msg string) error { return unauthorizedError{msg} }

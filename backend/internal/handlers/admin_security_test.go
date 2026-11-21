@@ -226,3 +226,20 @@ func TestUpdateRole_RevokeFailureKeepsRole(t *testing.T) {
 		t.Errorf("role = %q, want admin (unchanged)", role)
 	}
 }
+
+// A signed-in non-admin gets 403, not 401: the client treats 401 as an
+// expired session and rotates its refresh token before retrying.
+func TestAdminOnly_NonAdminGetsForbidden(t *testing.T) {
+	h := NewAdminHandler(nil, nil)
+	s := fuego.NewServer(fuego.WithoutStartupMessages())
+	fuego.Get(s, "/users", h.List)
+
+	ctx := context.WithValue(context.Background(), middleware.AdminIDKey, uuid.New())
+	ctx = context.WithValue(ctx, middleware.RoleKey, "user")
+	req := httptest.NewRequest(http.MethodGet, "/users", nil).WithContext(ctx)
+	rec := httptest.NewRecorder()
+	s.Mux.ServeHTTP(rec, req)
+	if rec.Code != http.StatusForbidden {
+		t.Errorf("status = %d, want 403", rec.Code)
+	}
+}
