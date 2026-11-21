@@ -47,7 +47,7 @@ func DecodeID(s string) (uuid.UUID, error) {
 // requireAdmin returns an error if the caller is not admin.
 func requireAdmin(ctx context.Context) error {
 	if RoleFromContext(ctx) != "admin" {
-		return errUnauthorized("admin role required")
+		return errForbidden("admin role required")
 	}
 	return nil
 }
@@ -69,16 +69,11 @@ func requireWeddingAccess(ctx context.Context, weddingID uuid.UUID) error {
 	return nil
 }
 
-type unauthorizedError struct{ msg string }
-
-func (e unauthorizedError) Error() string { return e.msg }
-
 type forbiddenError struct{ msg string }
 
 func (e forbiddenError) Error() string { return e.msg }
 
-func errUnauthorized(msg string) error { return unauthorizedError{msg} }
-func errForbidden(msg string) error    { return forbiddenError{msg} }
+func errForbidden(msg string) error { return forbiddenError{msg} }
 
 // notFoundIfMissing maps a missing row to 404 and leaves every other error
 // for the generic 500 path.
