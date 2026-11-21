@@ -124,12 +124,15 @@ export async function uploadFile(file: File): Promise<{ url: string; filename: s
 	const { accessToken } = getAuth();
 	const formData = new FormData();
 	formData.append('file', file);
+	// Uploads get longer than the default deadline: a photo on venue WiFi is slow.
+	const signal = () => withTimeout(null, 60_000);
 	let res = await fetch('/api/upload', {
 		method: 'POST',
 		headers: {
 			Authorization: `Bearer ${accessToken}`
 		},
-		body: formData
+		body: formData,
+		signal: signal()
 	});
 
 	if (res.status === 401) {
@@ -141,7 +144,8 @@ export async function uploadFile(file: File): Promise<{ url: string; filename: s
 				headers: {
 					Authorization: `Bearer ${newToken}`
 				},
-				body: formData
+				body: formData,
+				signal: signal()
 			});
 		}
 	}

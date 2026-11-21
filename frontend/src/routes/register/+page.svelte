@@ -1,6 +1,7 @@
 <script lang="ts">
 
   import { addToast } from '#lib/stores/index.ts';
+  import { withTimeout } from '#lib/utils/index.ts';
   import Eye from 'lucide-svelte/icons/eye';
 import EyeOff from 'lucide-svelte/icons/eye-off';
 import UserPlus from 'lucide-svelte/icons/user-plus';
@@ -34,7 +35,8 @@ import Mail from 'lucide-svelte/icons/mail';
       const res = await fetch('/api/auth/register', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name, email, password })
+        body: JSON.stringify({ name, email, password }),
+        signal: withTimeout()
       });
       if (!res.ok) {
         const err = await res.json().catch(() => ({ title: 'Registration failed' }));

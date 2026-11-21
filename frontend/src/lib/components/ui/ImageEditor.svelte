@@ -40,7 +40,8 @@ import Maximize2 from 'lucide-svelte/icons/maximize-2';
       value = window.location.origin + result.url;
       addToast(`${label} uploaded`, 'success');
     } catch (err: any) {
-      addToast(err.message || 'Upload failed', 'error');
+      // fetch rejects with TypeError offline and DOMException on timeout.
+      addToast(err instanceof TypeError || err instanceof DOMException ? 'Network error' : err.message || 'Upload failed', 'error');
     } finally {
       uploading = false;
       input.value = '';

@@ -2,6 +2,7 @@ import { goto } from '$app/navigation';
 import { getAuth, expireAuth } from '#lib/stores/index.ts';
 import { setWeddingId } from '#lib/stores/weddingId.ts';
 import { refreshAccessToken } from '#lib/api/client.ts';
+import { withTimeout } from '#lib/utils/index.ts';
 
 // Session expiry, not logout: keep the offline queue so queued check-ins sync after login.
 function toLogin() {
@@ -27,7 +28,8 @@ export async function validateToken(): Promise<boolean> {
   let res: Response;
   try {
     res = await fetch('/api/weddings', {
-      headers: { Authorization: `Bearer ${accessToken}` }
+      headers: { Authorization: `Bearer ${accessToken}` },
+      signal: withTimeout()
     });
   } catch {
     return true;

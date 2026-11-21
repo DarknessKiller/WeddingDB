@@ -67,4 +67,16 @@ describe('validateToken', () => {
 		expect(await validateToken()).toBe(true);
 		expect(getAuth().refreshToken).toBe('refresh-1');
 	});
+
+	it('gives up on a hung check so the offline roster still shows', async () => {
+		fetchMock.mockImplementationOnce((_url: string, init: RequestInit) => new Promise((_, reject) => {
+			if (init.signal?.aborted) reject(init.signal.reason);
+			init.signal?.addEventListener('abort', () => reject(init.signal!.reason));
+		}));
+		vi.spyOn(AbortSignal, 'timeout').mockImplementation(() => AbortSignal.abort(new DOMException('timed out', 'TimeoutError')));
+
+		const { validateToken } = await import('./auth');
+
+		expect(await validateToken()).toBe(true);
+	});
 });
