@@ -90,7 +90,7 @@ func (h *TableHandler) Update(c fuego.ContextWithBody[TableRequest]) (any, error
 	}
 	table, err := h.tableService.Get(ctx, id, wid)
 	if err != nil {
-		return nil, fuego.NotFoundError{Title: "Table not found"}
+		return nil, notFoundOr(err, "Table not found")
 	}
 	if strings.TrimSpace(body.Name) == "" {
 		return nil, fuego.BadRequestError{Title: "Name is required"}

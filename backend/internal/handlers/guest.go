@@ -82,7 +82,7 @@ func (h *GuestHandler) Get(c fuego.ContextNoBody) (any, error) {
 	}
 	guest, err := h.guestService.Get(ctx, id, wid)
 	if err != nil {
-		return nil, fuego.NotFoundError{Title: "Guest not found"}
+		return nil, notFoundOr(err, "Guest not found")
 	}
 	return guest, nil
 }
@@ -169,7 +169,7 @@ func (h *GuestHandler) Update(c fuego.ContextWithBody[GuestCreateRequest]) (any,
 	}
 	guest, err := h.guestService.Get(ctx, id, wid)
 	if err != nil {
-		return nil, fuego.NotFoundError{Title: "Guest not found"}
+		return nil, notFoundOr(err, "Guest not found")
 	}
 	guest.Name = body.Name
 	guest.Email = body.Email
@@ -469,4 +469,14 @@ func (h *GuestHandler) Sync(c fuego.ContextWithBody[SyncRequest]) (any, error) {
 		return nil, err
 	}
 	return map[string]any{"results": results}, nil
+}
+
+// notFoundOr answers 404 only when the row is missing. Any other lookup error
+// (pool timeout, dropped connection) goes to the internal error handler as a
+// retryable 500 instead of telling the client the record is gone.
+func notFoundOr(err error, title string) error {
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return fuego.NotFoundError{Title: title}
+	}
+	return err
 }

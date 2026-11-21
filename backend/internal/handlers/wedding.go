@@ -42,7 +42,7 @@ func (h *WeddingHandler) List(c fuego.ContextNoBody) (any, error) {
 	}
 	w, err := h.weddingService.Get(ctx, *wid)
 	if err != nil {
-		return nil, fuego.NotFoundError{Title: "Wedding not found"}
+		return nil, notFoundOr(err, "Wedding not found")
 	}
 	return []models.WeddingEvent{*w}, nil
 }
@@ -108,7 +108,7 @@ func (h *WeddingHandler) Update(c fuego.ContextWithBody[WeddingRequest]) (any, e
 	}
 	w, err := h.weddingService.Get(ctx, id)
 	if err != nil {
-		return nil, fuego.NotFoundError{Title: "Wedding not found"}
+		return nil, notFoundOr(err, "Wedding not found")
 	}
 	name := strings.TrimSpace(body.Name)
 	if name == "" {
@@ -165,7 +165,7 @@ func (h *WeddingHandler) UpdateKioskSettings(c fuego.ContextWithBody[KioskSettin
 	}
 	w, err := h.weddingService.Get(ctx, id)
 	if err != nil {
-		return nil, fuego.NotFoundError{Title: "Wedding not found"}
+		return nil, notFoundOr(err, "Wedding not found")
 	}
 	if body.Name != nil {
 		name := strings.TrimSpace(*body.Name)

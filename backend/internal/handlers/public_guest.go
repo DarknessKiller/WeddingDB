@@ -37,7 +37,7 @@ func NewPublicGuestHandler(guestService *services.GuestService, weddingService *
 func (h *PublicGuestHandler) toPublicGuests(ctx context.Context, wid uuid.UUID, guests []models.GuestRecord) ([]publicGuest, error) {
 	w, err := h.weddingService.Get(ctx, wid)
 	if err != nil {
-		return nil, fuego.NotFoundError{Title: "Wedding not found"}
+		return nil, notFoundOr(err, "Wedding not found")
 	}
 	out := make([]publicGuest, 0, len(guests))
 	for _, g := range guests {
@@ -114,7 +114,7 @@ func (h *PublicKioskHandler) GetKioskSettings(c fuego.ContextNoBody) (any, error
 	}
 	w, err := h.weddingService.Get(ctx, wid)
 	if err != nil {
-		return nil, fuego.NotFoundError{Title: "Wedding not found"}
+		return nil, notFoundOr(err, "Wedding not found")
 	}
 	return map[string]any{
 		"venueName":             w.VenueName,
