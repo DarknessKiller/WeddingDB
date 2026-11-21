@@ -59,13 +59,29 @@
     isDrawerOpen.set(false);
     drawerCreateMode.set(false);
     tables = [];
+    weddingTitle.set('');
+    showSeatNumbers.set(false);
   }
 
-  async function startWedding(w: string) {
+  // Bumped per startWedding; only the newest call may subscribe or set state,
+  // even when an A->B->A switch leaves two calls for the same wedding in flight.
+  let startGen = 0;
+  function stopSSE() {
     cleanupSSE?.();
+    cleanupSSE = undefined;
+  }
+  async function startWedding(w: string) {
+    const gen = ++startGen;
+    const stale = () => destroyed || gen !== startGen;
+    stopSSE();
     setWeddingId(w);
     resetWeddingState();
+    // Banner count and queue belong to this wedding now; send its edits before the snapshot.
+    refreshQueued();
+    if (navigator.onLine) await syncQueue(w).catch(() => {});
+    if (stale()) return;
     // Subscribe before the snapshot; guestEvents queues mutations until seeding completes.
+    stopSSE();
     cleanupSSE = initializeSSE(() => loadGuests(w));
     try {
       // refreshGuests keeps the syncing window open across fetch+seed even if
@@ -73,11 +89,12 @@
       await refreshGuests(() => loadGuests(w));
     } catch {}
     // Another startWedding took over while this one loaded; its own calls own the UI.
-    if (destroyed || w !== $weddingId) return;
+    if (stale()) return;
     listTables(w).then((t) => {
-      tables = t;
+      if (!stale()) tables = t;
     }).catch(() => {});
     getWedding(w).then((wedding) => {
+      if (stale()) return;
       weddingTitle.set(wedding.name || '');
       setShowSeatNumbers(w, wedding.showSeatNumbers ?? false);
     }).catch(() => {});
@@ -122,10 +139,6 @@
     };
     refreshQueued();
 
-    // initial sync before seed
-    if (wid && navigator.onLine) { try { await syncQueue(wid); } catch {} }
-
-    if (destroyed) return;
     if (wid) {
       activeWid = wid;
       await startWedding(wid);

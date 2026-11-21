@@ -126,9 +126,20 @@ export function clearGuests() {
 	tableOccupancy.set(new Map());
 }
 
+// Events carry the canonical UUID; the app holds the base64url form the REST API uses.
+function sameWedding(eventWid: string, wid: string): boolean {
+	if (eventWid === wid) return true;
+	const hex = eventWid.replace(/-/g, '');
+	if (!/^[0-9a-f]{32}$/i.test(hex)) return false;
+	const bytes = String.fromCharCode(...hex.match(/../g)!.map((h) => parseInt(h, 16)));
+	return btoa(bytes).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '') === wid;
+}
+
 function handleGuestEvent(event: GuestEvent) {
 	const { type, guest: guestData } = event;
 	if (!guestData) return;
+	// A stream left over from another wedding must not touch this roster.
+	if (!sameWedding(event.weddingId, get(weddingId))) return;
 
 	const guest = toGuest(guestData, event.timestamp > 0 ? new Date(event.timestamp) : new Date());
 

@@ -82,7 +82,7 @@ class SSEClient {
 			if (!response.ok || !response.body) throw new Error(`SSE request failed: ${response.status}`);
 
 			const reconnect = this.reconnectDelay > 1000;
-			this.reconnectDelay = 1000;
+			this.openedAt = Date.now();
 			this.statusHandlers.forEach((handler) => handler('connected', reconnect));
 			const reader = response.body.getReader();
 			const decoder = new TextDecoder();
@@ -113,10 +113,17 @@ class SSEClient {
 			clearTimeout(idleTimer);
 			if (this.controller === controller) {
 				this.controller = null;
+				if (this.openedAt && Date.now() - this.openedAt >= 30_000) this.reconnectDelay = 1000;
+				this.openedAt = 0;
 				this.scheduleReconnect();
 			}
 		}
 	}
+
+	// When the current stream opened. Backoff only resets once a stream has
+	// stayed up, so a server that accepts then closes (per-user cap eviction)
+	// cannot drive a reconnect every second.
+	private openedAt = 0;
 
 	disconnect() {
 		this.controller?.abort();
