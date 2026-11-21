@@ -3,6 +3,8 @@ package services
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"testing"
 	"time"
 
@@ -113,5 +115,44 @@ func TestTableDelete_PublishesUnassignedGuests(t *testing.T) {
 		}
 	case <-time.After(2 * time.Second):
 		t.Fatal("timed out waiting for unassign SSE event")
+	}
+}
+
+func TestCapacityCannotDropBelowSeatedGuests(t *testing.T) {
+	_, db, wid := newGuestSyncService(t)
+	ctx := t.Context()
+	tid := uuid.New()
+	seat := 3
+	testutil.NoErr(t, db.Create(&models.BanquetTable{ID: tid, WeddingID: wid, Name: "T1", Capacity: 10}).Error)
+	// Seats 3-4.
+	testutil.NoErr(t, db.Create(&models.GuestRecord{ID: uuid.New(), WeddingID: wid, Name: "Ann", Pax: 2, TableID: &tid, SeatNum: &seat}).Error)
+	tables := NewTableService(repository.NewTableRepo(db), repository.NewGuestRepo(db), nil, db)
+	layouts := repository.NewLayoutRepo(db)
+
+	tests := []struct {
+		capacity int
+		wantErr  bool
+	}{
+		{3, true},
+		{4, false},
+	}
+	for _, tt := range tests {
+		t.Run(fmt.Sprintf("table update capacity %d", tt.capacity), func(t *testing.T) {
+			err := tables.Update(ctx, &models.BanquetTable{ID: tid, WeddingID: wid, Name: "T1", Capacity: tt.capacity})
+			if got := errors.Is(err, repository.ErrCapacityBelowSeated); got != tt.wantErr {
+				t.Fatalf("err = %v, wantErr %v", err, tt.wantErr)
+			}
+		})
+		t.Run(fmt.Sprintf("layout save capacity %d", tt.capacity), func(t *testing.T) {
+			err := layouts.SaveLayout(ctx, wid, 0, 0, []models.TableUpdate{{ID: tid, Capacity: tt.capacity}}, nil, nil, nil)
+			if got := errors.Is(err, repository.ErrCapacityBelowSeated); got != tt.wantErr {
+				t.Fatalf("err = %v, wantErr %v", err, tt.wantErr)
+			}
+		})
+	}
+	var got models.BanquetTable
+	testutil.NoErr(t, db.First(&got, "id = ?", tid).Error)
+	if got.Capacity != 4 {
+		t.Fatalf("capacity = %d, want 4 (rejected writes rolled back)", got.Capacity)
 	}
 }

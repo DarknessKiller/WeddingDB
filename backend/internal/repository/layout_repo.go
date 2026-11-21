@@ -46,6 +46,9 @@ func (r *LayoutRepo) SaveLayout(
 			if res.RowsAffected == 0 {
 				return gorm.ErrRecordNotFound
 			}
+			if err := checkCapacityCoversSeats(tx, weddingID, t.ID, t.Capacity); err != nil {
+				return err
+			}
 		}
 		for i := range toCreate {
 			toCreate[i].WeddingID = weddingID
