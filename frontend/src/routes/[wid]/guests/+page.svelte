@@ -164,8 +164,11 @@ import Users from 'lucide-svelte/icons/users';
   });
 
   // Paginated slice of the already-filtered list.
-  let guests = $derived(filtered.slice(currentPage * pageSize, (currentPage + 1) * pageSize));
-  let hasNextPage = $derived((currentPage + 1) * pageSize < filtered.length);
+  // Clamp to the last page: deletions can shrink the list below the current
+  // page, which would otherwise render a blank "Page 2 of 1".
+  let page = $derived(Math.max(0, Math.min(currentPage, Math.ceil(filtered.length / pageSize) - 1)));
+  let guests = $derived(filtered.slice(page * pageSize, (page + 1) * pageSize));
+  let hasNextPage = $derived((page + 1) * pageSize < filtered.length);
 
   function clearFilters() {
     searchQuery = '';
@@ -706,10 +709,10 @@ import Users from 'lucide-svelte/icons/users';
       <!-- Pagination -->
       <div class="px-5 py-4 border-t border-gray-100 flex items-center justify-between text-sm">
         <span class="text-gray-500">
-          Page {currentPage + 1}{totalPages > 0 ? ` of ${totalPages}` : ''} · {displayTotal} guests
+          Page {page + 1}{totalPages > 0 ? ` of ${totalPages}` : ''} · {displayTotal} guests
         </span>
         <div class="flex items-center gap-2">
-          <button onclick={prevPage} disabled={currentPage === 0}
+          <button onclick={prevPage} disabled={page === 0}
             class="p-2 rounded-lg border border-gray-200 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed" aria-label="Previous page">
             <ChevronLeft class="w-4 h-4" />
           </button>
