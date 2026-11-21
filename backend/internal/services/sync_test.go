@@ -3,6 +3,7 @@ package services
 import (
 	"context"
 	"encoding/json"
+	"math"
 	"testing"
 	"time"
 
@@ -503,5 +504,16 @@ func TestCreate_RejectsOversizedParty(t *testing.T) {
 	})
 	if err == nil {
 		t.Fatal("expected oversized party size to be rejected")
+	}
+}
+
+func TestAssignSeat_RejectsHugeSeat(t *testing.T) {
+	svc, db, wid := newGuestSyncService(t)
+	tableID := uuid.New()
+	db.Create(&models.BanquetTable{ID: tableID, WeddingID: wid, Name: "T", Capacity: 8})
+	gid := uuid.New()
+	db.Create(&models.GuestRecord{ID: gid, WeddingID: wid, Name: "A", Pax: 2})
+	if err := svc.AssignSeat(context.Background(), gid, wid, tableID, math.MaxInt); err == nil {
+		t.Fatal("expected a near-MaxInt seat to be rejected")
 	}
 }

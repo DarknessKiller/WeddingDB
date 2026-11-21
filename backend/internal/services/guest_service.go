@@ -188,7 +188,7 @@ func checkSeatTx(ctx context.Context, tx *gorm.DB, weddingID, tableID uuid.UUID,
 	if pax < 1 {
 		return errors.New("guest pax must be at least 1")
 	}
-	if seatNum < 1 || seatNum+pax-1 > table.Capacity {
+	if seatNum < 1 || seatNum > table.Capacity-pax+1 {
 		return errors.New("seat range exceeds table capacity")
 	}
 	existing, err := repository.NewGuestRepo(tx).FindByTable(ctx, weddingID, tableID)
@@ -704,7 +704,7 @@ func (s *GuestService) validateSyncTableSeat(ctx context.Context, weddingID uuid
 	if err != nil {
 		return fmt.Errorf("table %s not found", *p.TableID)
 	}
-	if p.SeatNum != nil && table.Capacity > 0 && *p.SeatNum > table.Capacity {
+	if p.SeatNum != nil && table.Capacity > 0 && (*p.SeatNum < 1 || *p.SeatNum > table.Capacity) {
 		return fmt.Errorf("seat %d exceeds capacity %d of table %s", *p.SeatNum, table.Capacity, table.Name)
 	}
 	return nil
