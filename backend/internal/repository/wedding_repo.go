@@ -30,12 +30,20 @@ func (r *WeddingRepo) List(ctx context.Context) ([]models.WeddingEvent, error) {
 
 // Create stores a new wedding together with the default hall layout, so the
 // seating map has a stage and entrance from the start.
-func (r *WeddingRepo) Create(ctx context.Context, w *models.WeddingEvent) error {
+// Create stores the wedding, its default layout, and (when ownerID is set)
+// the owner's access link in one transaction.
+func (r *WeddingRepo) Create(ctx context.Context, w *models.WeddingEvent, ownerID uuid.UUID) error {
 	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if err := tx.Create(w).Error; err != nil {
 			return err
 		}
-		return tx.Create(models.DefaultElements(w.ID)).Error
+		if err := tx.Create(models.DefaultElements(w.ID)).Error; err != nil {
+			return err
+		}
+		if ownerID == uuid.Nil {
+			return nil
+		}
+		return tx.Create(&models.UserWedding{ID: uuid.New(), UserID: ownerID, WeddingID: w.ID}).Error
 	})
 }
 

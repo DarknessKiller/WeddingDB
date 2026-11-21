@@ -166,20 +166,3 @@ func (r *AdminRepo) HasWeddingAccess(ctx context.Context, userID, weddingID uuid
 		Count(&count).Error
 	return count > 0, err
 }
-
-// AddUserWedding adds a wedding association if it doesn't already exist.
-func (r *AdminRepo) AddUserWedding(ctx context.Context, userID, weddingID uuid.UUID) error {
-	exists, err := r.HasWeddingAccess(ctx, userID, weddingID)
-	if err != nil {
-		return err
-	}
-	if exists {
-		return nil
-	}
-	uw := models.UserWedding{
-		ID:        uuid.New(),
-		UserID:    userID,
-		WeddingID: weddingID,
-	}
-	return r.db.WithContext(ctx).Create(&uw).Error
-}

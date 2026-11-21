@@ -26,13 +26,27 @@ func TestWeddingRepo_CreateSeedsDefaultHall(t *testing.T) {
 	testutil.NoErr(t, db.Exec(`CREATE TABLE hall_elements (id TEXT PRIMARY KEY, wedding_id TEXT, type TEXT,
 		x REAL, y REAL, degree REAL, width REAL, height REAL, name TEXT, color TEXT, text_color TEXT,
 		stroke_color TEXT, opacity REAL, z_index INTEGER, created_at DATETIME, updated_at DATETIME)`).Error)
+	testutil.NoErr(t, db.Exec(`CREATE TABLE user_weddings (id TEXT PRIMARY KEY, user_id TEXT NOT NULL, wedding_id TEXT NOT NULL,
+		created_at DATETIME, UNIQUE(user_id, wedding_id))`).Error)
+	repo := NewWeddingRepo(db)
 
 	w := &models.WeddingEvent{ID: uuid.New(), Name: "New", Date: time.Now()}
-	testutil.NoErr(t, NewWeddingRepo(db).Create(t.Context(), w))
+	testutil.NoErr(t, repo.Create(t.Context(), w, uuid.Nil))
 
 	els, err := NewLayoutRepo(db).ElementsByWedding(t.Context(), w.ID)
 	testutil.NoErr(t, err)
 	if want := len(models.DefaultElements(w.ID)); len(els) != want {
 		t.Fatalf("new wedding has %d hall elements, want %d defaults", len(els), want)
+	}
+
+	// A user who creates a wedding is linked to it in the same transaction,
+	// so they can open it without an admin assigning it first.
+	owner := uuid.New()
+	w2 := &models.WeddingEvent{ID: uuid.New(), Name: "Owned", Date: time.Now()}
+	testutil.NoErr(t, repo.Create(t.Context(), w2, owner))
+	ok, err := NewAdminRepo(db).HasWeddingAccess(t.Context(), owner, w2.ID)
+	testutil.NoErr(t, err)
+	if !ok {
+		t.Fatal("creator is not linked to the wedding they created")
 	}
 }

@@ -13,7 +13,6 @@ import (
 	"weddingdb/internal/services"
 
 	"github.com/go-fuego/fuego"
-	"github.com/google/uuid"
 )
 
 type WeddingHandler struct {
@@ -87,15 +86,10 @@ func (h *WeddingHandler) Create(c fuego.ContextWithBody[WeddingRequest]) (any, e
 	if err := maxLen("Name", w.Name, 255); err != nil {
 		return nil, err
 	}
-	if err := h.weddingService.Create(ctx, w); err != nil {
+	// The creating admin is linked in the same transaction: a failed link
+	// must not leave a committed wedding that a retry would duplicate.
+	if err := h.weddingService.Create(ctx, w, AdminIDFromContext(c.Context())); err != nil {
 		return nil, err
-	}
-	// Link the creating admin to this wedding
-	adminID := AdminIDFromContext(c.Context())
-	if adminID != uuid.Nil {
-		if err := h.adminRepo.AddUserWedding(ctx, adminID, w.ID); err != nil {
-			return nil, err
-		}
 	}
 	c.SetStatus(201)
 	return w, nil
