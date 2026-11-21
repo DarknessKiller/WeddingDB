@@ -1,6 +1,9 @@
 package config
 
 import (
+	"context"
+	"errors"
+	"log/slog"
 	"net/http"
 	"time"
 
@@ -25,6 +28,9 @@ func NewFuegoServer(env Env, version string) *fuego.Server {
 					return fuego.DefaultOpenAPIHandler(specURL)
 				},
 			}),
+			// Untyped errors (driver/DB errors, raw repo errors) would be
+			// JSON-marshaled with their exported fields, leaking schema details.
+			fuego.WithErrorHandler(sanitizeError),
 		),
 	)
 
@@ -45,4 +51,15 @@ func NewFuegoServer(env Env, version string) *fuego.Server {
 	}
 
 	return s
+}
+
+// sanitizeError keeps typed fuego errors as they are and replaces anything
+// else with a generic 500, logging the original server-side.
+func sanitizeError(ctx context.Context, err error) error {
+	var statusErr fuego.ErrorWithStatus
+	if errors.As(err, &statusErr) {
+		return err
+	}
+	slog.ErrorContext(ctx, "unhandled handler error", "error", err)
+	return fuego.HTTPError{Status: http.StatusInternalServerError, Title: "Internal server error"}
 }

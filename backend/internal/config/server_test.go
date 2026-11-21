@@ -1,10 +1,15 @@
 package config
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
 	"os"
+	"strings"
 	"testing"
 	"time"
+
+	"github.com/go-fuego/fuego"
 )
 
 func TestNewFuegoServer_SetsOpenAPIInfo(t *testing.T) {
@@ -129,5 +134,28 @@ func TestNewFuegoServer_TimeoutsForLongTransfers(t *testing.T) {
 	}
 	if s.ReadHeaderTimeout == 0 {
 		t.Error("ReadHeaderTimeout = 0, want non-zero (slowloris guard)")
+	}
+}
+
+func TestSanitizeError_HidesUnhandledErrors(t *testing.T) {
+	err := sanitizeError(context.Background(), errors.New("pq: duplicate key admin_users_email_key"))
+	var httpErr fuego.HTTPError
+	if !errors.As(err, &httpErr) {
+		t.Fatalf("want fuego.HTTPError, got %T", err)
+	}
+	if httpErr.Status != 500 {
+		t.Errorf("status = %d, want 500", httpErr.Status)
+	}
+	if strings.Contains(httpErr.Error(), "admin_users") {
+		t.Errorf("public error leaks internals: %q", httpErr.Error())
+	}
+}
+
+func TestSanitizeError_KeepsTypedErrors(t *testing.T) {
+	original := fuego.HTTPError{Status: 404, Title: "not found"}
+	err := sanitizeError(context.Background(), original)
+	var httpErr fuego.HTTPError
+	if !errors.As(err, &httpErr) || httpErr.Status != 404 {
+		t.Fatalf("typed error should pass through, got %v", err)
 	}
 }
