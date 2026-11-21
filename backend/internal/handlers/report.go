@@ -46,6 +46,7 @@ func (h *ReportHandler) ExportAngpao(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err != nil {
+		slog.Error("generate report failed", "wedding", wid, "format", format, "err", err)
 		http.Error(w, "Failed to generate report", http.StatusInternalServerError)
 		return
 	}

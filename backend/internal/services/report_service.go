@@ -63,7 +63,7 @@ type angpaoSummary struct {
 func (s *ReportService) GenerateCSV(ctx context.Context, weddingID uuid.UUID) ([]byte, string, error) {
 	wedding, err := s.weddingRepo.FindByID(ctx, weddingID)
 	if err != nil {
-		return nil, "", fmt.Errorf("wedding not found")
+		return nil, "", fmt.Errorf("find wedding: %w", err)
 	}
 
 	guests, err := s.guestRepo.ListAllByWedding(ctx, weddingID)
@@ -149,7 +149,7 @@ func (s *ReportService) writeCSV(rows []angpaoRow, summary angpaoSummary) ([]byt
 func (s *ReportService) GenerateXLSX(ctx context.Context, weddingID uuid.UUID) ([]byte, string, error) {
 	wedding, err := s.weddingRepo.FindByID(ctx, weddingID)
 	if err != nil {
-		return nil, "", fmt.Errorf("wedding not found")
+		return nil, "", fmt.Errorf("find wedding: %w", err)
 	}
 
 	guests, err := s.guestRepo.ListAllByWedding(ctx, weddingID)
