@@ -839,11 +839,7 @@ func (s *GuestService) applySyncMutation(ctx context.Context, weddingID uuid.UUI
 			// Reload under a row lock: two phones syncing the same arrival at
 			// once must each see the other's write, or the last one overwrites
 			// the first angbao and note.
-			q := tx.Where("id = ? AND wedding_id = ?", gid, weddingID)
-			if tx.Name() == "postgres" {
-				q = q.Clauses(clause.Locking{Strength: "UPDATE"})
-			}
-			if err := q.First(existing).Error; err != nil {
+			if err := lockGuestRow(tx, existing); err != nil {
 				return err
 			}
 			var err error
@@ -861,16 +857,30 @@ func (s *GuestService) applySyncMutation(ctx context.Context, weddingID uuid.UUI
 		if !found {
 			return SyncResult{GuestID: m.GuestID, Status: "skipped", Reason: "not found"}
 		}
-		if opTime.Before(existing.UpdatedAt) {
-			return SyncResult{GuestID: m.GuestID, Status: "skipped", Reason: "older than server", ServerRecord: existing}
-		}
-		existing.CheckedInAt = nil
-		existing.UpdatedAt = opTime
-		if err := s.guestRepo.CheckOut(ctx, gid, weddingID, opTime); err != nil {
+		var res SyncResult
+		if err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+			// Re-check under the row lock, as check-in does: a newer check-in
+			// committed after the read above must not be wiped.
+			if err := lockGuestRow(tx, existing); err != nil {
+				return err
+			}
+			if opTime.Before(existing.UpdatedAt) {
+				res = SyncResult{GuestID: m.GuestID, Status: "skipped", Reason: "older than server", ServerRecord: existing}
+				return nil
+			}
+			// opTime is not before the locked row's updated_at, so this never
+			// moves it backwards.
+			existing.CheckedInAt = nil
+			existing.UpdatedAt = opTime
+			res = SyncResult{GuestID: m.GuestID, Status: "applied", ServerRecord: existing}
+			return repository.NewGuestRepo(tx).CheckOut(ctx, gid, weddingID, opTime)
+		}); err != nil {
 			return syncFailed(m, err)
 		}
-		s.sseHub.publishGuest("checkout", existing, weddingID)
-		return SyncResult{GuestID: m.GuestID, Status: "applied", ServerRecord: existing}
+		if res.Status == "applied" {
+			s.sseHub.publishGuest("checkout", existing, weddingID)
+		}
+		return res
 
 	default:
 		return SyncResult{GuestID: m.GuestID, Status: "skipped", Reason: "unknown op"}
@@ -895,6 +905,16 @@ func (s *GuestService) syncUpdate(ctx context.Context, g *models.GuestRecord, m 
 		return errGuestChangedDuringSync
 	}
 	return err
+}
+
+// lockGuestRow reloads g inside tx, row-locked on Postgres (sqlite tests have
+// one writer), so a sync write re-checks against the committed row.
+func lockGuestRow(tx *gorm.DB, g *models.GuestRecord) error {
+	q := tx.Where("id = ? AND wedding_id = ?", g.ID, g.WeddingID)
+	if tx.Name() == "postgres" {
+		q = q.Clauses(clause.Locking{Strength: "UPDATE"})
+	}
+	return q.First(g).Error
 }
 
 // syncCheckIn applies a queued check-in to g, which the caller loaded under a

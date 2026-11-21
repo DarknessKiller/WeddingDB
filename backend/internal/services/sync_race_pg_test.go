@@ -160,3 +160,45 @@ func TestCreateGuest_PostgresLongHanNamePinyinFits(t *testing.T) {
 		t.Fatalf("pinyin is %d bytes; the test needs one over 255", n)
 	}
 }
+
+// holdGuestRow locks gid the way a concurrent sync check-in does and applies
+// updates inside that transaction. Commit it to release the lock.
+func holdGuestRow(t *testing.T, db *gorm.DB, gid uuid.UUID, updates map[string]any) *gorm.DB {
+	t.Helper()
+	tx := db.Begin()
+	testutil.NoErr(t, tx.Clauses(clause.Locking{Strength: "UPDATE"}).Select("id").Where("id = ?", gid).First(&models.GuestRecord{}).Error)
+	testutil.NoErr(t, tx.Model(&models.GuestRecord{}).Where("id = ?", gid).Updates(updates).Error)
+	return tx
+}
+
+// A queued check-out older than a check-in that commits while the check-out
+// waits must lose: it may not wipe the arrival or move updated_at backwards.
+func TestSyncCheckOut_PostgresLosesToCheckInCommittedWhileWaiting(t *testing.T) {
+	svc, db := openGuestPG(t)
+	wid, gid := uuid.New(), uuid.New()
+	t0 := time.Now().Add(-time.Hour).UTC().Truncate(time.Microsecond)
+	testutil.NoErr(t, db.Create(&models.WeddingEvent{ID: wid, Name: "W"}).Error)
+	testutil.NoErr(t, db.Create(&models.GuestRecord{ID: gid, WeddingID: wid, Name: "G", Pax: 1, CheckedInAt: &t0, UpdatedAt: t0}).Error)
+
+	checkedIn := t0.Add(20 * time.Minute)
+	tx := holdGuestRow(t, db, gid, map[string]any{"checked_in_at": checkedIn, "updated_at": checkedIn})
+	done := make(chan SyncResult, 1)
+	go func() {
+		res, err := svc.Sync(t.Context(), wid, []SyncMutation{{Op: SyncOpCheckOut, GuestID: gid.String(), ClientUpdatedAt: t0.Add(10 * time.Minute)}})
+		if err != nil {
+			t.Errorf("sync: %v", err)
+		}
+		done <- res[0]
+	}()
+	time.Sleep(100 * time.Millisecond) // let the sync read the old row and block
+	testutil.NoErr(t, tx.Commit().Error)
+	if res := <-done; res.Status != "skipped" {
+		t.Errorf("status = %q (%s), want skipped", res.Status, res.Reason)
+	}
+
+	var got models.GuestRecord
+	testutil.NoErr(t, db.First(&got, "id = ?", gid).Error)
+	if got.CheckedInAt == nil || !got.UpdatedAt.Equal(checkedIn) {
+		t.Fatalf("checked_in_at = %v updated_at = %v, want the newer check-in kept", got.CheckedInAt, got.UpdatedAt)
+	}
+}
