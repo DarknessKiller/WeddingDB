@@ -8,6 +8,8 @@ import (
 
 	"weddingdb/internal/middleware"
 	"weddingdb/internal/services"
+
+	"github.com/google/uuid"
 )
 
 // SSEHandler provides raw HTTP handlers for SSE streaming.
@@ -46,11 +48,9 @@ func (h *SSEHandler) StreamHandler() http.HandlerFunc {
 		}
 
 		// Verify wedding scope: non-admin users must have a JWT scoped to the requested wedding.
-		if claims.Role != "admin" {
-			if claims.WeddingID == nil || *claims.WeddingID != wid {
-				http.Error(w, `{"error":"Access denied"}`, http.StatusForbidden)
-				return
-			}
+		if !canStream(claims, wid) {
+			http.Error(w, `{"error":"Access denied"}`, http.StatusForbidden)
+			return
 		}
 
 		w.Header().Set("Content-Type", "text/event-stream")
@@ -90,6 +90,12 @@ func (h *SSEHandler) StreamHandler() http.HandlerFunc {
 			case <-client.Done:
 				return
 			case <-keepalive.C:
+				// Re-check on every tick: a revoked or expired token, or a lost
+				// wedding scope, ends the stream instead of leaking events.
+				claims, err := h.authService.ValidateToken(ctx, token)
+				if err != nil || !canStream(claims, wid) {
+					return
+				}
 				if _, err := fmt.Fprintf(w, ": ping\n\n"); err != nil {
 					return
 				}
@@ -105,4 +111,10 @@ func (h *SSEHandler) StreamHandler() http.HandlerFunc {
 			}
 		}
 	}
+}
+
+// canStream reports whether claims may read wid's events: admins read every
+// wedding, other users only the one their token is scoped to.
+func canStream(claims *services.AccessClaims, wid uuid.UUID) bool {
+	return claims.Role == "admin" || (claims.WeddingID != nil && *claims.WeddingID == wid)
 }
