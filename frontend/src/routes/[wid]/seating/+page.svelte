@@ -10,6 +10,7 @@
   import { getLayout, saveLayout } from '#lib/api/layout.ts';
   import Badge from '#lib/components/ui/Badge.svelte';
   import { cn } from '#lib/utils/index.ts';
+  import { layoutTablesPayload } from '#lib/utils/layout.ts';
   import { page } from '$app/state';
   import { onMount, onDestroy } from 'svelte';
   import Users from 'lucide-svelte/icons/users';
@@ -244,7 +245,7 @@ import Pencil from 'lucide-svelte/icons/pencil';
       await saveLayout(wid, {
         hallWidth: hw,
         hallHeight: hh,
-        tables: editTables.map(t => ({ id: t.id, x: t.x, y: t.y, degree: t.degree, capacity: t.capacity, isVip: t.isVip })),
+        tables: layoutTablesPayload(editTables, allTables),
         elements: editElements,
       });
       addToast('Layout saved', 'success');

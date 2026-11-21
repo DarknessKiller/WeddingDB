@@ -16,7 +16,7 @@ import AlertCircle from 'lucide-svelte/icons/alert-circle';
 import Map from 'lucide-svelte/icons/map';
   import { listTables, createTable, updateTable, deleteTable, getOccupancy } from '#lib/api/tables.ts';
   import { getLayout, saveLayout } from '#lib/api/layout.ts';
-  import { defaultSlot } from '#lib/utils/layout.ts';
+  import { defaultSlot, layoutTablesPayload } from '#lib/utils/layout.ts';
   import { weddingId } from '#lib/stores/weddingId.ts';
   import { get } from 'svelte/store';
   import type { BanquetTable, TableOccupancy, HallElement, HallLayoutData } from '#lib/types/index.ts';
@@ -208,7 +208,7 @@ import Map from 'lucide-svelte/icons/map';
       await saveLayout(wid, {
         hallWidth: hw,
         hallHeight: hh,
-        tables: editTables.map(t => ({ id: t.id, x: t.x, y: t.y, degree: t.degree, capacity: t.capacity, isVip: t.isVip })),
+        tables: layoutTablesPayload(editTables, tables),
         elements: editElements,
       });
       addToast('Layout saved', 'success');
