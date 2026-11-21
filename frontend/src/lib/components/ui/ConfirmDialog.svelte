@@ -3,6 +3,7 @@
 import AlertTriangle from 'lucide-svelte/icons/alert-triangle';
   import { onMount } from 'svelte';
   import { fade } from 'svelte/transition';
+  import { trapFocus } from '#lib/utils/focus.ts';
 
   let {
     open = false,
@@ -71,6 +72,7 @@ import AlertTriangle from 'lucide-svelte/icons/alert-triangle';
       bind:this={dialogEl}
       class="relative bg-white/95 backdrop-blur-xl rounded-2xl shadow-2xl w-full max-w-sm overflow-hidden dialog-motion"
       onclick={(e) => e.stopPropagation()}
+      use:trapFocus
     >
       <!-- Icon + Content -->
       <div class="p-6 text-center">
