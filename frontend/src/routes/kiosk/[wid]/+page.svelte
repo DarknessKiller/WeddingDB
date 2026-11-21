@@ -4,7 +4,7 @@
   import { getPublicLayout } from '#lib/api/layout.ts';
   import { cacheKioskGuests, loadCachedKioskGuests } from '#lib/offline/queue.ts';
   import { rankGuests } from '#lib/utils/guestSearch.ts';
-  import { cn, getInitials, withTimeout } from '#lib/utils/index.ts';
+  import { backgroundStyle, cssPosition, cssSize, cn, getInitials, withTimeout } from '#lib/utils/index.ts';
   import { formatSeatRange, formatPartySize } from '#lib/utils/seat.ts';
   import Maximize from 'lucide-svelte/icons/maximize';
 import Minimize from 'lucide-svelte/icons/minimize';
@@ -556,14 +556,14 @@ import X from 'lucide-svelte/icons/x';
     <!-- Search View -->
     <div class="search-view" in:fade={{ duration: 250 }}>
       {#if kioskBackgroundUrl}
-        <div class="search-bg" style={`background-image: url("${kioskBackgroundUrl.replace(/["\\\n\r]/g, encodeURIComponent)}"); background-size: ${kioskBackgroundSize}; background-position: ${kioskBackgroundPosX} ${kioskBackgroundPosY}; filter: blur(${kioskBackgroundBlur}px); transform: scale(${kioskBackgroundBlur > 0 ? 1.1 : 1.05});`}></div>
+        <div class="search-bg" style={`${backgroundStyle(kioskBackgroundUrl, kioskBackgroundSize, kioskBackgroundPosX, kioskBackgroundPosY)} filter: blur(${Number(kioskBackgroundBlur) || 0}px); transform: scale(${kioskBackgroundBlur > 0 ? 1.1 : 1.05});`}></div>
         <div class="search-bg-overlay"></div>
       {/if}
 
       <div class="search-content">
         <div class="search-hero">
           {#if kioskLogoUrl}
-            <img src={kioskLogoUrl} alt="Logo" class="hero-logo" width="112" height="112" loading="eager" decoding="async" style={`object-fit: ${kioskLogoSize}; object-position: ${kioskLogoPosX} ${kioskLogoPosY};`} />
+            <img src={kioskLogoUrl} alt="Logo" class="hero-logo" width="112" height="112" loading="eager" decoding="async" style={`object-fit: ${cssSize(kioskLogoSize)}; object-position: ${cssPosition(kioskLogoPosX)} ${cssPosition(kioskLogoPosY)};`} />
           {:else}
             <div class="hero-icon">囍</div>
           {/if}
