@@ -14,6 +14,7 @@ function res(body: unknown, status = 200): Response {
 	return { ok: status >= 200 && status < 300, status, json: async () => body } as Response;
 }
 
+const jwtWithExp = (exp: number) => `h.${btoa(JSON.stringify({ exp }))}.s`;
 const REFRESH_OK = { accessToken: 'new-access', refreshToken: 'refresh-2', role: 'admin', name: 'A' };
 
 let fetchMock: ReturnType<typeof vi.fn>;
@@ -106,7 +107,8 @@ describe('apiFetch refresh recovery', () => {
 	});
 
 	it('adopts a token another tab already rotated instead of reusing the stale one', async () => {
-		localStorage.setItem('weddingdb_auth', JSON.stringify({ accessToken: 'tab2-access', refreshToken: 'refresh-2', role: 'admin', name: 'A', user: 'a@x.com' }));
+		const tab2Access = jwtWithExp(Date.now() / 1000 + 600);
+		localStorage.setItem('weddingdb_auth', JSON.stringify({ accessToken: tab2Access, refreshToken: 'refresh-2', role: 'admin', name: 'A', user: 'a@x.com' }));
 		fetchMock
 			.mockResolvedValueOnce(res({}, 401))
 			.mockResolvedValueOnce(res({ guests: [] }));
@@ -118,8 +120,26 @@ describe('apiFetch refresh recovery', () => {
 		expect(result.status).toBe(200);
 		expect(fetchMock).toHaveBeenCalledTimes(2);
 		expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/auth/refresh'))).toBe(false);
-		expect(fetchMock.mock.calls[1][1].headers.Authorization).toBe('Bearer tab2-access');
+		expect(fetchMock.mock.calls[1][1].headers.Authorization).toBe(`Bearer ${tab2Access}`);
 		expect(getAuth().refreshToken).toBe('refresh-2');
+	});
+
+	it('refreshes with the adopted token when the other tab\'s access token has expired', async () => {
+		localStorage.setItem('weddingdb_auth', JSON.stringify({ accessToken: jwtWithExp(Date.now() / 1000 - 60), refreshToken: 'refresh-2', role: 'admin', name: 'A', user: 'a@x.com' }));
+		fetchMock
+			.mockResolvedValueOnce(res({}, 401))
+			.mockResolvedValueOnce(res({ ...REFRESH_OK, refreshToken: 'refresh-3' }))
+			.mockResolvedValueOnce(res({ guests: [] }));
+
+		const { apiFetch } = await import('./client');
+		const { getAuth } = await import('#lib/stores/index.ts');
+		const result = await apiFetch('/api/guests');
+
+		expect(result.status).toBe(200);
+		const refreshCall = fetchMock.mock.calls.find(([url]) => String(url).includes('/api/auth/refresh'));
+		expect(JSON.parse(refreshCall![1].body)).toEqual({ refreshToken: 'refresh-2' });
+		expect(fetchMock.mock.calls[2][1].headers.Authorization).toBe('Bearer new-access');
+		expect(getAuth().refreshToken).toBe('refresh-3');
 	});
 
 	it('never adopts tokens of another user who logged in from another tab', async () => {
@@ -166,5 +186,43 @@ describe('apiFetch refresh recovery', () => {
 
 		expect(result.status).toBe(403);
 		expect(fetchMock).toHaveBeenCalledTimes(2);
+	});
+
+	it('refreshes with the in-memory token when a failed storage write left a rotated one stored', async () => {
+		const { setAuth, getAuth } = await import('#lib/stores/index.ts');
+		const stale = localStorage.getItem('weddingdb_auth');
+		vi.spyOn(localStorage, 'setItem').mockImplementation(() => { throw new Error('QuotaExceededError'); });
+		setAuth(jwtWithExp(Date.now() / 1000 - 60), 'refresh-2', 'admin', 'A');
+		expect(localStorage.getItem('weddingdb_auth')).toBe(stale);
+		fetchMock
+			.mockResolvedValueOnce(res({}, 401))
+			.mockResolvedValueOnce(res({ ...REFRESH_OK, refreshToken: 'refresh-3' }))
+			.mockResolvedValueOnce(res({ guests: [] }));
+
+		const { apiFetch } = await import('./client');
+		const result = await apiFetch('/api/guests');
+
+		expect(result.status).toBe(200);
+		const refreshCall = fetchMock.mock.calls.find(([url]) => String(url).includes('/api/auth/refresh'));
+		expect(JSON.parse(refreshCall![1].body)).toEqual({ refreshToken: 'refresh-2' });
+		expect(getAuth().refreshToken).toBe('refresh-3');
+	});
+
+	it('rebuilds a body factory after refresh so the retry carries the rotated refresh token', async () => {
+		const { getAuth } = await import('#lib/stores/index.ts');
+		fetchMock
+			.mockResolvedValueOnce(res({}, 401))
+			.mockResolvedValueOnce(res(REFRESH_OK))
+			.mockResolvedValueOnce(res({ accessToken: 'scoped' }));
+
+		const { apiFetch } = await import('./client');
+		const result = await apiFetch('/api/auth/select-wedding', {
+			method: 'POST',
+			body: () => JSON.stringify({ weddingId: 'w1', refreshToken: getAuth().refreshToken })
+		});
+
+		expect(result.status).toBe(200);
+		expect(JSON.parse(fetchMock.mock.calls[0][1].body).refreshToken).toBe('refresh-1');
+		expect(JSON.parse(fetchMock.mock.calls[2][1].body).refreshToken).toBe('refresh-2');
 	});
 });

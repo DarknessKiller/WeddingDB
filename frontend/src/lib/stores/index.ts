@@ -71,8 +71,17 @@ export function getAuth() {
   return { accessToken: _accessToken, refreshToken: _refreshToken, role: _role, name: _name };
 }
 
+// Refresh tokens this tab already rotated away from. A failed storage write
+// leaves one of them in localStorage; refreshing with it is a replay that
+// revokes the whole family, so it must never be mistaken for another tab's.
+const retiredRefreshTokens = new Set<string>();
+export function isRetiredRefreshToken(token: string): boolean {
+  return retiredRefreshTokens.has(token);
+}
+
 // user defaults to the current one: refresh and wedding selection keep the same user.
 export function setAuth(access: string, refresh: string, r: string, n: string, user = _user) {
+  if (_refreshToken && _refreshToken !== refresh) retiredRefreshTokens.add(_refreshToken);
   _accessToken = access;
   _refreshToken = refresh;
   _role = r;

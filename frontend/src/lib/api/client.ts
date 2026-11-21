@@ -1,4 +1,4 @@
-import { getAuth, setAuth, expireAuth, readStoredAuth, isSameUser, dropForeignSession } from '#lib/stores/index.ts';
+import { getAuth, setAuth, expireAuth, readStoredAuth, isSameUser, dropForeignSession, isRetiredRefreshToken } from '#lib/stores/index.ts';
 import { setWeddingId } from '#lib/stores/weddingId.ts';
 import { withTimeout } from '#lib/utils/index.ts';
 
@@ -8,7 +8,7 @@ const BASE = '';
 let refreshPromise: Promise<boolean> | null = null;
 
 async function doRefresh(): Promise<boolean> {
-	const { refreshToken } = getAuth();
+	let { refreshToken } = getAuth();
 	if (!refreshToken) return false;
 	// Another tab already rotated the token. Reusing our stale one would make the
 	// server revoke the whole token family and log out every tab.
@@ -20,7 +20,9 @@ async function doRefresh(): Promise<boolean> {
 		if (typeof window !== 'undefined') window.location.href = '/login';
 		return false;
 	}
-	if (stored.refreshToken !== refreshToken) {
+	// A token this tab already rotated away from is our own failed write, not
+	// another tab's rotation: in-memory auth is newer.
+	if (stored.refreshToken !== refreshToken && !isRetiredRefreshToken(stored.refreshToken)) {
 		// Another user logged in from another tab: never become them.
 		if (!isSameUser(stored)) {
 			dropForeignSession();
@@ -28,7 +30,10 @@ async function doRefresh(): Promise<boolean> {
 			return false;
 		}
 		setAuth(stored.accessToken, stored.refreshToken, stored.role, stored.name);
-		return true;
+		// The other tab may have rotated long ago and its access token since
+		// expired: retrying with it would 401 with no second refresh.
+		if (!accessTokenExpired(stored.accessToken)) return true;
+		refreshToken = stored.refreshToken;
 	}
 	let refreshRes: Response;
 	try {
@@ -60,6 +65,17 @@ async function doRefresh(): Promise<boolean> {
 	setWeddingId('');
 	if (typeof window !== 'undefined') window.location.href = '/login';
 	return false;
+}
+
+// accessTokenExpired reads the JWT exp claim (no signature check: the server
+// does that). Unreadable tokens count as expired so they get refreshed.
+function accessTokenExpired(token: string): boolean {
+	try {
+		const payload = JSON.parse(atob(token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/')));
+		return typeof payload.exp !== 'number' || payload.exp * 1000 <= Date.now() + 10_000;
+	} catch {
+		return true;
+	}
 }
 
 async function refreshIfNeeded(): Promise<boolean> {
