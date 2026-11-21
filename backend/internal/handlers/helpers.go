@@ -2,9 +2,12 @@ package handlers
 
 import (
 	"context"
+	"errors"
 	"weddingdb/internal/middleware"
 
+	"github.com/go-fuego/fuego"
 	"github.com/google/uuid"
+	"gorm.io/gorm"
 )
 
 // AdminIDFromContext extracts admin ID from the request context.
@@ -70,3 +73,12 @@ func (e forbiddenError) Error() string { return e.msg }
 
 func errUnauthorized(msg string) error { return unauthorizedError{msg} }
 func errForbidden(msg string) error    { return forbiddenError{msg} }
+
+// notFoundIfMissing maps a missing row to 404 and leaves every other error
+// for the generic 500 path.
+func notFoundIfMissing(err error, title string) error {
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return fuego.NotFoundError{Title: title}
+	}
+	return err
+}

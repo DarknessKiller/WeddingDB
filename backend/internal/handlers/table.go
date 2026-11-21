@@ -115,7 +115,7 @@ func (h *TableHandler) Delete(c fuego.ContextWithBody[any]) (any, error) {
 		return nil, fuego.BadRequestError{Title: "Invalid ID"}
 	}
 	if err := h.tableService.Delete(ctx, id, wid); err != nil {
-		return nil, err
+		return nil, notFoundIfMissing(err, "Table not found")
 	}
 	c.SetStatus(204)
 	return nil, nil
