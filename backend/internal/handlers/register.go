@@ -21,7 +21,7 @@ func RegisterRoutes(
 	adminRepo *repository.AdminRepo,
 ) {
 	authHandler := NewAuthHandler(authService, adminRepo)
-	adminHandler := NewAdminHandler(adminRepo, authService)
+	adminHandler := NewAdminHandler(adminRepo, authService, weddingService)
 	guestHandler := NewGuestHandler(guestService)
 	tableHandler := NewTableHandler(tableService)
 	weddingHandler := NewWeddingHandler(weddingService, adminRepo)

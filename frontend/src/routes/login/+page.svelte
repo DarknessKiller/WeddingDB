@@ -4,7 +4,7 @@
   import { weddingId, setWeddingId } from '#lib/stores/weddingId.ts';
   import { get } from 'svelte/store';
   import { LIMITS } from '#lib/utils/limits.ts';
-  import { pendingChangeCount } from '#lib/offline/queue.ts';
+  import { pendingChangeCount, claimOfflineOwner } from '#lib/offline/queue.ts';
   import { onMount } from 'svelte';
   import Eye from 'lucide-svelte/icons/eye';
 import EyeOff from 'lucide-svelte/icons/eye-off';
@@ -25,6 +25,7 @@ import ChevronRight from 'lucide-svelte/icons/chevron-right';
   let availableWeddings = $state<{ id: string; name: string; date: string }[]>([]);
   let loginRole = $state('');
   let loginName = $state('');
+  let loginUserId = $state('');
   let loginAccessToken = $state('');
   let loginRefreshToken = $state('');
 
@@ -79,9 +80,13 @@ import ChevronRight from 'lucide-svelte/icons/chevron-right';
       loginRefreshToken = data.refreshToken;
       loginRole = data.role ?? '';
       loginName = data.name ?? '';
+      loginUserId = data.userId ?? '';
+      // A different account must not inherit this device's queued edits or
+      // cached guest list.
+      claimOfflineOwner(loginUserId);
 
       if (data.forcePasswordChange) {
-        setAuth(loginAccessToken, loginRefreshToken, loginRole, loginName);
+        setAuth(loginAccessToken, loginRefreshToken, loginRole, loginName, loginUserId);
         goto('/change-password?forced=1', { replaceState: true });
         return;
       }
@@ -126,7 +131,7 @@ import ChevronRight from 'lucide-svelte/icons/chevron-right';
         return;
       }
       const data = await res.json();
-      setAuth(data.accessToken, loginRefreshToken, loginRole, loginName);
+      setAuth(data.accessToken, loginRefreshToken, loginRole, loginName, loginUserId);
       setWeddingId(weddingIdValue);
       addToast('Login successful', 'success');
       goto(`/${weddingIdValue}/dashboard`, { replaceState: true });

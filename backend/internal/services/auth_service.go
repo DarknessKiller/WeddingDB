@@ -61,6 +61,7 @@ func NewAuthService(
 
 // LoginResult holds the data returned by Login.
 type LoginResult struct {
+	UserID              string
 	AccessToken         string
 	RefreshToken        string
 	Role                string
@@ -119,6 +120,7 @@ func (s *AuthService) sessionResult(ctx context.Context, admin *models.AdminUser
 		weddings = []models.WeddingEvent{}
 	}
 	return &LoginResult{
+		UserID:              admin.ID.String(),
 		AccessToken:         accessToken,
 		RefreshToken:        refreshToken,
 		Role:                admin.Role,

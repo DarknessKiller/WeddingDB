@@ -15,12 +15,10 @@ import (
 
 	"github.com/google/uuid"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 var ErrInvalidCursor = errors.New("invalid cursor")
-
-// ErrAlreadyCheckedIn is returned by ConditionalCheckIn when the guest was already checked in.
-var ErrAlreadyCheckedIn = fmt.Errorf("already checked in")
 
 type GuestRepo struct{ db *gorm.DB }
 
@@ -79,14 +77,30 @@ func (r *GuestRepo) FindByTable(ctx context.Context, weddingID, tableID uuid.UUI
 	return guests, err
 }
 
+func (r *GuestRepo) Create(ctx context.Context, g *models.GuestRecord) error {
+	g.NamePinyin = models.GenerateNamePinyin(g.Name)
+	if g.UpdatedAt.IsZero() {
+		g.UpdatedAt = time.Now()
+	}
+	stampFields(g, editableFieldColumns, g.UpdatedAt)
+	return r.db.WithContext(ctx).Create(g).Error
+}
+
+// likePattern escapes LIKE metacharacters, including the escape character
+// itself, so a user query cannot break the pattern.
+func likePattern(s string) string {
+	s = strings.ReplaceAll(s, "\\", "\\\\")
+	s = strings.ReplaceAll(s, "%", "\\%")
+	s = strings.ReplaceAll(s, "_", "\\_")
+	return fmt.Sprintf("%%%s%%", s)
+}
+
 func (r *GuestRepo) SearchByWedding(ctx context.Context, weddingID uuid.UUID, query string) ([]models.GuestRecord, error) {
 	guests := make([]models.GuestRecord, 0)
-	escaped := strings.ReplaceAll(query, "%", "\\%")
-	escaped = strings.ReplaceAll(escaped, "_", "\\_")
-	q := fmt.Sprintf("%%%s%%", escaped)
-	pinyinQ := fmt.Sprintf("%%%s%%", strings.ToLower(models.GenerateNamePinyin(query)))
+	q := likePattern(query)
+	pinyinQ := likePattern(strings.ToLower(models.GenerateNamePinyin(query)))
 	lowerQ := strings.ToLower(query)
-	prefix := fmt.Sprintf("%s%%", lowerQ)
+	prefix := fmt.Sprintf("%s%%", strings.ToLower(query))
 	err := r.db.WithContext(ctx).Raw(`
 		SELECT * FROM guest_records
 		WHERE wedding_id = ? AND (name ILIKE ? OR name_pinyin ILIKE ?)
@@ -103,14 +117,6 @@ func (r *GuestRepo) SearchByWedding(ctx context.Context, weddingID uuid.UUID, qu
 		Scan(&guests).Error
 	return guests, err
 }
-
-func (r *GuestRepo) Create(ctx context.Context, g *models.GuestRecord) error {
-	g.NamePinyin = models.GenerateNamePinyin(g.Name)
-	return r.db.WithContext(ctx).Create(g).Error
-}
-
-// ErrGuestChanged reports that the guest changed after the caller loaded it.
-var ErrGuestChanged = errors.New("guest changed since it was loaded")
 
 // editableColumns are the fields an edit form owns. checked_in_at is left out:
 // only check-in and check-out own it, so a stale edit form cannot undo it.
@@ -132,25 +138,82 @@ func editableColumns(g *models.GuestRecord) map[string]any {
 	}
 }
 
+// editableFieldColumns are the columns an online edit owns. An online write
+// stamps all of them at the write time; offline sync stamps only the columns
+// its payload carries, so an unrelated newer write cannot block a field.
+var editableFieldColumns = []string{
+	"name", "email", "pax", "table_id", "seat_num", "rsvp", "notes",
+	"dietary", "is_vip", "angbao_amt", "gift_item",
+}
+
+func stampFields(g *models.GuestRecord, columns []string, at time.Time) {
+	if g.FieldUpdatedAt == nil {
+		g.FieldUpdatedAt = make(map[string]time.Time, len(columns))
+	}
+	for _, column := range columns {
+		g.FieldUpdatedAt[column] = at
+	}
+}
+
+// FieldVersion is the time of the newest write to column. Rows created before
+// per-field versions existed fall back to the row version.
+func FieldVersion(g *models.GuestRecord, column string) time.Time {
+	if t, ok := g.FieldUpdatedAt[column]; ok {
+		return t
+	}
+	return g.UpdatedAt
+}
+
+// NewestWrite returns the newest write time recorded on the row.
+func NewestWrite(g *models.GuestRecord) time.Time {
+	newest := g.UpdatedAt
+	for _, t := range g.FieldUpdatedAt {
+		if t.After(newest) {
+			newest = t
+		}
+	}
+	return newest
+}
+
+func stampsValue(stamps map[string]time.Time) (string, error) {
+	b, err := json.Marshal(stamps)
+	if err != nil {
+		return "", fmt.Errorf("marshal field versions: %w", err)
+	}
+	return string(b), nil
+}
+
 // Update writes the editable columns of a guest.
 func (r *GuestRepo) Update(ctx context.Context, g *models.GuestRecord) error {
+	stampFields(g, editableFieldColumns, time.Now())
+	columns := editableColumns(g)
+	stamps, err := stampsValue(g.FieldUpdatedAt)
+	if err != nil {
+		return err
+	}
+	columns["field_updated_at"] = stamps
 	return r.db.WithContext(ctx).Model(g).Where("id = ? AND wedding_id = ?", g.ID, g.WeddingID).
-		Updates(editableColumns(g)).Error
+		Updates(columns).Error
 }
 
 // UpdateIfUnchanged writes the editable columns only while the row still
 // matches the version the caller loaded, so a stale edit form cannot revert a
+// ErrGuestChanged reports that the guest changed after the caller loaded it.
+var ErrGuestChanged = errors.New("guest changed since it was loaded")
+
 // concurrent check-in, angbao entry or seat move. Returns ErrGuestChanged when
 // it lost that race.
-func (r *GuestRepo) UpdateIfUnchanged(ctx context.Context, g *models.GuestRecord, expectedUpdatedAt time.Time, expectedCheckedInAt *time.Time) error {
-	q := r.db.WithContext(ctx).Model(g).
-		Where("id = ? AND wedding_id = ? AND updated_at = ?", g.ID, g.WeddingID, expectedUpdatedAt)
-	if expectedCheckedInAt == nil {
-		q = q.Where("checked_in_at IS NULL")
-	} else {
-		q = q.Where("checked_in_at = ?", *expectedCheckedInAt)
+func (r *GuestRepo) UpdateIfUnchanged(ctx context.Context, g *models.GuestRecord, expectedUpdatedAt time.Time) error {
+	stampFields(g, editableFieldColumns, time.Now())
+	columns := editableColumns(g)
+	stamps, err := stampsValue(g.FieldUpdatedAt)
+	if err != nil {
+		return err
 	}
-	res := q.Updates(editableColumns(g))
+	columns["field_updated_at"] = stamps
+	res := r.db.WithContext(ctx).Model(g).
+		Where("id = ? AND wedding_id = ? AND updated_at = ?", g.ID, g.WeddingID, expectedUpdatedAt).
+		Updates(columns)
 	if res.Error != nil {
 		return res.Error
 	}
@@ -164,46 +227,65 @@ func (r *GuestRepo) UpdateIfUnchanged(ctx context.Context, g *models.GuestRecord
 // check-in or edit of other columns survives. Returns gorm.ErrRecordNotFound
 // when no guest matches.
 func (r *GuestRepo) UpdateFields(ctx context.Context, id, weddingID uuid.UUID, fields map[string]any) error {
-	res := r.db.WithContext(ctx).Model(&models.GuestRecord{}).
-		Where("id = ? AND wedding_id = ?", id, weddingID).Updates(fields)
-	if res.Error != nil {
-		return res.Error
-	}
-	if res.RowsAffected == 0 {
-		return gorm.ErrRecordNotFound
-	}
-	return nil
+	return r.updateFieldsAt(ctx, id, weddingID, fields, time.Now(), nil)
+}
+
+// SyncUpdateFields writes only the given columns and merges their per-field
+// version stamps, so a mutation that carries one field leaves the time of
+// every other field untouched.
+func (r *GuestRepo) SyncUpdateFields(ctx context.Context, id, weddingID uuid.UUID, fields map[string]any, at, rowUpdatedAt time.Time) error {
+	return r.updateFieldsAt(ctx, id, weddingID, fields, at, &rowUpdatedAt)
+}
+
+func (r *GuestRepo) updateFieldsAt(ctx context.Context, id, weddingID uuid.UUID, fields map[string]any, at time.Time, rowUpdatedAt *time.Time) error {
+	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var g models.GuestRecord
+		q := tx.WithContext(ctx)
+		if tx.Name() == "postgres" {
+			q = q.Clauses(clause.Locking{Strength: "UPDATE"})
+		}
+		if err := q.Select("id", "field_updated_at", "updated_at").
+			Where("id = ? AND wedding_id = ?", id, weddingID).First(&g).Error; err != nil {
+			return err
+		}
+		// Snapshot the pre-write row version for fields that predate per-field
+		// versions, or the updated_at this write sets would hide their real time.
+		for _, column := range editableFieldColumns {
+			if _, ok := g.FieldUpdatedAt[column]; !ok {
+				stampFields(&g, []string{column}, g.UpdatedAt)
+			}
+		}
+		columns := make([]string, 0, len(fields))
+		for column := range fields {
+			switch column {
+			case "updated_at", "field_updated_at":
+				continue
+			}
+			columns = append(columns, column)
+		}
+		stampFields(&g, columns, at)
+		stamps, err := stampsValue(g.FieldUpdatedAt)
+		if err != nil {
+			return err
+		}
+		fields["field_updated_at"] = stamps
+		if rowUpdatedAt != nil {
+			fields["updated_at"] = *rowUpdatedAt
+		}
+		res := tx.Model(&models.GuestRecord{}).
+			Where("id = ? AND wedding_id = ?", id, weddingID).Updates(fields)
+		if res.Error != nil {
+			return res.Error
+		}
+		if res.RowsAffected == 0 {
+			return gorm.ErrRecordNotFound
+		}
+		return nil
+	})
 }
 
 func (r *GuestRepo) Delete(ctx context.Context, id, weddingID uuid.UUID) error {
 	return r.db.WithContext(ctx).Where("id = ? AND wedding_id = ?", id, weddingID).Delete(&models.GuestRecord{}).Error
-}
-
-// SyncCreate creates a guest with explicit CreatedAt/UpdatedAt for offline sync LWW.
-func (r *GuestRepo) SyncCreate(ctx context.Context, g *models.GuestRecord) error {
-	g.NamePinyin = models.GenerateNamePinyin(g.Name)
-	return r.db.WithContext(ctx).Create(g).Error
-}
-
-// SyncUpdate updates a guest and forces UpdatedAt to the provided time for LWW.
-func (r *GuestRepo) SyncUpdate(ctx context.Context, g *models.GuestRecord) error {
-	g.NamePinyin = models.GenerateNamePinyin(g.Name)
-	return r.db.WithContext(ctx).Model(g).Where("id = ? AND wedding_id = ?", g.ID, g.WeddingID).Updates(map[string]interface{}{
-		"name":          g.Name,
-		"name_pinyin":   g.NamePinyin,
-		"email":         g.Email,
-		"pax":           g.Pax,
-		"table_id":      g.TableID,
-		"seat_num":      g.SeatNum,
-		"rsvp":          g.RSVP,
-		"checked_in_at": g.CheckedInAt,
-		"notes":         g.Notes,
-		"dietary":       g.Dietary,
-		"is_vip":        g.IsVip,
-		"angbao_amt":    g.AngbaoAmt,
-		"gift_item":     g.GiftItem,
-		"updated_at":    g.UpdatedAt,
-	}).Error
 }
 
 // UnassignByTable clears table_id and seat_num for all guests at a given table.
@@ -213,33 +295,17 @@ func (r *GuestRepo) UnassignByTable(ctx context.Context, weddingID, tableID uuid
 		Updates(map[string]interface{}{"table_id": nil, "seat_num": nil}).Error
 }
 
-// ConditionalCheckIn atomically checks in a guest only if not already checked in,
-// and promotes their RSVP to confirmed. A non-empty notes value replaces the stored
-// notes (callers pass the already-joined text).
-// Returns ErrAlreadyCheckedIn if the guest was already checked in, gorm.ErrRecordNotFound if missing.
-func (r *GuestRepo) ConditionalCheckIn(ctx context.Context, id, weddingID uuid.UUID, now time.Time, notes string) error {
-	updates := map[string]any{"checked_in_at": now, "rsvp": "confirmed"}
-	if notes != "" {
-		updates["notes"] = notes
+// FindByIDForUpdate loads a guest under a row lock so the caller's read and
+// write see the same row. The lock is Postgres-only; sqlite (tests) has one
+// writer.
+func (r *GuestRepo) FindByIDForUpdate(ctx context.Context, id, weddingID uuid.UUID) (*models.GuestRecord, error) {
+	q := r.db.WithContext(ctx)
+	if r.db.Name() == "postgres" {
+		q = q.Clauses(clause.Locking{Strength: "UPDATE"})
 	}
-	result := r.db.WithContext(ctx).Model(&models.GuestRecord{}).
-		Where("id = ? AND wedding_id = ? AND checked_in_at IS NULL", id, weddingID).
-		Updates(updates)
-	if result.Error != nil {
-		return result.Error
-	}
-	if result.RowsAffected == 0 {
-		var n int64
-		if err := r.db.WithContext(ctx).Model(&models.GuestRecord{}).
-			Where("id = ? AND wedding_id = ?", id, weddingID).Count(&n).Error; err != nil {
-			return fmt.Errorf("check-in existence check: %w", err)
-		}
-		if n == 0 {
-			return gorm.ErrRecordNotFound
-		}
-		return ErrAlreadyCheckedIn
-	}
-	return nil
+	var g models.GuestRecord
+	err := q.Where("id = ? AND wedding_id = ?", id, weddingID).First(&g).Error
+	return &g, err
 }
 
 func (r *GuestRepo) ListAllByWedding(ctx context.Context, weddingID uuid.UUID) ([]models.GuestRecord, error) {
@@ -283,4 +349,15 @@ func (t TableOccupancy) MarshalJSON() ([]byte, error) {
 		TableID: utils.EncodeUUID(t.TableID),
 		Alias:   (Alias)(t),
 	})
+}
+
+// SyncCreate creates a guest with explicit CreatedAt/UpdatedAt for offline
+// sync, stamping every field with the creation time.
+func (r *GuestRepo) SyncCreate(ctx context.Context, g *models.GuestRecord) error {
+	g.NamePinyin = models.GenerateNamePinyin(g.Name)
+	if g.UpdatedAt.IsZero() {
+		g.UpdatedAt = time.Now()
+	}
+	stampFields(g, editableFieldColumns, g.UpdatedAt)
+	return r.db.WithContext(ctx).Create(g).Error
 }

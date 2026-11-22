@@ -122,6 +122,23 @@ func (r *AdminRepo) SetUserWeddings(ctx context.Context, userID uuid.UUID, weddi
 	})
 }
 
+// CreateWithWeddings inserts an account and its wedding grants in one
+// transaction, so a failed grant write cannot leave a grantless account behind.
+func (r *AdminRepo) CreateWithWeddings(ctx context.Context, admin *models.AdminUser, weddingIDs []uuid.UUID) error {
+	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Create(admin).Error; err != nil {
+			return err
+		}
+		for _, wid := range weddingIDs {
+			uw := models.UserWedding{ID: uuid.New(), UserID: admin.ID, WeddingID: wid}
+			if err := tx.Create(&uw).Error; err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+}
+
 // HasWeddingAccess checks if a user has access to a specific wedding.
 func (r *AdminRepo) HasWeddingAccess(ctx context.Context, userID, weddingID uuid.UUID) (bool, error) {
 	var count int64

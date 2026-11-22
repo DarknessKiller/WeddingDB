@@ -35,18 +35,20 @@ if (typeof window !== 'undefined') {
 }
 let _accessToken: string | null = null;
 let _refreshToken: string | null = null;
-let _role: string | null = null;
 let _name: string | null = null;
+let _role: string | null = null;
+let _userId: string | null = null;
 
 export function getAuth() {
-  return { accessToken: _accessToken, refreshToken: _refreshToken, role: _role, name: _name };
+  return { accessToken: _accessToken, refreshToken: _refreshToken, role: _role, name: _name, userId: _userId };
 }
 
-export function setAuth(access: string, refresh: string, r: string, n: string) {
+export function setAuth(access: string, refresh: string, r: string, n: string, userId?: string) {
   _accessToken = access;
   _refreshToken = refresh;
   _role = r;
   _name = n;
+  if (userId) _userId = userId;
 }
 
 export function clearAuth() {
@@ -54,12 +56,12 @@ export function clearAuth() {
   _refreshToken = null;
   _role = null;
   _name = null;
+  _userId = null;
   if (typeof window !== 'undefined') {
     localStorage.removeItem('weddingdb_access_token');
     localStorage.removeItem('weddingdb_refresh_token');
   }
 }
-
 // Show seat numbers setting. Shared so every page reacts without a reload, and
 // mirrored to localStorage so a kiosk/preview tab in the same browser updates too.
 export const showSeatNumbers = writable(false);

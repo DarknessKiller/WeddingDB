@@ -56,11 +56,11 @@ func TestGuestCap_CountsPartySize(t *testing.T) {
 		t.Fatalf("get couple: %v", err)
 	}
 	fetched.Pax = 3
-	if err := svc.Update(ctx, fetched); !errors.Is(err, ErrGuestCapExceeded) {
+	if err := svc.UpdateWithSeat(ctx, fetched, nil, 0); !errors.Is(err, ErrGuestCapExceeded) {
 		t.Fatalf("growing pax past the cap should be rejected, got %v", err)
 	}
 	fetched.Pax = 1
-	if err := svc.Update(ctx, fetched); err != nil {
+	if err := svc.UpdateWithSeat(ctx, fetched, nil, 0); err != nil {
 		t.Fatalf("shrinking pax should fit: %v", err)
 	}
 }
@@ -119,7 +119,7 @@ func TestGuestCap_LegacyOverCapAllowsDecrease(t *testing.T) {
 		t.Fatalf("load first guest: %v", err)
 	}
 	first.Pax = 1
-	if err := svc.Update(ctx, &first); err != nil {
+	if err := svc.UpdateWithSeat(ctx, &first, nil, 0); err != nil {
 		t.Fatalf("non-increasing update must be allowed: %v", err)
 	}
 	if err := svc.Delete(ctx, first.ID, wid); err != nil {

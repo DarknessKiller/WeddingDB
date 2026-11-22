@@ -166,7 +166,7 @@ import ArrowUpDown from 'lucide-svelte/icons/arrow-up-down';
     const projected = dragY + projectVelocity(velocity) * 16;
     // Dismiss if: past threshold OR fast flick downward
     if (projected > DISMISS_THRESHOLD || velocity > VELOCITY_THRESHOLD) {
-      onClose();
+      requestClose();
     } else {
       // Snap back: let CSS transition handle it by resetting dragY next frame
       requestAnimationFrame(() => { dragY = 0; });
@@ -184,10 +184,25 @@ import ArrowUpDown from 'lucide-svelte/icons/arrow-up-down';
     angbaoAmt: '',
     giftItem: '',
   });
+  const createBase = JSON.stringify(form);
+  function formKey() { return JSON.stringify(form); }
+  function isDirty() { return editing && formKey() !== (createMode ? createBase : baseForm); }
+  function requestClose() {
+    if (isDirty()) {
+      showDiscardConfirm = true;
+      return;
+    }
+    onClose();
+  }
 
   // An SSE update replaces the guest prop; refill only for a different guest
   // or outside edit mode so unsaved edits survive it.
   let filledId: string | undefined;
+  // Version of the row the form was filled from. Sent with the save so a stale
+  // form cannot overwrite a concurrent edit.
+  let baseUpdatedAt: string | undefined;
+  let baseForm = '';
+  let showDiscardConfirm = $state(false);
   $effect(() => {
     if (!guest) return;
     if (editing && guest.id === filledId) return;
@@ -201,6 +216,8 @@ import ArrowUpDown from 'lucide-svelte/icons/arrow-up-down';
     form.dietary = guest.dietaryRequirements;
     form.angbaoAmt = guest.angbaoAmount != null ? String(guest.angbaoAmount) : '';
     form.giftItem = guest.giftItem ?? '';
+    baseUpdatedAt = guest.updatedAt instanceof Date ? guest.updatedAt.toISOString() : String(guest.updatedAt);
+    baseForm = formKey();
   });
 
   async function save() {
@@ -222,6 +239,7 @@ import ArrowUpDown from 'lucide-svelte/icons/arrow-up-down';
           pax: form.pax, rsvp: form.rsvp, isVip: form.isVip, notes: form.notes,
           dietary: form.dietary, angbaoAmt: form.angbaoAmt ? Number(form.angbaoAmt) : null,
           giftItem: form.giftItem || null,
+          updatedAt: baseUpdatedAt,
         });
         Object.assign(guest!, {
           name: updated.name, email: updated.email,
@@ -322,8 +340,8 @@ import ArrowUpDown from 'lucide-svelte/icons/arrow-up-down';
 </script>
 
 <!-- svelte-ignore a11y_no_static_element_interactions -->
-<svelte:window onkeydown={(e) => { if (e.key === 'Escape' && !showUnassignConfirm && !showCheckInModal) onClose(); }} />
-<div class="drawer-overlay" onclick={onClose} role="presentation">
+<svelte:window onkeydown={(e) => { if (e.key === 'Escape' && !showUnassignConfirm && !showCheckInModal && !showDiscardConfirm) requestClose(); }} />
+<div class="drawer-overlay" onclick={requestClose} role="presentation">
   <div class="drawer-backdrop" style="opacity: {dragging ? Math.max(0, 1 - dragY / 400) : 1}" aria-hidden="true" transition:fade={{ duration: 250 }}></div>
   <!-- svelte-ignore a11y_no_static_element_interactions -->
   <!-- svelte-ignore a11y_click_events_have_key_events -->
@@ -336,7 +354,7 @@ import ArrowUpDown from 'lucide-svelte/icons/arrow-up-down';
     out={outfade}
     style="transform: translateY({dragY}px); transition: {dragging ? 'none' : 'transform 300ms cubic-bezier(0.2, 0.8, 0.2, 1)'}"
   >
-    <div class="drawer-pill flex sm:hidden" onclick={onClose} role="presentation">
+    <div class="drawer-pill flex sm:hidden" onclick={requestClose} role="presentation">
       <div class="drawer-pill-bar"></div>
     </div>
     <div class="drawer-header">
@@ -346,11 +364,11 @@ import ArrowUpDown from 'lucide-svelte/icons/arrow-up-down';
           <button onclick={() => editing = true} class="drawer-icon-btn flex" aria-label="Edit">
             <Pencil class="w-5 h-5" />
           </button>
-          <button onclick={onClose} class="drawer-icon-btn hidden sm:flex" aria-label="Close">
+          <button onclick={requestClose} class="drawer-icon-btn hidden sm:flex" aria-label="Close">
             <X class="w-5 h-5" />
           </button>
         {:else}
-          <button onclick={onClose} class="drawer-icon-btn flex" aria-label="Close">
+          <button onclick={requestClose} class="drawer-icon-btn flex" aria-label="Close">
             <X class="w-5 h-5" />
           </button>
         {/if}
@@ -405,7 +423,7 @@ import ArrowUpDown from 'lucide-svelte/icons/arrow-up-down';
           </div>
           <div class="form-field">
             <label for="guest-angbao" class="form-label">Angbao Amount (RM)</label>
-            <input id="guest-angbao" type="number" min="0" bind:value={form.angbaoAmt} placeholder="0" class="form-input" />
+            <input id="guest-angbao" type="number" min="0" max={LIMITS.angbaoMax} bind:value={form.angbaoAmt} placeholder="0" class="form-input" />
           </div>
           <div class="form-field">
             <label for="guest-gift" class="form-label">Gift Item</label>
@@ -545,6 +563,17 @@ import ArrowUpDown from 'lucide-svelte/icons/arrow-up-down';
     {/if}
   </div>
 </div>
+
+<ConfirmDialog
+  open={showDiscardConfirm}
+  title="Discard Changes?"
+  message="You have unsaved guest changes. Closing now will discard them."
+  confirmLabel="Discard"
+  cancelLabel="Keep Editing"
+  variant="warning"
+  onConfirm={() => { showDiscardConfirm = false; editing = false; onClose(); }}
+  onCancel={() => showDiscardConfirm = false}
+/>
 
 <ConfirmDialog
   open={showUnassignConfirm}

@@ -272,6 +272,7 @@ func (h *WeddingHandler) Delete(c fuego.ContextWithBody[any]) (any, error) {
 	if err := h.weddingService.Delete(ctx, id); err != nil {
 		return nil, err
 	}
+	removeWeddingUploads(id)
 	c.SetStatus(204)
 	return nil, nil
 }

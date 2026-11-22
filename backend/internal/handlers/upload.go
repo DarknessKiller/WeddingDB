@@ -122,11 +122,27 @@ func (h *UploadHandler) Upload(c fuego.ContextWithBody[any]) (any, error) {
 	}
 	hash := hex.EncodeToString(hasher.Sum(nil))
 
-	// Check if file with same hash already exists via index file, and sum the
-	// wedding's usage in the same pass. Index lines: "hash filename [size wedding]";
-	// lines from before the quota carry no size and do not count.
-	// shortcut: concurrent uploads can each pass the check and overshoot the cap by one file; lock the index around check and append if that matters.
+	// Check the hash index and the quota, write the file and append the index
+	// entry under one exclusive lock, so concurrent uploads cannot both pass
+	// the quota check or leave an uncounted file. Index lines: "hash filename
+	// [size wedding]"; lines from before the quota carry no size and do not
+	// count.
 	indexPath := filepath.Join(uploadDir, ".hash-index")
+	lockPath := indexPath + ".lock"
+	lockFile, err := os.OpenFile(lockPath, os.O_CREATE|os.O_RDWR, 0644)
+	if err != nil {
+		return nil, fuego.InternalServerError{Title: "Failed to save file"}
+	}
+	defer closeLogged(lockFile)
+	if err := syscall.Flock(int(lockFile.Fd()), syscall.LOCK_EX); err != nil {
+		return nil, fuego.InternalServerError{Title: "Failed to save file"}
+	}
+	defer func() {
+		if err := syscall.Flock(int(lockFile.Fd()), syscall.LOCK_UN); err != nil {
+			slog.Warn("unlock upload index failed", "err", err)
+		}
+	}()
+
 	var used int64
 	if idx, err := os.ReadFile(indexPath); err == nil {
 		for line := range strings.SplitSeq(string(idx), "\n") {
@@ -157,40 +173,34 @@ func (h *UploadHandler) Upload(c fuego.ContextWithBody[any]) (any, error) {
 	if err != nil {
 		return nil, fuego.InternalServerError{Title: "Failed to save file"}
 	}
-	defer closeLogged(dst)
-
-	// Reset file pointer to beginning for writing
 	if _, err := file.Seek(0, 0); err != nil {
+		closeLogged(dst)
 		return nil, fuego.InternalServerError{Title: "Failed to save file"}
 	}
 	written, err := dst.ReadFrom(file)
+	closeLogged(dst)
 	if err != nil {
+		if removeErr := os.Remove(filePath); removeErr != nil {
+			slog.Warn("remove partial upload failed", "file", filename, "err", removeErr)
+		}
 		return nil, fuego.InternalServerError{Title: "Failed to save file"}
 	}
 
-	// Append hash to index file with file lock
-	lockPath := indexPath + ".lock"
-	lockFile, err := os.OpenFile(lockPath, os.O_CREATE|os.O_RDWR, 0644)
-	if err == nil {
-		defer closeLogged(lockFile)
-		if err := syscall.Flock(int(lockFile.Fd()), syscall.LOCK_EX); err != nil {
-			slog.Warn("lock upload index failed", "err", err)
-		}
-		defer func() {
-			if err := syscall.Flock(int(lockFile.Fd()), syscall.LOCK_UN); err != nil {
-				slog.Warn("unlock upload index failed", "err", err)
-			}
-		}()
-	}
 	f, err := os.OpenFile(indexPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 	if err != nil {
-		// ponytail: index write failure is non-critical — file is already saved
-	} else {
-		if _, err := fmt.Fprintf(f, "%s %s %d %s\n", hash, filename, written, scope); err != nil {
-			slog.Warn("write upload index failed", "err", err)
+		if removeErr := os.Remove(filePath); removeErr != nil {
+			slog.Warn("remove unindexed upload failed", "file", filename, "err", removeErr)
 		}
-		closeLogged(f)
+		return nil, fuego.InternalServerError{Title: "Failed to save file"}
 	}
+	if _, err := fmt.Fprintf(f, "%s %s %d %s\n", hash, filename, written, scope); err != nil {
+		closeLogged(f)
+		if removeErr := os.Remove(filePath); removeErr != nil {
+			slog.Warn("remove unindexed upload failed", "file", filename, "err", removeErr)
+		}
+		return nil, fuego.InternalServerError{Title: "Failed to save file"}
+	}
+	closeLogged(f)
 
 	c.SetStatus(201)
 	return map[string]any{
@@ -198,4 +208,59 @@ func (h *UploadHandler) Upload(c fuego.ContextWithBody[any]) (any, error) {
 		"filename": filename,
 		"hash":     hash,
 	}, nil
+}
+
+// removeWeddingUploads deletes every indexed file belonging to a wedding and
+// drops its index entries. Failures are logged: the database delete already
+// committed, so a leftover file must not turn it into an error.
+func removeWeddingUploads(weddingID uuid.UUID) {
+	uploadDir := "./uploads"
+	indexPath := filepath.Join(uploadDir, ".hash-index")
+	lockPath := indexPath + ".lock"
+	lockFile, err := os.OpenFile(lockPath, os.O_CREATE|os.O_RDWR, 0644)
+	if err != nil {
+		slog.Warn("open upload index lock failed", "err", err)
+		return
+	}
+	defer closeLogged(lockFile)
+	if err := syscall.Flock(int(lockFile.Fd()), syscall.LOCK_EX); err != nil {
+		slog.Warn("lock upload index failed", "err", err)
+		return
+	}
+	defer func() {
+		if err := syscall.Flock(int(lockFile.Fd()), syscall.LOCK_UN); err != nil {
+			slog.Warn("unlock upload index failed", "err", err)
+		}
+	}()
+
+	idx, err := os.ReadFile(indexPath)
+	if err != nil {
+		return
+	}
+	kept := make([]string, 0, len(idx)/32)
+	var removed []string
+	for line := range strings.SplitSeq(string(idx), "\n") {
+		parts := strings.Fields(line)
+		if len(parts) == 4 && parts[3] == weddingID.String() {
+			removed = append(removed, parts[1])
+			continue
+		}
+		if line != "" {
+			kept = append(kept, line)
+		}
+	}
+	tmp := indexPath + ".tmp"
+	if err := os.WriteFile(tmp, []byte(strings.Join(kept, "\n")+"\n"), 0644); err != nil {
+		slog.Warn("write upload index failed", "err", err)
+		return
+	}
+	if err := os.Rename(tmp, indexPath); err != nil {
+		slog.Warn("replace upload index failed", "err", err)
+		return
+	}
+	for _, name := range removed {
+		if err := os.Remove(filepath.Join(uploadDir, name)); err != nil {
+			slog.Warn("remove wedding upload failed", "file", name, "err", err)
+		}
+	}
 }

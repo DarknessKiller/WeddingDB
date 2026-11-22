@@ -41,7 +41,8 @@ func newGuestSyncService(t *testing.T) (*GuestService, *gorm.DB, uuid.UUID) {
 		angbao_amt INTEGER,
 		gift_item TEXT,
 		created_at DATETIME,
-		updated_at DATETIME
+		updated_at DATETIME,
+		field_updated_at TEXT
 	)`)
 	db.Exec(`CREATE TABLE banquet_tables (
 		id TEXT PRIMARY KEY,
@@ -53,7 +54,8 @@ func newGuestSyncService(t *testing.T) (*GuestService, *gorm.DB, uuid.UUID) {
 		degree REAL NOT NULL DEFAULT 0,
 		is_vip INTEGER,
 		created_at DATETIME,
-		updated_at DATETIME
+		updated_at DATETIME,
+		field_updated_at TEXT
 	)`)
 	db.Exec(`CREATE TABLE applied_mutations (
 		wedding_id TEXT NOT NULL,
@@ -646,5 +648,44 @@ func TestSync_RetryableOnlyForTransientFailures(t *testing.T) {
 	testutil.NoErr(t, err)
 	if results[0].Status != "failed" || !results[0].Retryable {
 		t.Fatalf("db failure: got %+v, want failed and retryable", results[0])
+	}
+}
+
+// Invariant 1: a newer write to one field must not block an older offline
+// write to a different field.
+func TestSync_NewerUnrelatedFieldDoesNotBlockOlderEdit(t *testing.T) {
+	svc, db, wid := newGuestSyncService(t)
+	gid := uuid.New()
+	base := time.Now().Add(-time.Hour).UTC()
+	testutil.NoErr(t, db.Create(&models.GuestRecord{
+		ID: gid, WeddingID: wid, Name: "Ann", Pax: 1, CreatedAt: base, UpdatedAt: base,
+	}).Error)
+	update := func(at time.Time, payload map[string]any) SyncResult {
+		raw, err := json.Marshal(payload)
+		testutil.NoErr(t, err)
+		var p SyncPayload
+		testutil.NoErr(t, json.Unmarshal(raw, &p))
+		res, err := svc.Sync(t.Context(), wid, []SyncMutation{{
+			MutationID: uuid.NewString(), Op: SyncOpUpdate, GuestID: gid.String(),
+			ClientUpdatedAt: at, Payload: &p,
+		}})
+		testutil.NoErr(t, err)
+		return res[0]
+	}
+
+	if r := update(base.Add(2*time.Minute), map[string]any{"name": "Ann New"}); r.Status != "applied" {
+		t.Fatalf("newer name edit: %+v, want applied", r)
+	}
+	// Older notes edit must apply even though the row's updated_at is newer.
+	if r := update(base.Add(time.Minute), map[string]any{"notes": "allergy"}); r.Status != "applied" {
+		t.Fatalf("older notes edit: %+v, want applied", r)
+	}
+	var got models.GuestRecord
+	testutil.NoErr(t, db.First(&got, "id = ?", gid).Error)
+	if got.Name != "Ann New" || got.Notes != "allergy" {
+		t.Fatalf("merged row = %+v, want newer name and applied notes", got)
+	}
+	if r := update(base.Add(3*time.Second), map[string]any{"name": "Old"}); r.Status != "skipped" {
+		t.Fatalf("older name edit: %+v, want skipped", r)
 	}
 }

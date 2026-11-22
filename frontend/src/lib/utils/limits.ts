@@ -17,6 +17,7 @@ export const LIMITS = {
 	venueAddress: 500,
 	kioskDescription: 500,
 	url: 500,
+	angbaoMax: 1000000,
 	color: 20
 } as const;
 

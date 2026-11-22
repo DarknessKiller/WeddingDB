@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"context"
 	"errors"
 	"log/slog"
 	"net/mail"
@@ -14,12 +15,33 @@ import (
 )
 
 type AdminHandler struct {
-	adminRepo   *repository.AdminRepo
-	authService *services.AuthService
+	adminRepo      *repository.AdminRepo
+	authService    *services.AuthService
+	weddingService *services.WeddingService
 }
 
-func NewAdminHandler(adminRepo *repository.AdminRepo, authService *services.AuthService) *AdminHandler {
-	return &AdminHandler{adminRepo: adminRepo, authService: authService}
+func NewAdminHandler(adminRepo *repository.AdminRepo, authService *services.AuthService, weddingService *services.WeddingService) *AdminHandler {
+	return &AdminHandler{adminRepo: adminRepo, authService: authService, weddingService: weddingService}
+}
+
+// parseWeddingIDs rejects the whole request when any ID is malformed or
+// unknown. Silently dropping one would remove that wedding's grant for a user
+// who still has it.
+func (h *AdminHandler) parseWeddingIDs(ctx context.Context, values []string) ([]uuid.UUID, error) {
+	ids := make([]uuid.UUID, 0, len(values))
+	for _, raw := range values {
+		id, err := DecodeID(raw)
+		if err != nil {
+			return nil, fuego.BadRequestError{Title: "Invalid wedding ID"}
+		}
+		ids = append(ids, id)
+	}
+	for _, id := range ids {
+		if _, err := h.weddingService.Get(ctx, id); err != nil {
+			return nil, fuego.BadRequestError{Title: "Wedding not found"}
+		}
+	}
+	return ids, nil
 }
 
 type AdminRequest struct {
@@ -70,22 +92,12 @@ func (h *AdminHandler) Create(c fuego.ContextWithBody[AdminRequest]) (any, error
 		Name:     body.Name,
 		Role:     body.Role,
 	}
-	if err := h.adminRepo.Create(ctx, admin); err != nil {
+	ids, err := h.parseWeddingIDs(ctx, body.Weddings)
+	if err != nil {
 		return nil, err
 	}
-	// Assign weddings if provided
-	if len(body.Weddings) > 0 {
-		var ids []uuid.UUID
-		for _, ws := range body.Weddings {
-			if id, err := DecodeID(ws); err == nil {
-				ids = append(ids, id)
-			}
-		}
-		if len(ids) > 0 {
-			if err := h.adminRepo.SetUserWeddings(ctx, admin.ID, ids); err != nil {
-				return nil, err
-			}
-		}
+	if err := h.adminRepo.CreateWithWeddings(ctx, admin, ids); err != nil {
+		return nil, err
 	}
 	c.SetStatus(201)
 	return admin, nil
@@ -145,11 +157,9 @@ func (h *AdminHandler) AssignWeddings(c fuego.ContextWithBody[AssignWeddingsRequ
 	if err != nil {
 		return nil, fuego.NotFoundError{Title: "Admin not found"}
 	}
-	var ids []uuid.UUID
-	for _, ws := range body.Weddings {
-		if wid, err := DecodeID(ws); err == nil {
-			ids = append(ids, wid)
-		}
+	ids, err := h.parseWeddingIDs(ctx, body.Weddings)
+	if err != nil {
+		return nil, err
 	}
 	// Fetch the old grants so removing access can revoke live sessions.
 	oldWeddings, err := h.adminRepo.GetUserWeddings(ctx, admin.ID)

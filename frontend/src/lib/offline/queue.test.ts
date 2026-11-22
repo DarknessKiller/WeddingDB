@@ -1,9 +1,10 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { writable } from 'svelte/store';
 
 const apiFetch = vi.hoisted(() => vi.fn());
 const addToast = vi.hoisted(() => vi.fn());
 vi.mock('#lib/api/client.ts', () => ({ apiFetch }));
-vi.mock('#lib/stores/guestEvents.ts', () => ({ applyGuestResponse: vi.fn(), removeGuest: vi.fn() }));
+vi.mock('#lib/stores/guestEvents.ts', () => ({ applyGuestResponse: vi.fn(), removeGuest: vi.fn(), guestList: writable([]) }));
 vi.mock('#lib/stores/index.ts', () => ({ addToast }));
 
 function memoryStorage() {
@@ -112,5 +113,20 @@ describe('logout data', () => {
 		expect(pendingChangeCount()).toBe(0);
 		expect(localStorage.getItem('offline_cache_w1')).toBeNull();
 		expect(localStorage.getItem('weddingdb_show_seat_numbers_w1')).toBe('1');
+	});
+
+	it('a different user logging in drops the previous user edits and cache', async () => {
+		const { enqueue, claimOfflineOwner, getQueue, cacheGuests, loadCachedGuests } = await import('./queue');
+		claimOfflineOwner('user-a');
+		enqueue('w1', mutation('a'));
+		cacheGuests('w1', [{ id: 'g1', name: 'Previous guest' }]);
+
+		claimOfflineOwner('user-a');
+		expect(getQueue('w1')).toHaveLength(1);
+
+		claimOfflineOwner('user-b');
+		expect(getQueue('w1')).toEqual([]);
+		expect(loadCachedGuests('w1')).toBeNull();
+		expect(localStorage.getItem('offline_owner')).toBe('user-b');
 	});
 });

@@ -54,6 +54,12 @@ type GuestRecord struct {
 	GiftItem    *string     `gorm:"size:255" json:"giftItem"`
 	CreatedAt   time.Time   `json:"createdAt"`
 	UpdatedAt   time.Time   `json:"updatedAt"`
+
+	// FieldUpdatedAt records the client timestamp of the newest write per
+	// column (keyed by DB column name) for offline sync's per-field
+	// last-write-wins. A nil map means the row predates it, and UpdatedAt
+	// stands in for every field.
+	FieldUpdatedAt map[string]time.Time `gorm:"serializer:json;type:text" json:"-"`
 }
 
 func (g GuestRecord) MarshalJSON() ([]byte, error) {

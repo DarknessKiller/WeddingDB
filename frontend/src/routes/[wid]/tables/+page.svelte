@@ -15,7 +15,7 @@ import Trash2 from 'lucide-svelte/icons/trash-2';
 import AlertCircle from 'lucide-svelte/icons/alert-circle';
 import Map from 'lucide-svelte/icons/map';
   import { listTables, createTable, updateTable, deleteTable, getOccupancy } from '#lib/api/tables.ts';
-  import { getLayout, saveLayout, LayoutConflictError } from '#lib/api/layout.ts';
+  import { getLayout, saveLayout, saveLayoutKeepMine, LayoutConflictError } from '#lib/api/layout.ts';
   import { defaultSlot } from '#lib/utils/layout.ts';
   import { weddingId } from '#lib/stores/weddingId.ts';
   import { get } from 'svelte/store';
@@ -36,6 +36,8 @@ import Map from 'lucide-svelte/icons/map';
   let occupancy: Record<string, TableOccupancy> = $state.raw({});
   let loading = $state(true);
   let editMode = $state(false);
+  let showLayoutConflict = $state(false);
+  let pendingLayout: { tables: BanquetTable[]; elements: HallElement[]; hw: number; hh: number } | null = $state(null);
 
   let gridCols = $derived.by(() => {
     const n = (tables ?? []).length;
@@ -219,12 +221,42 @@ import Map from 'lucide-svelte/icons/map';
       editMode = false;
       await loadData();
     } catch (e: any) {
-      addToast(e.message ?? 'Save failed', 'error');
       if (e instanceof LayoutConflictError) {
-        editMode = false;
-        await loadData().catch(() => {});
+        // Keep the user's arrangement open and let them choose; silently
+        // reloading would throw away their unsaved layout.
+        pendingLayout = { tables: editTables, elements: editElements, hw, hh };
+        showLayoutConflict = true;
+        return;
       }
+      addToast(e.message ?? 'Save failed', 'error');
     }
+  }
+
+  async function keepMyLayout() {
+    if (!pendingLayout) return;
+    try {
+      await saveLayoutKeepMine(get(weddingId), {
+        version: 0,
+        hallWidth: pendingLayout.hw,
+        hallHeight: pendingLayout.hh,
+        tables: pendingLayout.tables.map(t => ({ id: t.id, x: t.x, y: t.y, degree: t.degree, capacity: t.capacity, isVip: t.isVip })),
+        elements: pendingLayout.elements,
+      });
+      showLayoutConflict = false;
+      pendingLayout = null;
+      editMode = false;
+      addToast('Layout saved', 'success');
+      await loadData();
+    } catch {
+      addToast('Could not save the layout. Try again.', 'error');
+    }
+  }
+
+  function discardMyLayout() {
+    showLayoutConflict = false;
+    pendingLayout = null;
+    editMode = false;
+    loadData().catch(() => {});
   }
 
   function handleCancelEdit() {
@@ -408,6 +440,16 @@ import Map from 'lucide-svelte/icons/map';
   variant="danger"
   onConfirm={confirmDelete}
   onCancel={() => { showDeleteConfirm = false; deleteTarget = null; }}
+/>
+<ConfirmDialog
+  open={showLayoutConflict}
+  title="Layout Changed Elsewhere"
+  message="Another device saved this layout while you were editing. Your arrangement is still open. Save yours anyway, or discard it and load the newer layout?"
+  confirmLabel="Save Mine"
+  cancelLabel="Discard Mine"
+  variant="warning"
+  onConfirm={keepMyLayout}
+  onCancel={discardMyLayout}
 />
 
 <!-- Add/Edit Drawer -->

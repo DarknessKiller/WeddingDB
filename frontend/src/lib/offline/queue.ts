@@ -1,7 +1,9 @@
+import { get } from 'svelte/store';
 import { apiFetch } from '#lib/api/client.ts';
-import { applyGuestResponse, removeGuest } from '#lib/stores/guestEvents.ts';
+import { applyGuestResponse, removeGuest, guestList } from '#lib/stores/guestEvents.ts';
 import { addToast } from '#lib/stores/index.ts';
 import type { GuestResponse } from '#lib/api/guests.ts';
+import type { Guest } from '#lib/types/index.ts';
 
 export type SyncOp = 'create' | 'update' | 'delete' | 'checkin' | 'checkout';
 
@@ -12,6 +14,9 @@ export interface QueuedMutation {
 	clientUpdatedAt: string;
 	baseUpdatedAt?: string | null;
 	payload?: Record<string, unknown> | null;
+	// previous is the row this mutation's optimistic patch replaced, kept so a
+	// rejected change can be rolled back when the server sends no record.
+	previous?: Guest | null;
 }
 
 function qkey(wid: string) { return `offline_queue_${wid}`; }
@@ -22,7 +27,15 @@ export function getQueue(wid: string): QueuedMutation[] {
 	try { return JSON.parse(localStorage.getItem(qkey(wid)) || '[]'); } catch { return []; }
 }
 function setQueue(wid: string, q: QueuedMutation[]) {
-	localStorage.setItem(qkey(wid), JSON.stringify(q.slice(0, 500)));
+	const trimmed = q.slice(0, 500);
+	try {
+		localStorage.setItem(qkey(wid), JSON.stringify(trimmed));
+	} catch {
+		// Storage quota: keep the newest changes so the most recent work survives.
+		const newest = trimmed.slice(-250);
+		localStorage.setItem(qkey(wid), JSON.stringify(newest));
+		addToast('Device storage is full: older queued changes were dropped.', 'error');
+	}
 }
 
 export function enqueue(wid: string, m: QueuedMutation) {
@@ -31,8 +44,16 @@ export function enqueue(wid: string, m: QueuedMutation) {
 		q.shift();
 		addToast('Offline queue is full (500 changes): the oldest unsynced change was dropped. Reconnect to sync.', 'error');
 	}
+	const current = get(guestList).find(g => g.id === m.guestId);
+	if (m.previous === undefined) {
+		m.previous = current ? JSON.parse(JSON.stringify(current)) as Guest : null;
+	}
 	q.push(m);
-	setQueue(wid, q);
+	try {
+		setQueue(wid, q);
+	} catch {
+		addToast('Could not save this change on the device: storage is full.', 'error');
+	}
 	notifyChanged();
 }
 
@@ -69,6 +90,37 @@ export function clearOfflineData() {
 	notifyChanged();
 }
 
+// claimOfflineOwner drops another account's unsynced changes and cached guest
+// list when a different user logs in on this shared device, then records the
+// owner. Queued edits and guest PII must never pass to the next user.
+export function claimOfflineOwner(userId: string) {
+	if (typeof window === 'undefined' || !userId) return;
+	const previous = localStorage.getItem('offline_owner');
+	if (previous && previous !== userId) clearOfflineData();
+	try {
+		localStorage.setItem('offline_owner', userId);
+	} catch {}
+}
+
+// rollbackOptimistic restores the row a rejected mutation replaced. The queue
+// stores it as JSON, so dates are revived before the store sees them.
+function rollbackOptimistic(m: QueuedMutation) {
+	if (!m.previous) {
+		if (m.op === 'create') removeGuest(m.guestId);
+		return;
+	}
+	const previous = m.previous;
+	const restored: Guest = {
+		...previous,
+		createdAt: new Date(previous.createdAt),
+		updatedAt: new Date(previous.updatedAt ?? Date.now()),
+		checkedInAt: previous.checkedInAt ? new Date(previous.checkedInAt) : undefined,
+	};
+	guestList.update(list => list.some(g => g.id === restored.id)
+		? list.map(g => (g.id === restored.id ? restored : g))
+		: [...list, restored]);
+}
+
 export function cacheGuests(wid: string, guests: unknown[]) {
 	try { localStorage.setItem(ckey(wid), JSON.stringify(guests)); } catch {}
 }
@@ -100,7 +152,7 @@ async function runSync(wid: string): Promise<SyncSummary> {
 	if (!q.length) return { applied: 0, skipped: 0, results: [] };
 	const res = await apiFetch(`/api/weddings/${wid}/guests/sync`, {
 		method: 'POST',
-		body: JSON.stringify({ mutations: q })
+		body: JSON.stringify({ mutations: q.map(({ previous, ...m }) => m) })
 	});
 	if (!res.ok) {
 		const t = await res.text().catch(() => '');
@@ -126,6 +178,7 @@ async function runSync(wid: string): Promise<SyncSummary> {
 			dropped.push(r.reason || 'rejected');
 			appliedIds.push(q[i].mutationId);
 			if (r.serverRecord) applyGuestResponse(r.serverRecord as GuestResponse);
+			else rollbackOptimistic(q[i]);
 		} else if (r.status === 'failed') {
 			retrying.push(r.reason || 'unknown error');
 		}

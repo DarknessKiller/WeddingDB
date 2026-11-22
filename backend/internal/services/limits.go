@@ -27,6 +27,10 @@ const (
 	MaxColorLen            = 20
 )
 
+// MaxAngbaoAmt bounds the recorded gift amount so a typo cannot poison report
+// totals. The frontend mirrors it in LIMITS.angbaoMax.
+const MaxAngbaoAmt = 1_000_000
+
 // FieldLenError reports a text field over its cap. Handlers map it to a 400.
 type FieldLenError struct {
 	Field string
@@ -69,9 +73,11 @@ func ValidateGuestText(g *models.GuestRecord) error {
 			return err
 		}
 	}
+	if g.AngbaoAmt != nil && (*g.AngbaoAmt < 0 || *g.AngbaoAmt > MaxAngbaoAmt) {
+		return fmt.Errorf("angbao amount must be between 0 and %d", MaxAngbaoAmt)
+	}
 	return nil
 }
-
 func ValidateTableName(name string) error {
 	return checkLen("Name", name, MaxTableNameLen)
 }

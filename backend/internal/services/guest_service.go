@@ -94,7 +94,7 @@ func (s *GuestService) createGuestTx(ctx context.Context, tx *gorm.DB, g *models
 	return repo.Create(ctx, g)
 }
 
-func (s *GuestService) updateGuestTx(ctx context.Context, tx *gorm.DB, g *models.GuestRecord, syncWrite bool) error {
+func (s *GuestService) updateGuestTx(ctx context.Context, tx *gorm.DB, g *models.GuestRecord) error {
 	if g.Pax < 1 {
 		g.Pax = 1
 	}
@@ -121,18 +121,14 @@ func (s *GuestService) updateGuestTx(ctx context.Context, tx *gorm.DB, g *models
 		return ruleError{guestCapError(total, g.Pax-current.Pax)}
 	}
 	repo := repository.NewGuestRepo(tx)
-	if syncWrite {
-		return repo.SyncUpdate(ctx, g)
-	}
 	// Online edits never write checked_in_at; report the stored value.
-	expectedCheckedInAt := g.CheckedInAt
 	g.CheckedInAt = current.CheckedInAt
 	if g.UpdatedAt.IsZero() {
 		return repo.Update(ctx, g)
 	}
-	// The caller edited a loaded row: refuse the write if the row moved on, so
-	// a stale form cannot revert another receptionist's check-in or edit.
-	return repo.UpdateIfUnchanged(ctx, g, g.UpdatedAt, expectedCheckedInAt)
+	// The caller edited a row loaded at g.UpdatedAt: refuse the write if the
+	// row moved on, so a stale form cannot revert another writer.
+	return repo.UpdateIfUnchanged(ctx, g, g.UpdatedAt)
 }
 
 func (s *GuestService) List(ctx context.Context, weddingID uuid.UUID, cursor string, limit int) ([]models.GuestRecord, int64, error) {
@@ -182,17 +178,6 @@ func (s *GuestService) Create(ctx context.Context, g *models.GuestRecord) error 
 		return err
 	}
 	s.publishEvent("create", g, g.WeddingID)
-	return nil
-}
-
-func (s *GuestService) Update(ctx context.Context, g *models.GuestRecord) error {
-	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		return s.updateGuestTx(ctx, tx, g, false)
-	})
-	if err != nil {
-		return err
-	}
-	s.publishEvent("update", g, g.WeddingID)
 	return nil
 }
 
@@ -283,14 +268,22 @@ func (s *GuestService) AssignSeat(ctx context.Context, guestID, weddingID, table
 	var guest *models.GuestRecord
 	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		txGuestRepo := repository.NewGuestRepo(tx)
-		var err error
-		guest, err = txGuestRepo.FindByID(ctx, guestID, weddingID)
-		if err != nil {
-			return err
-		}
 		// Wedding row lock keeps the lock order identical to create/update, so
 		// a concurrent seat move and import cannot deadlock each other.
 		if _, err := s.guestCountLocked(tx, weddingID); err != nil {
+			return err
+		}
+		// Lock the table before reading the guest: the guest's pax decides the
+		// seat range, so it must be read under the lock, not before it.
+		if tx.Name() == "postgres" {
+			if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Select("id").
+				Where("id = ? AND wedding_id = ?", tableID, weddingID).First(&models.BanquetTable{}).Error; err != nil {
+				return ruleError{errors.New("table not found")}
+			}
+		}
+		var err error
+		guest, err = txGuestRepo.FindByIDForUpdate(ctx, guestID, weddingID)
+		if err != nil {
 			return err
 		}
 		if err := checkSeatTx(ctx, tx, weddingID, tableID, guestID, guest.Pax, seatNum); err != nil {
@@ -317,7 +310,7 @@ func (s *GuestService) UpdateWithSeat(ctx context.Context, g *models.GuestRecord
 			g.TableID = tableID
 			g.SeatNum = &seatNum
 		}
-		return s.updateGuestTx(ctx, tx, g, false)
+		return s.updateGuestTx(ctx, tx, g)
 	})
 	if err != nil {
 		return err
@@ -332,23 +325,28 @@ func (s *GuestService) UpdateWithSeat(ctx context.Context, g *models.GuestRecord
 // receptionist (FIFO conflict).
 func (s *GuestService) CheckIn(ctx context.Context, id, weddingID uuid.UUID, notes string) error {
 	now := time.Now()
-	updatedNotes := ""
 	notes = strings.TrimSpace(notes)
-	if notes != "" {
-		existing, err := s.guestRepo.FindByID(ctx, id, weddingID)
-		if err != nil {
-			return err
-		}
-		updatedNotes = appendNote(existing.Notes, notes)
-	}
-	// Atomic conditional update: only check in if not already checked in
-	if err := s.guestRepo.ConditionalCheckIn(ctx, id, weddingID, now, updatedNotes); err != nil {
-		if errors.Is(err, repository.ErrAlreadyCheckedIn) {
-			return ErrAlreadyCheckedIn
-		}
+	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		repo := repository.NewGuestRepo(tx)
+		// Lock the row before reading its notes: the append below must see the
+		// notes a concurrent edit committed, or it would overwrite them.
+		guest, err := repo.FindByIDForUpdate(ctx, id, weddingID)
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return ErrGuestNotFound
 		}
+		if err != nil {
+			return err
+		}
+		if guest.CheckedInAt != nil {
+			return ErrAlreadyCheckedIn
+		}
+		fields := map[string]any{"checked_in_at": now, "rsvp": "confirmed"}
+		if notes != "" {
+			fields["notes"] = appendNote(guest.Notes, notes)
+		}
+		return repo.UpdateFields(ctx, id, weddingID, fields)
+	})
+	if err != nil {
 		return err
 	}
 	s.publishFresh(ctx, "checkin", id, weddingID)
@@ -597,6 +595,13 @@ type ruleError struct{ error }
 
 func (e ruleError) Unwrap() error { return e.error }
 
+// IsRuleError reports whether err is a broken guest rule (validation, seat,
+// capacity), which the handler answers with 400 instead of 500.
+func IsRuleError(err error) bool {
+	_, ok := errors.AsType[ruleError](err)
+	return ok
+}
+
 // syncFailed answers a mutation that did not apply. Only errors a later attempt
 // can clear (database, network) are retryable.
 func syncFailed(m SyncMutation, err error) SyncResult {
@@ -693,87 +698,20 @@ func (s *GuestService) applySyncMutation(ctx context.Context, weddingID uuid.UUI
 		}
 
 		switch m.Op {
-		case SyncOpCreate:
-			if found {
-				// treat as update with LWW; equal timestamps count as newer (tie-break)
-				if opTime.Before(existing.UpdatedAt) {
-					return skipped("older than server", existing)
-				}
-				if m.Payload != nil {
-					if err := svc.validateSyncTableSeat(ctx, weddingID, m.Payload); err != nil {
-						return err
-					}
-					applySyncPayload(existing, m.Payload, &gid)
-				}
-				existing.UpdatedAt = opTime
-				if err := svc.updateGuestTx(ctx, tx, existing, true); err != nil {
-					return err
-				}
-				return applied(existing, "update")
-			}
-			if m.Payload == nil || m.Payload.Name == "" {
-				return skipped("name required", nil)
-			}
-			if m.Payload.Pax < 1 {
-				m.Payload.Pax = 1
-			}
-			if err := svc.validateSyncTableSeat(ctx, weddingID, m.Payload); err != nil {
-				return err
-			}
-			g := &models.GuestRecord{
-				ID:        gid,
-				WeddingID: weddingID,
-				Name:      m.Payload.Name,
-				Email:     m.Payload.Email,
-				Pax:       m.Payload.Pax,
-				RSVP:      m.Payload.RSVP,
-				IsVip:     m.Payload.IsVip,
-				Notes:     m.Payload.Notes,
-				Dietary:   m.Payload.Dietary,
-				AngbaoAmt: m.Payload.AngbaoAmt,
-				GiftItem:  m.Payload.GiftItem,
-				CreatedAt: opTime,
-				UpdatedAt: opTime,
-			}
-			if m.Payload.TableID != nil && *m.Payload.TableID != "" {
-				if tid, err := parseSyncID(*m.Payload.TableID); err == nil {
-					g.TableID = &tid
-				}
-			}
-			g.SeatNum = m.Payload.SeatNum
-			if g.TableID == nil {
-				g.SeatNum = nil // a seat without a table is not a valid assignment
-			}
-			if err := svc.createGuestTx(ctx, tx, g, true); err != nil {
-				return err
-			}
-			return applied(g, "create")
-
-		case SyncOpUpdate:
+		case SyncOpCreate, SyncOpUpdate:
 			if !found {
-				return skipped("not found", nil)
-			}
-			// Equal timestamps win the tie-break: only strictly older ops lose.
-			if opTime.Before(existing.UpdatedAt) {
-				return skipped("older than server", existing)
-			}
-			if m.Payload != nil {
-				if err := svc.validateSyncTableSeat(ctx, weddingID, m.Payload); err != nil {
-					return err
+				if m.Op == SyncOpUpdate {
+					return skipped("not found", nil)
 				}
-				applySyncPayload(existing, m.Payload, nil)
+				return svc.syncCreate(ctx, tx, weddingID, gid, m, opTime, applied, skipped)
 			}
-			existing.UpdatedAt = opTime
-			if err := svc.updateGuestTx(ctx, tx, existing, true); err != nil {
-				return err
-			}
-			return applied(existing, "update")
+			return svc.syncUpdate(ctx, tx, weddingID, existing, m, opTime, applied, skipped)
 
 		case SyncOpDelete:
 			if !found {
 				return applied(nil, "")
 			}
-			if opTime.Before(existing.UpdatedAt) {
+			if opTime.Before(repository.NewestWrite(existing)) {
 				// Report "failed", not "skipped": the client keeps failed items
 				// queued instead of dequeuing and losing the delete intent.
 				// Not retryable: the server copy only gets newer, so a retry loses again.
@@ -789,37 +727,47 @@ func (s *GuestService) applySyncMutation(ctx context.Context, weddingID uuid.UUI
 			if !found {
 				return skipped("not found", nil)
 			}
-			if opTime.Before(existing.UpdatedAt) {
-				return skipped("older than server", existing)
+			fields := make(map[string]any, 5)
+			if !opTime.Before(repository.FieldVersion(existing, "checked_in_at")) {
+				existing.CheckedInAt = &opTime
+				fields["checked_in_at"] = opTime
 			}
-			existing.CheckedInAt = &opTime
-			existing.RSVP = "confirmed"
-			existing.UpdatedAt = opTime
-			// Only the columns a check-in owns: a full-row write would revert a
-			// concurrent seat assignment or edit with this mutation's snapshot.
-			fields := map[string]any{"checked_in_at": opTime, "rsvp": "confirmed", "updated_at": opTime}
+			if !opTime.Before(repository.FieldVersion(existing, "rsvp")) {
+				existing.RSVP = "confirmed"
+				fields["rsvp"] = "confirmed"
+			}
 			if m.Payload != nil {
-				if m.Payload.AngbaoAmt != nil {
+				if m.Payload.has("angbaoAmt") && m.Payload.AngbaoAmt != nil &&
+					!opTime.Before(repository.FieldVersion(existing, "angbao_amt")) {
 					existing.AngbaoAmt = m.Payload.AngbaoAmt
 					fields["angbao_amt"] = *m.Payload.AngbaoAmt
 				}
-				if m.Payload.GiftItem != nil {
+				if m.Payload.has("giftItem") && m.Payload.GiftItem != nil &&
+					!opTime.Before(repository.FieldVersion(existing, "gift_item")) {
 					existing.GiftItem = m.Payload.GiftItem
 					fields["gift_item"] = *m.Payload.GiftItem
 				}
-				// A notes value in a checkin payload is appended to the guest's notes,
-				// never replacing them, so a queued note never wipes existing notes.
+				// A notes value in a checkin payload is appended to the guest's
+				// notes, never replacing them, so a queued note never wipes
+				// existing notes.
 				note := strings.TrimSpace(m.Payload.Notes)
-				if err := checkLen("Check-in notes", note, MaxCheckInNoteLen); err != nil {
-					return ruleError{err}
-				}
-				existing.Notes = appendNote(existing.Notes, note)
-				fields["notes"] = existing.Notes
-				if err := ValidateGuestText(existing); err != nil {
-					return ruleError{err}
+				if note != "" && !opTime.Before(repository.FieldVersion(existing, "notes")) {
+					if err := checkLen("Check-in notes", note, MaxCheckInNoteLen); err != nil {
+						return ruleError{err}
+					}
+					existing.Notes = appendNote(existing.Notes, note)
+					fields["notes"] = existing.Notes
 				}
 			}
-			if err := svc.guestRepo.UpdateFields(ctx, gid, weddingID, fields); err != nil {
+			if len(fields) == 0 {
+				return skipped("older than server", existing)
+			}
+			if err := ValidateGuestText(existing); err != nil {
+				return ruleError{err}
+			}
+			rowTime := newerTime(repository.NewestWrite(existing), opTime)
+			existing.UpdatedAt = rowTime
+			if err := svc.guestRepo.SyncUpdateFields(ctx, gid, weddingID, fields, opTime, rowTime); err != nil {
 				return err
 			}
 			return applied(existing, "checkin")
@@ -828,12 +776,13 @@ func (s *GuestService) applySyncMutation(ctx context.Context, weddingID uuid.UUI
 			if !found {
 				return skipped("not found", nil)
 			}
-			if opTime.Before(existing.UpdatedAt) {
+			if opTime.Before(repository.FieldVersion(existing, "checked_in_at")) {
 				return skipped("older than server", existing)
 			}
 			existing.CheckedInAt = nil
-			existing.UpdatedAt = opTime
-			if err := svc.guestRepo.UpdateFields(ctx, gid, weddingID, map[string]any{"checked_in_at": nil, "updated_at": opTime}); err != nil {
+			rowTime := newerTime(repository.NewestWrite(existing), opTime)
+			existing.UpdatedAt = rowTime
+			if err := svc.guestRepo.SyncUpdateFields(ctx, gid, weddingID, map[string]any{"checked_in_at": nil}, opTime, rowTime); err != nil {
 				return err
 			}
 			return applied(existing, "checkout")
@@ -870,8 +819,182 @@ func (s *GuestService) syncLoadForUpdate(ctx context.Context, tx *gorm.DB, gid, 
 	return &g, true, nil
 }
 
+func newerTime(a, b time.Time) time.Time {
+	if b.After(a) {
+		return b
+	}
+	return a
+}
+
+// applySyncFields merges the payload fields whose client time is not older
+// than the stored field version into g, and records the columns to write.
+// Fields the payload does not carry keep their stored value and version.
+func applySyncFields(g *models.GuestRecord, p *SyncPayload, opTime time.Time, fields map[string]any) error {
+	newer := func(column string) bool { return !opTime.Before(repository.FieldVersion(g, column)) }
+	if p.has("name") && p.Name != "" && newer("name") {
+		g.Name = p.Name
+		g.NamePinyin = models.GenerateNamePinyin(p.Name)
+		fields["name"] = g.Name
+		fields["name_pinyin"] = g.NamePinyin
+	}
+	if p.has("email") && newer("email") {
+		g.Email = p.Email
+		fields["email"] = p.Email
+	}
+	if p.has("pax") && p.Pax >= 1 && newer("pax") {
+		g.Pax = p.Pax
+		fields["pax"] = p.Pax
+	}
+	if p.has("rsvp") && p.RSVP != "" && newer("rsvp") {
+		g.RSVP = p.RSVP
+		fields["rsvp"] = p.RSVP
+	}
+	if p.has("notes") && newer("notes") {
+		g.Notes = p.Notes
+		fields["notes"] = p.Notes
+	}
+	if p.has("dietary") && newer("dietary") {
+		g.Dietary = p.Dietary
+		fields["dietary"] = p.Dietary
+	}
+	if p.has("isVip") && newer("is_vip") {
+		g.IsVip = p.IsVip
+		fields["is_vip"] = p.IsVip
+	}
+	if p.has("angbaoAmt") && newer("angbao_amt") {
+		g.AngbaoAmt = p.AngbaoAmt
+		fields["angbao_amt"] = g.AngbaoAmt
+	}
+	if p.has("giftItem") && newer("gift_item") {
+		g.GiftItem = p.GiftItem
+		fields["gift_item"] = g.GiftItem
+	}
+	if !p.has("tableId") {
+		return nil
+	}
+	if p.TableID == nil || *p.TableID == "" {
+		// JSON null and empty string both mean "unassign": clear the whole
+		// seat assignment. SeatNum must never survive with a nil TableID.
+		if newer("table_id") || newer("seat_num") {
+			g.TableID = nil
+			g.SeatNum = nil
+			fields["table_id"] = nil
+			fields["seat_num"] = nil
+		}
+		return nil
+	}
+	tid, err := parseSyncID(*p.TableID)
+	if err != nil {
+		return ruleError{fmt.Errorf("invalid tableId %q", *p.TableID)}
+	}
+	if newer("table_id") {
+		g.TableID = &tid
+		fields["table_id"] = tid
+	}
+	if p.has("seatNum") && newer("seat_num") {
+		g.SeatNum = p.SeatNum
+		fields["seat_num"] = p.SeatNum
+	}
+	return nil
+}
+
+// validateSyncUpdate runs the same rules as the online edit path against the
+// merged row, so an offline mutation cannot bypass them.
+func (s *GuestService) validateSyncUpdate(ctx context.Context, tx *gorm.DB, g *models.GuestRecord, previousPax int, fields map[string]any) error {
+	_, tableWritten := fields["table_id"]
+	_, seatWritten := fields["seat_num"]
+	_, paxWritten := fields["pax"]
+	if tableWritten || seatWritten || paxWritten {
+		if err := checkSeatNotTaken(ctx, tx, g); err != nil {
+			return err
+		}
+	}
+	if g.Pax < 1 {
+		g.Pax = 1
+	}
+	if g.Pax > MaxGuestPartySize {
+		return ruleError{fmt.Errorf("party size must be at most %d", MaxGuestPartySize)}
+	}
+	if err := ValidateGuestText(g); err != nil {
+		return ruleError{err}
+	}
+	total, err := s.guestCountLocked(tx, g.WeddingID)
+	if err != nil {
+		return err
+	}
+	if g.Pax > previousPax && total-previousPax+g.Pax > MaxGuestsPerWedding {
+		return ruleError{guestCapError(total, g.Pax-previousPax)}
+	}
+	return nil
+}
+
+type syncApplyFn func(*models.GuestRecord, string) error
+type syncSkipFn func(string, *models.GuestRecord) error
+
+func (s *GuestService) syncUpdate(ctx context.Context, tx *gorm.DB, weddingID uuid.UUID, existing *models.GuestRecord, m SyncMutation, opTime time.Time, applied syncApplyFn, skipped syncSkipFn) error {
+	previousPax := existing.Pax
+	fields := make(map[string]any, 11)
+	if m.Payload != nil {
+		if err := applySyncFields(existing, m.Payload, opTime, fields); err != nil {
+			return err
+		}
+	}
+	if len(fields) == 0 {
+		return skipped("older than server", existing)
+	}
+	if err := s.validateSyncUpdate(ctx, tx, existing, previousPax, fields); err != nil {
+		return err
+	}
+	rowTime := newerTime(repository.NewestWrite(existing), opTime)
+	existing.UpdatedAt = rowTime
+	if err := s.guestRepo.SyncUpdateFields(ctx, existing.ID, weddingID, fields, opTime, rowTime); err != nil {
+		return err
+	}
+	return applied(existing, "update")
+}
+
+func (s *GuestService) syncCreate(ctx context.Context, tx *gorm.DB, weddingID, gid uuid.UUID, m SyncMutation, opTime time.Time, applied syncApplyFn, skipped syncSkipFn) error {
+	if m.Payload == nil || m.Payload.Name == "" {
+		return skipped("name required", nil)
+	}
+	if m.Payload.Pax < 1 {
+		m.Payload.Pax = 1
+	}
+	if err := s.validateSyncTableSeat(ctx, weddingID, m.Payload); err != nil {
+		return err
+	}
+	g := &models.GuestRecord{
+		ID:        gid,
+		WeddingID: weddingID,
+		Name:      m.Payload.Name,
+		Email:     m.Payload.Email,
+		Pax:       m.Payload.Pax,
+		RSVP:      m.Payload.RSVP,
+		IsVip:     m.Payload.IsVip,
+		Notes:     m.Payload.Notes,
+		Dietary:   m.Payload.Dietary,
+		AngbaoAmt: m.Payload.AngbaoAmt,
+		GiftItem:  m.Payload.GiftItem,
+		CreatedAt: opTime,
+		UpdatedAt: opTime,
+	}
+	if m.Payload.TableID != nil && *m.Payload.TableID != "" {
+		if tid, err := parseSyncID(*m.Payload.TableID); err == nil {
+			g.TableID = &tid
+		}
+	}
+	g.SeatNum = m.Payload.SeatNum
+	if g.TableID == nil {
+		g.SeatNum = nil // a seat without a table is not a valid assignment
+	}
+	if err := s.createGuestTx(ctx, tx, g, true); err != nil {
+		return err
+	}
+	return applied(g, "create")
+}
+
 // validateSyncTableSeat mirrors the table/seat rules of AssignSeat for offline
-// sync mutations: the table must exist in this wedding and the seat must fit
+// sync creates: the table must exist in this wedding and the seat must fit
 // its capacity. A nil/empty tableId (unassign) needs no validation.
 func (s *GuestService) validateSyncTableSeat(ctx context.Context, weddingID uuid.UUID, p *SyncPayload) error {
 	if p.TableID == nil || *p.TableID == "" {
@@ -892,52 +1015,6 @@ func (s *GuestService) validateSyncTableSeat(ctx context.Context, weddingID uuid
 		return ruleError{fmt.Errorf("seat %d exceeds capacity %d of table %s", *p.SeatNum, table.Capacity, table.Name)}
 	}
 	return nil
-}
-
-func applySyncPayload(g *models.GuestRecord, p *SyncPayload, gid *uuid.UUID) {
-	if p.Name != "" {
-		g.Name = p.Name
-	}
-	if p.has("email") {
-		g.Email = p.Email
-	}
-	if p.Pax >= 1 {
-		g.Pax = p.Pax
-	}
-	if p.RSVP != "" {
-		g.RSVP = p.RSVP
-	}
-	if p.has("isVip") {
-		g.IsVip = p.IsVip
-	}
-	if p.has("notes") {
-		g.Notes = p.Notes
-	}
-	if p.has("dietary") {
-		g.Dietary = p.Dietary
-	}
-	if p.has("angbaoAmt") {
-		g.AngbaoAmt = p.AngbaoAmt
-	}
-	if p.has("giftItem") {
-		g.GiftItem = p.GiftItem
-	}
-	if p.has("tableId") {
-		if p.TableID == nil || *p.TableID == "" {
-			// JSON null and empty string both mean "unassign": clear the whole
-			// seat assignment. SeatNum must never survive with a nil TableID.
-			g.TableID = nil
-			g.SeatNum = nil
-		} else if tid, err := parseSyncID(*p.TableID); err == nil {
-			g.TableID = &tid
-			if p.has("seatNum") {
-				g.SeatNum = p.SeatNum
-			}
-		}
-	}
-	if gid != nil {
-		g.ID = *gid
-	}
 }
 
 // appendNote joins existing notes and notes added at check-in with a newline.

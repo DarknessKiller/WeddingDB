@@ -55,7 +55,8 @@ Files: `backend/internal/{handlers,services,repository,models,utils}`.
 Files: `backend/internal/{services,repository}`.
 
 - A value read before the write must not be written back later. Do read-compare-write in one transaction with the row locked (`syncLoadForUpdate`, `guestCountLocked`, `checkSeatTx`) or make the UPDATE conditional on the version the caller loaded (`UpdateIfUnchanged`, layout version) and answer 409 when no row matches. A stale form must never silently revert another writer.
-- Write only the columns the operation owns (`UpdateFields`, `editableColumns`). A full-row write (`SyncUpdate`) is only allowed against a row this transaction just locked.
+- Write only the columns the operation owns (`UpdateFields`, `editableColumns`). A full-row write is only allowed against a row this transaction just locked.
+- Every field write records its own version: online writes stamp all editable columns (`editableFieldColumns`), offline sync stamps only the columns its payload carries (`SyncUpdateFields`). Comparing a partial write against the row `UpdatedAt` reintroduces the row-level overwrite this section forbids, so read the per-field version (`repository.FieldVersion`) instead.
 - Lock order is wedding row, table row, guest row. The sync path locks the guest first; a deadlock with the online path is aborted by Postgres and the mutation returns a retryable failure, so the client keeps it queued. Do not add a new path that locks guest before table without stating why.
 - Error mapping: sentinel in the repository, wrapped by the service, translated to a typed `fuego` error in the handler (409 for lost races, 404 for missing rows). A concurrency loss is a conflict, not a 500.
 - Tests: a race fix carries a Postgres test that holds the lock with `clause.Locking{Strength: "UPDATE"}` and proves the operation waits or loses. A test that stays green with the guard removed does not prove the fix.

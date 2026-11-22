@@ -100,11 +100,11 @@ func (h *TableHandler) Update(c fuego.ContextWithBody[TableRequest]) (any, error
 	if body.Capacity < 1 || body.Capacity > 200 {
 		return nil, fuego.BadRequestError{Title: "Capacity must be between 1 and 200"}
 	}
+	// A table edit owns its name, capacity and VIP flag only. Position and
+	// rotation belong to the layout editor: writing them here would revert a
+	// drag another device saved after this form loaded its snapshot.
 	table.Name = body.Name
 	table.Capacity = body.Capacity
-	table.X = body.X
-	table.Y = body.Y
-	table.Degree = body.Degree
 	table.IsVip = body.IsVip
 	if err := h.tableService.Update(ctx, table); err != nil {
 		if errors.Is(err, repository.ErrCapacityBelowSeated) {

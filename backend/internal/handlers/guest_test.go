@@ -27,7 +27,7 @@ func newGuestTestDB(t *testing.T) *gorm.DB {
 		id TEXT PRIMARY KEY, wedding_id TEXT NOT NULL, name TEXT NOT NULL, name_pinyin TEXT,
 		email TEXT, pax INTEGER NOT NULL DEFAULT 1, table_id TEXT, seat_num INTEGER,
 		rsvp TEXT DEFAULT 'no_response', checked_in_at DATETIME, notes TEXT, dietary TEXT,
-		is_vip INTEGER, angbao_amt INTEGER, gift_item TEXT, created_at DATETIME, updated_at DATETIME)`).Error)
+		is_vip INTEGER, angbao_amt INTEGER, gift_item TEXT, created_at DATETIME, updated_at DATETIME, field_updated_at TEXT)`).Error)
 	testutil.NoErr(t, db.Exec(`CREATE TABLE banquet_tables (
 		id TEXT PRIMARY KEY, wedding_id TEXT NOT NULL, name TEXT NOT NULL, capacity INTEGER,
 		x REAL NOT NULL DEFAULT 0, y REAL NOT NULL DEFAULT 0, degree REAL NOT NULL DEFAULT 0,
@@ -268,5 +268,32 @@ func TestGuestDelete_MissingIs404(t *testing.T) {
 				t.Fatalf("status = %d, want %d", rec.Code, tt.want)
 			}
 		})
+	}
+}
+
+// A form that loaded a row before another device saved it must be rejected,
+// not allowed to overwrite the newer values.
+func TestGuestUpdate_StaleVersionConflicts(t *testing.T) {
+	db := newGuestTestDB(t)
+	wid, gid := uuid.New(), uuid.New()
+	loaded := time.Now().Add(-time.Hour).UTC().Truncate(time.Second)
+	testutil.NoErr(t, db.Create(&models.GuestRecord{ID: gid, WeddingID: wid, Name: "Alice", Pax: 1, UpdatedAt: loaded}).Error)
+	testutil.NoErr(t, db.Model(&models.GuestRecord{}).Where("id = ?", gid).
+		Updates(map[string]any{"name": "Bob", "notes": "saved elsewhere", "updated_at": loaded.Add(time.Minute)}).Error)
+
+	s := newGuestTestServer(db)
+	stale := `{"name":"Alicia","pax":1,"updatedAt":"` + loaded.Format(time.RFC3339Nano) + `"}`
+	if rec := serveJSON(s, http.MethodPut, "/api/weddings/"+wid.String()+"/guests/"+gid.String(), stale); rec.Code != http.StatusConflict {
+		t.Fatalf("stale edit status = %d, want 409; body %s", rec.Code, rec.Body)
+	}
+	var got models.GuestRecord
+	testutil.NoErr(t, db.First(&got, "id = ?", gid).Error)
+	if got.Name != "Bob" || got.Notes != "saved elsewhere" {
+		t.Fatalf("stale edit overwrote newer row: %+v", got)
+	}
+
+	fresh := `{"name":"Alicia","pax":1,"updatedAt":"` + loaded.Add(time.Minute).Format(time.RFC3339Nano) + `"}`
+	if rec := serveJSON(s, http.MethodPut, "/api/weddings/"+wid.String()+"/guests/"+gid.String(), fresh); rec.Code != http.StatusOK {
+		t.Fatalf("fresh edit status = %d, want 200; body %s", rec.Code, rec.Body)
 	}
 }

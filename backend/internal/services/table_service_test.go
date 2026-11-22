@@ -50,7 +50,8 @@ func TestTableDelete_PublishesUnassignedGuests(t *testing.T) {
 		angbao_amt INTEGER,
 		gift_item TEXT,
 		created_at DATETIME,
-		updated_at DATETIME
+		updated_at DATETIME,
+		field_updated_at TEXT
 	)`)
 	db.Exec(`CREATE TABLE banquet_tables (
 		id TEXT PRIMARY KEY,
@@ -62,7 +63,8 @@ func TestTableDelete_PublishesUnassignedGuests(t *testing.T) {
 		degree REAL NOT NULL DEFAULT 0,
 		is_vip INTEGER,
 		created_at DATETIME,
-		updated_at DATETIME
+		updated_at DATETIME,
+		field_updated_at TEXT
 	)`)
 
 	wid := uuid.New()
@@ -128,7 +130,7 @@ func TestCapacityCannotDropBelowSeatedGuests(t *testing.T) {
 	testutil.NoErr(t, db.Create(&models.GuestRecord{ID: uuid.New(), WeddingID: wid, Name: "Ann", Pax: 2, TableID: &tid, SeatNum: &seat}).Error)
 	testutil.NoErr(t, db.Exec(`CREATE TABLE wedding_events (id TEXT PRIMARY KEY, name TEXT,
 		hall_width INTEGER, hall_height INTEGER, layout_version INTEGER NOT NULL DEFAULT 0,
-		created_at DATETIME, updated_at DATETIME)`).Error)
+		created_at DATETIME, updated_at DATETIME, field_updated_at TEXT)`).Error)
 	testutil.NoErr(t, db.Exec(`INSERT INTO wedding_events (id, name) VALUES (?, 'W')`, wid).Error)
 	tables := NewTableService(repository.NewTableRepo(db), repository.NewGuestRepo(db), nil, db)
 	layouts := repository.NewLayoutRepo(db)

@@ -7,7 +7,8 @@
   import { goto } from '$app/navigation';
   import { assignSeat, checkInGuest, checkOutGuest, ConflictError } from '#lib/api/guests.ts';
   import { getOccupancy, listTables } from '#lib/api/tables.ts';
-  import { getLayout, saveLayout, LayoutConflictError } from '#lib/api/layout.ts';
+  import { getLayout, saveLayout, saveLayoutKeepMine, LayoutConflictError } from '#lib/api/layout.ts';
+  import ConfirmDialog from '#lib/components/ui/ConfirmDialog.svelte';
   import Badge from '#lib/components/ui/Badge.svelte';
   import { cn } from '#lib/utils/index.ts';
   import { page } from '$app/state';
@@ -36,6 +37,14 @@ import Pencil from 'lucide-svelte/icons/pencil';
   let errored = $state(false);
   let error = $state<string | null>(null);
   let editMode = $state(false);
+  let showLayoutConflict = $state(false);
+  let pendingLayout: { tables: BanquetTable[]; elements: HallElement[]; hw: number; hh: number } | null = $state(null);
+
+  // Patch the shared store, not the local mirror: the mirror is refilled from
+  // the store on the next SSE update and would otherwise revert this change.
+  function patchGuest(id: string, patch: Partial<Guest>) {
+    guestList.update(list => list.map(g => g.id === id ? { ...g, ...patch } : g));
+  }
 
   let selectedTableId = $state<string | null>(null);
   let showMobilePanel = $state(false);
@@ -178,10 +187,7 @@ import Pencil from 'lucide-svelte/icons/pencil';
     const wid = get(weddingId);
     try {
       await assignSeat(wid, guest.id, String(selectedTable.id), seatNum);
-      allGuests = allGuests.map(g => g.id === guest.id
-        ? { ...g, tableId: selectedTable.id, seatNumber: seatNum }
-        : g
-      );
+      patchGuest(guest.id, { tableId: String(selectedTable.id), seatNumber: seatNum });
       assigningSeat = null;
       guestSearch = '';
       addToast(`${guest.name} assigned to seat ${seatNum}`, 'success');
@@ -206,18 +212,17 @@ import Pencil from 'lucide-svelte/icons/pencil';
       await checkInGuest(wid, checkinGuest.id, notes);
       // Notes come back from the server via SSE (or offline optimisticPatch);
       // appending them here too duplicated the input.
-      allGuests = allGuests.map(g => g.id === checkinGuest!.id ? {
-        ...g,
+      patchGuest(checkinGuest.id, {
         checkedIn: true,
         checkedInAt: new Date(),
         rsvp: 'confirmed' as const,
-      } : g);
+      });
       showCheckinModal = false;
       addToast(`${checkinGuest.name} checked in`, 'success');
     } catch (e: any) {
       if (e instanceof ConflictError) {
         // Another receptionist checked the guest in first.
-        allGuests = allGuests.map(g => g.id === checkinGuest!.id ? { ...g, checkedIn: true, rsvp: 'confirmed' as const } : g);
+        patchGuest(checkinGuest.id, { checkedIn: true, rsvp: 'confirmed' as const });
         showCheckinModal = false;
         addToast(`${checkinGuest.name} was already checked in by another receptionist`, 'error');
         return;
@@ -230,7 +235,7 @@ import Pencil from 'lucide-svelte/icons/pencil';
     const wid = get(weddingId);
     try {
       await checkOutGuest(wid, guest.id);
-      allGuests = allGuests.map(g => g.id === guest.id ? { ...g, checkedIn: false, checkedInAt: undefined } : g);
+      patchGuest(guest.id, { checkedIn: false, checkedInAt: undefined });
       addToast(`${guest.name} checked out`, 'success');
     } catch (e: any) {
       addToast(e.message ?? 'Check-out failed', 'error');
@@ -251,12 +256,42 @@ import Pencil from 'lucide-svelte/icons/pencil';
       editMode = false;
       await loadData();
     } catch (e: any) {
-      addToast(e.message ?? 'Save failed', 'error');
       if (e instanceof LayoutConflictError) {
-        editMode = false;
-        await loadData().catch(() => {});
+        // Keep the user's arrangement open and let them choose; silently
+        // reloading would throw away their unsaved layout.
+        pendingLayout = { tables: editTables, elements: editElements, hw, hh };
+        showLayoutConflict = true;
+        return;
       }
+      addToast(e.message ?? 'Save failed', 'error');
     }
+  }
+
+  async function keepMyLayout() {
+    if (!pendingLayout) return;
+    try {
+      await saveLayoutKeepMine(get(weddingId), {
+        version: 0,
+        hallWidth: pendingLayout.hw,
+        hallHeight: pendingLayout.hh,
+        tables: pendingLayout.tables.map(t => ({ id: t.id, x: t.x, y: t.y, degree: t.degree, capacity: t.capacity, isVip: t.isVip })),
+        elements: pendingLayout.elements,
+      });
+      showLayoutConflict = false;
+      pendingLayout = null;
+      editMode = false;
+      addToast('Layout saved', 'success');
+      await loadData();
+    } catch {
+      addToast('Could not save the layout. Try again.', 'error');
+    }
+  }
+
+  function discardMyLayout() {
+    showLayoutConflict = false;
+    pendingLayout = null;
+    editMode = false;
+    loadData().catch(() => {});
   }
 
   function handleCancelEdit() {
@@ -579,3 +614,14 @@ import Pencil from 'lucide-svelte/icons/pencil';
     onClose={() => showCheckinModal = false}
   />
 {/if}
+
+<ConfirmDialog
+  open={showLayoutConflict}
+  title="Layout Changed Elsewhere"
+  message="Another device saved this layout while you were editing. Your arrangement is still open. Save yours anyway, or discard it and load the newer layout?"
+  confirmLabel="Save Mine"
+  cancelLabel="Discard Mine"
+  variant="warning"
+  onConfirm={keepMyLayout}
+  onCancel={discardMyLayout}
+/>

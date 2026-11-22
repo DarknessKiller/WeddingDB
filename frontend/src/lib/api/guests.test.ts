@@ -22,3 +22,14 @@ describe('createGuest', () => {
 		expect(g.id).toBe(sent);
 	});
 });
+
+describe('updateGuest', () => {
+	it('sends the loaded row version and reports 409 as a conflict', async () => {
+		apiFetch.mockResolvedValue({ ok: false, status: 409, json: async () => ({ title: 'Guest changed on another device; reload and try again' }) });
+		const { updateGuest, ConflictError } = await import('./guests');
+		const data = { name: 'A', pax: 1, rsvp: 'pending', isVip: false, notes: '', dietary: [], updatedAt: '2026-01-01T00:00:00Z' };
+		await expect(updateGuest('w1', 'g1', data as never)).rejects.toBeInstanceOf(ConflictError);
+		const body = JSON.parse(apiFetch.mock.calls[0][1].body);
+		expect(body.updatedAt).toBe('2026-01-01T00:00:00Z');
+	});
+});

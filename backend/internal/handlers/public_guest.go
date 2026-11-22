@@ -2,29 +2,48 @@ package handlers
 
 import (
 	"strconv"
+	"weddingdb/internal/models"
 	"weddingdb/internal/services"
 	"weddingdb/internal/utils"
 
 	"github.com/go-fuego/fuego"
 )
 
+// publicGuest is the kiosk-facing guest shape. Attendance state, gifts and
+// notes stay staff-only (offline-sync spec): the kiosk needs only the identity
+// and where the guest sits.
 type publicGuest struct {
 	ID      string  `json:"id"`
 	Name    string  `json:"name"`
-	Rsvp    string  `json:"rsvp"`
 	TableID *string `json:"tableId"`
 	SeatNum *int    `json:"seatNum"`
 	Pax     int     `json:"pax"`
 	IsVip   bool    `json:"isVip"`
 	Pinyin  string  `json:"pinyin"`
 }
-
 type PublicGuestHandler struct {
 	guestService *services.GuestService
 }
 
 func NewPublicGuestHandler(guestService *services.GuestService) *PublicGuestHandler {
 	return &PublicGuestHandler{guestService: guestService}
+}
+
+func toPublicGuest(g models.GuestRecord) publicGuest {
+	var tid *string
+	if g.TableID != nil {
+		s := utils.EncodeUUID(*g.TableID)
+		tid = &s
+	}
+	return publicGuest{
+		ID:      utils.EncodeUUID(g.ID),
+		Name:    g.Name,
+		TableID: tid,
+		SeatNum: g.SeatNum,
+		Pax:     g.Pax,
+		IsVip:   g.IsVip,
+		Pinyin:  g.NamePinyin,
+	}
 }
 
 func (h *PublicGuestHandler) List(c fuego.ContextNoBody) (any, error) {
@@ -54,21 +73,7 @@ func (h *PublicGuestHandler) List(c fuego.ContextNoBody) (any, error) {
 	}
 	out := make([]publicGuest, 0, len(guests))
 	for _, g := range guests {
-		var tid *string
-		if g.TableID != nil {
-			s := utils.EncodeUUID(*g.TableID)
-			tid = &s
-		}
-		out = append(out, publicGuest{
-			ID:      utils.EncodeUUID(g.ID),
-			Name:    g.Name,
-			Rsvp:    g.RSVP,
-			TableID: tid,
-			SeatNum: g.SeatNum,
-			Pax:     g.Pax,
-			IsVip:   g.IsVip,
-			Pinyin:  g.NamePinyin,
-		})
+		out = append(out, toPublicGuest(g))
 	}
 	return map[string]any{"guests": out, "nextCursor": nextCursor}, nil
 }
@@ -131,21 +136,7 @@ func (h *PublicGuestHandler) Search(c fuego.ContextNoBody) (any, error) {
 	}
 	out := make([]publicGuest, 0, len(guests))
 	for _, g := range guests {
-		var tid *string
-		if g.TableID != nil {
-			s := utils.EncodeUUID(*g.TableID)
-			tid = &s
-		}
-		out = append(out, publicGuest{
-			ID:      utils.EncodeUUID(g.ID),
-			Name:    g.Name,
-			Rsvp:    g.RSVP,
-			TableID: tid,
-			SeatNum: g.SeatNum,
-			Pax:     g.Pax,
-			IsVip:   g.IsVip,
-			Pinyin:  g.NamePinyin,
-		})
+		out = append(out, toPublicGuest(g))
 	}
 	return out, nil
 }

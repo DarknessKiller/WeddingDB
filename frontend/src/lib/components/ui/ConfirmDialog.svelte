@@ -28,6 +28,7 @@ import AlertTriangle from 'lucide-svelte/icons/alert-triangle';
   let dialogEl: HTMLDivElement | null = $state(null);
 
   function handleKeydown(e: KeyboardEvent) {
+    if (!open) return;
     if (e.key === 'Escape') onCancel();
   }
 

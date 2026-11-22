@@ -47,3 +47,10 @@ export async function saveLayout(wid: string, data: SaveLayoutPayload): Promise<
 	if (res.status === 409) throw new LayoutConflictError();
 	if (!res.ok) throw new Error('Failed to save layout');
 }
+
+// saveLayoutKeepMine retries a conflicted save against the version currently
+// on the server, after the user explicitly chose to overwrite it.
+export async function saveLayoutKeepMine(wid: string, data: SaveLayoutPayload): Promise<void> {
+	const latest = await getLayout(wid);
+	await saveLayout(wid, { ...data, version: latest.version ?? 0 });
+}

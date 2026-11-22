@@ -6,7 +6,7 @@ import { enqueue } from '#lib/offline/queue.ts';
 import { guestList } from '#lib/stores/guestEvents.ts';
 
 function isOffline() {
-	return typeof navigator !== 'undefined' && !navigator.onLine;
+	return typeof navigator !== 'undefined' && navigator.onLine === false;
 }
 function isNetworkError(e: unknown) {
 	if (isOffline()) return true;
@@ -117,6 +117,9 @@ export interface GuestCreateData {
 	seatNum?: number | null;
 	angbaoAmt?: number | null;
 	giftItem?: string | null;
+	// updatedAt is the row version the edit form loaded; the API rejects a
+	// stale value with 409 instead of overwriting a newer edit.
+	updatedAt?: string;
 }
 
 export async function listGuests(weddingId: string, opts?: { limit?: number; cursor?: string }): Promise<{ guests: GuestResponse[]; total: number; nextCursor: string | null }> {
@@ -169,7 +172,7 @@ export async function createGuest(weddingId: string, data: GuestCreateData): Pro
 }
 
 export async function updateGuest(weddingId: string, guestId: string, data: GuestCreateData): Promise<GuestResponse> {
-	const doQueue = () => { enqueue(weddingId, { mutationId: genId(), op: 'update', guestId, clientUpdatedAt: nowIso(), payload: data as unknown as Record<string, unknown> }); optimisticPatch('update', guestId, data as unknown as Record<string, unknown>); };
+	const doQueue = () => { enqueue(weddingId, { mutationId: genId(), op: 'update', guestId, clientUpdatedAt: nowIso(), baseUpdatedAt: data.updatedAt ?? null, payload: data as unknown as Record<string, unknown> }); optimisticPatch('update', guestId, data as unknown as Record<string, unknown>); };
 	if (isOffline()) { doQueue(); const now = nowIso(); return { id: guestId, weddingId, name: data.name, email: data.email || '', pax: data.pax, rsvp: data.rsvp, isVip: data.isVip, notes: data.notes, dietary: data.dietary, tableId: (data.tableId as string | null) ?? null, seatNum: data.seatNum ?? null, checkedInAt: null, angbaoAmt: data.angbaoAmt ?? null, giftItem: data.giftItem ?? null, createdAt: now, updatedAt: now }; }
 	try {
 		const res = await apiFetch(`/api/weddings/${weddingId}/guests/${guestId}`, { method: 'PUT', body: JSON.stringify(data) });

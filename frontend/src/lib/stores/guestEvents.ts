@@ -18,8 +18,7 @@ export const tableOccupancy = derived(guestList, (guests) => {
 	return occ;
 });
 
-// Whether the SSE connection is active.
-export const sseConnected = writable(false);
+
 
 let initialized = false;
 let syncing = false;
@@ -45,7 +44,6 @@ export function initializeSSE(onResync?: () => Promise<Guest[]>): (() => void) |
 
 	const client = connectSSE(wid);
 	const unsubscribeStatus = client.onStatus((status, reconnect) => {
-		sseConnected.set(status === 'connected');
 		if (status === 'connected' && reconnect && resync) {
 			// On failure keep the current list; refreshGuests replays queued events.
 			refreshGuests(resync).catch(() => {});
@@ -60,7 +58,6 @@ export function initializeSSE(onResync?: () => Promise<Guest[]>): (() => void) |
 		unsubscribe();
 		unsubscribeStatus();
 		disconnectSSE();
-		sseConnected.set(false);
 		initialized = false;
 		syncing = false;
 		queuedEvents = [];
@@ -68,13 +65,19 @@ export function initializeSSE(onResync?: () => Promise<Guest[]>): (() => void) |
 	};
 }
 
+let refreshChain: Promise<unknown> = Promise.resolve();
+
 /**
- * Run a full fetch+seed inside the syncing window: SSE events that arrive
- * mid-fetch are queued and replayed after the seed lands instead of being
- * clobbered by it. Use for manual refreshes outside of initializeSSE
- * (e.g. the wedding layout's online/visibility sync).
+ * Run a full fetch+seed inside the syncing window. Refreshes are serialized so
+ * two overlapping calls cannot apply their snapshots out of order.
  */
-export async function refreshGuests(fetchFn: () => Promise<Guest[]>): Promise<Guest[]> {
+export function refreshGuests(fetchFn: () => Promise<Guest[]>): Promise<Guest[]> {
+	const run = refreshChain.then(() => runRefresh(fetchFn));
+	refreshChain = run.catch(() => {});
+	return run;
+}
+
+async function runRefresh(fetchFn: () => Promise<Guest[]>): Promise<Guest[]> {
 	syncing = true;
 	try {
 		const guests = await fetchFn();

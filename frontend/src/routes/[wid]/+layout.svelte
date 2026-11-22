@@ -9,7 +9,7 @@
   import { weddingTitle } from '#lib/stores/weddingTitle.ts';
   import { validateToken } from '#lib/utils/auth.ts';
   import { fetchAllGuests, type GuestResponse } from '#lib/api/guests.ts';
-  import { syncQueue, cacheGuests, loadCachedGuests } from '#lib/offline/queue.ts';
+  import { syncQueue, cacheGuests, loadCachedGuests, getQueue } from '#lib/offline/queue.ts';
   import { getWedding } from '#lib/api/weddings.ts';
   import { listTables } from '#lib/api/tables.ts';
   import { initializeSSE, refreshGuests, guestList } from '#lib/stores/guestEvents.ts';
@@ -49,11 +49,13 @@
     cacheGuests($weddingId, raw);
     return raw.map(toGuest);
   };
-  // Only the first load falls back to the cache; later refreshes keep the live list.
+  // Only an offline load falls back to the cache; a 401/403/500 must not render
+  // another account's cached guest data.
   const loadGuests = async () => {
     try {
       return await fetchGuests();
-    } catch {
+    } catch (e) {
+      if (typeof navigator === 'undefined' || navigator.onLine) throw e;
       const cached = loadCachedGuests<GuestResponse>($weddingId);
       if (cached) return cached.map(toGuest);
       throw new Error('offline');
@@ -78,11 +80,14 @@
       if (!wid || typeof window === 'undefined' || !navigator.onLine) return;
       try {
         await syncQueue(wid);
-        // Refresh inside the syncing window so SSE events arriving mid-fetch
-        // are queued and replayed after the seed instead of being clobbered.
-        const guests = await refreshGuests(fetchGuests);
-        guestCount = guests.length;
-        refreshQueued();
+        // Seed only when nothing is left queued: a server snapshot would hide
+        // the optimistic edits still waiting for a retry.
+        if (getQueue(wid).length === 0) {
+          const guests = await refreshGuests(fetchGuests);
+          guestCount = guests.length;
+        } else {
+          refreshQueued();
+        }
       } catch {}
     }
 
@@ -164,7 +169,7 @@
       {#if offline}
         <div class="offline-banner">Offline — changes queued{queued ? ` (${queued})` : ''}</div>
       {:else if queued}
-        <div class="offline-banner queued">{queued} queued — syncing on reconnect <button onclick={async () => { try { await syncQueue(wid); } catch { addToast('Could not sync yet; changes stay queued', 'error'); } refreshQueued(); refreshGuests(fetchGuests).catch(() => {}); }}>Sync now</button></div>
+        <div class="offline-banner queued">{queued} queued — syncing on reconnect <button onclick={async () => { try { await syncQueue(wid); } catch { addToast('Could not sync yet; changes stay queued', 'error'); } refreshQueued(); if (getQueue(wid).length === 0) refreshGuests(fetchGuests).catch(() => {}); }}>Sync now</button></div>
       {/if}
       <Header />
       <main class="main-content">

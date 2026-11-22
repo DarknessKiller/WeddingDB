@@ -5,12 +5,14 @@ import (
 	"errors"
 	"log/slog"
 	"strconv"
+	"time"
 	"weddingdb/internal/models"
 	"weddingdb/internal/repository"
 	"weddingdb/internal/services"
 
 	"github.com/go-fuego/fuego"
 	"github.com/google/uuid"
+	"gorm.io/gorm"
 )
 
 type GuestHandler struct{ guestService *services.GuestService }
@@ -34,6 +36,9 @@ type GuestCreateRequest struct {
 	SeatNum   *int     `json:"seatNum"`
 	AngbaoAmt *int     `json:"angbaoAmt"`
 	GiftItem  *string  `json:"giftItem"`
+	// UpdatedAt is the version of the row the edit form loaded. A stale value
+	// is rejected with 409 instead of overwriting a newer edit.
+	UpdatedAt *time.Time `json:"updatedAt"`
 }
 
 func (h *GuestHandler) List(c fuego.ContextNoBody) (any, error) {
@@ -214,12 +219,24 @@ func (h *GuestHandler) Update(c fuego.ContextWithBody[GuestCreateRequest]) (any,
 			}
 		}
 	}
+	if body.UpdatedAt != nil {
+		guest.UpdatedAt = *body.UpdatedAt
+	} else {
+		// Older clients send no version: keep the previous unguarded behavior.
+		guest.UpdatedAt = time.Time{}
+	}
 	if err := h.guestService.UpdateWithSeat(ctx, guest, tid, seatNum); err != nil {
-		if errors.Is(err, services.ErrGuestCapExceeded) {
+		switch {
+		case errors.Is(err, services.ErrGuestCapExceeded):
 			return nil, fuego.BadRequestError{Title: err.Error()}
-		}
-		if errors.Is(err, repository.ErrGuestChanged) {
+		case errors.Is(err, repository.ErrGuestChanged):
 			return nil, fuego.ConflictError{Title: "Guest changed on another device; reload and try again"}
+		case errors.Is(err, services.ErrSeatOverlap):
+			return nil, fuego.ConflictError{Title: err.Error()}
+		case errors.Is(err, gorm.ErrRecordNotFound), errors.Is(err, services.ErrGuestNotFound):
+			return nil, fuego.NotFoundError{Title: "Guest not found"}
+		case services.IsRuleError(err):
+			return nil, fuego.BadRequestError{Title: err.Error()}
 		}
 		return nil, err
 	}
@@ -373,11 +390,13 @@ func (h *GuestHandler) BulkImport(c fuego.ContextWithBody[BulkImportRequest]) (a
 			Dietary:   g.Dietary,
 		}
 		if g.TableID != nil {
-			if tid, err := DecodeID(*g.TableID); err == nil {
-				gr.TableID = &tid
+			tid, err := DecodeID(*g.TableID)
+			if err != nil {
+				return nil, fuego.BadRequestError{Title: "Invalid table ID"}
 			}
+			gr.TableID = &tid
 		}
-		if g.SeatNum != nil {
+		if g.SeatNum != nil && gr.TableID != nil {
 			gr.SeatNum = g.SeatNum
 		}
 		guests = append(guests, gr)

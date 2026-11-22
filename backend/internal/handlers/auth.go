@@ -71,6 +71,7 @@ type WeddingInfo struct {
 }
 
 type TokenResponse struct {
+	UserID              string        `json:"userId"`
 	AccessToken         string        `json:"accessToken"`
 	RefreshToken        string        `json:"refreshToken"`
 	Role                string        `json:"role"`
@@ -126,6 +127,7 @@ func (h *AuthHandler) Login(c fuego.ContextWithBody[LoginRequest]) (TokenRespons
 		return TokenResponse{}, fuego.UnauthorizedError{Title: err.Error()}
 	}
 	return TokenResponse{
+		UserID:              result.UserID,
 		AccessToken:         result.AccessToken,
 		RefreshToken:        result.RefreshToken,
 		Role:                result.Role,
