@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"log/slog"
+	"net/mail"
 	"weddingdb/internal/models"
 	"weddingdb/internal/repository"
 	"weddingdb/internal/services"
@@ -44,6 +45,12 @@ func (h *AdminHandler) Create(c fuego.ContextWithBody[AdminRequest]) (any, error
 	body, err := c.Body()
 	if err != nil {
 		return nil, fuego.BadRequestError{Title: "Invalid request"}
+	}
+	if _, err := mail.ParseAddress(body.Email); err != nil {
+		return nil, fuego.BadRequestError{Title: "Invalid email format"}
+	}
+	if err := services.ValidateAdminText(body.Name, body.Email); err != nil {
+		return nil, fuego.BadRequestError{Title: err.Error()}
 	}
 	if err := validatePassword(body.Password); err != nil {
 		return nil, err
@@ -111,6 +118,12 @@ func (h *AdminHandler) Delete(c fuego.ContextWithBody[any]) (any, error) {
 	}
 	if err := h.adminRepo.Delete(ctx, id); err != nil {
 		return nil, err
+	}
+
+	// Deleting the account must end its live session and wedding access now,
+	// not when the access token expires.
+	if err := h.authService.RevokeUserTokens(ctx, id); err != nil {
+		slog.Warn("revoke tokens after delete failed", "user", id, "err", err)
 	}
 	c.SetStatus(204)
 	return nil, nil
@@ -218,6 +231,7 @@ func (h *AdminHandler) ResetPassword(c fuego.ContextWithBody[ResetPasswordReques
 		return nil, fuego.InternalServerError{Title: "Failed to hash password"}
 	}
 	admin.Password = string(hash)
+	admin.ForcePasswordChange = true
 	if err := h.adminRepo.Update(ctx, admin); err != nil {
 		return nil, fuego.InternalServerError{Title: "Failed to update password"}
 	}

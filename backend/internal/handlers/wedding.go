@@ -73,6 +73,9 @@ func (h *WeddingHandler) Create(c fuego.ContextWithBody[WeddingRequest]) (any, e
 	if w.Name == "" {
 		return nil, fuego.BadRequestError{Title: "Name is required"}
 	}
+	if err := services.ValidateWeddingText(w); err != nil {
+		return nil, fuego.BadRequestError{Title: err.Error()}
+	}
 	if err := h.weddingService.Create(ctx, w); err != nil {
 		return nil, err
 	}
@@ -115,6 +118,9 @@ func (h *WeddingHandler) Update(c fuego.ContextWithBody[WeddingRequest]) (any, e
 			return nil, fuego.BadRequestError{Title: "Invalid date format, use YYYY-MM-DD"}
 		}
 		w.Date = d
+	}
+	if err := services.ValidateWeddingText(w); err != nil {
+		return nil, fuego.BadRequestError{Title: err.Error()}
 	}
 	if err := h.weddingService.Update(ctx, w); err != nil {
 		return nil, err
@@ -214,6 +220,9 @@ func (h *WeddingHandler) UpdateKioskSettings(c fuego.ContextWithBody[KioskSettin
 	}
 	if body.KioskIdleResetSeconds != nil {
 		w.KioskIdleResetSeconds = max(0, min(3600, *body.KioskIdleResetSeconds))
+	}
+	if err := services.ValidateWeddingText(w); err != nil {
+		return nil, fuego.BadRequestError{Title: err.Error()}
 	}
 	if err := h.weddingService.Update(ctx, w); err != nil {
 		return nil, fuego.InternalServerError{Title: "Failed to update kiosk settings"}

@@ -78,6 +78,9 @@ func (p *GuestPatch) applyTo(dst *models.GuestRecord) ([]string, error) {
 		if p.Pax < 1 {
 			return nil, fmt.Errorf("%w: pax must be at least 1", ErrGuestPatchInvalid)
 		}
+		if p.Pax > MaxGuestPartySize {
+			return nil, fmt.Errorf("%w: party size must be at most %d", ErrGuestPatchInvalid, MaxGuestPartySize)
+		}
 		dst.Pax = p.Pax
 		carried = append(carried, groupPax)
 	}

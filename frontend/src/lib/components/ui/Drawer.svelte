@@ -1,6 +1,7 @@
 <script lang="ts">
   import type { Guest, BanquetTable, RSVPStatus } from '#lib/types/index.ts';
   import { trapFocus } from '#lib/utils/focus.ts';
+  import { LIMITS } from '#lib/utils/limits.ts';
   import X from 'lucide-svelte/icons/x';
 import Mail from 'lucide-svelte/icons/mail';
 import Utensils from 'lucide-svelte/icons/utensils';
@@ -347,16 +348,16 @@ import ArrowUpDown from 'lucide-svelte/icons/arrow-up-down';
         <div class="form-grid">
           <div class="form-field">
             <label for="guest-name" class="form-label">Name</label>
-            <input id="guest-name" bind:value={form.name} class="form-input" />
+            <input id="guest-name" bind:value={form.name} maxlength={LIMITS.name} class="form-input" />
           </div>
           <div class="form-field">
             <label for="guest-email" class="form-label">Email</label>
-            <input id="guest-email" bind:value={form.email} class="form-input" />
+            <input id="guest-email" bind:value={form.email} maxlength={LIMITS.email} class="form-input" />
           </div>
           <div class="form-row-2">
             <div class="form-field">
               <label for="guest-pax" class="form-label">Pax</label>
-              <input id="guest-pax" type="number" min="1" bind:value={form.pax} class="form-input" />
+              <input id="guest-pax" type="number" min="1" max={LIMITS.guestPax} bind:value={form.pax} class="form-input" />
             </div>
             <div class="form-field">
               <label for="guest-rsvp" class="form-label">RSVP</label>
@@ -375,7 +376,7 @@ import ArrowUpDown from 'lucide-svelte/icons/arrow-up-down';
           </div>
           <div class="form-field">
             <label for="guest-notes" class="form-label">Notes</label>
-            <textarea id="guest-notes" bind:value={form.notes} rows="2" class="form-input form-textarea"></textarea>
+            <textarea id="guest-notes" bind:value={form.notes} maxlength={LIMITS.guestNotes} rows="2" class="form-input form-textarea"></textarea>
           </div>
           <div class="form-field">
             <div class="form-label">Dietary</div>
@@ -394,7 +395,7 @@ import ArrowUpDown from 'lucide-svelte/icons/arrow-up-down';
           </div>
           <div class="form-field">
             <label for="guest-gift" class="form-label">Gift Item</label>
-            <input id="guest-gift" bind:value={form.giftItem} placeholder="e.g. Kitchenware set" class="form-input" />
+            <input id="guest-gift" bind:value={form.giftItem} maxlength={LIMITS.giftItem} placeholder="e.g. Kitchenware set" class="form-input" />
           </div>
         </div>
       {:else if localGuest}

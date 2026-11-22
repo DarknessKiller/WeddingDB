@@ -138,6 +138,9 @@ func (h *LayoutHandler) Save(c fuego.ContextWithBody[LayoutRequest]) (any, error
 			}
 			el.ID = id
 		}
+		if err := services.ValidateElementText(&el); err != nil {
+			return nil, fuego.BadRequestError{Title: err.Error()}
+		}
 		elements = append(elements, el)
 	}
 	if err := h.layoutService.Save(ctx, wid, body.HallWidth, body.HallHeight, tables, elements); err != nil {

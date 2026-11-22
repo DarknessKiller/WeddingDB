@@ -91,6 +91,9 @@ func (h *GuestHandler) Create(c fuego.ContextWithBody[GuestCreateRequest]) (any,
 	if body.Pax < 1 {
 		return nil, fuego.BadRequestError{Title: "Pax must be at least 1"}
 	}
+	if body.Pax > services.MaxGuestPartySize {
+		return nil, fuego.BadRequestError{Title: "Pax must be at most " + strconv.Itoa(services.MaxGuestPartySize)}
+	}
 	validRSVP := map[string]bool{"confirmed": true, "pending": true, "declined": true, "no_response": true}
 	if body.RSVP != "" && !validRSVP[body.RSVP] {
 		return nil, fuego.BadRequestError{Title: "Invalid RSVP status"}
@@ -109,7 +112,14 @@ func (h *GuestHandler) Create(c fuego.ContextWithBody[GuestCreateRequest]) (any,
 		Notes:     body.Notes,
 		Dietary:   body.Dietary,
 	}
+	if err := services.ValidateGuestText(guest); err != nil {
+		return nil, fuego.BadRequestError{Title: err.Error()}
+	}
 	if err := h.guestService.Create(ctx, guest); err != nil {
+		var lenErr services.FieldLenError
+		if errors.As(err, &lenErr) {
+			return nil, fuego.BadRequestError{Title: err.Error()}
+		}
 		if errors.Is(err, services.ErrGuestCapExceeded) {
 			return nil, fuego.BadRequestError{Title: err.Error()}
 		}
@@ -169,6 +179,10 @@ func (h *GuestHandler) Update(c fuego.ContextWithBody[*services.GuestPatch]) (an
 			errors.Is(err, services.ErrSeatRange) {
 			return nil, fuego.BadRequestError{Title: err.Error()}
 		}
+		var lenErr services.FieldLenError
+		if errors.As(err, &lenErr) {
+			return nil, fuego.BadRequestError{Title: err.Error()}
+		}
 		return nil, err
 	}
 	return guest, nil
@@ -215,12 +229,19 @@ func (h *GuestHandler) CheckIn(c fuego.ContextWithBody[CheckInRequest]) (any, er
 	if err != nil {
 		slog.Warn("check-in body decode failed, continuing without notes", "guest", id, "err", err)
 	}
+	if len([]rune(body.Notes)) > services.MaxCheckInNoteLen {
+		return nil, fuego.BadRequestError{Title: "Check-in notes must be at most " + strconv.Itoa(services.MaxCheckInNoteLen) + " characters"}
+	}
 	if err := h.guestService.CheckIn(ctx, id, wid, body.Notes); err != nil {
 		if errors.Is(err, services.ErrAlreadyCheckedIn) {
 			return nil, fuego.ConflictError{Title: "Guest already checked in by another receptionist"}
 		}
 		if errors.Is(err, services.ErrGuestNotFound) {
 			return nil, fuego.NotFoundError{Title: "Guest not found"}
+		}
+		var lenErr services.FieldLenError
+		if errors.As(err, &lenErr) {
+			return nil, fuego.BadRequestError{Title: err.Error()}
 		}
 		return nil, err
 	}
@@ -329,6 +350,10 @@ func (h *GuestHandler) BulkImport(c fuego.ContextWithBody[BulkImportRequest]) (a
 	}
 	count, err := h.guestService.BulkCreate(ctx, guests)
 	if err != nil {
+		var lenErr services.FieldLenError
+		if errors.As(err, &lenErr) {
+			return nil, fuego.BadRequestError{Title: err.Error()}
+		}
 		if errors.Is(err, services.ErrGuestCapExceeded) {
 			return nil, fuego.BadRequestError{Title: err.Error()}
 		}

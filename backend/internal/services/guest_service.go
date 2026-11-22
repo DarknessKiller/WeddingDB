@@ -64,6 +64,12 @@ func (s *GuestService) createGuestTx(ctx context.Context, tx *gorm.DB, g *models
 	if g.Pax < 1 {
 		g.Pax = 1
 	}
+	if g.Pax > MaxGuestPartySize {
+		return fmt.Errorf("%w: party size must be at most %d", ErrGuestPatchInvalid, MaxGuestPartySize)
+	}
+	if err := ValidateGuestText(g); err != nil {
+		return err
+	}
 	// Wedding row first, table row second: every write path locks in this
 	// order, so the two lock sets cannot deadlock.
 	total, err := s.guestCountLocked(tx, g.WeddingID)
@@ -108,6 +114,9 @@ func (s *GuestService) mergeGuestUpdate(ctx context.Context, tx *gorm.DB, weddin
 		return nil, false, guestCapError(total, locked.Pax-existingPax)
 	}
 	if err := checkSeatNotTaken(ctx, tx, locked); err != nil {
+		return nil, false, err
+	}
+	if err := ValidateGuestText(locked); err != nil {
 		return nil, false, err
 	}
 	if err := repo.Update(ctx, locked); err != nil {
@@ -354,6 +363,9 @@ func (s *GuestService) UnassignSeat(ctx context.Context, id, weddingID uuid.UUID
 // receptionist (FIFO conflict).
 func (s *GuestService) CheckIn(ctx context.Context, id, weddingID uuid.UUID, notes string) error {
 	notes = strings.TrimSpace(notes)
+	if err := checkLen("Check-in notes", notes, MaxCheckInNoteLen); err != nil {
+		return err
+	}
 	var merged *models.GuestRecord
 	applied := false
 	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
@@ -376,6 +388,9 @@ func (s *GuestService) CheckIn(ctx context.Context, id, weddingID uuid.UUID, not
 		if notes != "" {
 			candidate.Notes = appendNote(locked.Notes, notes)
 			carried = append(carried, groupNotes)
+		}
+		if err := ValidateGuestText(&candidate); err != nil {
+			return err
 		}
 		merged = locked
 		if won := mergeGuestWrite(locked, &candidate, now, carried); len(won) == 0 {
@@ -431,6 +446,12 @@ func (s *GuestService) BulkCreate(ctx context.Context, guests []models.GuestReco
 	for i := range guests {
 		if guests[i].Pax < 1 {
 			guests[i].Pax = 1
+		}
+		if guests[i].Pax > MaxGuestPartySize {
+			return 0, fmt.Errorf("%w: party size must be at most %d", ErrGuestPatchInvalid, MaxGuestPartySize)
+		}
+		if err := ValidateGuestText(&guests[i]); err != nil {
+			return 0, err
 		}
 		incoming += guests[i].Pax
 	}
@@ -576,6 +597,10 @@ func (s *GuestService) Sync(ctx context.Context, weddingID uuid.UUID, mutations 
 }
 
 func syncErrorReason(ctx context.Context, err error) string {
+	var fieldErr FieldLenError
+	if errors.As(err, &fieldErr) {
+		return err.Error()
+	}
 	if errors.Is(err, ErrGuestPatchInvalid) || errors.Is(err, ErrGuestCapExceeded) || errors.Is(err, ErrSeatOverlap) || errors.Is(err, ErrTableNotFound) || errors.Is(err, ErrInvalidGuestPax) || errors.Is(err, ErrSeatRange) {
 		return err.Error()
 	}
@@ -729,6 +754,9 @@ func (s *GuestService) applySyncMutation(ctx context.Context, weddingID uuid.UUI
 				// existing notes. A replay carries the same time as the stored
 				// check-in, so it must not append the note again.
 				if notes := strings.TrimSpace(m.Payload.Notes); notes != "" && opTime.After(fieldTime(locked, groupCheckedInAt)) {
+					if err := checkLen("Check-in notes", notes, MaxCheckInNoteLen); err != nil {
+						return err
+					}
 					candidate.Notes = appendNote(locked.Notes, notes)
 					carried = append(carried, groupNotes)
 				}
@@ -736,6 +764,9 @@ func (s *GuestService) applySyncMutation(ctx context.Context, weddingID uuid.UUI
 			merged = locked
 			if won := mergeGuestWrite(locked, &candidate, opTime, carried); len(won) == 0 {
 				return nil
+			}
+			if err := ValidateGuestText(locked); err != nil {
+				return err
 			}
 			applied = true
 			return repo.Update(ctx, locked)

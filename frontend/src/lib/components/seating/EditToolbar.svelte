@@ -10,6 +10,7 @@ import ChevronsUp from 'lucide-svelte/icons/chevrons-up';
 import ChevronsDown from 'lucide-svelte/icons/chevrons-down';
 import Undo2 from 'lucide-svelte/icons/undo-2';
 import Redo2 from 'lucide-svelte/icons/redo-2';
+  import { LIMITS } from '#lib/utils/limits.ts';
 import AlignStartVertical from 'lucide-svelte/icons/align-start-vertical';
 import AlignCenterVertical from 'lucide-svelte/icons/align-center-vertical';
 import AlignEndVertical from 'lucide-svelte/icons/align-end-vertical';
@@ -310,6 +311,7 @@ import AlignVerticalDistributeCenter from 'lucide-svelte/icons/align-vertical-di
           id="sel-name"
           type="text"
           value={selectedItem.name ?? ''}
+          maxlength={LIMITS.name}
           oninput={(e) => onUpdateSelected({ name: e.currentTarget.value })}
           class="w-24 px-1.5 py-1 border border-gray-200 rounded-lg"
         />
