@@ -52,10 +52,19 @@ func (r *TokenRepo) DeleteByToken(ctx context.Context, token string) (int64, err
 // UpdateWeddingScope persists the selected wedding onto the caller's own live
 // refresh token, so Refresh re-mints a scoped access token instead of dropping
 // back to an unscoped (nil) wedding. Other sessions of the same user keep theirs.
+// A token that matches no live row is reported as not found: silently returning
+// success would hand back a token whose scope was never persisted.
 func (r *TokenRepo) UpdateWeddingScope(ctx context.Context, adminID uuid.UUID, token string, weddingID uuid.UUID) error {
-	return r.db.WithContext(ctx).Model(&models.RefreshToken{}).
+	res := r.db.WithContext(ctx).Model(&models.RefreshToken{}).
 		Where("admin_id = ? AND token = ? AND expires_at > ?", adminID, token, time.Now()).
-		Update("wedding_id", weddingID).Error
+		Update("wedding_id", weddingID)
+	if res.Error != nil {
+		return res.Error
+	}
+	if res.RowsAffected == 0 {
+		return gorm.ErrRecordNotFound
+	}
+	return nil
 }
 
 // DeleteByAdminID deletes all refresh tokens for the given admin user.
