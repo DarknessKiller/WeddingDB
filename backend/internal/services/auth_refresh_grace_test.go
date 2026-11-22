@@ -119,6 +119,37 @@ func TestRefresh_ReplayAfterGraceRejected(t *testing.T) {
 	}
 }
 
+// A replayed token whose successor was already consumed is reuse too, even
+// inside the grace window: otherwise a thief pacing the victim's rotations
+// keeps minting access tokens forever.
+func TestRefresh_ReplayWithConsumedSuccessorRejectedInsideGrace(t *testing.T) {
+	svc, _, db := newIntegrationAuthService(t, "test-secret")
+	adminID := uuid.New()
+	refreshStr := "grace-chain"
+
+	seedAdmin(t, db, adminID, "admin")
+	seedRefreshToken(t, db, adminID, nil, refreshStr)
+
+	first, err := svc.Refresh(context.Background(), refreshStr, "")
+	if err != nil {
+		t.Fatalf("first Refresh failed: %v", err)
+	}
+	second, err := svc.Refresh(context.Background(), first.RefreshToken, "")
+	if err != nil {
+		t.Fatalf("successor Refresh failed: %v", err)
+	}
+
+	if _, err := svc.Refresh(context.Background(), refreshStr, ""); err == nil {
+		t.Fatal("replay of a token whose successor was consumed was accepted")
+	}
+	if _, err := svc.Refresh(context.Background(), second.RefreshToken, ""); err == nil {
+		t.Fatal("live successor still usable after reuse was detected")
+	}
+	if _, err := svc.ValidateToken(context.Background(), second.AccessToken); err == nil {
+		t.Fatal("access token still valid after reuse was detected")
+	}
+}
+
 // The claim is exclusive and the loser's replacement is not stored.
 func TestTokenRotate_SecondClaimRejected(t *testing.T) {
 	_, _, db := newIntegrationAuthService(t, "test-secret")

@@ -253,6 +253,14 @@ func (s *AuthService) resumeRotation(ctx context.Context, presented string, cons
 	if err != nil {
 		return nil, errors.New("invalid refresh token")
 	}
+	if replacement.RotatedAt != nil {
+		// The successor was already consumed: this presentation is a replay of a
+		// token two rotations old, so the whole chain has leaked.
+		if err := s.RevokeUserTokens(ctx, consumed.AdminID); err != nil {
+			slog.Error("revoke sessions after refresh token reuse", "admin", consumed.AdminID, "err", err)
+		}
+		return nil, errors.New("invalid refresh token")
+	}
 	admin, err := s.adminRepo.FindByID(ctx, replacement.AdminID)
 	if err != nil {
 		return nil, errors.New("admin not found")
