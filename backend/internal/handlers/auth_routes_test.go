@@ -49,7 +49,8 @@ func newAuthRoutes(t *testing.T) *authRoutes {
 	adminRepo := repository.NewAdminRepo(db)
 	auth := services.NewAuthService(adminRepo, repository.NewWeddingRepo(db), repository.NewTokenRepo(db), secret, rdb)
 	s := config.NewFuegoServer(config.Env{Port: "0"}, "test")
-	RegisterRoutes(s, auth, nil, nil, nil, nil, nil, adminRepo)
+	// Guest service without repositories: enough for paths answered before any query.
+	RegisterRoutes(s, auth, services.NewGuestService(nil, nil, nil, nil), nil, nil, nil, nil, adminRepo)
 	return &authRoutes{s: s.Mux, db: db, mr: mr, secret: secret}
 }
 
