@@ -180,7 +180,10 @@ func (s *AuthService) Refresh(ctx context.Context, refreshTokenStr string, oldAc
 
 	token, err := s.tokenRepo.FindByToken(ctx, refreshTokenStr)
 	if err != nil {
-		return nil, errors.New("invalid refresh token")
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, ErrInvalidToken
+		}
+		return nil, fmt.Errorf("find refresh token: %w", err)
 	}
 	if token.RotatedAt != nil {
 		return s.resumeRotation(ctx, refreshTokenStr, token)
@@ -188,7 +191,10 @@ func (s *AuthService) Refresh(ctx context.Context, refreshTokenStr string, oldAc
 
 	admin, err := s.adminRepo.FindByID(ctx, token.AdminID)
 	if err != nil {
-		return nil, errors.New("admin not found")
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, ErrInvalidToken
+		}
+		return nil, fmt.Errorf("find admin for refresh token: %w", err)
 	}
 
 	// Mint before consuming: if Redis or the token generator fails here, the
@@ -222,7 +228,7 @@ func (s *AuthService) Refresh(ctx context.Context, refreshTokenStr string, oldAc
 	// successor instead of failing one of the two.
 	current, findErr := s.tokenRepo.FindByToken(ctx, refreshTokenStr)
 	if findErr != nil || current.RotatedAt == nil {
-		return nil, errors.New("invalid refresh token")
+		return nil, ErrInvalidToken
 	}
 	return s.resumeRotation(ctx, refreshTokenStr, current)
 }
@@ -240,7 +246,7 @@ func (s *AuthService) successorToken(presented string) string {
 // successor, inside the grace window. Outside it the token counts as replayed.
 func (s *AuthService) resumeRotation(ctx context.Context, presented string, consumed *models.RefreshToken) (*LoginResult, error) {
 	if consumed.RotatedAt == nil || consumed.ReplacedBy == nil {
-		return nil, errors.New("invalid refresh token")
+		return nil, ErrInvalidToken
 	}
 	if time.Since(*consumed.RotatedAt) > refreshGraceWindow {
 		// A consumed token reused after the grace window means it leaked: end
@@ -248,12 +254,12 @@ func (s *AuthService) resumeRotation(ctx context.Context, presented string, cons
 		if err := s.RevokeUserTokens(ctx, consumed.AdminID); err != nil {
 			slog.Error("revoke sessions after refresh token reuse", "admin", consumed.AdminID, "err", err)
 		}
-		return nil, errors.New("invalid refresh token")
+		return nil, ErrInvalidToken
 	}
 	successor := s.successorToken(presented)
 	replacement, err := s.tokenRepo.FindByToken(ctx, successor)
 	if err != nil {
-		return nil, errors.New("invalid refresh token")
+		return nil, ErrInvalidToken
 	}
 	if replacement.RotatedAt != nil {
 		// The successor was already consumed: this presentation is a replay of a
@@ -261,11 +267,14 @@ func (s *AuthService) resumeRotation(ctx context.Context, presented string, cons
 		if err := s.RevokeUserTokens(ctx, consumed.AdminID); err != nil {
 			slog.Error("revoke sessions after refresh token reuse", "admin", consumed.AdminID, "err", err)
 		}
-		return nil, errors.New("invalid refresh token")
+		return nil, ErrInvalidToken
 	}
 	admin, err := s.adminRepo.FindByID(ctx, replacement.AdminID)
 	if err != nil {
-		return nil, errors.New("admin not found")
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, ErrInvalidToken
+		}
+		return nil, fmt.Errorf("find admin for refresh token: %w", err)
 	}
 	weddingID, err := s.activeWeddingScope(ctx, admin.ID, replacement.WeddingID)
 	if err != nil {
@@ -539,7 +548,7 @@ func (s *AuthService) discardIfRevoked(ctx context.Context, userID uuid.UUID, ac
 	if _, err := s.tokenRepo.DeleteByToken(ctx, refreshToken); err != nil {
 		return fmt.Errorf("failed to delete revoked successor: %w", err)
 	}
-	return errors.New("session revoked")
+	return ErrInvalidToken
 }
 
 // parseTokenClaims parses a JWT without blacklist/tv checks — used only for extracting claims during logout.

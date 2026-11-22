@@ -14,6 +14,11 @@ var (
 
 	// ErrWeddingNotFound is returned when a report names an unknown wedding.
 	ErrWeddingNotFound = errors.New("wedding not found")
+
+	// ErrInvalidToken is returned when a refresh token is unknown, expired, or
+	// replayed. Every other Refresh error is an infrastructure fault, so the
+	// handler answers 503 and the client keeps its session and offline queue.
+	ErrInvalidToken = errors.New("invalid refresh token")
 )
 
 // SelectWedding sentinels; handlers map them to 401/403.

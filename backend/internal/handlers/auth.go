@@ -173,7 +173,13 @@ func (h *AuthHandler) Refresh(c fuego.ContextWithBody[RefreshRequest]) (TokenRes
 	}
 	result, err := h.authService.Refresh(c.Context(), body.RefreshToken, oldAccessToken)
 	if err != nil {
-		return TokenResponse{}, fuego.UnauthorizedError{Title: err.Error()}
+		// Only a dead token ends the session; a database or Redis outage must
+		// stay 503 so the client keeps its offline queue.
+		if errors.Is(err, services.ErrInvalidToken) {
+			return TokenResponse{}, fuego.UnauthorizedError{Title: services.ErrInvalidToken.Error()}
+		}
+		slog.Error("refresh failed", "err", err)
+		return TokenResponse{}, fuego.HTTPError{Status: http.StatusServiceUnavailable, Title: "Service temporarily unavailable"}
 	}
 	return TokenResponse{
 		AccessToken:         result.AccessToken,
