@@ -59,7 +59,7 @@ func (s *GuestService) guestCountLocked(tx *gorm.DB, weddingID uuid.UUID) (int, 
 	return total, nil
 }
 
-func (s *GuestService) createGuestTx(ctx context.Context, tx *gorm.DB, g *models.GuestRecord, syncWrite bool) error {
+func (s *GuestService) createGuestTx(ctx context.Context, tx *gorm.DB, g *models.GuestRecord) error {
 	if g.Pax < 1 {
 		g.Pax = 1
 	}
@@ -75,38 +75,56 @@ func (s *GuestService) createGuestTx(ctx context.Context, tx *gorm.DB, g *models
 	if total+g.Pax > MaxGuestsPerWedding {
 		return guestCapError(total, g.Pax)
 	}
-	repo := repository.NewGuestRepo(tx)
-	if syncWrite {
-		return repo.SyncCreate(ctx, g)
-	}
-	return repo.Create(ctx, g)
+	return repository.NewGuestRepo(tx).Create(ctx, g)
 }
 
-func (s *GuestService) updateGuestTx(ctx context.Context, tx *gorm.DB, g *models.GuestRecord, syncWrite bool) error {
-	if g.Pax < 1 {
-		g.Pax = 1
-	}
-	total, err := s.guestCountLocked(tx, g.WeddingID)
+// mergeGuestUpdate is the one write path for guest edits: lock the wedding,
+// lock the guest row, merge the carried groups, then validate and save the
+// merged row. A write that wins no group is not validated and not saved.
+func (s *GuestService) mergeGuestUpdate(ctx context.Context, tx *gorm.DB, weddingID, id uuid.UUID, patch *GuestPatch, at time.Time) (*models.GuestRecord, bool, error) {
+	total, err := s.guestCountLocked(tx, weddingID)
 	if err != nil {
-		return err
-	}
-	if err := checkSeatNotTaken(ctx, tx, g); err != nil {
-		return err
-	}
-	var current models.GuestRecord
-	if err := tx.Select("id", "pax").
-		Where("id = ? AND wedding_id = ?", g.ID, g.WeddingID).
-		First(&current).Error; err != nil {
-		return err
-	}
-	if g.Pax > current.Pax && total-current.Pax+g.Pax > MaxGuestsPerWedding {
-		return guestCapError(total, g.Pax-current.Pax)
+		return nil, false, err
 	}
 	repo := repository.NewGuestRepo(tx)
-	if syncWrite {
-		return repo.SyncUpdate(ctx, g)
+	locked, err := repo.FindByIDForUpdate(ctx, id, weddingID)
+	if err != nil {
+		return nil, false, err
 	}
-	return repo.Update(ctx, g)
+	if patch == nil {
+		return locked, false, nil
+	}
+	existingPax := locked.Pax
+	candidate := *locked
+	carried, err := guestPatchForWrite(patch).applyTo(&candidate)
+	if err != nil {
+		return nil, false, err
+	}
+	if won := mergeGuestWrite(locked, &candidate, at, carried); len(won) == 0 {
+		return locked, false, nil
+	}
+	if locked.Pax > existingPax && total-existingPax+locked.Pax > MaxGuestsPerWedding {
+		return nil, false, guestCapError(total, locked.Pax-existingPax)
+	}
+	if err := checkSeatNotTaken(ctx, tx, locked); err != nil {
+		return nil, false, err
+	}
+	if err := repo.Update(ctx, locked); err != nil {
+		return nil, false, err
+	}
+	return locked, true, nil
+}
+
+// guestPatchForWrite keeps patches built in Go carrying every group without
+// failing on the zero RSVP the old full-payload callers never sent. A decoded
+// JSON patch keeps its presence map, so an explicit "" is still rejected.
+func guestPatchForWrite(p *GuestPatch) *GuestPatch {
+	if p == nil || p.set != nil || p.RSVP != "" {
+		return p
+	}
+	c := *p
+	c.RSVP = "no_response"
+	return &c
 }
 
 func (s *GuestService) List(ctx context.Context, weddingID uuid.UUID, cursor string, limit int) ([]models.GuestRecord, int64, error) {
@@ -119,7 +137,7 @@ func (s *GuestService) Get(ctx context.Context, id, weddingID uuid.UUID) (*model
 
 func (s *GuestService) Create(ctx context.Context, g *models.GuestRecord) error {
 	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		return s.createGuestTx(ctx, tx, g, false)
+		return s.createGuestTx(ctx, tx, g)
 	})
 	if err != nil {
 		return err
@@ -128,15 +146,66 @@ func (s *GuestService) Create(ctx context.Context, g *models.GuestRecord) error 
 	return nil
 }
 
+// Update writes a full guest row (all column groups) at server time.
 func (s *GuestService) Update(ctx context.Context, g *models.GuestRecord) error {
+	var merged *models.GuestRecord
+	applied := false
 	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		return s.updateGuestTx(ctx, tx, g, false)
+		var err error
+		merged, applied, err = s.mergeGuestUpdate(ctx, tx, g.WeddingID, g.ID, guestPatchFromRecord(g), time.Now())
+		return err
 	})
 	if err != nil {
 		return err
 	}
-	s.publishEvent("update", g, g.WeddingID)
+	if applied {
+		s.publishEvent("update", merged, g.WeddingID)
+	}
 	return nil
+}
+
+// guestPatchFromRecord turns a full row into a patch that carries every group.
+func guestPatchFromRecord(g *models.GuestRecord) *GuestPatch {
+	p := &GuestPatch{
+		Name:      g.Name,
+		Email:     g.Email,
+		Pax:       g.Pax,
+		RSVP:      g.RSVP,
+		IsVip:     g.IsVip,
+		Notes:     g.Notes,
+		Dietary:   g.Dietary,
+		AngbaoAmt: g.AngbaoAmt,
+		GiftItem:  g.GiftItem,
+		set:       map[string]bool{"name": true, "email": true, "pax": true, "rsvp": true, "isVip": true, "notes": true, "dietary": true, "angbaoAmt": true, "giftItem": true, "tableId": true},
+	}
+	if g.TableID != nil {
+		table := g.TableID.String()
+		p.TableID = &table
+		p.SeatNum = g.SeatNum
+	}
+	return p
+}
+
+// UpdatePatch merges a sparse online edit into the locked row and returns the
+// merged record. Absent fields keep their stored value, explicit null clears.
+func (s *GuestService) UpdatePatch(ctx context.Context, id, weddingID uuid.UUID, patch *GuestPatch) (*models.GuestRecord, error) {
+	var merged *models.GuestRecord
+	applied := false
+	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var err error
+		merged, applied, err = s.mergeGuestUpdate(ctx, tx, weddingID, id, patch, time.Now())
+		return err
+	})
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, ErrGuestNotFound
+		}
+		return nil, err
+	}
+	if applied {
+		s.publishEvent("update", merged, weddingID)
+	}
+	return merged, nil
 }
 
 func (s *GuestService) Delete(ctx context.Context, id, weddingID uuid.UUID) error {
@@ -215,30 +284,20 @@ func checkSeatNotTaken(ctx context.Context, tx *gorm.DB, g *models.GuestRecord) 
 }
 
 func (s *GuestService) AssignSeat(ctx context.Context, guestID, weddingID, tableID uuid.UUID, seatNum int) error {
-	var guest *models.GuestRecord
+	table := tableID.String()
+	patch := &GuestPatch{TableID: &table, SeatNum: &seatNum, set: map[string]bool{"tableId": true}}
+	var merged *models.GuestRecord
 	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		txGuestRepo := repository.NewGuestRepo(tx)
 		var err error
-		guest, err = txGuestRepo.FindByID(ctx, guestID, weddingID)
-		if err != nil {
-			return err
-		}
-		// Wedding row lock keeps the lock order identical to create/update, so
-		// a concurrent seat move and import cannot deadlock each other.
-		if _, err := s.guestCountLocked(tx, weddingID); err != nil {
-			return err
-		}
-		if err := checkSeatTx(ctx, tx, weddingID, tableID, guestID, guest.Pax, seatNum); err != nil {
-			return err
-		}
-		guest.TableID = &tableID
-		guest.SeatNum = &seatNum
-		return txGuestRepo.Update(ctx, guest)
+		// Wedding lock, guest lock, then table lock: the same order as every
+		// other write path, so a concurrent seat move and import cannot deadlock.
+		merged, _, err = s.mergeGuestUpdate(ctx, tx, weddingID, guestID, patch, time.Now())
+		return err
 	})
 	if err != nil {
 		return err
 	}
-	s.publishEvent("seat_assign", guest, weddingID)
+	s.publishEvent("seat_assign", merged, weddingID)
 	return nil
 }
 
@@ -247,65 +306,108 @@ func (s *GuestService) AssignSeat(ctx context.Context, guestID, weddingID, table
 // fields untouched and a failed field write leaves the seat where it was.
 // A nil tableID preserves the current seat assignment.
 func (s *GuestService) UpdateWithSeat(ctx context.Context, g *models.GuestRecord, tableID *uuid.UUID, seatNum int) error {
+	patch := guestPatchFromRecord(g)
+	if tableID == nil {
+		delete(patch.set, "tableId")
+		patch.TableID = nil
+		patch.SeatNum = nil
+	} else {
+		table := tableID.String()
+		patch.TableID = &table
+		patch.SeatNum = &seatNum
+	}
+	var merged *models.GuestRecord
+	applied := false
 	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		if tableID != nil {
-			g.TableID = tableID
-			g.SeatNum = &seatNum
-		}
-		return s.updateGuestTx(ctx, tx, g, false)
+		var err error
+		merged, applied, err = s.mergeGuestUpdate(ctx, tx, g.WeddingID, g.ID, patch, time.Now())
+		return err
 	})
 	if err != nil {
 		return err
 	}
-	s.publishEvent("update", g, g.WeddingID)
+	if applied {
+		s.publishEvent("update", merged, g.WeddingID)
+	}
 	return nil
 }
 
+// UnassignSeat clears the table and seat as one column group.
+func (s *GuestService) UnassignSeat(ctx context.Context, id, weddingID uuid.UUID) error {
+	_, err := s.UpdatePatch(ctx, id, weddingID, &GuestPatch{set: map[string]bool{"tableId": true}})
+	return err
+}
+
 // CheckIn marks a guest as checked in and promotes their RSVP to confirmed.
-// Non-empty notes are appended to the guest's existing notes.
+// Non-empty notes are appended to the locked guest's existing notes.
 // Returns ErrAlreadyCheckedIn if the guest was already checked in by another
 // receptionist (FIFO conflict).
 func (s *GuestService) CheckIn(ctx context.Context, id, weddingID uuid.UUID, notes string) error {
-	now := time.Now()
-	updatedNotes := ""
 	notes = strings.TrimSpace(notes)
-	if notes != "" {
-		existing, err := s.guestRepo.FindByID(ctx, id, weddingID)
-		if err != nil {
-			return err
-		}
-		updatedNotes = appendNote(existing.Notes, notes)
-	}
-	// Atomic conditional update: only check in if not already checked in
-	if err := s.guestRepo.ConditionalCheckIn(ctx, id, weddingID, now, updatedNotes); err != nil {
-		if errors.Is(err, repository.ErrAlreadyCheckedIn) {
-			return ErrAlreadyCheckedIn
-		}
+	var merged *models.GuestRecord
+	applied := false
+	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		repo := repository.NewGuestRepo(tx)
+		locked, err := repo.FindByIDForUpdate(ctx, id, weddingID)
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return ErrGuestNotFound
 		}
+		if err != nil {
+			return err
+		}
+		if locked.CheckedInAt != nil {
+			return ErrAlreadyCheckedIn
+		}
+		now := time.Now()
+		candidate := *locked
+		candidate.CheckedInAt = &now
+		candidate.RSVP = "confirmed"
+		carried := []string{groupCheckedInAt, groupRSVP}
+		if notes != "" {
+			candidate.Notes = appendNote(locked.Notes, notes)
+			carried = append(carried, groupNotes)
+		}
+		merged = locked
+		if won := mergeGuestWrite(locked, &candidate, now, carried); len(won) == 0 {
+			return nil
+		}
+		applied = true
+		return repo.Update(ctx, locked)
+	})
+	if err != nil {
 		return err
 	}
-	guest, err := s.guestRepo.FindByID(ctx, id, weddingID)
-	if err != nil {
-		log.Printf("guest lookup after check-in failed: %v", err)
-	}
-	if guest != nil {
-		s.publishEvent("checkin", guest, weddingID)
+	if applied {
+		s.publishEvent("checkin", merged, weddingID)
 	}
 	return nil
 }
 
 func (s *GuestService) CheckOut(ctx context.Context, id, weddingID uuid.UUID) error {
-	guest, err := s.guestRepo.FindByID(ctx, id, weddingID)
+	var merged *models.GuestRecord
+	applied := false
+	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		repo := repository.NewGuestRepo(tx)
+		locked, err := repo.FindByIDForUpdate(ctx, id, weddingID)
+		if err != nil {
+			return err
+		}
+		now := time.Now()
+		candidate := *locked
+		candidate.CheckedInAt = nil
+		merged = locked
+		if won := mergeGuestWrite(locked, &candidate, now, []string{groupCheckedInAt}); len(won) == 0 {
+			return nil
+		}
+		applied = true
+		return repo.Update(ctx, locked)
+	})
 	if err != nil {
 		return err
 	}
-	guest.CheckedInAt = nil
-	if err := s.guestRepo.Update(ctx, guest); err != nil {
-		return err
+	if applied {
+		s.publishEvent("checkout", merged, weddingID)
 	}
-	s.publishEvent("checkout", guest, weddingID)
 	return nil
 }
 
@@ -436,20 +538,6 @@ const (
 	SyncOpCheckOut SyncOp = "checkout"
 )
 
-type SyncPayload struct {
-	Name      string   `json:"name"`
-	Email     string   `json:"email"`
-	Pax       int      `json:"pax"`
-	RSVP      string   `json:"rsvp"`
-	IsVip     bool     `json:"isVip"`
-	Notes     string   `json:"notes"`
-	Dietary   []string `json:"dietary"`
-	TableID   *string  `json:"tableId"`
-	SeatNum   *int     `json:"seatNum"`
-	AngbaoAmt *int     `json:"angbaoAmt"`
-	GiftItem  *string  `json:"giftItem"`
-}
-
 type SyncMutation struct {
 	MutationID      string       `json:"mutationId"`
 	Op              SyncOp       `json:"op"`
@@ -466,7 +554,7 @@ type SyncResult struct {
 	ServerRecord *models.GuestRecord `json:"serverRecord,omitempty"`
 }
 
-// Sync applies a batch of mutations with newer-time-wins.
+// Sync applies a batch of mutations with per-column newer-time-wins.
 // Mutations are processed in order received, FIFO.
 func (s *GuestService) Sync(ctx context.Context, weddingID uuid.UUID, mutations []SyncMutation) ([]SyncResult, error) {
 	results := make([]SyncResult, 0, len(mutations))
@@ -482,6 +570,9 @@ func (s *GuestService) applySyncMutation(ctx context.Context, weddingID uuid.UUI
 	if err != nil {
 		return SyncResult{GuestID: m.GuestID, Status: "skipped", Reason: "invalid guestId"}
 	}
+	if m.ClientUpdatedAt.IsZero() {
+		return SyncResult{GuestID: m.GuestID, Status: "failed", Reason: "clientUpdatedAt required"}
+	}
 
 	// Skew clamp: never trust a client clock in the future, or a skewed device
 	// would win every LWW comparison from then on.
@@ -490,67 +581,55 @@ func (s *GuestService) applySyncMutation(ctx context.Context, weddingID uuid.UUI
 		opTime = time.Now()
 	}
 
-	// Load server record if exists
-	existing, err := s.guestRepo.FindByID(ctx, gid, weddingID)
-	found := err == nil
-
 	switch m.Op {
 	case SyncOpCreate:
-		if found {
-			// treat as update with LWW; equal timestamps count as newer (tie-break)
-			if opTime.Before(existing.UpdatedAt) {
-				return SyncResult{GuestID: m.GuestID, Status: "skipped", Reason: "older than server", ServerRecord: existing}
-			}
-			if m.Payload != nil {
-				if err := s.validateSyncTableSeat(ctx, weddingID, m.Payload); err != nil {
-					return SyncResult{GuestID: m.GuestID, Status: "failed", Reason: err.Error()}
-				}
-				applySyncPayload(existing, m.Payload, &gid)
-			}
-			existing.UpdatedAt = opTime
-			if err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-				return s.updateGuestTx(ctx, tx, existing, true)
-			}); err != nil {
+		if _, err := s.guestRepo.FindByID(ctx, gid, weddingID); err == nil {
+			// The guest already exists: treat the create as an update.
+			merged, applied, err := s.syncMerge(ctx, weddingID, gid, m.Payload, opTime)
+			if err != nil {
 				return SyncResult{GuestID: m.GuestID, Status: "failed", Reason: err.Error()}
 			}
-			s.publishEvent("update", existing, weddingID)
-			return SyncResult{GuestID: m.GuestID, Status: "applied", ServerRecord: existing}
-		}
-		if m.Payload == nil || m.Payload.Name == "" {
-			return SyncResult{GuestID: m.GuestID, Status: "skipped", Reason: "name required"}
-		}
-		if m.Payload.Pax < 1 {
-			m.Payload.Pax = 1
-		}
-		if err := s.validateSyncTableSeat(ctx, weddingID, m.Payload); err != nil {
+			if !applied {
+				return SyncResult{GuestID: m.GuestID, Status: "skipped", Reason: "older than server", ServerRecord: merged}
+			}
+			s.publishEvent("update", merged, weddingID)
+			return SyncResult{GuestID: m.GuestID, Status: "applied", ServerRecord: merged}
+		} else if !errors.Is(err, gorm.ErrRecordNotFound) {
 			return SyncResult{GuestID: m.GuestID, Status: "failed", Reason: err.Error()}
 		}
-		g := &models.GuestRecord{
-			ID:        gid,
-			WeddingID: weddingID,
-			Name:      m.Payload.Name,
-			Email:     m.Payload.Email,
-			Pax:       m.Payload.Pax,
-			RSVP:      m.Payload.RSVP,
-			IsVip:     m.Payload.IsVip,
-			Notes:     m.Payload.Notes,
-			Dietary:   m.Payload.Dietary,
-			AngbaoAmt: m.Payload.AngbaoAmt,
-			GiftItem:  m.Payload.GiftItem,
-			CreatedAt: opTime,
-			UpdatedAt: opTime,
+		if m.Payload == nil || m.Payload.Name == "" {
+			return SyncResult{GuestID: m.GuestID, Status: "failed", Reason: "name is required"}
 		}
-		if m.Payload.TableID != nil && *m.Payload.TableID != "" {
-			if tid, err := parseSyncID(*m.Payload.TableID); err == nil {
-				g.TableID = &tid
+		patch := m.Payload
+		if patch.set == nil {
+			// Go-built full payloads predate presence tracking: keep the old
+			// defaults instead of failing on a zero pax/rsvp.
+			c := *patch
+			if c.Pax < 1 {
+				c.Pax = 1
 			}
+			if c.RSVP == "" {
+				c.RSVP = "no_response"
+			}
+			patch = &c
 		}
-		g.SeatNum = m.Payload.SeatNum
-		if g.TableID == nil {
-			g.SeatNum = nil // a seat without a table is not a valid assignment
+		g := &models.GuestRecord{
+			ID:         gid,
+			WeddingID:  weddingID,
+			Pax:        1,
+			RSVP:       "no_response",
+			CreatedAt:  opTime,
+			UpdatedAt:  opTime,
+			FieldTimes: make(models.FieldTimes, len(guestGroups())),
+		}
+		for _, key := range guestGroups() {
+			g.FieldTimes[key] = opTime
+		}
+		if _, err := patch.applyTo(g); err != nil {
+			return SyncResult{GuestID: m.GuestID, Status: "failed", Reason: err.Error()}
 		}
 		if err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-			return s.createGuestTx(ctx, tx, g, true)
+			return s.createGuestTx(ctx, tx, g)
 		}); err != nil {
 			return SyncResult{GuestID: m.GuestID, Status: "failed", Reason: err.Error()}
 		}
@@ -558,142 +637,148 @@ func (s *GuestService) applySyncMutation(ctx context.Context, weddingID uuid.UUI
 		return SyncResult{GuestID: m.GuestID, Status: "applied", ServerRecord: g}
 
 	case SyncOpUpdate:
-		if !found {
-			return SyncResult{GuestID: m.GuestID, Status: "skipped", Reason: "not found", ServerRecord: nil}
+		merged, applied, err := s.syncMerge(ctx, weddingID, gid, m.Payload, opTime)
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return SyncResult{GuestID: m.GuestID, Status: "skipped", Reason: "not found"}
 		}
-		// Equal timestamps win the tie-break: only strictly older ops lose.
-		if opTime.Before(existing.UpdatedAt) {
-			return SyncResult{GuestID: m.GuestID, Status: "skipped", Reason: "older than server", ServerRecord: existing}
-		}
-		if m.Payload != nil {
-			if err := s.validateSyncTableSeat(ctx, weddingID, m.Payload); err != nil {
-				return SyncResult{GuestID: m.GuestID, Status: "failed", Reason: err.Error()}
-			}
-			applySyncPayload(existing, m.Payload, nil)
-		}
-		existing.UpdatedAt = opTime
-		if err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-			return s.updateGuestTx(ctx, tx, existing, true)
-		}); err != nil {
+		if err != nil {
 			return SyncResult{GuestID: m.GuestID, Status: "failed", Reason: err.Error()}
 		}
-		s.publishEvent("update", existing, weddingID)
-		return SyncResult{GuestID: m.GuestID, Status: "applied", ServerRecord: existing}
+		if !applied {
+			return SyncResult{GuestID: m.GuestID, Status: "skipped", Reason: "older than server", ServerRecord: merged}
+		}
+		s.publishEvent("update", merged, weddingID)
+		return SyncResult{GuestID: m.GuestID, Status: "applied", ServerRecord: merged}
 
 	case SyncOpDelete:
-		if !found {
-			return SyncResult{GuestID: m.GuestID, Status: "applied"}
-		}
-		if opTime.Before(existing.UpdatedAt) {
-			// Report "failed", not "skipped": the client keeps failed items
-			// queued instead of dequeuing and losing the delete intent.
-			return SyncResult{GuestID: m.GuestID, Status: "failed", Reason: "older than server", ServerRecord: existing}
-		}
-		if err := s.guestRepo.Delete(ctx, gid, weddingID); err != nil {
+		var losing, deleted *models.GuestRecord
+		err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+			repo := repository.NewGuestRepo(tx)
+			locked, err := repo.FindByIDForUpdate(ctx, gid, weddingID)
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return nil
+			}
+			if err != nil {
+				return err
+			}
+			if !guestDeleteWins(locked, opTime) {
+				// Report "failed", not "skipped": the client keeps failed items
+				// queued instead of dequeuing and losing the delete intent.
+				losing = locked
+				return nil
+			}
+			if err := repo.Delete(ctx, gid, weddingID); err != nil {
+				return err
+			}
+			deleted = locked
+			return nil
+		})
+		if err != nil {
 			return SyncResult{GuestID: m.GuestID, Status: "failed", Reason: err.Error()}
 		}
-		s.publishEvent("delete", existing, weddingID)
+		if losing != nil {
+			return SyncResult{GuestID: m.GuestID, Status: "failed", Reason: "older than server", ServerRecord: losing}
+		}
+		if deleted != nil {
+			s.publishEvent("delete", deleted, weddingID)
+		}
 		return SyncResult{GuestID: m.GuestID, Status: "applied"}
 
 	case SyncOpCheckIn:
-		if !found {
+		var merged *models.GuestRecord
+		applied := false
+		err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+			repo := repository.NewGuestRepo(tx)
+			locked, err := repo.FindByIDForUpdate(ctx, gid, weddingID)
+			if err != nil {
+				return err
+			}
+			candidate := *locked
+			candidate.CheckedInAt = &opTime
+			candidate.RSVP = "confirmed"
+			carried := []string{groupCheckedInAt, groupRSVP}
+			if m.Payload != nil {
+				if m.Payload.AngbaoAmt != nil {
+					candidate.AngbaoAmt = m.Payload.AngbaoAmt
+					carried = append(carried, groupAngbaoAmt)
+				}
+				if m.Payload.GiftItem != nil {
+					candidate.GiftItem = m.Payload.GiftItem
+					carried = append(carried, groupGiftItem)
+				}
+				// A notes value in a checkin payload is appended to the guest's
+				// notes, never replacing them, so a queued note never wipes
+				// existing notes. A replay carries the same time as the stored
+				// check-in, so it must not append the note again.
+				if notes := strings.TrimSpace(m.Payload.Notes); notes != "" && opTime.After(fieldTime(locked, groupCheckedInAt)) {
+					candidate.Notes = appendNote(locked.Notes, notes)
+					carried = append(carried, groupNotes)
+				}
+			}
+			merged = locked
+			if won := mergeGuestWrite(locked, &candidate, opTime, carried); len(won) == 0 {
+				return nil
+			}
+			applied = true
+			return repo.Update(ctx, locked)
+		})
+		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return SyncResult{GuestID: m.GuestID, Status: "skipped", Reason: "not found"}
 		}
-		if opTime.Before(existing.UpdatedAt) {
-			return SyncResult{GuestID: m.GuestID, Status: "skipped", Reason: "older than server", ServerRecord: existing}
-		}
-		existing.CheckedInAt = &opTime
-		existing.RSVP = "confirmed"
-		if m.Payload != nil {
-			if m.Payload.AngbaoAmt != nil {
-				existing.AngbaoAmt = m.Payload.AngbaoAmt
-			}
-			if m.Payload.GiftItem != nil {
-				existing.GiftItem = m.Payload.GiftItem
-			}
-			// A notes value in a checkin payload is appended to the guest's notes,
-			// never replacing them, so a queued note never wipes existing notes.
-			existing.Notes = appendNote(existing.Notes, strings.TrimSpace(m.Payload.Notes))
-		}
-		existing.UpdatedAt = opTime
-		if err := s.guestRepo.SyncUpdate(ctx, existing); err != nil {
+		if err != nil {
 			return SyncResult{GuestID: m.GuestID, Status: "failed", Reason: err.Error()}
 		}
-		s.publishEvent("checkin", existing, weddingID)
-		return SyncResult{GuestID: m.GuestID, Status: "applied", ServerRecord: existing}
+		if !applied {
+			return SyncResult{GuestID: m.GuestID, Status: "skipped", Reason: "older than server", ServerRecord: merged}
+		}
+		s.publishEvent("checkin", merged, weddingID)
+		return SyncResult{GuestID: m.GuestID, Status: "applied", ServerRecord: merged}
 
 	case SyncOpCheckOut:
-		if !found {
+		var merged *models.GuestRecord
+		applied := false
+		err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+			repo := repository.NewGuestRepo(tx)
+			locked, err := repo.FindByIDForUpdate(ctx, gid, weddingID)
+			if err != nil {
+				return err
+			}
+			candidate := *locked
+			candidate.CheckedInAt = nil
+			merged = locked
+			if won := mergeGuestWrite(locked, &candidate, opTime, []string{groupCheckedInAt}); len(won) == 0 {
+				return nil
+			}
+			applied = true
+			return repo.Update(ctx, locked)
+		})
+		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return SyncResult{GuestID: m.GuestID, Status: "skipped", Reason: "not found"}
 		}
-		if opTime.Before(existing.UpdatedAt) {
-			return SyncResult{GuestID: m.GuestID, Status: "skipped", Reason: "older than server", ServerRecord: existing}
-		}
-		existing.CheckedInAt = nil
-		existing.UpdatedAt = opTime
-		if err := s.guestRepo.SyncUpdate(ctx, existing); err != nil {
+		if err != nil {
 			return SyncResult{GuestID: m.GuestID, Status: "failed", Reason: err.Error()}
 		}
-		s.publishEvent("checkout", existing, weddingID)
-		return SyncResult{GuestID: m.GuestID, Status: "applied", ServerRecord: existing}
+		if !applied {
+			return SyncResult{GuestID: m.GuestID, Status: "skipped", Reason: "older than server", ServerRecord: merged}
+		}
+		s.publishEvent("checkout", merged, weddingID)
+		return SyncResult{GuestID: m.GuestID, Status: "applied", ServerRecord: merged}
 
 	default:
 		return SyncResult{GuestID: m.GuestID, Status: "skipped", Reason: "unknown op"}
 	}
 }
 
-// validateSyncTableSeat mirrors the table/seat rules of AssignSeat for offline
-// sync mutations: the table must exist in this wedding and the seat must fit
-// its capacity. A nil/empty tableId (unassign) needs no validation.
-func (s *GuestService) validateSyncTableSeat(ctx context.Context, weddingID uuid.UUID, p *SyncPayload) error {
-	if p.TableID == nil || *p.TableID == "" {
-		return nil
-	}
-	tid, err := parseSyncID(*p.TableID)
-	if err != nil {
-		return fmt.Errorf("invalid tableId %q", *p.TableID)
-	}
-	table, err := s.tableRepo.FindByID(ctx, tid, weddingID)
-	if err != nil {
-		return fmt.Errorf("table %s not found", *p.TableID)
-	}
-	if p.SeatNum != nil && table.Capacity > 0 && *p.SeatNum > table.Capacity {
-		return fmt.Errorf("seat %d exceeds capacity %d of table %s", *p.SeatNum, table.Capacity, table.Name)
-	}
-	return nil
-}
-
-func applySyncPayload(g *models.GuestRecord, p *SyncPayload, gid *uuid.UUID) {
-	if p.Name != "" {
-		g.Name = p.Name
-	}
-	g.Email = p.Email
-	if p.Pax >= 1 {
-		g.Pax = p.Pax
-	}
-	if p.RSVP != "" {
-		g.RSVP = p.RSVP
-	}
-	g.IsVip = p.IsVip
-	g.Notes = p.Notes
-	g.Dietary = p.Dietary
-	g.AngbaoAmt = p.AngbaoAmt
-	g.GiftItem = p.GiftItem
-	switch {
-	case p.TableID == nil || *p.TableID == "":
-		// JSON null and empty string both mean "unassign": clear the whole
-		// seat assignment. SeatNum must never survive with a nil TableID.
-		g.TableID = nil
-		g.SeatNum = nil
-	default:
-		if tid, err := parseSyncID(*p.TableID); err == nil {
-			g.TableID = &tid
-			g.SeatNum = p.SeatNum
-		}
-	}
-	if gid != nil {
-		g.ID = *gid
-	}
+// syncMerge runs the shared locked merge for one sync payload.
+func (s *GuestService) syncMerge(ctx context.Context, weddingID, gid uuid.UUID, payload *SyncPayload, at time.Time) (*models.GuestRecord, bool, error) {
+	var merged *models.GuestRecord
+	applied := false
+	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var err error
+		merged, applied, err = s.mergeGuestUpdate(ctx, tx, weddingID, gid, payload, at)
+		return err
+	})
+	return merged, applied, err
 }
 
 // appendNote joins existing notes and notes added at check-in with a newline.

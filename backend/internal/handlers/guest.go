@@ -9,7 +9,6 @@ import (
 	"weddingdb/internal/services"
 
 	"github.com/go-fuego/fuego"
-	"github.com/google/uuid"
 )
 
 type GuestHandler struct{ guestService *services.GuestService }
@@ -141,21 +140,13 @@ func (h *GuestHandler) Create(c fuego.ContextWithBody[GuestCreateRequest]) (any,
 	return guest, nil
 }
 
-func (h *GuestHandler) Update(c fuego.ContextWithBody[GuestCreateRequest]) (any, error) {
+// Update applies a sparse edit: absent fields keep their stored value, explicit
+// null clears a nullable field, and the merged record is returned.
+func (h *GuestHandler) Update(c fuego.ContextWithBody[*services.GuestPatch]) (any, error) {
 	ctx := c.Context()
 	body, err := c.Body()
-	if err != nil {
+	if err != nil || body == nil {
 		return nil, fuego.BadRequestError{Title: "Invalid request"}
-	}
-	if body.Name == "" {
-		return nil, fuego.BadRequestError{Title: "Name is required"}
-	}
-	if body.Pax < 1 {
-		return nil, fuego.BadRequestError{Title: "Pax must be at least 1"}
-	}
-	validRSVP := map[string]bool{"confirmed": true, "pending": true, "declined": true, "no_response": true}
-	if body.RSVP != "" && !validRSVP[body.RSVP] {
-		return nil, fuego.BadRequestError{Title: "Invalid RSVP status"}
 	}
 	wid, err := DecodeWID(c)
 	if err != nil {
@@ -165,41 +156,14 @@ func (h *GuestHandler) Update(c fuego.ContextWithBody[GuestCreateRequest]) (any,
 	if err != nil {
 		return nil, fuego.BadRequestError{Title: "Invalid ID"}
 	}
-	guest, err := h.guestService.Get(ctx, id, wid)
+	guest, err := h.guestService.UpdatePatch(ctx, id, wid, body)
 	if err != nil {
-		return nil, fuego.NotFoundError{Title: "Guest not found"}
-	}
-	guest.Name = body.Name
-	guest.Email = body.Email
-	guest.Pax = body.Pax
-	guest.RSVP = body.RSVP
-	guest.IsVip = body.IsVip
-	guest.Notes = body.Notes
-	guest.Dietary = body.Dietary
-	guest.AngbaoAmt = body.AngbaoAmt
-	guest.GiftItem = body.GiftItem
-	// tableId not provided — preserve the existing seat assignment.
-	var tid *uuid.UUID
-	seatNum := 0
-	if body.TableID != nil {
-		if *body.TableID == "" {
-			// Explicitly clearing seat
-			guest.TableID = nil
-			guest.SeatNum = nil
-		} else {
-			id, err := DecodeID(*body.TableID)
-			if err != nil {
-				return nil, fuego.BadRequestError{Title: "Invalid table ID"}
-			}
-			tid = &id
-			seatNum = 1
-			if body.SeatNum != nil {
-				seatNum = *body.SeatNum
-			}
+		if errors.Is(err, services.ErrGuestNotFound) {
+			return nil, fuego.NotFoundError{Title: "Guest not found"}
 		}
-	}
-	if err := h.guestService.UpdateWithSeat(ctx, guest, tid, seatNum); err != nil {
-		if errors.Is(err, services.ErrGuestCapExceeded) {
+		if errors.Is(err, services.ErrGuestPatchInvalid) ||
+			errors.Is(err, services.ErrGuestCapExceeded) ||
+			errors.Is(err, services.ErrSeatOverlap) {
 			return nil, fuego.BadRequestError{Title: err.Error()}
 		}
 		return nil, err
@@ -410,13 +374,10 @@ func (h *GuestHandler) UnassignSeat(c fuego.ContextNoBody) (any, error) {
 	if err != nil {
 		return nil, fuego.BadRequestError{Title: "Invalid ID"}
 	}
-	guest, err := h.guestService.Get(ctx, guestID, wid)
-	if err != nil {
-		return nil, fuego.NotFoundError{Title: "Guest not found"}
-	}
-	guest.TableID = nil
-	guest.SeatNum = nil
-	if err := h.guestService.Update(ctx, guest); err != nil {
+	if err := h.guestService.UnassignSeat(ctx, guestID, wid); err != nil {
+		if errors.Is(err, services.ErrGuestNotFound) {
+			return nil, fuego.NotFoundError{Title: "Guest not found"}
+		}
 		return nil, err
 	}
 	c.SetStatus(204)

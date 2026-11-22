@@ -17,6 +17,7 @@ import ArrowUpDown from 'lucide-svelte/icons/arrow-up-down';
   import CheckInModal from './CheckInModal.svelte';
   import { getInitials, cn } from '#lib/utils/index.ts';
   import { formatSeatRange } from '#lib/utils/seat.ts';
+  import { guestPatch } from '#lib/utils/guestPatch.ts';
   import { addToast } from '#lib/stores/index.ts';
   import { weddingId } from '#lib/stores/weddingId.ts';
   import { guestList } from '#lib/stores/guestEvents.ts';
@@ -211,22 +212,19 @@ import ArrowUpDown from 'lucide-svelte/icons/arrow-up-down';
         addToast(`${created.name} created`, 'success');
         onClose();
       } else {
-        const updated = await updateGuest(wid, guest!.id, {
-          name: form.name, email: form.email || undefined,
-          pax: form.pax, rsvp: form.rsvp, isVip: form.isVip, notes: form.notes,
-          dietary: form.dietary, angbaoAmt: form.angbaoAmt ? Number(form.angbaoAmt) : null,
-          giftItem: form.giftItem || null,
-        });
-        Object.assign(guest!, {
-          name: updated.name, email: updated.email,
-          pax: updated.pax, rsvp: updated.rsvp, isVip: updated.isVip,
-          notes: updated.notes, dietaryRequirements: updated.dietary,
-          angbaoAmount: updated.angbaoAmt ?? undefined, giftItem: updated.giftItem ?? undefined,
-        });
-        Object.assign(form, {
-          angbaoAmt: updated.angbaoAmt != null ? String(updated.angbaoAmt) : '',
-          giftItem: updated.giftItem ?? '',
-        });
+        const updated = await updateGuest(wid, guest!.id, guestPatch(guest!, form));
+        if (updated) {
+          Object.assign(guest!, {
+            name: updated.name, email: updated.email,
+            pax: updated.pax, rsvp: updated.rsvp, isVip: updated.isVip,
+            notes: updated.notes, dietaryRequirements: updated.dietary,
+            angbaoAmount: updated.angbaoAmt ?? undefined, giftItem: updated.giftItem ?? undefined,
+          });
+          Object.assign(form, {
+            angbaoAmt: updated.angbaoAmt != null ? String(updated.angbaoAmt) : '',
+            giftItem: updated.giftItem ?? '',
+          });
+        }
         editing = false;
         addToast('Guest updated', 'success');
         await refreshGuest();

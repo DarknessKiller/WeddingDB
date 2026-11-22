@@ -11,6 +11,10 @@ var (
 
 	// ErrGuestNotFound is returned when the guest does not exist in the wedding.
 	ErrGuestNotFound = errors.New("guest not found")
+
+	// ErrGuestPatchInvalid is returned when a sparse guest write carries a
+	// value the API refuses.
+	ErrGuestPatchInvalid = errors.New("invalid guest patch")
 )
 
 // SelectWedding sentinels; handlers map them to 401/403.

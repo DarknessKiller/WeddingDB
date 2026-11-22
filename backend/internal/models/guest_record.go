@@ -36,6 +36,32 @@ func (s *StringSlice) Scan(src interface{}) error {
 	}
 }
 
+// FieldTimes stores the last write time of each guest column group as JSON
+// text, using the same pattern as StringSlice.
+type FieldTimes map[string]time.Time
+
+func (f FieldTimes) Value() (driver.Value, error) {
+	if f == nil {
+		return "{}", nil
+	}
+	return json.Marshal(f)
+}
+
+func (f *FieldTimes) Scan(src any) error {
+	if src == nil {
+		*f = nil
+		return nil
+	}
+	switch v := src.(type) {
+	case []byte:
+		return json.Unmarshal(v, f)
+	case string:
+		return json.Unmarshal([]byte(v), f)
+	default:
+		return fmt.Errorf("cannot scan %T into FieldTimes", src)
+	}
+}
+
 type GuestRecord struct {
 	ID          uuid.UUID   `gorm:"type:uuid;primaryKey;default:gen_random_uuid()" json:"id"`
 	WeddingID   uuid.UUID   `gorm:"type:uuid;index;not null" json:"weddingId"`
@@ -52,6 +78,7 @@ type GuestRecord struct {
 	IsVip       bool        `json:"isVip"`
 	AngbaoAmt   *int        `json:"angbaoAmt"`
 	GiftItem    *string     `gorm:"size:255" json:"giftItem"`
+	FieldTimes  FieldTimes  `gorm:"type:text" json:"-"`
 	CreatedAt   time.Time   `json:"createdAt"`
 	UpdatedAt   time.Time   `json:"updatedAt"`
 }

@@ -162,9 +162,24 @@ export async function createGuest(weddingId: string, data: GuestCreateData): Pro
 	}
 }
 
-export async function updateGuest(weddingId: string, guestId: string, data: GuestCreateData): Promise<GuestResponse> {
+/** Offline echo of an update, merged from the optimistic store entry so fields
+ * the patch did not carry keep their current values. */
+function offlineGuestResponse(weddingId: string, guestId: string): GuestResponse | null {
+	const g = get(guestMap).get(guestId);
+	if (!g) return null;
+	return {
+		id: g.id, weddingId, name: g.name, pinyin: g.pinyin, email: g.email ?? '',
+		pax: g.pax, rsvp: g.rsvp, isVip: g.isVip, notes: g.notes,
+		dietary: g.dietaryRequirements, tableId: g.tableId, seatNum: g.seatNumber,
+		checkedInAt: g.checkedInAt ? g.checkedInAt.toISOString() : null,
+		angbaoAmt: g.angbaoAmount ?? null, giftItem: g.giftItem ?? null,
+		createdAt: g.createdAt.toISOString(), updatedAt: g.updatedAt?.toISOString() ?? nowIso(),
+	};
+}
+
+export async function updateGuest(weddingId: string, guestId: string, data: Partial<GuestCreateData>): Promise<GuestResponse | null> {
 	const doQueue = () => { enqueue(weddingId, { mutationId: genId(), op: 'update', guestId, clientUpdatedAt: nowIso(), payload: data as unknown as Record<string, unknown> }); optimisticPatch('update', guestId, data as unknown as Record<string, unknown>); };
-	if (isOffline()) { doQueue(); const now = nowIso(); return { id: guestId, weddingId, name: data.name, email: data.email || '', pax: data.pax, rsvp: data.rsvp, isVip: data.isVip, notes: data.notes, dietary: data.dietary, tableId: (data.tableId as string | null) ?? null, seatNum: data.seatNum ?? null, checkedInAt: null, angbaoAmt: data.angbaoAmt ?? null, giftItem: data.giftItem ?? null, createdAt: now, updatedAt: now }; }
+	if (isOffline()) { doQueue(); return offlineGuestResponse(weddingId, guestId); }
 	try {
 		const res = await apiFetch(`/api/weddings/${weddingId}/guests/${guestId}`, { method: 'PUT', body: JSON.stringify(data) });
 		if (!res.ok) throw new Error(`Failed to update guest: ${res.status}`);
@@ -172,7 +187,7 @@ export async function updateGuest(weddingId: string, guestId: string, data: Gues
 		applyGuestResponse(resp);
 		return resp;
 	} catch (e) {
-		if (isNetworkError(e)) { doQueue(); const now = nowIso(); return { id: guestId, weddingId, name: data.name, email: data.email || '', pax: data.pax, rsvp: data.rsvp, isVip: data.isVip, notes: data.notes, dietary: data.dietary, tableId: (data.tableId as string | null) ?? null, seatNum: data.seatNum ?? null, checkedInAt: null, angbaoAmt: data.angbaoAmt ?? null, giftItem: data.giftItem ?? null, createdAt: now, updatedAt: now }; }
+		if (isNetworkError(e)) { doQueue(); return offlineGuestResponse(weddingId, guestId); }
 		throw e;
 	}
 }
