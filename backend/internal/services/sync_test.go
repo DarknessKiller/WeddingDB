@@ -56,8 +56,7 @@ func newGuestSyncService(t *testing.T) (*GuestService, *gorm.DB, uuid.UUID) {
 		updated_at DATETIME
 	)`)
 	guestRepo := repository.NewGuestRepo(db)
-	tableRepo := repository.NewTableRepo(db)
-	svc := NewGuestService(guestRepo, tableRepo, nil, db)
+	svc := NewGuestService(guestRepo, nil, db)
 	wid := uuid.New()
 	return svc, db, wid
 }

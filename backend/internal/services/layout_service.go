@@ -21,6 +21,9 @@ func (s *LayoutService) Elements(ctx context.Context, weddingID uuid.UUID) ([]mo
 	return s.layoutRepo.ElementsByWedding(ctx, weddingID)
 }
 
+// Save replaces the layout in one transaction: the stored elements are read and
+// reconciled under the same lock as the write, so a concurrent save cannot
+// duplicate or drop an element.
 func (s *LayoutService) Save(
 	ctx context.Context,
 	weddingID uuid.UUID,
@@ -28,31 +31,5 @@ func (s *LayoutService) Save(
 	tables []models.TableUpdate,
 	incoming []models.HallElement,
 ) error {
-	existing, err := s.layoutRepo.ElementsByWedding(ctx, weddingID)
-	if err != nil {
-		return err
-	}
-	toCreate, toUpdate, toDelete := ReconcileElements(existing, incoming)
-	return s.layoutRepo.SaveLayout(ctx, weddingID, hallWidth, hallHeight, tables, toCreate, toUpdate, toDelete)
-}
-
-// ReconcileElements diffs desired elements against stored ones (full-replace semantics).
-// Incoming elements without an ID are creates; with an ID are updates;
-// existing elements absent from incoming are deletes.
-func ReconcileElements(existing, incoming []models.HallElement) (toCreate, toUpdate []models.HallElement, toDelete []uuid.UUID) {
-	incomingIDs := make(map[uuid.UUID]bool, len(incoming))
-	for _, e := range incoming {
-		if e.ID == uuid.Nil {
-			toCreate = append(toCreate, e)
-		} else {
-			toUpdate = append(toUpdate, e)
-			incomingIDs[e.ID] = true
-		}
-	}
-	for _, e := range existing {
-		if !incomingIDs[e.ID] {
-			toDelete = append(toDelete, e.ID)
-		}
-	}
-	return toCreate, toUpdate, toDelete
+	return s.layoutRepo.SaveLayout(ctx, weddingID, hallWidth, hallHeight, tables, incoming)
 }

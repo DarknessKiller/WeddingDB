@@ -38,7 +38,7 @@ func TestAssignSeat_PostgresConcurrent(t *testing.T) {
 	if err := db.AutoMigrate(&models.WeddingEvent{}, &models.BanquetTable{}, &models.GuestRecord{}); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}
-	svc := NewGuestService(repository.NewGuestRepo(db), repository.NewTableRepo(db), nil, db)
+	svc := NewGuestService(repository.NewGuestRepo(db), nil, db)
 	ctx := context.Background()
 	wid, tid := uuid.New(), uuid.New()
 	if err := db.Create(&models.WeddingEvent{ID: wid, Name: "Seat"}).Error; err != nil {
