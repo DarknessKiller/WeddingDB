@@ -46,9 +46,6 @@ import Users from 'lucide-svelte/icons/users';
   let unassignTarget = $state<Guest | null>(null);
   let showDeleteConfirm = $state(false);
   let deleteTarget = $state<Guest | null>(null);
-  let loading = $state(true);
-  let errored = $state(false);
-  let error = $state<string | null>(null);
 
   // Derive guest list from SSE store — updates in real time.
   let allGuests = $derived($guestList);
@@ -102,7 +99,6 @@ import Users from 'lucide-svelte/icons/users';
 
   onMount(() => {
     loadTables();
-    loading = false;
     function onKey(e: KeyboardEvent) {
       if (e.key === 'Escape') {
         contextMenu = null;
@@ -536,20 +532,7 @@ import Users from 'lucide-svelte/icons/users';
     </div>
   {/if}
 
-  {#if loading}
-    <div class="flex items-center justify-center py-20 text-gray-500">Loading guests...</div>
-  {:else if errored}
-    <div class="flex flex-col items-center justify-center py-20 text-center">
-      <div class="w-16 h-16 bg-red-50 rounded-full flex items-center justify-center mb-4">
-        <AlertCircle class="w-8 h-8 text-red" />
-      </div>
-      <p class="text-red font-medium">Failed to load guests</p>
-      <p class="text-sm text-gray-500 mt-1 mb-4">{error}</p>
-      <button onclick={() => { visible = PAGE; }} class="px-4 py-2 bg-red text-white rounded-xl text-sm font-semibold hover:bg-red-light transition-colors">
-        Retry
-      </button>
-    </div>
-  {:else if allGuests.length === 0}
+  {#if allGuests.length === 0}
     <div class="flex flex-col items-center justify-center py-20 text-center">
       <div class="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mb-4">
         <Users class="w-8 h-8 text-gray-500" />
