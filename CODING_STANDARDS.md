@@ -50,6 +50,36 @@ Files: `backend/internal/{handlers,services,repository,models,utils}`.
 - Helpers in `internal/utils` stay pure: no db, no http, no shared state (see `encoding.go`). Model methods stay pure too: JSON marshaling and derivation.
 - Tests: stdlib `testing` in `internal/<pkg>/*_test.go`, table-driven with `t.Run` when cases repeat, request/response tests for handler behaviour. No new test dependency.
 
+## Stale writes and concurrency
+
+Files: `backend/internal/{services,repository}`.
+
+- A value read before the write must not be written back later. Do read-compare-write in one transaction with the row locked (`syncLoadForUpdate`, `guestCountLocked`, `checkSeatTx`) or make the UPDATE conditional on the version the caller loaded (`UpdateIfUnchanged`, layout version) and answer 409 when no row matches. A stale form must never silently revert another writer.
+- Write only the columns the operation owns (`UpdateFields`, `editableColumns`). A full-row write (`SyncUpdate`) is only allowed against a row this transaction just locked.
+- Lock order is wedding row, table row, guest row. The sync path locks the guest first; a deadlock with the online path is aborted by Postgres and the mutation returns a retryable failure, so the client keeps it queued. Do not add a new path that locks guest before table without stating why.
+- Error mapping: sentinel in the repository, wrapped by the service, translated to a typed `fuego` error in the handler (409 for lost races, 404 for missing rows). A concurrency loss is a conflict, not a 500.
+- Tests: a race fix carries a Postgres test that holds the lock with `clause.Locking{Strength: "UPDATE"}` and proves the operation waits or loses. A test that stays green with the guard removed does not prove the fix.
+
+### Verify
+
+```sh
+cd backend && TEST_DATABASE_URL=... CGO_ENABLED=1 go test -race -p 1 ./...
+```
+
+## Frontend state and session data
+
+Files: `frontend/src/lib/api/client.ts` (`doRefresh`), `frontend/src/lib/utils/auth.ts` (`toLogin`), `frontend/src/lib/offline/queue.ts` (`clearOfflineData`), stateful components under `frontend/src/lib/components/ui`.
+
+- Every path that ends the session (explicit logout, dead refresh token, `validateToken` redirect) calls `clearOfflineData()` before `clearAuth()`. The offline queue and guest cache hold another user's edits and guest PII; a shared front-desk browser must not pass them on.
+- An effect that seeds a form or a selection from live props must be pinned to the identity it belongs to (guest id, table id) or to explicit user edit, never to the whole live array (`Drawer`, `MoveGuestDrawer`). A background SSE update must not overwrite unsaved input or a manual choice.
+- Server-side races surface as `ConflictError` in the API layer; the component keeps the user's input, refreshes the stored copy, and says what happened. Never swallow a 409 into a generic failure toast.
+
+### Verify
+
+```sh
+cd frontend && npm run check && npx vitest run
+```
+
 ## Offline sync
 
 Files: `backend/internal/services/guest_service.go` (`Sync*`, `syncCheckIn`), `backend/internal/repository/guest_repo.go` (`Sync*`), `frontend/src/lib/offline/**`, `frontend/src/lib/stores/guestEvents.ts`.
@@ -122,5 +152,12 @@ Canonical implementation: `frontend/src/routes/[wid]/guests/+page.svelte`. Copy 
 ```sh
 cd frontend && npm run check && npx vitest run
 ```
+
+## Audits
+
+- A finding names severity, `file:line`, the concrete failure scenario, and the fix. No finding without a scenario a reviewer can reproduce by reading the cited code.
+- Critical and high findings get one adversarial pass that tries to refute them (guards, middleware, existing tests) before they are reported. Report refuted findings as refuted.
+- A fix ships with the test that is red without it; the commit says which test. If no test can cover the defect, the commit says so and why.
+- After a fix wave, re-check every prior finding against current HEAD and report fixed / partial / unchanged with file:line evidence. Do not assume a commit with a matching message closed the gap.
 
 
