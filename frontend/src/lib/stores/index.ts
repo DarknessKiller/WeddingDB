@@ -1,4 +1,5 @@
 import { writable } from 'svelte/store';
+import { setWeddingId } from '#lib/stores/weddingId.ts';
 import type { Guest } from '#lib/types/index.ts';
 
 // Selected guest for drawer
@@ -51,6 +52,32 @@ export function setAuth(access: string, refresh: string, r: string, n: string, u
   if (userId) _userId = userId;
 }
 
+const LOGOUT_KEY = 'weddingdb_logout';
+let applyingRemoteLogout = false;
+
+/** Tell every other tab this session ended. The emitting tab sees no storage event. */
+function broadcastLogout() {
+  if (typeof window === 'undefined' || applyingRemoteLogout) return;
+  try { localStorage.setItem(LOGOUT_KEY, String(Date.now())); } catch {}
+}
+
+function applyRemoteLogout() {
+  if (!_accessToken && !_refreshToken) return;
+  applyingRemoteLogout = true;
+  try {
+    clearAuth();
+    setWeddingId('');
+  } finally {
+    applyingRemoteLogout = false;
+  }
+  // Static import would cycle: queue.ts imports addToast from this module.
+  void import('#lib/offline/queue.ts').then(({ recordDiscardedQueue, clearOfflineData }) => {
+    recordDiscardedQueue();
+    clearOfflineData();
+    if (typeof window !== 'undefined') window.location.href = '/login';
+  });
+}
+
 export function clearAuth() {
   _accessToken = null;
   _refreshToken = null;
@@ -61,6 +88,7 @@ export function clearAuth() {
     localStorage.removeItem('weddingdb_access_token');
     localStorage.removeItem('weddingdb_refresh_token');
   }
+  broadcastLogout();
 }
 // Show seat numbers setting. Shared so every page reacts without a reload, and
 // mirrored to localStorage so a kiosk/preview tab in the same browser updates too.
@@ -81,5 +109,6 @@ export function setShowSeatNumbers(wid: string, value: boolean) {
 if (typeof window !== 'undefined') {
 	window.addEventListener('storage', (e) => {
 		if (e.key === seatNumbersKey(currentWid)) showSeatNumbers.set(e.newValue !== '0');
+		if (e.key === LOGOUT_KEY && e.newValue) applyRemoteLogout();
 	});
 }

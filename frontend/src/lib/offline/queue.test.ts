@@ -98,6 +98,29 @@ describe('syncQueue', () => {
 	});
 });
 
+describe('discarded queue notice', () => {
+	it('records the count before the wipe and clears it when the login page reads it', async () => {
+		const { enqueue, recordDiscardedQueue, takeDiscardedQueueNotice, clearOfflineData } = await import('./queue');
+		enqueue('w1', mutation('a'));
+		enqueue('w1', mutation('b'));
+
+		recordDiscardedQueue();
+		clearOfflineData();
+
+		expect(localStorage.getItem('weddingdb_discarded_queue')).toBe('2');
+		expect(takeDiscardedQueueNotice()).toBe(2);
+		expect(localStorage.getItem('weddingdb_discarded_queue')).toBeNull();
+	});
+
+	it('records nothing when the queue is empty', async () => {
+		const { recordDiscardedQueue, takeDiscardedQueueNotice } = await import('./queue');
+
+		recordDiscardedQueue();
+
+		expect(takeDiscardedQueueNotice()).toBe(0);
+	});
+});
+
 describe('logout data', () => {
 	it('counts unsynced changes across weddings and clears only offline keys', async () => {
 		const { enqueue, pendingChangeCount, clearOfflineData, cacheGuests } = await import('./queue');

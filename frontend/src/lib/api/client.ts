@@ -1,7 +1,7 @@
 import { goto } from '$app/navigation';
 import { getAuth, setAuth, clearAuth } from '#lib/stores/index.ts';
 import { setWeddingId } from '#lib/stores/weddingId.ts';
-import { clearOfflineData } from '#lib/offline/queue.ts';
+import { clearOfflineData, recordDiscardedQueue } from '#lib/offline/queue.ts';
 
 const BASE = '';
 
@@ -18,13 +18,17 @@ export function getAccessToken(): string {
 }
 
 async function doRefresh(): Promise<RefreshResult> {
-	const { refreshToken } = getAuth();
+	const { refreshToken, accessToken } = getAuth();
 	if (!refreshToken) return 'ended';
 	let refreshRes: Response;
 	try {
 		refreshRes = await fetch(`${BASE}/api/auth/refresh`, {
 			method: 'POST',
-			headers: { 'Content-Type': 'application/json' },
+			headers: {
+				'Content-Type': 'application/json',
+				// Lets the backend blacklist the access token it is rotating away.
+				...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {})
+			},
 			body: JSON.stringify({ refreshToken })
 		});
 	} catch {
@@ -47,6 +51,7 @@ async function doRefresh(): Promise<RefreshResult> {
 	if (refreshRes.status !== 400 && refreshRes.status !== 401) return 'unavailable';
 	// The session is over: drop this account's queued edits and cached guest
 	// data so the next login on this device cannot replay or read them.
+	recordDiscardedQueue();
 	clearOfflineData();
 	clearAuth();
 	setWeddingId('');

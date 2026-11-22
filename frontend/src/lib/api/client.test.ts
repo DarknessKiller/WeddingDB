@@ -113,6 +113,29 @@ describe('apiFetch refresh recovery', () => {
 		expect(localStorage.getItem('offline_cache_w1')).toBeNull();
 	});
 
+	it('sends the current access token on refresh so the server can blacklist it', async () => {
+		fetchMock.mockResolvedValueOnce(res(REFRESH_OK));
+
+		const { refreshSession } = await import('./client');
+		await refreshSession();
+
+		const headers = fetchMock.mock.calls[0][1].headers as Record<string, string>;
+		expect(headers.Authorization).toBe('Bearer old-access');
+	});
+
+	it('leaves a one-shot notice when a dead session discards queued edits', async () => {
+		localStorage.setItem('offline_queue_w1', JSON.stringify([{ mutationId: 'm1' }, { mutationId: 'm2' }]));
+		fetchMock
+			.mockResolvedValueOnce(res({}, 401))
+			.mockResolvedValueOnce(res({ title: 'invalid refresh token' }, 401));
+
+		const { apiFetch } = await import('./client');
+		await apiFetch('/api/guests');
+
+		expect(localStorage.getItem('offline_queue_w1')).toBeNull();
+		expect(localStorage.getItem('weddingdb_discarded_queue')).toBe('2');
+	});
+
 	it('retries a DELETE with the same headers it first sent', async () => {
 		fetchMock
 			.mockResolvedValueOnce(res({}, 401))

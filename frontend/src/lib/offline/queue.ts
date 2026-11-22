@@ -98,6 +98,29 @@ export function pendingChangeCount(): number {
 	return offlineKeys().filter(k => k.startsWith('offline_queue_')).reduce((n, k) => n + getQueue(k.slice('offline_queue_'.length)).length, 0);
 }
 
+// A session-end wipe cannot ask first, so leave a one-shot notice for the
+// login page. Deliberately not an `offline_` key: clearOfflineData must not
+// erase the notice it was just given.
+const DISCARDED_NOTICE_KEY = 'weddingdb_discarded_queue';
+
+/** Record how many queued edits this browser is about to discard. */
+export function recordDiscardedQueue() {
+	if (typeof window === 'undefined') return;
+	const count = pendingChangeCount();
+	if (count === 0) return;
+	try { localStorage.setItem(DISCARDED_NOTICE_KEY, String(count)); } catch {}
+}
+
+/** Read and clear the one-shot unsynced-changes-discarded notice. */
+export function takeDiscardedQueueNotice(): number {
+	if (typeof window === 'undefined') return 0;
+	try {
+		const count = Number(localStorage.getItem(DISCARDED_NOTICE_KEY) || 0);
+		localStorage.removeItem(DISCARDED_NOTICE_KEY);
+		return Number.isFinite(count) ? count : 0;
+	} catch { return 0; }
+}
+
 /** Explicit logout: drop every queue and guest cache this browser holds. */
 export function clearOfflineData() {
 	if (typeof window === 'undefined') return;

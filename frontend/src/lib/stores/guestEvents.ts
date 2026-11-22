@@ -78,21 +78,31 @@ let refreshChain: Promise<unknown> = Promise.resolve();
  * Run a full fetch+seed inside the syncing window. Refreshes are serialized so
  * two overlapping calls cannot apply their snapshots out of order.
  */
-export function refreshGuests(fetchFn: () => Promise<Guest[]>): Promise<Guest[]> {
-	const run = refreshChain.then(() => runRefresh(fetchFn));
+export function refreshGuests(fetchFn: () => Promise<Guest[]>, wid = get(weddingId)): Promise<Guest[]> {
+	const run = refreshChain.then(() => runRefresh(fetchFn, wid));
 	refreshChain = run.catch(() => {});
 	return run;
 }
 
-async function runRefresh(fetchFn: () => Promise<Guest[]>): Promise<Guest[]> {
+async function runRefresh(fetchFn: () => Promise<Guest[]>, wid: string): Promise<Guest[]> {
 	syncing = true;
 	guestSync.set({ loading: true, error: null });
 	try {
 		const guests = await fetchFn();
+		// The layout switched weddings while this request was in flight: its rows
+		// and the SSE events queued meanwhile belong to the old wedding.
+		if (get(weddingId) !== wid) {
+			syncing = false;
+			queuedEvents = [];
+			return guests;
+		}
 		seedGuests(guests);
 		return guests;
 	} catch (e) {
-		guestSync.set({ loading: false, error: e instanceof Error ? e.message : 'Failed to load guests' });
+		// A stale request must not paint an error over the current wedding.
+		if (get(weddingId) === wid) {
+			guestSync.set({ loading: false, error: e instanceof Error ? e.message : 'Failed to load guests' });
+		}
 		// Abandon the window; replay anything that queued up meanwhile.
 		syncing = false;
 		const pending = queuedEvents;

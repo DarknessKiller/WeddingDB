@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
+  import { get } from 'svelte/store';
   import { page } from '$app/state';
   import Sidebar from '#lib/components/layout/Sidebar.svelte';
   import Header from '#lib/components/layout/Header.svelte';
@@ -12,7 +13,7 @@
   import { syncQueue, cacheGuests, loadCachedGuests, getQueue } from '#lib/offline/queue.ts';
   import { getWedding } from '#lib/api/weddings.ts';
   import { listTables } from '#lib/api/tables.ts';
-  import { initializeSSE, refreshGuests, guestList } from '#lib/stores/guestEvents.ts';
+  import { initializeSSE, refreshGuests, guestList, guestSync } from '#lib/stores/guestEvents.ts';
   import type { BanquetTable } from '#lib/types/index.ts';
 
   let { children } = $props();
@@ -44,10 +45,17 @@
       createdAt, updatedAt: g.updatedAt ? new Date(g.updatedAt) : createdAt,
     };
   };
+  let destroyed = false;
+  let cleanupListeners: (() => void) | undefined;
+  // Pinned to the wedding this mount belongs to: a response that lands after a
+  // switch must not seed or cache the old wid.
+  let mountWid = '';
+
   // Cache the raw server rows: toGuest reads the server field names.
   const fetchGuests = async () => {
-    const raw = await fetchAllGuests($weddingId);
-    cacheGuests($weddingId, raw);
+    const raw = await fetchAllGuests(mountWid);
+    if (get(weddingId) !== mountWid) throw new Error('wedding changed');
+    cacheGuests(mountWid, raw);
     return raw.map(toGuest);
   };
   // Only an offline load falls back to the cache; a 401/403/500 must not render
@@ -57,18 +65,17 @@
       return await fetchGuests();
     } catch (e) {
       if (typeof navigator === 'undefined' || navigator.onLine) throw e;
-      const cached = loadCachedGuests<GuestResponse>($weddingId);
+      const cached = loadCachedGuests<GuestResponse>(mountWid);
       if (cached) return cached.map(toGuest);
       throw new Error('offline');
     }
   };
 
-  let destroyed = false;
-  let cleanupListeners: (() => void) | undefined;
   onMount(async () => {
+    mountWid = wid;
     if (!await validateToken() || destroyed) return;
-    if (wid) {
-      setWeddingId(wid);
+    if (mountWid) {
+      setWeddingId(mountWid);
     }
     // These stores outlive the layout. Clear them before children render so
     // the previous wedding's guests can never flash in this one.
@@ -78,13 +85,14 @@
     authChecked = true;
 
     async function doSync() {
-      if (!wid || typeof window === 'undefined' || !navigator.onLine) return;
+      if (!mountWid || typeof window === 'undefined' || !navigator.onLine) return;
       try {
-        await syncQueue(wid);
+        await syncQueue(mountWid);
+        if (get(weddingId) !== mountWid) return;
         // Seed only when nothing is left queued: a server snapshot would hide
         // the optimistic edits still waiting for a retry.
-        if (getQueue(wid).length === 0) {
-          await refreshGuests(fetchGuests);
+        if (getQueue(mountWid).length === 0) {
+          await refreshGuests(fetchGuests, mountWid);
         } else {
           refreshQueued();
         }
@@ -110,23 +118,25 @@
     refreshQueued();
 
     // initial sync before seed
-    if (navigator.onLine) { try { await syncQueue(wid); } catch {} }
+    if (navigator.onLine) { try { await syncQueue(mountWid); } catch {} }
 
-    if (destroyed) return;
+    if (destroyed || get(weddingId) !== mountWid) return;
     // Subscribe before the snapshot; guestEvents queues mutations until seeding completes.
     cleanupSSE = initializeSSE(fetchGuests);
     try {
       // refreshGuests keeps the syncing window open across fetch+seed even if
       // initializeSSE early-returned, so mid-fetch SSE events can't be clobbered.
-      await refreshGuests(loadGuests);
+      await refreshGuests(loadGuests, mountWid);
     } catch {}
 
-    listTables($weddingId).then((t) => {
-      tables = t;
+    if (destroyed || get(weddingId) !== mountWid) return;
+    listTables(mountWid).then((t) => {
+      if (get(weddingId) === mountWid) tables = t;
     }).catch(() => {});
-    getWedding(wid).then((w) => {
+    getWedding(mountWid).then((w) => {
+      if (get(weddingId) !== mountWid) return;
       weddingTitle.set(w.name || '');
-      setShowSeatNumbers(wid, w.showSeatNumbers ?? false);
+      setShowSeatNumbers(mountWid, w.showSeatNumbers ?? false);
     }).catch(() => {});
   });
 
@@ -134,6 +144,7 @@
     destroyed = true;
     cleanupListeners?.();
     cleanupSSE?.();
+    guestSync.set({ loading: true, error: null });
   });
 
   $effect(() => {

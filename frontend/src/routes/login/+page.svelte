@@ -4,7 +4,7 @@
   import { weddingId, setWeddingId } from '#lib/stores/weddingId.ts';
   import { get } from 'svelte/store';
   import { LIMITS } from '#lib/utils/limits.ts';
-  import { pendingChangeCount, claimOfflineOwner } from '#lib/offline/queue.ts';
+  import { pendingChangeCount, claimOfflineOwner, takeDiscardedQueueNotice } from '#lib/offline/queue.ts';
   import { onMount } from 'svelte';
   import Eye from 'lucide-svelte/icons/eye';
 import EyeOff from 'lucide-svelte/icons/eye-off';
@@ -14,7 +14,13 @@ import ChevronRight from 'lucide-svelte/icons/chevron-right';
 
   // Tokens live in memory, so a reload lands here with the offline queue still saved.
   let pendingChanges = $state(0);
-  onMount(() => { pendingChanges = pendingChangeCount(); });
+  // Session ended without asking (dead refresh token / another tab logged out):
+  // unsynced edits were wiped, so say so once.
+  let discardedChanges = $state(0);
+  onMount(() => {
+    pendingChanges = pendingChangeCount();
+    discardedChanges = takeDiscardedQueueNotice();
+  });
 
   let email = $state('');
   let password = $state('');
@@ -152,6 +158,11 @@ import ChevronRight from 'lucide-svelte/icons/chevron-right';
       <div class="auth-logo">囍</div>
       <h1 class="auth-title">WeddingDB</h1>
       <p class="auth-subtitle">Sign in to manage your wedding</p>
+      {#if discardedChanges > 0}
+        <p class="pending-notice discarded-notice" role="alert">
+          Your session ended, so {discardedChanges} unsynced change{discardedChanges === 1 ? ' was' : 's were'} discarded. Sign in and re-enter {discardedChanges === 1 ? 'it' : 'them'}.
+        </p>
+      {/if}
       {#if pendingChanges > 0}
         <p class="pending-notice" role="status">
           {pendingChanges} offline change{pendingChanges === 1 ? ' is' : 's are'} saved on this device and will sync after you log in and open the wedding.
@@ -276,6 +287,7 @@ import ChevronRight from 'lucide-svelte/icons/chevron-right';
 
 <style>
   .pending-notice { margin-top: 0.75rem; font-size: 0.8125rem; color: #7a2b00; }
+  .discarded-notice { color: #A11217; font-weight: 600; }
   .section-title {
     font-size: 0.875rem;
     font-weight: 600;
