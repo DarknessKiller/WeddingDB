@@ -160,3 +160,21 @@ describe('guestEvents store', () => {
 		expect(get(tableOccupancy).get('t2')).toBe(4);
 	});
 });
+
+describe('offline guest cache', () => {
+	it('reads back what seedGuests cached without losing seat, dietary or angbao', async () => {
+		const store = new Map<string, string>();
+		vi.stubGlobal('localStorage', { getItem: (k: string) => store.get(k) ?? null, setItem: (k: string, v: string) => void store.set(k, v), removeItem: (k: string) => void store.delete(k) });
+		try {
+			const { seedGuests, readCachedGuests } = await freshModule();
+			seedGuests([makeGuest({ tableId: 't1', seatNumber: 3, dietaryRequirements: ['vegan'], angbaoAmount: 88, checkedIn: true, checkedInAt: new Date('2026-01-01T10:00:00Z') })]);
+
+			const [cached] = readCachedGuests('w1') ?? [];
+			expect(cached).toMatchObject({ tableId: 't1', seatNumber: 3, dietaryRequirements: ['vegan'], angbaoAmount: 88, checkedIn: true });
+			expect(cached.checkedInAt).toBeInstanceOf(Date);
+			expect(readCachedGuests('other')).toBeNull();
+		} finally {
+			vi.unstubAllGlobals();
+		}
+	});
+});

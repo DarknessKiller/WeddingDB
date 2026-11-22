@@ -12,9 +12,9 @@
   import { syncQueue } from '#lib/offline/queue.ts';
   import { getWedding } from '#lib/api/weddings.ts';
   import { listTables } from '#lib/api/tables.ts';
-  import { initializeSSE, refreshGuests } from '#lib/stores/guestEvents.ts';
-  import { toGuest, reviveGuest } from '#lib/utils/guestTransform.ts';
-  import type { BanquetTable, Guest } from '#lib/types/index.ts';
+  import { initializeSSE, readCachedGuests, refreshGuests } from '#lib/stores/guestEvents.ts';
+  import { toGuest } from '#lib/utils/guestTransform.ts';
+  import type { BanquetTable } from '#lib/types/index.ts';
 
   let { children } = $props();
 
@@ -45,11 +45,8 @@
       try {
         return (await fetchAllGuests($weddingId)).map(toGuest);
       } catch {
-        try {
-          // The cache holds app-shaped Guest rows (seedGuests): only dates need reviving.
-          const cached = JSON.parse(localStorage.getItem(`offline_cache_${$weddingId}`) || 'null');
-          if (cached) return (cached as Guest[]).map(reviveGuest);
-        } catch {}
+        const cached = readCachedGuests($weddingId);
+        if (cached) return cached;
         throw new Error('offline');
       }
     };

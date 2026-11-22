@@ -3,7 +3,7 @@ import { selectedGuest } from '#lib/stores/index.ts';
 import { connectSSE, disconnectSSE, type GuestEvent } from '#lib/api/sse.ts';
 import { weddingId } from '#lib/stores/weddingId.ts';
 import type { Guest } from '#lib/types/index.ts';
-import { toGuest } from '#lib/utils/guestTransform.ts';
+import { reviveGuest, toGuest } from '#lib/utils/guestTransform.ts';
 import type { GuestResponse } from '#lib/api/guests.ts';
 
 // All guests for the current wedding, kept in sync via SSE.
@@ -90,6 +90,18 @@ export async function refreshGuests(fetchFn: () => Promise<Guest[]>): Promise<Gu
 /**
  * Seed the stores with the initial guest list (called after first fetch).
  */
+function cacheKey(wid: string) { return `offline_cache_${wid}`; }
+
+/** The last seeded guest list for `wid`, or null. Rows are app-shaped `Guest`s: only dates need reviving. */
+export function readCachedGuests(wid: string): Guest[] | null {
+	try {
+		const cached = JSON.parse(localStorage.getItem(cacheKey(wid)) || 'null');
+		return cached ? (cached as Guest[]).map(reviveGuest) : null;
+	} catch {
+		return null;
+	}
+}
+
 export function seedGuests(guests: Guest[]) {
 	guestList.set(guests);
 	const map = new Map<string, Guest>();
@@ -101,7 +113,7 @@ export function seedGuests(guests: Guest[]) {
 	// cache for offline reads
 	try {
 		const wid = get(weddingId);
-		if (wid) localStorage.setItem(`offline_cache_${wid}`, JSON.stringify(guests));
+		if (wid) localStorage.setItem(cacheKey(wid), JSON.stringify(guests));
 	} catch {}
 	if (syncing) {
 		syncing = false;
