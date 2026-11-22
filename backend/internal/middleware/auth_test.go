@@ -3,6 +3,7 @@ package middleware
 import (
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -130,5 +131,31 @@ func TestAuthMiddleware_WrongBearerFormat(t *testing.T) {
 
 	if rec.Code != http.StatusUnauthorized {
 		t.Errorf("status = %d, want %d", rec.Code, http.StatusUnauthorized)
+	}
+}
+
+// A Redis outage is not a bad token: 503 keeps the client's session, and no
+// driver text reaches the body.
+func TestAuthMiddleware_RedisDownIs503(t *testing.T) {
+	secret := "test-secret"
+	mr := miniredis.RunT(t)
+	rdb := redis.NewClient(&redis.Options{Addr: mr.Addr()})
+	mw := AuthMiddleware(services.NewAuthService(nil, nil, nil, secret, rdb))
+	handler := mw(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	mr.Close()
+
+	tok := signToken(t, secret, uuid.New(), "admin", nil, time.Now().Add(15*time.Minute))
+	req := httptest.NewRequest("GET", "/api/weddings", nil)
+	req.Header.Set("Authorization", "Bearer "+tok)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Errorf("status = %d, want %d", rec.Code, http.StatusServiceUnavailable)
+	}
+	if body := rec.Body.String(); strings.Contains(body, "dial") || strings.Contains(body, "connection") {
+		t.Errorf("body leaks driver text: %q", body)
 	}
 }
