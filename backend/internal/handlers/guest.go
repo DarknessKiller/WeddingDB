@@ -431,6 +431,10 @@ type SyncRequest struct {
 	Mutations []json.RawMessage `json:"mutations"`
 }
 
+// maxSyncMutations matches the client chunk and keeps one batch well under the
+// 1 MiB body limit (Offline sync).
+const maxSyncMutations = 100
+
 func (h *GuestHandler) Sync(c fuego.ContextWithBody[SyncRequest]) (any, error) {
 	ctx := c.Context()
 	wid, err := DecodeWID(c)
@@ -441,8 +445,8 @@ func (h *GuestHandler) Sync(c fuego.ContextWithBody[SyncRequest]) (any, error) {
 	if err != nil {
 		return nil, fuego.BadRequestError{Title: "Invalid request"}
 	}
-	if len(body.Mutations) > 500 {
-		return nil, fuego.BadRequestError{Title: "Too many mutations (max 500)"}
+	if len(body.Mutations) > maxSyncMutations {
+		return nil, fuego.BadRequestError{Title: "Too many mutations (max 100)"}
 	}
 	results := make([]services.SyncResult, len(body.Mutations))
 	valid := make([]services.SyncMutation, 0, len(body.Mutations))

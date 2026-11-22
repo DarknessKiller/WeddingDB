@@ -53,7 +53,7 @@ func TestGuestUpdate_SparsePatch(t *testing.T) {
 	}
 	testutil.NoErr(t, db.Create(guest).Error)
 
-	svc := services.NewGuestService(repository.NewGuestRepo(db), repository.NewTableRepo(db), nil, db)
+	svc := services.NewGuestService(repository.NewGuestRepo(db), nil, db)
 	s := fuego.NewServer(fuego.WithoutStartupMessages())
 	fuego.Put(s, "/api/weddings/{wid}/guests/{id}", NewGuestHandler(svc).Update)
 

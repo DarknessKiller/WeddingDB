@@ -104,6 +104,29 @@ func TestKioskSettings_VenueNameBounds(t *testing.T) {
 	}
 }
 
+func TestLayoutSave_ElementCountCap(t *testing.T) {
+	s := fuego.NewServer(fuego.WithoutStartupMessages())
+	fuego.Put(s, "/api/weddings/{wid}/layout", NewLayoutHandler(nil, nil, nil).Save)
+
+	put := func(elements int) *httptest.ResponseRecorder {
+		items := make([]string, 0, elements)
+		for range elements {
+			items = append(items, `{"type":"box","x":10,"y":10,"width":10,"height":10}`)
+		}
+		body := `{"hallWidth":1000,"hallHeight":1000,"tables":[],"elements":[` + strings.Join(items, ",") + `]}`
+		req := httptest.NewRequest(http.MethodPut, "/api/weddings/"+utils.EncodeUUID(uuid.New())+"/layout", strings.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+		rec := httptest.NewRecorder()
+		s.Mux.ServeHTTP(rec, req)
+		return rec
+	}
+
+	if rec := put(services.MaxLayoutElements + 1); rec.Code != http.StatusBadRequest ||
+		!strings.Contains(rec.Body.String(), "Too many elements") {
+		t.Fatalf("%d elements status = %d, body %s", services.MaxLayoutElements+1, rec.Code, rec.Body.String())
+	}
+}
+
 func TestLayoutSave_ElementNameBounds(t *testing.T) {
 	s := fuego.NewServer(fuego.WithoutStartupMessages())
 	fuego.Put(s, "/api/weddings/{wid}/layout", NewLayoutHandler(nil, nil, nil).Save)

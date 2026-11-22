@@ -31,7 +31,7 @@ func TestGuestCreate_NameBounds(t *testing.T) {
 		angbao_amt INTEGER, gift_item TEXT, field_times TEXT,
 		created_at DATETIME, updated_at DATETIME)`).Error)
 	wid := uuid.New()
-	svc := services.NewGuestService(repository.NewGuestRepo(db), repository.NewTableRepo(db), nil, db)
+	svc := services.NewGuestService(repository.NewGuestRepo(db), nil, db)
 	s := fuego.NewServer(fuego.WithoutStartupMessages())
 	fuego.Post(s, "/api/weddings/{wid}/guests", NewGuestHandler(svc).Create)
 	post := func(name string) *httptest.ResponseRecorder {
