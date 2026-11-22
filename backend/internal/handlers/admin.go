@@ -11,6 +11,7 @@ import (
 	"github.com/go-fuego/fuego"
 	"github.com/google/uuid"
 	"golang.org/x/crypto/bcrypt"
+	"gorm.io/gorm"
 )
 
 type AdminHandler struct {
@@ -150,10 +151,12 @@ func (h *AdminHandler) AssignWeddings(c fuego.ContextWithBody[AssignWeddingsRequ
 			ids = append(ids, wid)
 		}
 	}
-	// Fetch the old grants so removing access can revoke live sessions.
+	// Fetch the old grants so removing access can revoke live sessions. Without
+	// them the revocation below cannot run, so the request fails instead of
+	// leaving a removed wedding's token valid.
 	oldWeddings, err := h.adminRepo.GetUserWeddings(ctx, admin.ID)
 	if err != nil {
-		slog.Warn("fetch current wedding grants failed", "user", admin.ID, "err", err)
+		return nil, err
 	}
 	if err := h.adminRepo.SetUserWeddings(ctx, admin.ID, ids); err != nil {
 		return nil, fuego.InternalServerError{Title: "Failed to assign weddings"}
@@ -227,6 +230,9 @@ func (h *AdminHandler) ResetPassword(c fuego.ContextWithBody[ResetPasswordReques
 	admin.Password = string(hash)
 	admin.ForcePasswordChange = true
 	if err := h.adminRepo.Update(ctx, admin); err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, fuego.NotFoundError{Title: "User not found"}
+		}
 		return nil, fuego.InternalServerError{Title: "Failed to update password"}
 	}
 	// Kill sessions minted under the old password. Password is already
