@@ -2,8 +2,10 @@ import { goto } from '$app/navigation';
 import { getAuth, clearAuth } from '#lib/stores/index.ts';
 import { refreshSession } from '#lib/api/client.ts';
 import { setWeddingId } from '#lib/stores/weddingId.ts';
+import { clearOfflineData } from '#lib/offline/queue.ts';
 
 function toLogin() {
+  clearOfflineData();
   clearAuth();
   setWeddingId('');
   goto('/login', { replaceState: true });

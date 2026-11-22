@@ -9,7 +9,9 @@ function memoryStorage() {
 		getItem: (k: string) => map.get(k) ?? null,
 		setItem: (k: string, v: string) => void map.set(k, String(v)),
 		removeItem: (k: string) => void map.delete(k),
-		clear: () => map.clear()
+		clear: () => map.clear(),
+		get length() { return map.size; },
+		key: (i: number) => [...map.keys()][i] ?? null
 	};
 }
 
@@ -28,7 +30,7 @@ beforeEach(async () => {
 	localStorage.setItem('weddingdb_access_token', 'old-access');
 	localStorage.setItem('weddingdb_refresh_token', 'refresh-1');
 	location = { href: '' };
-	Object.defineProperty(globalThis, 'window', { value: { location, addEventListener: () => {} }, configurable: true });
+	Object.defineProperty(globalThis, 'window', { value: { location, addEventListener: () => {}, dispatchEvent: () => true }, configurable: true });
 	fetchMock = vi.fn();
 	Object.defineProperty(globalThis, 'fetch', { value: fetchMock, configurable: true });
 	const { setAuth } = await import('#lib/stores/index.ts');
@@ -95,6 +97,20 @@ describe('apiFetch refresh recovery', () => {
 		expect(location.href).toBe('/login');
 		expect(getAuth().accessToken).toBeNull();
 		expect(localStorage.getItem('weddingdb_refresh_token')).toBeNull();
+	});
+
+	it('drops offline queues and cached guest data when the session ends', async () => {
+		localStorage.setItem('offline_queue_w1', JSON.stringify([{ mutationId: 'm1', op: 'update', guestId: 'g1' }]));
+		localStorage.setItem('offline_cache_w1', JSON.stringify([{ name: 'Ann', email: 'ann@x.test' }]));
+		fetchMock
+			.mockResolvedValueOnce(res({}, 401))
+			.mockResolvedValueOnce(res({ title: 'invalid refresh token' }, 401));
+
+		const { apiFetch } = await import('./client');
+		await apiFetch('/api/guests');
+
+		expect(localStorage.getItem('offline_queue_w1')).toBeNull();
+		expect(localStorage.getItem('offline_cache_w1')).toBeNull();
 	});
 
 	it('retries a DELETE with the same headers it first sent', async () => {

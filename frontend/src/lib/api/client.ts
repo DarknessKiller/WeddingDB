@@ -1,6 +1,7 @@
 import { goto } from '$app/navigation';
 import { getAuth, setAuth, clearAuth } from '#lib/stores/index.ts';
 import { setWeddingId } from '#lib/stores/weddingId.ts';
+import { clearOfflineData } from '#lib/offline/queue.ts';
 
 const BASE = '';
 
@@ -44,6 +45,9 @@ async function doRefresh(): Promise<RefreshResult> {
 	}
 	// Only a definite rejection means the refresh token is dead. Keep the session on 5xx.
 	if (refreshRes.status !== 400 && refreshRes.status !== 401) return 'unavailable';
+	// The session is over: drop this account's queued edits and cached guest
+	// data so the next login on this device cannot replay or read them.
+	clearOfflineData();
 	clearAuth();
 	setWeddingId('');
 	if (typeof window !== 'undefined') window.location.href = '/login';
