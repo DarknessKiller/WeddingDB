@@ -23,6 +23,7 @@ import ArrowUpDown from 'lucide-svelte/icons/arrow-up-down';
   import { weddingId } from '#lib/stores/weddingId.ts';
   import { guestList } from '#lib/stores/guestEvents.ts';
   import { updateGuest, createGuest, checkInGuest, checkOutGuest, unassignSeat, getGuest, ConflictError } from '#lib/api/guests.ts';
+  import { toGuest } from '#lib/utils/guestTransform.ts';
   import { get } from 'svelte/store';
   import { fade } from 'svelte/transition';
   import { slideOut as drawerSlideOut } from '#lib/utils/motion.ts';
@@ -52,20 +53,7 @@ import ArrowUpDown from 'lucide-svelte/icons/arrow-up-down';
     try {
       const fresh = await getGuest(wid, guest.id);
       // Build updated guest without mutating the prop directly
-      localGuest = {
-        ...guest,
-        name: fresh.name,
-        email: fresh.email,
-        pax: fresh.pax,
-        rsvp: fresh.rsvp,
-        isVip: fresh.isVip,
-        notes: fresh.notes,
-        dietaryRequirements: fresh.dietary,
-        checkedIn: !!fresh.checkedInAt,
-        checkedInAt: fresh.checkedInAt ? new Date(fresh.checkedInAt) : undefined,
-        angbaoAmount: fresh.angbaoAmt ?? undefined,
-        giftItem: fresh.giftItem ?? undefined,
-      } as Guest;
+      localGuest = toGuest(fresh);
     } catch {}
   }
 
@@ -215,12 +203,7 @@ import ArrowUpDown from 'lucide-svelte/icons/arrow-up-down';
       } else {
         const updated = await updateGuest(wid, guest!.id, guestPatch(guest!, form));
         if (updated) {
-          Object.assign(guest!, {
-            name: updated.name, email: updated.email,
-            pax: updated.pax, rsvp: updated.rsvp, isVip: updated.isVip,
-            notes: updated.notes, dietaryRequirements: updated.dietary,
-            angbaoAmount: updated.angbaoAmt ?? undefined, giftItem: updated.giftItem ?? undefined,
-          });
+          Object.assign(guest!, toGuest(updated));
           Object.assign(form, {
             angbaoAmt: updated.angbaoAmt != null ? String(updated.angbaoAmt) : '',
             giftItem: updated.giftItem ?? '',

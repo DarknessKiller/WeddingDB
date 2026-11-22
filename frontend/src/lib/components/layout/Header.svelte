@@ -19,7 +19,8 @@ import LogOut from 'lucide-svelte/icons/log-out';
     '/users': 'User Management',
   };
 
-  let pageTitle = $derived(TITLES[page.url.pathname] || 'WeddingDB');
+  // Routes live under /{wid}/..., so match on the last path segment.
+  let pageTitle = $derived(TITLES['/' + (page.url.pathname.split('/').filter(Boolean).pop() ?? '')] || 'WeddingDB');
   let auth = $derived(getAuth());
   let initials = $derived(
     (auth.name || 'A').split(' ').map((w: string) => w[0]).join('').toUpperCase().slice(0, 2)
