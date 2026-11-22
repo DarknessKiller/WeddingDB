@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"weddingdb/internal/repository"
 	"weddingdb/internal/services"
 	"weddingdb/internal/testutil"
 
@@ -13,6 +14,8 @@ import (
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/google/uuid"
 	"github.com/redis/go-redis/v9"
+	"gorm.io/driver/sqlite"
+	"gorm.io/gorm"
 )
 
 func signToken(t *testing.T, secret string, adminID uuid.UUID, role string, wid *uuid.UUID, exp time.Time) string {
@@ -33,15 +36,30 @@ func signToken(t *testing.T, secret string, adminID uuid.UUID, role string, wid 
 	return s
 }
 
-func newAuthService(t *testing.T, secret string) *services.AuthService {
+func newAuthService(t *testing.T, secret string) (*services.AuthService, *gorm.DB) {
 	t.Helper()
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	testutil.NoErr(t, err)
+	sqlDB, err := db.DB()
+	testutil.NoErr(t, err)
+	sqlDB.SetMaxOpenConns(1)
+	testutil.NoErr(t, db.Exec(`CREATE TABLE admin_users (id TEXT PRIMARY KEY, email TEXT NOT NULL, password TEXT NOT NULL,
+		name TEXT, role TEXT NOT NULL, force_password_change INTEGER DEFAULT 0, token_version INTEGER NOT NULL DEFAULT 0,
+		created_at DATETIME, updated_at DATETIME)`).Error)
 	mr := miniredis.RunT(t)
 	rdb := redis.NewClient(&redis.Options{Addr: mr.Addr()})
-	return services.NewAuthService(nil, nil, nil, secret, rdb)
+	return services.NewAuthService(repository.NewAdminRepo(db), nil, nil, secret, rdb), db
+}
+
+func seedAdmin(t *testing.T, db *gorm.DB, id uuid.UUID) {
+	t.Helper()
+	testutil.NoErr(t, db.Exec(`INSERT INTO admin_users (id, email, password, role) VALUES (?, ?, 'h', 'admin')`,
+		id, id.String()+"@x.test").Error)
 }
 
 func TestAuthMiddleware_MissingToken(t *testing.T) {
-	mw := AuthMiddleware(newAuthService(t, "secret"))
+	svc, _ := newAuthService(t, "secret")
+	mw := AuthMiddleware(svc)
 	handler := mw(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	}))
@@ -56,7 +74,8 @@ func TestAuthMiddleware_MissingToken(t *testing.T) {
 }
 
 func TestAuthMiddleware_InvalidToken(t *testing.T) {
-	mw := AuthMiddleware(newAuthService(t, "secret"))
+	svc, _ := newAuthService(t, "secret")
+	mw := AuthMiddleware(svc)
 	handler := mw(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	}))
@@ -73,7 +92,8 @@ func TestAuthMiddleware_InvalidToken(t *testing.T) {
 
 func TestAuthMiddleware_ExpiredToken(t *testing.T) {
 	secret := "test-secret"
-	mw := AuthMiddleware(newAuthService(t, secret))
+	svc, _ := newAuthService(t, secret)
+	mw := AuthMiddleware(svc)
 	handler := mw(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	}))
@@ -93,7 +113,9 @@ func TestAuthMiddleware_ValidToken(t *testing.T) {
 	secret := "test-secret"
 	adminID := uuid.New()
 	wid := uuid.New()
-	mw := AuthMiddleware(newAuthService(t, secret))
+	svc, db := newAuthService(t, secret)
+	seedAdmin(t, db, adminID)
+	mw := AuthMiddleware(svc)
 
 	var capturedAdminID uuid.UUID
 	handler := mw(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -118,7 +140,8 @@ func TestAuthMiddleware_ValidToken(t *testing.T) {
 }
 
 func TestAuthMiddleware_WrongBearerFormat(t *testing.T) {
-	mw := AuthMiddleware(newAuthService(t, "secret"))
+	svc, _ := newAuthService(t, "secret")
+	mw := AuthMiddleware(svc)
 	handler := mw(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	}))
@@ -135,12 +158,15 @@ func TestAuthMiddleware_WrongBearerFormat(t *testing.T) {
 
 func TestAuthMiddleware_ForcePasswordChangeOnlyReachesChangePassword(t *testing.T) {
 	secret := "test-secret"
-	mw := AuthMiddleware(newAuthService(t, secret))
+	adminID := uuid.New()
+	svc, db := newAuthService(t, secret)
+	seedAdmin(t, db, adminID)
+	mw := AuthMiddleware(svc)
 	handler := mw(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	}))
 	claims := services.AccessClaims{
-		AdminID:             uuid.New(),
+		AdminID:             adminID,
 		Role:                "user",
 		ForcePasswordChange: true,
 		RegisteredClaims: jwt.RegisteredClaims{
