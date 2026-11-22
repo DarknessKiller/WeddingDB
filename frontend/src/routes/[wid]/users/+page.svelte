@@ -62,6 +62,7 @@ import LogOut from 'lucide-svelte/icons/log-out';
   // Assign weddings modal
   let assignTarget = $state<User | null>(null);
   let assignWeddingIds = $state<string[]>([]);
+  let assignLoading = $state(false);
   let assignSaving = $state(false);
 
   // Reset password modal
@@ -169,16 +170,24 @@ import LogOut from 'lucide-svelte/icons/log-out';
     }
   }
 
-  function openAssign(user: User) {
+  async function openAssign(user: User) {
     assignTarget = user;
     assignWeddingIds = [];
-    getUserWeddings(user.id).then(weds => {
+    assignLoading = true;
+    try {
+      const weds = await getUserWeddings(user.id);
       assignWeddingIds = weds.map(w => w.id);
-    }).catch(() => {});
+    } catch (e: any) {
+      // Saving an unloaded list would send [] and revoke every grant.
+      addToast(e.message ?? 'Failed to load wedding assignments', 'error');
+      assignTarget = null;
+    } finally {
+      assignLoading = false;
+    }
   }
 
   async function handleAssign() {
-    if (!assignTarget) return;
+    if (!assignTarget || assignLoading) return;
     assignSaving = true;
     try {
       await assignWeddings(assignTarget.id, assignWeddingIds);
@@ -420,7 +429,9 @@ import LogOut from 'lucide-svelte/icons/log-out';
       </div>
       <div class="p-5 space-y-4">
         <p class="text-sm text-gray-600">Assign weddings to <strong>{assignTarget.name}</strong></p>
-        {#if weddings.length === 0}
+        {#if assignLoading}
+          <p class="text-sm text-gray-500 italic">Loading assignments...</p>
+        {:else if weddings.length === 0}
           <p class="text-sm text-gray-500 italic">No weddings available</p>
         {:else}
           <div class="space-y-2 max-h-60 overflow-y-auto">
@@ -434,7 +445,7 @@ import LogOut from 'lucide-svelte/icons/log-out';
         {/if}
       </div>
       <div class="flex gap-3 p-5 pt-0">
-        <button onclick={handleAssign} disabled={assignSaving}
+        <button onclick={handleAssign} disabled={assignSaving || assignLoading}
           class="flex-1 py-2.5 bg-red text-white rounded-xl text-sm font-semibold hover:bg-red-light transition-colors disabled:opacity-50">
           {assignSaving ? 'Saving...' : 'Save'}
         </button>
