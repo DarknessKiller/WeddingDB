@@ -255,7 +255,16 @@ func checkSeatNotTaken(ctx context.Context, tx *gorm.DB, g *models.GuestRecord) 
 	}
 	if g.SeatNum == nil {
 		// Table without a seat: only the wedding-scoped ownership check applies,
-		// but a cross-wedding table id must still be rejected.
+		// but a cross-wedding table id must still be rejected. Lock the row like
+		// checkSeatTx does: table delete takes the same lock, so a plain
+		// assignment cannot slip in while the table is being dropped.
+		// The row lock is Postgres-only; sqlite (tests) has one writer.
+		if tx.Name() == "postgres" {
+			if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Select("id").
+				Where("id = ? AND wedding_id = ?", *g.TableID, g.WeddingID).First(&models.BanquetTable{}).Error; err != nil {
+				return ruleError{errors.New("table not found")}
+			}
+		}
 		if _, err := repository.NewTableRepo(tx).FindByID(ctx, *g.TableID, g.WeddingID); err != nil {
 			return ruleError{errors.New("table not found")}
 		}

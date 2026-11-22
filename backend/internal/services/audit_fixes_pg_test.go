@@ -14,6 +14,7 @@ import (
 	"github.com/google/uuid"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 // openAuditPG opens TEST_DATABASE_URL and migrates the tables the locked
@@ -110,4 +111,34 @@ func TestSyncReplay_Postgres(t *testing.T) {
 	if got.Notes != "late" {
 		t.Fatalf("notes = %q, want one note", got.Notes)
 	}
+}
+
+// A guest assigned to a table without a seat must wait for the table row lock
+// the delete path takes, so it cannot land on a table being dropped.
+func TestGuestTableOnlyAssignmentWaitsForTableLock_Postgres(t *testing.T) {
+	db := openAuditPG(t)
+	wid, tid := uuid.New(), uuid.New()
+	testutil.NoErr(t, db.Create(&models.WeddingEvent{ID: wid, Name: "Table lock PG"}).Error)
+	testutil.NoErr(t, db.Create(&models.BanquetTable{ID: tid, WeddingID: wid, Name: "T1", Capacity: 10}).Error)
+	svc := NewGuestService(repository.NewGuestRepo(db), repository.NewTableRepo(db), nil, db)
+
+	// Hold the lock a concurrent table delete takes.
+	lockTx := db.Begin()
+	testutil.NoErr(t, lockTx.Clauses(clause.Locking{Strength: "UPDATE"}).Select("id").
+		Where("id = ?", tid).First(&models.BanquetTable{}).Error)
+
+	done := make(chan error, 1)
+	go func() {
+		done <- svc.Create(t.Context(), &models.GuestRecord{
+			ID: uuid.New(), WeddingID: wid, Name: "Late", Pax: 1, TableID: &tid,
+		})
+	}()
+	select {
+	case err := <-done:
+		testutil.NoErr(t, lockTx.Rollback().Error)
+		t.Fatalf("table-only assignment did not wait for the table row lock: %v", err)
+	case <-time.After(200 * time.Millisecond):
+	}
+	testutil.NoErr(t, lockTx.Rollback().Error)
+	testutil.NoErr(t, <-done)
 }
