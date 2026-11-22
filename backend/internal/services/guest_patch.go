@@ -104,6 +104,9 @@ func (p *GuestPatch) applyTo(dst *models.GuestRecord) ([]string, error) {
 		carried = append(carried, groupDietary)
 	}
 	if p.carries("angbaoAmt") {
+		if p.AngbaoAmt != nil && *p.AngbaoAmt < 0 {
+			return nil, fmt.Errorf("%w: angbaoAmt must not be negative", ErrGuestPatchInvalid)
+		}
 		dst.AngbaoAmt = p.AngbaoAmt
 		carried = append(carried, groupAngbaoAmt)
 	}

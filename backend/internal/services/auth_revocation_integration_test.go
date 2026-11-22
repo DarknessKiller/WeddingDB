@@ -340,8 +340,9 @@ func TestSelectWedding_PersistsWeddingScopeForUser(t *testing.T) {
 	seedWedding(t, db, wid)
 	seedUserWedding(t, db, adminID, wid)
 	seedRefreshToken(t, db, adminID, nil, refreshStr) // login mints nil wedding scope
+	seedRefreshToken(t, db, adminID, nil, "other-device-token")
 
-	if _, err := svc.SelectWedding(context.Background(), adminID, wid); err != nil {
+	if _, err := svc.SelectWedding(context.Background(), adminID, refreshStr, wid); err != nil {
 		t.Fatalf("SelectWedding failed: %v", err)
 	}
 
@@ -352,6 +353,14 @@ func TestSelectWedding_PersistsWeddingScopeForUser(t *testing.T) {
 	}
 	if rt.WeddingID == nil || *rt.WeddingID != wid {
 		t.Fatalf("expected refresh token wedding_id=%s, got %v", wid, rt.WeddingID)
+	}
+	// Another session of the same user keeps its own scope.
+	var other models.RefreshToken
+	if err := db.Where("token = ?", "other-device-token").First(&other).Error; err != nil {
+		t.Fatalf("failed to load other refresh token: %v", err)
+	}
+	if other.WeddingID != nil {
+		t.Fatalf("other session was rescoped to %v", *other.WeddingID)
 	}
 
 	// Refresh must re-mint a scoped access token (not drop to nil → 403).
@@ -378,7 +387,7 @@ func TestSelectWedding_AdminKeepsUnscopedRefreshToken(t *testing.T) {
 	seedWedding(t, db, wid)
 	seedRefreshToken(t, db, adminID, nil, refreshStr)
 
-	if _, err := svc.SelectWedding(context.Background(), adminID, wid); err != nil {
+	if _, err := svc.SelectWedding(context.Background(), adminID, refreshStr, wid); err != nil {
 		t.Fatalf("SelectWedding failed: %v", err)
 	}
 

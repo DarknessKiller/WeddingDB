@@ -20,7 +20,13 @@ var (
 	ErrInvalidGuestPax = errors.New("guest pax must be at least 1")
 	ErrSeatRange       = errors.New("seat range exceeds table capacity")
 	ErrSSECapacity     = errors.New("too many streams for wedding")
+	ErrSSEUserCapacity = errors.New("too many streams for user")
 )
+
+// ErrTokenRejected wraps every reason a presented access or refresh token is
+// refused (bad, expired, revoked, blacklisted, stale version, replayed).
+// Handlers map it to 401; any other auth error is an outage and maps to 503.
+var ErrTokenRejected = errors.New("invalid or expired token")
 
 // SelectWedding sentinels; handlers map them to 401/403.
 var (

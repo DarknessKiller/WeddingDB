@@ -37,12 +37,14 @@ type GuestEventData struct {
 	CheckedInAt *string  `json:"checkedInAt"`
 	AngbaoAmt   *int     `json:"angbaoAmt"`
 	GiftItem    *string  `json:"giftItem"`
+	Pinyin      string   `json:"pinyin"`
 }
 
 // SSEClient represents a connected SSE client.
 type SSEClient struct {
 	ID          string
 	WeddingID   uuid.UUID
+	UserID      uuid.UUID
 	Chan        chan []byte
 	Done        chan struct{}
 	doneOnce    sync.Once
@@ -53,22 +55,31 @@ type SSEClient struct {
 
 const sseLeaseDuration = 30 * time.Second
 
+// KEYS[1] holds the wedding's leases (cap 100), KEYS[2] the user's (cap 5).
+// Returns 1 on success, 0 when the wedding is full, -1 when the user is.
 var sseAcquire = redis.NewScript(`
 local now = redis.call('TIME')
 local ms = now[1] * 1000 + math.floor(now[2] / 1000)
-redis.call('ZREMRANGEBYSCORE', KEYS[1], '-inf', ms)
+for _, k in ipairs(KEYS) do redis.call('ZREMRANGEBYSCORE', k, '-inf', ms) end
 if redis.call('ZCARD', KEYS[1]) >= 100 then return 0 end
-redis.call('ZADD', KEYS[1], ms + ARGV[2], ARGV[1])
-redis.call('PEXPIRE', KEYS[1], ARGV[2])
+if redis.call('ZCARD', KEYS[2]) >= 5 then return -1 end
+for _, k in ipairs(KEYS) do
+  redis.call('ZADD', k, ms + ARGV[2], ARGV[1])
+  redis.call('PEXPIRE', k, ARGV[2])
+end
 return 1`)
 
 var sseRenew = redis.NewScript(`
 local now = redis.call('TIME')
 local ms = now[1] * 1000 + math.floor(now[2] / 1000)
-local expiry = redis.call('ZSCORE', KEYS[1], ARGV[1])
-if not expiry or tonumber(expiry) <= ms then return 0 end
-redis.call('ZADD', KEYS[1], ms + ARGV[2], ARGV[1])
-redis.call('PEXPIRE', KEYS[1], ARGV[2])
+for _, k in ipairs(KEYS) do
+  local expiry = redis.call('ZSCORE', k, ARGV[1])
+  if not expiry or tonumber(expiry) <= ms then return 0 end
+end
+for _, k in ipairs(KEYS) do
+  redis.call('ZADD', k, ms + ARGV[2], ARGV[1])
+  redis.call('PEXPIRE', k, ARGV[2])
+end
 return 1`)
 
 func (c *SSEClient) Deadline() time.Time {
@@ -78,6 +89,10 @@ func (c *SSEClient) Deadline() time.Time {
 }
 
 func (c *SSEClient) key() string { return "wedding:" + c.WeddingID.String() + ":sse-leases" }
+
+func (c *SSEClient) userKey() string { return "user:" + c.UserID.String() + ":sse-leases" }
+
+func (c *SSEClient) keys() []string { return []string{c.key(), c.userKey()} }
 
 // SSEHub manages SSE connections per wedding and Redis pub/sub.
 type SSEHub struct {
@@ -144,16 +159,20 @@ func (h *SSEHub) subscribeRedis() {
 	}
 }
 
-// Subscribe atomically acquires a deployment-wide lease before registering a client.
-func (h *SSEHub) Subscribe(ctx context.Context, weddingID uuid.UUID) (*SSEClient, error) {
-	client := &SSEClient{ID: uuid.New().String(), WeddingID: weddingID, Chan: make(chan []byte, 64), Done: make(chan struct{})}
+// Subscribe atomically acquires deployment-wide wedding and user leases before
+// registering a client.
+func (h *SSEHub) Subscribe(ctx context.Context, weddingID, userID uuid.UUID) (*SSEClient, error) {
+	client := &SSEClient{ID: uuid.New().String(), WeddingID: weddingID, UserID: userID, Chan: make(chan []byte, 64), Done: make(chan struct{})}
 	start := time.Now()
-	result, err := sseAcquire.Run(ctx, h.redis, []string{client.key()}, client.ID, sseLeaseDuration.Milliseconds()).Int()
+	result, err := sseAcquire.Run(ctx, h.redis, client.keys(), client.ID, sseLeaseDuration.Milliseconds()).Int()
 	if err != nil {
 		return nil, fmt.Errorf("acquire SSE lease: %w", err)
 	}
-	if result == 0 {
+	switch result {
+	case 0:
 		return nil, ErrSSECapacity
+	case -1:
+		return nil, ErrSSEUserCapacity
 	}
 	client.deadline = start.Add(sseLeaseDuration)
 	if !time.Now().Before(client.deadline) {
@@ -183,7 +202,7 @@ func (h *SSEHub) renewLease(client *SSEClient) {
 		case <-ticker.C:
 			start := time.Now()
 			ctx, cancel := context.WithDeadline(h.ctx, client.Deadline())
-			result, err := sseRenew.Run(ctx, h.redis, []string{client.key()}, client.ID, sseLeaseDuration.Milliseconds()).Int()
+			result, err := sseRenew.Run(ctx, h.redis, client.keys(), client.ID, sseLeaseDuration.Milliseconds()).Int()
 			cancel()
 			if err != nil || result == 0 || !time.Now().Before(client.Deadline()) {
 				client.doneOnce.Do(func() { close(client.Done) })
@@ -210,8 +229,10 @@ func (h *SSEHub) Unsubscribe(client *SSEClient) {
 	client.releaseOnce.Do(func() {
 		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 		defer cancel()
-		if err := h.redis.ZRem(ctx, client.key(), client.ID).Err(); err != nil {
-			log.Printf("SSE: lease release failed: %v", err)
+		for _, key := range client.keys() {
+			if err := h.redis.ZRem(ctx, key, client.ID).Err(); err != nil {
+				log.Printf("SSE: lease release failed: %v", err)
+			}
 		}
 	})
 	log.Printf("SSE: client %s disconnected from wedding %s", client.ID, client.WeddingID)

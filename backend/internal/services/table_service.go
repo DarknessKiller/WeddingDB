@@ -2,23 +2,22 @@ package services
 
 import (
 	"context"
-	"log"
-	"time"
 
 	"weddingdb/internal/models"
 	"weddingdb/internal/repository"
 
 	"github.com/google/uuid"
+	"gorm.io/gorm"
 )
 
 type TableService struct {
 	tableRepo *repository.TableRepo
-	guestRepo *repository.GuestRepo
 	sseHub    *SSEHub
+	db        *gorm.DB
 }
 
-func NewTableService(tableRepo *repository.TableRepo, guestRepo *repository.GuestRepo, sseHub *SSEHub) *TableService {
-	return &TableService{tableRepo: tableRepo, guestRepo: guestRepo, sseHub: sseHub}
+func NewTableService(tableRepo *repository.TableRepo, sseHub *SSEHub, db *gorm.DB) *TableService {
+	return &TableService{tableRepo: tableRepo, sseHub: sseHub, db: db}
 }
 
 func (s *TableService) List(ctx context.Context, weddingID uuid.UUID) ([]models.BanquetTable, error) {
@@ -38,46 +37,34 @@ func (s *TableService) Update(ctx context.Context, t *models.BanquetTable) error
 }
 
 func (s *TableService) Delete(ctx context.Context, id, weddingID uuid.UUID) error {
-	// Surface the guests seated at this table before unassigning so their
-	// updates can be broadcast afterwards.
-	affected, err := s.guestRepo.FindByTable(ctx, weddingID, id)
+	var affected []models.GuestRecord
+	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		// Wedding lock, then table lock: the order every guest write uses, so a
+		// concurrent seat move either lands before the unassign or sees no table.
+		if err := lockWedding(tx, weddingID); err != nil {
+			return err
+		}
+		if err := lockTable(tx, weddingID, id); err != nil {
+			return err
+		}
+		guests := repository.NewGuestRepo(tx)
+		var err error
+		if affected, err = guests.FindByTable(ctx, weddingID, id); err != nil {
+			return err
+		}
+		if err := guests.UnassignByTable(ctx, weddingID, id); err != nil {
+			return err
+		}
+		return repository.NewTableRepo(tx).Delete(ctx, id, weddingID)
+	})
 	if err != nil {
-		return err
-	}
-	// Unassign guests from this table before deleting
-	if err := s.guestRepo.UnassignByTable(ctx, weddingID, id); err != nil {
-		return err
-	}
-	if err := s.tableRepo.Delete(ctx, id, weddingID); err != nil {
 		return err
 	}
 	for i := range affected {
 		g := &affected[i]
 		g.TableID = nil
 		g.SeatNum = nil
-		s.publishGuestEvent("update", g, weddingID)
+		s.sseHub.publishGuest("update", g, weddingID)
 	}
 	return nil
-}
-
-// publishGuestEvent broadcasts a guest mutation to all connected SSE clients,
-// mirroring GuestService.publishEvent (same hub, envelope and payload shape).
-func (s *TableService) publishGuestEvent(eventType string, guest *models.GuestRecord, weddingID uuid.UUID) {
-	if s.sseHub == nil {
-		return
-	}
-
-	event := GuestEvent{
-		Type:      eventType,
-		GuestID:   guest.ID.String(),
-		WeddingID: weddingID.String(),
-		Guest:     guestToEventData(guest),
-		Timestamp: time.Now().UnixMilli(),
-	}
-
-	go func() {
-		if err := s.sseHub.Publish(context.Background(), weddingID, event); err != nil {
-			log.Printf("SSE: publish %s for guest %s in wedding %s: %v", eventType, guest.ID, weddingID, err)
-		}
-	}()
 }

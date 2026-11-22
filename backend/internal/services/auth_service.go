@@ -122,7 +122,7 @@ func (s *AuthService) sessionResult(ctx context.Context, admin *models.AdminUser
 }
 
 // SelectWedding generates a new access token with the selected wedding embedded.
-func (s *AuthService) SelectWedding(ctx context.Context, adminID uuid.UUID, weddingID uuid.UUID) (string, error) {
+func (s *AuthService) SelectWedding(ctx context.Context, adminID uuid.UUID, refreshToken string, weddingID uuid.UUID) (string, error) {
 	admin, err := s.adminRepo.FindByID(ctx, adminID)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -139,11 +139,11 @@ func (s *AuthService) SelectWedding(ctx context.Context, adminID uuid.UUID, wedd
 		if !hasAccess {
 			return "", ErrNoWeddingAccess
 		}
-		// Persist the wedding scope onto the caller's refresh token(s) so that
+		// Persist the wedding scope onto the caller's refresh token so that
 		// Refresh re-mints a scoped access token. Without this, the first
 		// refresh after SelectWedding drops the wedding and the user gets 403
 		// until they log in again. Admins keep a nil scope (all weddings).
-		if err := s.tokenRepo.UpdateWeddingScope(ctx, adminID, weddingID); err != nil {
+		if err := s.tokenRepo.UpdateWeddingScope(ctx, adminID, refreshToken, weddingID); err != nil {
 			return "", fmt.Errorf("failed to persist wedding scope: %w", err)
 		}
 	}
@@ -170,7 +170,7 @@ func (s *AuthService) Refresh(ctx context.Context, refreshTokenStr string, oldAc
 
 	token, err := s.tokenRepo.FindByToken(ctx, refreshTokenStr)
 	if err != nil {
-		return nil, errors.New("invalid refresh token")
+		return nil, lookupErr("find refresh token", err)
 	}
 	if token.RotatedAt != nil {
 		return s.resumeRotation(ctx, token)
@@ -178,7 +178,7 @@ func (s *AuthService) Refresh(ctx context.Context, refreshTokenStr string, oldAc
 
 	admin, err := s.adminRepo.FindByID(ctx, token.AdminID)
 	if err != nil {
-		return nil, errors.New("admin not found")
+		return nil, lookupErr("find admin", err)
 	}
 
 	// The row carries the version it was minted under. A Rotate that committed
@@ -192,7 +192,7 @@ func (s *AuthService) Refresh(ctx context.Context, refreshTokenStr string, oldAc
 		if _, err := s.tokenRepo.DeleteByToken(ctx, refreshTokenStr); err != nil {
 			return nil, fmt.Errorf("failed to delete revoked refresh token: %w", err)
 		}
-		return nil, errors.New("session revoked")
+		return nil, fmt.Errorf("session revoked: %w", ErrTokenRejected)
 	}
 
 	// Mint before consuming: if Redis or the token generator fails here, the
@@ -223,9 +223,12 @@ func (s *AuthService) Refresh(ctx context.Context, refreshTokenStr string, oldAc
 	}
 	// Another caller rotated it between our read and our claim — serve the
 	// successor instead of failing one of the two.
-	current, findErr := s.tokenRepo.FindByToken(ctx, refreshTokenStr)
-	if findErr != nil || current.RotatedAt == nil {
-		return nil, errors.New("invalid refresh token")
+	current, err := s.tokenRepo.FindByToken(ctx, refreshTokenStr)
+	if err != nil {
+		return nil, lookupErr("find claimed refresh token", err)
+	}
+	if current.RotatedAt == nil {
+		return nil, fmt.Errorf("claimed token not rotated: %w", ErrTokenRejected)
 	}
 	return s.resumeRotation(ctx, current)
 }
@@ -234,15 +237,15 @@ func (s *AuthService) Refresh(ctx context.Context, refreshTokenStr string, oldAc
 // successor, inside the grace window. Outside it the token counts as replayed.
 func (s *AuthService) resumeRotation(ctx context.Context, consumed *models.RefreshToken) (*LoginResult, error) {
 	if consumed.RotatedAt == nil || consumed.ReplacedBy == nil || time.Since(*consumed.RotatedAt) > refreshGraceWindow {
-		return nil, errors.New("invalid refresh token")
+		return nil, fmt.Errorf("refresh token replayed: %w", ErrTokenRejected)
 	}
 	replacement, err := s.tokenRepo.FindByToken(ctx, *consumed.ReplacedBy)
 	if err != nil {
-		return nil, errors.New("invalid refresh token")
+		return nil, lookupErr("find successor token", err)
 	}
 	admin, err := s.adminRepo.FindByID(ctx, replacement.AdminID)
 	if err != nil {
-		return nil, errors.New("admin not found")
+		return nil, lookupErr("find admin", err)
 	}
 
 	// The successor must still match the live version; otherwise it was minted
@@ -255,7 +258,7 @@ func (s *AuthService) resumeRotation(ctx context.Context, consumed *models.Refre
 		if _, err := s.tokenRepo.DeleteByToken(ctx, replacement.Token); err != nil {
 			return nil, fmt.Errorf("failed to delete revoked successor: %w", err)
 		}
-		return nil, errors.New("session revoked")
+		return nil, fmt.Errorf("session revoked: %w", ErrTokenRejected)
 	}
 
 	weddingID, err := s.activeWeddingScope(ctx, admin.ID, replacement.WeddingID)
@@ -392,25 +395,16 @@ func (s *AuthService) ValidateToken(ctx context.Context, tokenStr string) (*Acce
 		return s.secret, nil
 	})
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("%w: %w", ErrTokenRejected, err)
 	}
 	claims, ok := token.Claims.(*AccessClaims)
 	if !ok || !token.Valid {
-		return nil, errors.New("invalid token")
+		return nil, ErrTokenRejected
 	}
 
 	// Enforce required claims
-	if claims.AdminID == uuid.Nil {
-		return nil, errors.New("token missing admin ID")
-	}
-	if claims.Role == "" {
-		return nil, errors.New("token missing role")
-	}
-	if claims.ID == "" {
-		return nil, errors.New("token missing JTI")
-	}
-	if claims.ExpiresAt == nil {
-		return nil, errors.New("token missing expiration")
+	if claims.AdminID == uuid.Nil || claims.Role == "" || claims.ID == "" || claims.ExpiresAt == nil {
+		return nil, fmt.Errorf("token missing required claim: %w", ErrTokenRejected)
 	}
 
 	// Check blacklist (targeted, time-bounded check — do this first)
@@ -420,7 +414,7 @@ func (s *AuthService) ValidateToken(ctx context.Context, tokenStr string) (*Acce
 		return nil, fmt.Errorf("service temporarily unavailable: %w", err)
 	}
 	if blacklisted {
-		return nil, errors.New("token has been revoked")
+		return nil, fmt.Errorf("token has been revoked: %w", ErrTokenRejected)
 	}
 
 	// Check token version (broader sweep)
@@ -430,7 +424,7 @@ func (s *AuthService) ValidateToken(ctx context.Context, tokenStr string) (*Acce
 		return nil, fmt.Errorf("service temporarily unavailable: %w", err)
 	}
 	if claims.TokenVersion < storedTV {
-		return nil, errors.New("token version is stale")
+		return nil, fmt.Errorf("token version is stale: %w", ErrTokenRejected)
 	}
 
 	return claims, nil
@@ -521,7 +515,16 @@ func (s *AuthService) discardIfRevoked(ctx context.Context, userID uuid.UUID, re
 	if _, err := s.tokenRepo.DeleteByToken(ctx, refreshToken); err != nil {
 		return fmt.Errorf("failed to delete revoked successor: %w", err)
 	}
-	return errors.New("session revoked")
+	return fmt.Errorf("session revoked: %w", ErrTokenRejected)
+}
+
+// lookupErr maps a missing row to ErrTokenRejected and keeps any other error
+// as an outage, so a database failure never reads as a bad token.
+func lookupErr(what string, err error) error {
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return fmt.Errorf("%s: %w", what, ErrTokenRejected)
+	}
+	return fmt.Errorf("%s: %w", what, err)
 }
 
 // parseTokenClaims parses a JWT without blacklist/tv checks — used only for extracting claims during logout.

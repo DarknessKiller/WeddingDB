@@ -42,7 +42,7 @@ func TestSSEHub_DistributedWeddingLimit(t *testing.T) {
 	if count != 100 {
 		t.Fatalf("accepted %d streams across hubs, want 100", count)
 	}
-	other, err := hubs[1].Subscribe(context.Background(), uuid.New())
+	other, err := hubs[1].Subscribe(context.Background(), uuid.New(), uuid.New())
 	testutil.NoErr(t, err)
 	t.Cleanup(func() { hubs[1].Unsubscribe(other) })
 	var released *SSEClient
@@ -53,11 +53,11 @@ func TestSSEHub_DistributedWeddingLimit(t *testing.T) {
 			break
 		}
 	}
-	replacement, err := hubs[1].Subscribe(context.Background(), wid)
+	replacement, err := hubs[1].Subscribe(context.Background(), wid, uuid.New())
 	testutil.NoErr(t, err)
 	t.Cleanup(func() { hubs[1].Unsubscribe(replacement) })
 	testutil.NoErr(t, rdb.ZAdd(context.Background(), replacement.key(), redis.Z{Score: 0, Member: replacement.ID}).Err())
-	reclaimed, err := hubs[0].Subscribe(context.Background(), wid)
+	reclaimed, err := hubs[0].Subscribe(context.Background(), wid, uuid.New())
 	testutil.NoErr(t, err)
 	t.Cleanup(func() { hubs[0].Unsubscribe(reclaimed) })
 	select {
@@ -78,7 +78,7 @@ func TestSSEHub_RenewalFailureClosesStream(t *testing.T) {
 	rdb := redis.NewClient(&redis.Options{Addr: addr})
 	hub := NewSSEHub(rdb)
 	t.Cleanup(hub.Shutdown)
-	client, err := hub.Subscribe(context.Background(), uuid.New())
+	client, err := hub.Subscribe(context.Background(), uuid.New(), uuid.New())
 	testutil.NoErr(t, err)
 	testutil.NoErr(t, rdb.Close())
 	select {
@@ -86,7 +86,7 @@ func TestSSEHub_RenewalFailureClosesStream(t *testing.T) {
 	case <-time.After(12 * time.Second):
 		t.Fatal("Redis failure did not close stream")
 	}
-	if _, err := hub.Subscribe(context.Background(), uuid.New()); err == nil {
+	if _, err := hub.Subscribe(context.Background(), uuid.New(), uuid.New()); err == nil {
 		t.Fatal("Redis failure admitted a stream")
 	}
 }
