@@ -546,8 +546,7 @@ import Users from 'lucide-svelte/icons/users';
       />
     </div>
     <div class="flex items-center gap-1 sm:gap-2 flex-wrap">
-      <select bind:value={rsvpFilter} class="px-2 sm:px-3 py-2 border border-gray-200 rounded-xl text-sm bg-white focus:border-gold outline-none">
-        aria-label="Filter by RSVP status"
+      <select bind:value={rsvpFilter} aria-label="Filter by RSVP status" class="px-2 sm:px-3 py-2 border border-gray-200 rounded-xl text-sm bg-white focus:border-gold outline-none">
         <option value="all">All Status</option>
         <option value="confirmed">Confirmed</option>
         <option value="pending">Pending</option>

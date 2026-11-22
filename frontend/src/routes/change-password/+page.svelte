@@ -1,7 +1,8 @@
 <script lang="ts">
   import { page } from '$app/state';
   import { goto } from '$app/navigation';
-  import { addToast, getAuth } from '#lib/stores/index.ts';
+  import { addToast } from '#lib/stores/index.ts';
+  import { apiFetch } from '#lib/api/client.ts';
   import Eye from 'lucide-svelte/icons/eye';
 import EyeOff from 'lucide-svelte/icons/eye-off';
 import KeyRound from 'lucide-svelte/icons/key-round';
@@ -30,13 +31,10 @@ import KeyRound from 'lucide-svelte/icons/key-round';
     if (!canSubmit) return;
     loading = true;
     try {
-      const { accessToken } = getAuth();
-      const res = await fetch('/api/auth/change-password', {
+      // apiFetch retries after a session refresh, so an expired access token on
+      // this page is recoverable instead of looking like a wrong password.
+      const res = await apiFetch('/api/auth/change-password', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${accessToken}`
-        },
         body: JSON.stringify({ password, ...(forced ? {} : { currentPassword }) })
       });
       if (!res.ok) {

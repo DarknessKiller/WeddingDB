@@ -20,7 +20,8 @@
   let currentPath = $derived(page.url.pathname);
   let wid = $derived(page.params.wid ?? '');
   let authChecked = $state(false);
-  let guestCount = $state(0);
+  // Derived, so SSE updates from another device keep the sidebar badge current.
+  let guestCount = $derived($guestList.length);
   let tables = $state<BanquetTable[]>([]);
   let cleanupSSE: (() => void) | undefined;
   let offline = $state(typeof navigator !== 'undefined' ? !navigator.onLine : false);
@@ -83,8 +84,7 @@
         // Seed only when nothing is left queued: a server snapshot would hide
         // the optimistic edits still waiting for a retry.
         if (getQueue(wid).length === 0) {
-          const guests = await refreshGuests(fetchGuests);
-          guestCount = guests.length;
+          await refreshGuests(fetchGuests);
         } else {
           refreshQueued();
         }
@@ -118,8 +118,7 @@
     try {
       // refreshGuests keeps the syncing window open across fetch+seed even if
       // initializeSSE early-returned, so mid-fetch SSE events can't be clobbered.
-      const guests = await refreshGuests(loadGuests);
-      guestCount = guests.length;
+      await refreshGuests(loadGuests);
     } catch {}
 
     listTables($weddingId).then((t) => {

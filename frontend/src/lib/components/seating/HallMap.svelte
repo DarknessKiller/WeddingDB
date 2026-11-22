@@ -253,6 +253,8 @@ import RotateCcw from 'lucide-svelte/icons/rotate-ccw';
   onMount(() => {
     let ro: ResizeObserver | null = null;
     const canvasListeners: Array<[string, EventListener, any]> = [];
+    let destroyed = false;
+    let rafId = 0;
 
     if (containerEl) {
       ro = new ResizeObserver((entries) => {
@@ -265,9 +267,16 @@ import RotateCcw from 'lucide-svelte/icons/rotate-ccw';
     }
 
     (async () => {
-      const mod = await import('svelte-konva');
-      // A finger wobbles a few pixels during a tap: land it as a tap, not a 3px drag.
-      if ('ontouchstart' in window) (await import('konva')).default.dragDistance = 12;
+      let mod;
+      try {
+        mod = await import('svelte-konva');
+        // A finger wobbles a few pixels during a tap: land it as a tap, not a 3px drag.
+        if ('ontouchstart' in window) (await import('konva')).default.dragDistance = 12;
+      } catch (err) {
+        console.error('Failed to load seating canvas', err);
+        return;
+      }
+      if (destroyed) return;
       KonvaStage = mod.Stage;
       KLayer = mod.Layer;
       KTransformer = mod.Transformer;
@@ -277,10 +286,10 @@ import RotateCcw from 'lucide-svelte/icons/rotate-ccw';
       konvaLoaded = true;
 
       const attachHandlers = () => {
+        if (destroyed) return;
         const canvas = containerEl?.querySelector('canvas');
-        if (!canvas) { requestAnimationFrame(attachHandlers); return; }
+        if (!canvas) { rafId = requestAnimationFrame(attachHandlers); return; }
 
-        // ponytail: store listeners for cleanup on destroy
         const onWheel = (e: Event) => {
           e.preventDefault();
           const we = e as WheelEvent;
@@ -297,42 +306,50 @@ import RotateCcw from 'lucide-svelte/icons/rotate-ccw';
           let pinchStartDist = 0;
           let pinchStartZoom = 1;
 
-          canvas.addEventListener('touchstart', (e: TouchEvent) => {
-              if (e.touches.length !== 2) return;
-              // Second finger: a pinch, not a move of whatever the first one grabbed.
-              cancelDrag();
-              const stage = stageRef?.node ?? stageRef;
-              stage?.stopDrag?.();
-              stage?.position({ x: panX, y: panY });
-              const dx = e.touches[0].clientX - e.touches[1].clientX;
-              const dy = e.touches[0].clientY - e.touches[1].clientY;
-              pinchStartDist = Math.hypot(dx, dy);
-              pinchStartZoom = zoom;
-          }, { passive: true });
+          const onPinchStart = (e: TouchEvent) => {
+            if (e.touches.length !== 2) return;
+            // Second finger: a pinch, not a move of whatever the first one grabbed.
+            cancelDrag();
+            const stage = stageRef?.node ?? stageRef;
+            stage?.stopDrag?.();
+            stage?.position({ x: panX, y: panY });
+            const dx = e.touches[0].clientX - e.touches[1].clientX;
+            const dy = e.touches[0].clientY - e.touches[1].clientY;
+            pinchStartDist = Math.hypot(dx, dy);
+            pinchStartZoom = zoom;
+          };
 
-          canvas.addEventListener('touchmove', (e: TouchEvent) => {
-              if (e.touches.length !== 2 || pinchStartDist === 0) return;
-              e.preventDefault();
-              const [a, b] = [e.touches[0], e.touches[1]];
-              const rect = canvas.getBoundingClientRect();
-              const dist = Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY);
+          const onPinchMove = (e: TouchEvent) => {
+            if (e.touches.length !== 2 || pinchStartDist === 0) return;
+            e.preventDefault();
+            const [a, b] = [e.touches[0], e.touches[1]];
+            const rect = canvas.getBoundingClientRect();
+            const dist = Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY);
 
-              zoomAt(pinchStartZoom * (dist / pinchStartDist), (a.clientX + b.clientX) / 2 - rect.left, (a.clientY + b.clientY) / 2 - rect.top);
-            },
-            { passive: false }
+            zoomAt(pinchStartZoom * (dist / pinchStartDist), (a.clientX + b.clientX) / 2 - rect.left, (a.clientY + b.clientY) / 2 - rect.top);
+          };
+
+          const onPinchEnd = (e: TouchEvent) => {
+            if (e.touches.length < 2) pinchStartDist = 0;
+          };
+
+          canvas.addEventListener('touchstart', onPinchStart, { passive: true });
+          canvas.addEventListener('touchmove', onPinchMove, { passive: false });
+          canvas.addEventListener('touchend', onPinchEnd, { passive: true });
+          canvasListeners.push(
+            ['touchstart', onPinchStart as EventListener, { passive: true }],
+            ['touchmove', onPinchMove as EventListener, { passive: false }],
+            ['touchend', onPinchEnd as EventListener, { passive: true }],
           );
-
-          canvas.addEventListener('touchend', (e: TouchEvent) => {
-              if (e.touches.length < 2) pinchStartDist = 0;
-          }, { passive: true });
         }
       };
-      requestAnimationFrame(attachHandlers);
+      rafId = requestAnimationFrame(attachHandlers);
     })();
 
-      return () => {
+    return () => {
+      destroyed = true;
+      cancelAnimationFrame(rafId);
       ro?.disconnect();
-      // Clean up canvas event listeners
       const canvas = containerEl?.querySelector('canvas');
       if (canvas) {
         for (const [event, handler, opts] of canvasListeners) {

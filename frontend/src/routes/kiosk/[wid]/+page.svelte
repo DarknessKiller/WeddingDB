@@ -81,6 +81,11 @@ import X from 'lucide-svelte/icons/x';
       allGuests = await publicListGuests({ signal });
       if (req !== guestsRequest) return;
       cacheGuests(`kiosk_${wid}`, allGuests); // own key: the public list lacks staff fields
+      // Keep an open guest screen current: staff may have moved them to another
+      // table since the poll snapshot the selection came from.
+      if (selectedGuest) {
+        selectedGuest = allGuests.find(g => g.id === selectedGuest!.id) ?? selectedGuest;
+      }
       showingCachedGuests = false;
       guestsLoaded = true;
       guestsError = false;

@@ -309,7 +309,7 @@ import ArrowUpDown from 'lucide-svelte/icons/arrow-up-down';
     if (!guest) return;
     const wid = get(weddingId);
     try {
-      await checkOutGuest(wid, guest.id);
+      await checkOutGuest(wid, guest.id, guest.checkedInAt);
       guest.checkedIn = false;
       guest.checkedInAt = undefined;
       pushGuestPatch(guest.id, { checkedIn: false, checkedInAt: undefined });

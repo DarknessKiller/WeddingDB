@@ -82,7 +82,9 @@ import MapPin from 'lucide-svelte/icons/map-pin';
     const next = !$showSeatNumbers;
     setShowSeatNumbers(wedding.id, next);
     try {
-      await updateKioskSettings(wedding.id, { ...kioskPayload(), showSeatNumbers: next });
+      // Send only the toggled field: the full payload would persist every
+      // half-finished edit in the form without the admin pressing Save.
+      await updateKioskSettings(wedding.id, { showSeatNumbers: next });
     } catch (e: any) {
       setShowSeatNumbers(wedding.id, !next);
       addToast(e.message ?? 'Failed to save', 'error');

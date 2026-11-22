@@ -217,11 +217,16 @@ export async function checkInGuest(weddingId: string, guestId: string, notes?: s
 	}
 }
 
-export async function checkOutGuest(weddingId: string, guestId: string): Promise<void> {
+export async function checkOutGuest(weddingId: string, guestId: string, checkedInAt?: Date): Promise<void> {
 	const doQueue = () => { enqueue(weddingId, { mutationId: genId(), op: 'checkout', guestId, clientUpdatedAt: nowIso() }); optimisticPatch('checkout', guestId); };
 	if (isOffline()) { doQueue(); return; }
 	try {
-		const res = await apiFetch(`/api/weddings/${weddingId}/guests/${guestId}/checkout`, { method: 'POST' });
+		// Send the check-in being undone: the server rejects the undo when the
+		// guest was checked in again meanwhile.
+		const res = await apiFetch(`/api/weddings/${weddingId}/guests/${guestId}/checkout`, {
+			method: 'POST',
+			body: JSON.stringify({ checkedInAt: checkedInAt?.toISOString() }),
+		});
 		if (!res.ok) throw new Error(`Failed to check out guest: ${res.status}`);
 	} catch (e) {
 		if (isNetworkError(e)) { doQueue(); return; }

@@ -186,8 +186,14 @@ import Pencil from 'lucide-svelte/icons/pencil';
     if (!selectedTable) return;
     const wid = get(weddingId);
     try {
+      const before = get(guestList).find(g => g.id === guest.id);
       await assignSeat(wid, guest.id, String(selectedTable.id), seatNum);
-      patchGuest(guest.id, { tableId: String(selectedTable.id), seatNumber: seatNum });
+      // An SSE update may have applied a newer assignment while the request ran;
+      // only write the local patch over the state this request started from.
+      const current = get(guestList).find(g => g.id === guest.id);
+      if (current && current.tableId === before?.tableId && current.seatNumber === before?.seatNumber) {
+        patchGuest(guest.id, { tableId: String(selectedTable.id), seatNumber: seatNum });
+      }
       assigningSeat = null;
       guestSearch = '';
       addToast(`${guest.name} assigned to seat ${seatNum}`, 'success');
@@ -234,7 +240,7 @@ import Pencil from 'lucide-svelte/icons/pencil';
   async function handleCheckOut(guest: Guest) {
     const wid = get(weddingId);
     try {
-      await checkOutGuest(wid, guest.id);
+      await checkOutGuest(wid, guest.id, guest.checkedInAt);
       patchGuest(guest.id, { checkedIn: false, checkedInAt: undefined });
       addToast(`${guest.name} checked out`, 'success');
     } catch (e: any) {
