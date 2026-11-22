@@ -57,6 +57,11 @@ func (h *TableHandler) Create(c fuego.ContextWithBody[TableRequest]) (any, error
 	if body.Capacity < 1 || body.Capacity > 200 {
 		return nil, fuego.BadRequestError{Title: "Capacity must be between 1 and 200"}
 	}
+	// Same 0..100 bounds as the layout save, so a table cannot be placed
+	// outside the hall.
+	if body.X < 0 || body.X > 100 || body.Y < 0 || body.Y > 100 {
+		return nil, fuego.BadRequestError{Title: "X/Y must be 0–100"}
+	}
 	table := &models.BanquetTable{
 		WeddingID: wid,
 		Name:      body.Name,

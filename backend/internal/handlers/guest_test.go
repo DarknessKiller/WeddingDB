@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"weddingdb/internal/config"
 	"weddingdb/internal/models"
 	"weddingdb/internal/repository"
 	"weddingdb/internal/services"
@@ -76,6 +77,13 @@ func TestGuestUpdate_PreservesCheckIn(t *testing.T) {
 	rec := serveJSON(s, http.MethodPut, "/api/weddings/"+wid.String()+"/guests/"+gid.String(), `{"name":"Alicia","pax":2}`)
 	if rec.Code != http.StatusBadRequest {
 		t.Fatalf("missing updatedAt status = %d, want 400", rec.Code)
+	}
+
+	// The zero time carries no version either.
+	rec = serveJSON(s, http.MethodPut, "/api/weddings/"+wid.String()+"/guests/"+gid.String(),
+		`{"name":"Alicia","pax":2,"updatedAt":"0001-01-01T00:00:00Z"}`)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("zero updatedAt status = %d, want 400", rec.Code)
 	}
 
 	// A stale edit form knows nothing about the check-in.
@@ -221,6 +229,34 @@ func TestGuestCreate_SeatInSameTransaction(t *testing.T) {
 	}
 }
 
+// A seated create used to answer any error with 400 and the raw error text,
+// leaking database details to the client.
+func TestGuestCreate_SeatedDBErrorSanitized(t *testing.T) {
+	db := newGuestTestDB(t)
+	wid, tid := uuid.New(), uuid.New()
+	testutil.NoErr(t, db.Create(&models.BanquetTable{ID: tid, WeddingID: wid, Name: "T1", Capacity: 10}).Error)
+	testutil.NoErr(t, db.Callback().Create().Before("gorm:create").
+		Register("boom_secret", func(tx *gorm.DB) {
+			if tx.Statement.Table == "guest_records" {
+				//nolint:errcheck // AddError returns the injected error itself; it is the test's point.
+				tx.AddError(errors.New("db exploded secret"))
+			}
+		}))
+
+	svc := services.NewGuestService(repository.NewGuestRepo(db), repository.NewTableRepo(db), nil, db)
+	s := config.NewFuegoServer(config.Env{}, "test")
+	fuego.Post(s, "/api/weddings/{wid}/guests", NewGuestHandler(svc).Create)
+
+	body := `{"name":"A","pax":1,"tableId":"` + tid.String() + `","seatNum":1}`
+	rec := serveJSON(s, http.MethodPost, "/api/weddings/"+wid.String()+"/guests", body)
+	if rec.Code != http.StatusInternalServerError {
+		t.Fatalf("status = %d, want 500; body %s", rec.Code, rec.Body)
+	}
+	if strings.Contains(rec.Body.String(), "exploded") {
+		t.Fatalf("response leaked the raw error: %s", rec.Body)
+	}
+}
+
 func TestGuestCreate_ClientID(t *testing.T) {
 	db := newGuestTestDB(t)
 	wid, otherWid := uuid.New(), uuid.New()
@@ -255,6 +291,18 @@ func TestGuestCreate_ClientID(t *testing.T) {
 	testutil.NoErr(t, db.First(&other, "id = ?", foreign).Error)
 	if other.WeddingID != otherWid || other.Name != "Other" {
 		t.Fatalf("foreign guest changed: %+v", other)
+	}
+}
+
+// Both search endpoints cap q at 100 runes; the authenticated one used to pass
+// it through unbounded.
+func TestTruncateSearchQuery(t *testing.T) {
+	short := strings.Repeat("a", 100)
+	if got := truncateSearchQuery(short); got != short {
+		t.Fatalf("100-rune query changed, got %d runes", len([]rune(got)))
+	}
+	if got := truncateSearchQuery(strings.Repeat("名", 150)); len([]rune(got)) != 100 {
+		t.Fatalf("long query = %d runes, want 100", len([]rune(got)))
 	}
 }
 

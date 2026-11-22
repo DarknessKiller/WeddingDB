@@ -82,7 +82,7 @@ func TestTableDelete_PublishesUnassignedGuests(t *testing.T) {
 		t.Fatalf("seed table: %v", err)
 	}
 
-	client, err := hub.Subscribe(wid)
+	client, err := hub.Subscribe(wid, uuid.New())
 	testutil.NoErr(t, err)
 
 	svc := NewTableService(repository.NewTableRepo(db), repository.NewGuestRepo(db), hub, db)
@@ -142,6 +142,7 @@ func TestCapacityCannotDropBelowSeatedGuests(t *testing.T) {
 		{3, true},
 		{4, false},
 	}
+	version := 0
 	for _, tt := range tests {
 		t.Run(fmt.Sprintf("table update capacity %d", tt.capacity), func(t *testing.T) {
 			err := tables.Update(ctx, &models.BanquetTable{ID: tid, WeddingID: wid, Name: "T1", Capacity: tt.capacity})
@@ -150,7 +151,7 @@ func TestCapacityCannotDropBelowSeatedGuests(t *testing.T) {
 			}
 		})
 		t.Run(fmt.Sprintf("layout save capacity %d", tt.capacity), func(t *testing.T) {
-			_, err := layouts.SaveLayout(ctx, wid, nil, 0, 0, []models.TableUpdate{{ID: tid, Capacity: tt.capacity}}, nil, nil, nil)
+			_, err := layouts.SaveLayout(ctx, wid, &version, 0, 0, []models.TableUpdate{{ID: tid, Capacity: tt.capacity}}, nil, nil, nil)
 			if got := errors.Is(err, repository.ErrCapacityBelowSeated); got != tt.wantErr {
 				t.Fatalf("err = %v, wantErr %v", err, tt.wantErr)
 			}

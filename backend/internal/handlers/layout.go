@@ -47,7 +47,8 @@ type ElementInput struct {
 }
 
 type LayoutRequest struct {
-	// Version is the layout version the editor loaded; absent skips the check.
+	// Version is the layout version the editor loaded. A save without it would
+	// be an unchecked full replace, so absent is rejected.
 	Version    *int           `json:"version"`
 	HallWidth  int            `json:"hallWidth"`
 	HallHeight int            `json:"hallHeight"`
@@ -97,6 +98,9 @@ func (h *LayoutHandler) Save(c fuego.ContextWithBody[LayoutRequest]) (any, error
 	wid, err := DecodeWID(c)
 	if err != nil {
 		return nil, fuego.BadRequestError{Title: "Invalid wedding ID"}
+	}
+	if body.Version == nil {
+		return nil, fuego.BadRequestError{Title: "version is required"}
 	}
 	if body.HallWidth <= 0 || body.HallHeight <= 0 {
 		return nil, fuego.BadRequestError{Title: "HallWidth and HallHeight must be > 0"}

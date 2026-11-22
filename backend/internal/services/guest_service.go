@@ -347,7 +347,12 @@ func (s *GuestService) CheckIn(ctx context.Context, id, weddingID uuid.UUID, not
 		}
 		fields := map[string]any{"checked_in_at": now, "rsvp": "confirmed"}
 		if notes != "" {
-			fields["notes"] = appendNote(guest.Notes, notes)
+			merged := appendNote(guest.Notes, notes)
+			// Same cap the offline sync path enforces on the merged notes.
+			if err := checkLen("Notes", merged, MaxNotesLen); err != nil {
+				return ruleError{err}
+			}
+			fields["notes"] = merged
 		}
 		return repo.UpdateFields(ctx, id, weddingID, fields)
 	})
@@ -630,7 +635,13 @@ func IsRuleError(err error) bool {
 // syncFailed answers a mutation that did not apply. Only errors a later attempt
 // can clear (database, network) are retryable.
 func syncFailed(m SyncMutation, err error) SyncResult {
-	return SyncResult{GuestID: m.GuestID, Status: "failed", Reason: err.Error(), Retryable: syncRetryable(err)}
+	reason := "internal error"
+	if IsRuleError(err) {
+		reason = err.Error()
+	} else {
+		log.Printf("sync mutation for guest %s failed: %v", m.GuestID, err)
+	}
+	return SyncResult{GuestID: m.GuestID, Status: "failed", Reason: reason, Retryable: syncRetryable(err)}
 }
 
 // syncRetryable reports whether a failed mutation can succeed on a later
@@ -697,7 +708,7 @@ func (s *GuestService) applySyncOnce(ctx context.Context, weddingID uuid.UUID, m
 
 func (s *GuestService) applySyncMutation(ctx context.Context, weddingID uuid.UUID, m SyncMutation) SyncResult {
 	gid, err := parseSyncID(m.GuestID)
-	if err != nil {
+	if err != nil || gid == uuid.Nil {
 		return SyncResult{GuestID: m.GuestID, Status: "skipped", Reason: "invalid guestId"}
 	}
 

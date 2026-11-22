@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -220,6 +221,52 @@ func TestCheckInPromotesRSVPAndAppendsNotes(t *testing.T) {
 		}
 		if got.Notes != "no gift" {
 			t.Errorf("Notes = %q", got.Notes)
+		}
+	})
+}
+
+// Both check-in paths must reject a note that pushes the merged notes over
+// MaxNotesLen, and neither may write the row.
+func TestCheckIn_RejectsNotesOverCap(t *testing.T) {
+	ctx := context.Background()
+	long := strings.Repeat("a", MaxNotesLen-5)
+	note := "1234567890" // merged is MaxNotesLen+5
+
+	t.Run("online endpoint", func(t *testing.T) {
+		svc, db, wid := newGuestSyncService(t)
+		gid := uuid.New()
+		testutil.NoErr(t, db.Create(&models.GuestRecord{ID: gid, WeddingID: wid, Name: "Ann", Pax: 1, Notes: long}).Error)
+
+		err := svc.CheckIn(ctx, gid, wid, note)
+		if !IsRuleError(err) {
+			t.Fatalf("checkin err = %v, want a rule error", err)
+		}
+
+		var got models.GuestRecord
+		testutil.NoErr(t, db.First(&got, "id = ?", gid).Error)
+		if got.Notes != long || got.CheckedInAt != nil {
+			t.Fatalf("rejected check-in wrote the row: notes changed=%v checkedIn=%v", got.Notes != long, got.CheckedInAt != nil)
+		}
+	})
+
+	t.Run("offline sync op", func(t *testing.T) {
+		svc, db, wid := newGuestSyncService(t)
+		gid := uuid.New()
+		testutil.NoErr(t, db.Create(&models.GuestRecord{ID: gid, WeddingID: wid, Name: "Ann", Pax: 1, Notes: long}).Error)
+
+		res, err := svc.Sync(ctx, wid, []SyncMutation{{
+			MutationID:      "m1",
+			Op:              SyncOpCheckIn,
+			GuestID:         gid.String(),
+			ClientUpdatedAt: time.Now(),
+			Payload:         &SyncPayload{Notes: note},
+		}})
+		testutil.NoErr(t, err)
+		if len(res) != 1 || res[0].Status != "failed" || res[0].Retryable {
+			t.Fatalf("sync result = %+v, want failed and not retryable", res)
+		}
+		if !strings.Contains(res[0].Reason, "Notes") {
+			t.Fatalf("reason = %q, want the notes cap message", res[0].Reason)
 		}
 	})
 }

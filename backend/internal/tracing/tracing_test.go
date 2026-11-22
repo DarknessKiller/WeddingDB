@@ -333,3 +333,45 @@ func TestMiddlewareSkipsAuthBodies(t *testing.T) {
 		t.Errorf("non-auth span recorded %d body events, want 2", n)
 	}
 }
+
+// flushSpy records the calls SSE handlers make through the wrapper chain.
+type flushSpy struct {
+	*httptest.ResponseRecorder
+	flushed     bool
+	deadlineSet bool
+	deadline    time.Time
+}
+
+func (f *flushSpy) Flush() {
+	f.flushed = true
+	f.ResponseRecorder.Flush()
+}
+
+func (f *flushSpy) SetWriteDeadline(deadline time.Time) error {
+	f.deadlineSet = true
+	f.deadline = deadline
+	return nil
+}
+
+// The recorder sits between timingWriter and the real writer, so it must pass
+// Flush and ResponseController discovery through or SSE stops streaming.
+func TestRecorderPassesFlushAndDeadline(t *testing.T) {
+	spy := &flushSpy{ResponseRecorder: httptest.NewRecorder()}
+	tw := &timingWriter{ResponseWriter: &recorder{ResponseWriter: spy}, start: time.Now()}
+
+	tw.Flush()
+	if !spy.flushed {
+		t.Fatal("Flush did not reach the underlying writer")
+	}
+
+	if err := http.NewResponseController(tw).SetWriteDeadline(time.Time{}); err != nil {
+		t.Fatalf("SetWriteDeadline through wrappers: %v", err)
+	}
+	if !spy.deadlineSet || !spy.deadline.IsZero() {
+		t.Fatalf("deadline not cleared on underlying writer: set=%v deadline=%v", spy.deadlineSet, spy.deadline)
+	}
+
+	if err := http.NewResponseController(tw).Flush(); err != nil {
+		t.Fatalf("ResponseController could not find the underlying Flusher: %v", err)
+	}
+}

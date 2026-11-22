@@ -20,7 +20,7 @@ func TestSSEHub_SubscribeUnsubscribe(t *testing.T) {
 	}
 
 	wid := uuid.New()
-	client, err := hub.Subscribe(wid)
+	client, err := hub.Subscribe(wid, uuid.New())
 	testutil.NoErr(t, err)
 
 	if client == nil {
@@ -56,9 +56,9 @@ func TestSSEHub_CloseClients(t *testing.T) {
 		clients: make(map[uuid.UUID]map[string]*SSEClient),
 		ctx:     context.Background(),
 	}
-	first, err := hub.Subscribe(uuid.New())
+	first, err := hub.Subscribe(uuid.New(), uuid.New())
 	testutil.NoErr(t, err)
-	second, err := hub.Subscribe(uuid.New())
+	second, err := hub.Subscribe(uuid.New(), uuid.New())
 	testutil.NoErr(t, err)
 
 	hub.CloseClients()
@@ -88,7 +88,7 @@ func TestSSEHub_FanOut(t *testing.T) {
 	const numClients = 3
 	clients := make([]*SSEClient, numClients)
 	for i := range numClients {
-		c, err := hub.Subscribe(wid)
+		c, err := hub.Subscribe(wid, uuid.New())
 		testutil.NoErr(t, err)
 		clients[i] = c
 	}
@@ -151,7 +151,7 @@ func TestSSEHub_BufferFull(t *testing.T) {
 	}
 
 	wid := uuid.New()
-	client, err := hub.Subscribe(wid)
+	client, err := hub.Subscribe(wid, uuid.New())
 	testutil.NoErr(t, err)
 
 	// Fill the buffer (capacity 64).
@@ -191,9 +191,9 @@ func TestSSEHub_MultipleWeddings(t *testing.T) {
 
 	wid1 := uuid.New()
 	wid2 := uuid.New()
-	client1, err := hub.Subscribe(wid1)
+	client1, err := hub.Subscribe(wid1, uuid.New())
 	testutil.NoErr(t, err)
-	client2, err := hub.Subscribe(wid2)
+	client2, err := hub.Subscribe(wid2, uuid.New())
 	testutil.NoErr(t, err)
 
 	// Send event to wedding 1.
@@ -356,10 +356,26 @@ func TestSSEHub_SubscribeCap(t *testing.T) {
 	hub := &SSEHub{clients: make(map[uuid.UUID]map[string]*SSEClient), ctx: context.Background()}
 	wid := uuid.New()
 	for range maxSSEClientsPerWedding {
-		_, err := hub.Subscribe(wid)
+		_, err := hub.Subscribe(wid, uuid.New())
 		testutil.NoErr(t, err)
 	}
-	if _, err := hub.Subscribe(wid); !errors.Is(err, ErrTooManyStreams) {
+	if _, err := hub.Subscribe(wid, uuid.New()); !errors.Is(err, ErrTooManyStreams) {
 		t.Fatalf("expected ErrTooManyStreams, got %v", err)
+	}
+}
+
+// One authenticated user must not be able to take every stream in the wedding.
+func TestSSEHub_SubscribePerUserCap(t *testing.T) {
+	hub := &SSEHub{clients: make(map[uuid.UUID]map[string]*SSEClient), ctx: context.Background()}
+	wid, user := uuid.New(), uuid.New()
+	for range maxSSEClientsPerUser {
+		_, err := hub.Subscribe(wid, user)
+		testutil.NoErr(t, err)
+	}
+	if _, err := hub.Subscribe(wid, user); !errors.Is(err, ErrTooManyStreams) {
+		t.Fatalf("expected ErrTooManyStreams for the same user, got %v", err)
+	}
+	if _, err := hub.Subscribe(wid, uuid.New()); err != nil {
+		t.Fatalf("another user must still connect: %v", err)
 	}
 }

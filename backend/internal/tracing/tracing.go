@@ -212,6 +212,18 @@ func (r *recorder) Write(b []byte) (int, error) {
 	return r.ResponseWriter.Write(b)
 }
 
+// Flush keeps SSE streams flushing through the wrapper: timingWriter asserts
+// its own writer is an http.Flusher, and this recorder sits beneath it.
+func (r *recorder) Flush() {
+	if f, ok := r.ResponseWriter.(http.Flusher); ok {
+		f.Flush()
+	}
+}
+
+// Unwrap lets http.ResponseController (SetWriteDeadline, Flush) reach the
+// underlying writer through the wrapper chain.
+func (r *recorder) Unwrap() http.ResponseWriter { return r.ResponseWriter }
+
 // GormPlugin creates a "gorm.query" span per DB query. Statement text is only
 // recorded when OTEL_LOG_SQL=all.
 type GormPlugin struct {

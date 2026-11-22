@@ -156,13 +156,19 @@ func TestSyncUpdate_KeepsNewerEditMadeWhileWaitingForLock_Postgres(t *testing.T)
 	lockTx := db.Begin()
 	testutil.NoErr(t, lockTx.Clauses(clause.Locking{Strength: "UPDATE"}).Select("id").Where("id = ?", gid).First(&models.GuestRecord{}).Error)
 
-	done := make(chan []SyncResult, 1)
+	done := make(chan struct {
+		res []SyncResult
+		err error
+	}, 1)
 	go func() {
-		res, _ := svc.Sync(t.Context(), wid, []SyncMutation{{
+		res, err := svc.Sync(t.Context(), wid, []SyncMutation{{
 			MutationID: uuid.NewString(), Op: SyncOpUpdate, GuestID: gid.String(),
 			ClientUpdatedAt: base.Add(time.Second), Payload: &SyncPayload{Name: "Old Offline"},
 		}})
-		done <- res
+		done <- struct {
+			res []SyncResult
+			err error
+		}{res, err}
 	}()
 	time.Sleep(100 * time.Millisecond) // let the sync request block on the row lock
 
@@ -171,7 +177,9 @@ func TestSyncUpdate_KeepsNewerEditMadeWhileWaitingForLock_Postgres(t *testing.T)
 		Updates(map[string]any{"name": "Server New", "updated_at": base.Add(time.Minute)}).Error)
 	testutil.NoErr(t, lockTx.Commit().Error)
 
-	res := <-done
+	out := <-done
+	testutil.NoErr(t, out.err)
+	res := out.res
 	if res[0].Status != "skipped" {
 		t.Fatalf("status = %q, want skipped (sync op is older than the committed edit)", res[0].Status)
 	}
@@ -197,13 +205,19 @@ func TestSyncCheckIn_KeepsConcurrentSeatAssignment_Postgres(t *testing.T) {
 	lockTx := db.Begin()
 	testutil.NoErr(t, lockTx.Clauses(clause.Locking{Strength: "UPDATE"}).Select("id").Where("id = ?", gid).First(&models.GuestRecord{}).Error)
 
-	done := make(chan []SyncResult, 1)
+	done := make(chan struct {
+		res []SyncResult
+		err error
+	}, 1)
 	go func() {
-		res, _ := svc.Sync(t.Context(), wid, []SyncMutation{{
+		res, err := svc.Sync(t.Context(), wid, []SyncMutation{{
 			MutationID: uuid.NewString(), Op: SyncOpCheckIn, GuestID: gid.String(),
 			ClientUpdatedAt: base.Add(time.Second),
 		}})
-		done <- res
+		done <- struct {
+			res []SyncResult
+			err error
+		}{res, err}
 	}()
 	time.Sleep(100 * time.Millisecond) // let the check-in block on the row lock
 
@@ -212,7 +226,9 @@ func TestSyncCheckIn_KeepsConcurrentSeatAssignment_Postgres(t *testing.T) {
 		Updates(map[string]any{"table_id": table2, "seat_num": seat2, "updated_at": base}).Error)
 	testutil.NoErr(t, lockTx.Commit().Error)
 
-	res := <-done
+	out := <-done
+	testutil.NoErr(t, out.err)
+	res := out.res
 	if res[0].Status != "applied" {
 		t.Fatalf("status = %q, want applied", res[0].Status)
 	}

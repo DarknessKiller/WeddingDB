@@ -25,9 +25,9 @@ func (r *LayoutRepo) ElementsByWedding(ctx context.Context, weddingID uuid.UUID)
 	return els, err
 }
 
-// SaveLayout writes the layout and returns the new layout version. A non-nil
+// SaveLayout writes the layout and returns the new layout version. The given
 // version must equal the stored one or ErrLayoutVersionConflict is returned;
-// nil skips the check (older clients).
+// nil counts as a conflict so no call can full-replace unchecked.
 func (r *LayoutRepo) SaveLayout(
 	ctx context.Context,
 	weddingID uuid.UUID,
@@ -49,7 +49,7 @@ func (r *LayoutRepo) SaveLayout(
 		if err := q.Select("id", "layout_version").Where("id = ?", weddingID).First(&w).Error; err != nil {
 			return err
 		}
-		if version != nil && *version != w.LayoutVersion {
+		if version == nil || *version != w.LayoutVersion {
 			return ErrLayoutVersionConflict
 		}
 		newVersion = w.LayoutVersion + 1

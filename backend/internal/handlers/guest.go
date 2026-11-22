@@ -149,7 +149,9 @@ func (h *GuestHandler) Create(c fuego.ContextWithBody[GuestCreateRequest]) (any,
 		if errors.Is(err, services.ErrGuestIDTaken) {
 			return nil, fuego.ConflictError{Title: "Guest ID already in use"}
 		}
-		if errors.Is(err, services.ErrGuestCapExceeded) || seated {
+		// Only rule violations are the client's to see. Any other failure keeps
+		// its raw text out of the response and goes to the sanitized 500 path.
+		if errors.Is(err, services.ErrGuestCapExceeded) || (seated && services.IsRuleError(err)) {
 			return nil, fuego.BadRequestError{Title: err.Error()}
 		}
 		return nil, err
@@ -221,7 +223,7 @@ func (h *GuestHandler) Update(c fuego.ContextWithBody[GuestCreateRequest]) (any,
 	}
 	// Without the row version loaded by the edit form there is no way to detect
 	// a concurrent write, and this endpoint would silently revert it.
-	if body.UpdatedAt == nil {
+	if body.UpdatedAt == nil || body.UpdatedAt.IsZero() {
 		return nil, fuego.BadRequestError{Title: "updatedAt is required"}
 	}
 	guest.UpdatedAt = *body.UpdatedAt
@@ -294,6 +296,9 @@ func (h *GuestHandler) CheckIn(c fuego.ContextWithBody[CheckInRequest]) (any, er
 		if errors.Is(err, services.ErrGuestNotFound) {
 			return nil, fuego.NotFoundError{Title: "Guest not found"}
 		}
+		if services.IsRuleError(err) {
+			return nil, fuego.BadRequestError{Title: err.Error()}
+		}
 		return nil, err
 	}
 	guest, err := h.guestService.Get(ctx, id, wid)
@@ -336,13 +341,22 @@ func (h *GuestHandler) CheckOut(c fuego.ContextWithBody[CheckOutRequest]) (any, 
 	return nil, nil
 }
 
+// truncateSearchQuery caps a search term at 100 runes for every search
+// endpoint. Truncate by character, not byte, so a multi-byte name is never split.
+func truncateSearchQuery(query string) string {
+	if r := []rune(query); len(r) > 100 {
+		return string(r[:100])
+	}
+	return query
+}
+
 func (h *GuestHandler) Search(c fuego.ContextNoBody) (any, error) {
 	ctx := c.Context()
 	wid, err := DecodeWID(c)
 	if err != nil {
 		return nil, fuego.BadRequestError{Title: "Invalid wedding ID"}
 	}
-	query := c.QueryParam("q")
+	query := truncateSearchQuery(c.QueryParam("q"))
 	guests, err := h.guestService.Search(ctx, wid, query)
 	if err != nil {
 		return nil, err

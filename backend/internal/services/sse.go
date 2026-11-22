@@ -44,6 +44,7 @@ type GuestEventData struct {
 type SSEClient struct {
 	ID        string
 	WeddingID uuid.UUID
+	UserID    uuid.UUID
 	Chan      chan []byte
 	Done      chan struct{}
 	doneOnce  sync.Once
@@ -114,22 +115,31 @@ func (h *SSEHub) subscribeRedis() {
 	}
 }
 
-const maxSSEClientsPerWedding = 100
+const (
+	maxSSEClientsPerWedding = 100
+	maxSSEClientsPerUser    = 5
+)
 
-// ErrTooManyStreams is returned when a wedding already holds its maximum
-// number of open event streams.
-var ErrTooManyStreams = errors.New("too many SSE streams for this wedding")
+// ErrTooManyStreams is returned when a wedding or one user already holds the
+// maximum number of open event streams.
+var ErrTooManyStreams = errors.New("too many SSE streams")
 
 // Subscribe registers a new SSE client for a wedding, refusing once the
-// per-wedding cap is reached so one token holder cannot exhaust memory or
-// file descriptors.
-func (h *SSEHub) Subscribe(weddingID uuid.UUID) (*SSEClient, error) {
+// per-wedding or per-user cap is reached so one token holder cannot exhaust
+// memory or file descriptors.
+func (h *SSEHub) Subscribe(weddingID, userID uuid.UUID) (*SSEClient, error) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
-	if len(h.clients[weddingID]) >= maxSSEClientsPerWedding {
+	userStreams := 0
+	for _, client := range h.clients[weddingID] {
+		if client.UserID == userID {
+			userStreams++
+		}
+	}
+	if len(h.clients[weddingID]) >= maxSSEClientsPerWedding || userStreams >= maxSSEClientsPerUser {
 		return nil, ErrTooManyStreams
 	}
-	client := &SSEClient{ID: uuid.New().String(), WeddingID: weddingID, Chan: make(chan []byte, 64), Done: make(chan struct{})}
+	client := &SSEClient{ID: uuid.New().String(), WeddingID: weddingID, UserID: userID, Chan: make(chan []byte, 64), Done: make(chan struct{})}
 	if h.clients[weddingID] == nil {
 		h.clients[weddingID] = make(map[string]*SSEClient)
 	}

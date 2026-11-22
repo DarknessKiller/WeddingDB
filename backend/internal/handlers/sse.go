@@ -58,6 +58,12 @@ func (h *SSEHandler) StreamHandler() http.HandlerFunc {
 		w.Header().Set("Connection", "keep-alive")
 		w.Header().Set("X-Accel-Buffering", "no")
 
+		// The server's WriteTimeout applies to the whole response and would end
+		// every stream at 60s. Clear it for this response only before writing.
+		if err := http.NewResponseController(w).SetWriteDeadline(time.Time{}); err != nil {
+			slog.Warn("SSE: clearing write deadline failed", "wedding", wid, "err", err)
+		}
+
 		flusher, ok := w.(http.Flusher)
 		if !ok {
 			http.Error(w, "streaming not supported", http.StatusInternalServerError)
@@ -65,7 +71,7 @@ func (h *SSEHandler) StreamHandler() http.HandlerFunc {
 		}
 
 		// Subscribe to wedding events.
-		client, err := h.sseHub.Subscribe(wid)
+		client, err := h.sseHub.Subscribe(wid, claims.AdminID)
 		if err != nil {
 			http.Error(w, `{"error":"Too many event streams"}`, http.StatusServiceUnavailable)
 			return

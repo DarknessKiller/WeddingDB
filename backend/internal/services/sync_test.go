@@ -70,6 +70,44 @@ func newGuestSyncService(t *testing.T) (*GuestService, *gorm.DB, uuid.UUID) {
 	return svc, db, wid
 }
 
+// A non-rule failure (database, network) must not put its raw text in the
+// per-item reason; the detail goes to the log.
+func TestSync_NonRuleFailureHidesDetail(t *testing.T) {
+	svc, db, wid := newGuestSyncService(t)
+	testutil.NoErr(t, db.Exec("DROP TABLE guest_records").Error)
+
+	res, err := svc.Sync(context.Background(), wid, []SyncMutation{{
+		MutationID:      "m1",
+		Op:              SyncOpUpdate,
+		GuestID:         uuid.New().String(),
+		ClientUpdatedAt: time.Now(),
+		Payload:         &SyncPayload{Name: "Ann", Pax: 1},
+	}})
+	testutil.NoErr(t, err)
+	if len(res) != 1 || res[0].Status != "failed" || !res[0].Retryable {
+		t.Fatalf("result = %+v, want a retryable failure", res)
+	}
+	if res[0].Reason != "internal error" {
+		t.Fatalf("reason = %q, want the generic text", res[0].Reason)
+	}
+}
+
+// The sync path must reject the nil UUID like the online create does.
+func TestSync_RejectsNilGuestID(t *testing.T) {
+	svc, _, wid := newGuestSyncService(t)
+	res, err := svc.Sync(context.Background(), wid, []SyncMutation{{
+		MutationID:      "nil",
+		Op:              SyncOpUpdate,
+		GuestID:         uuid.Nil.String(),
+		ClientUpdatedAt: time.Now(),
+		Payload:         &SyncPayload{Name: "Ann", Pax: 1},
+	}})
+	testutil.NoErr(t, err)
+	if len(res) != 1 || res[0].Status != "skipped" || res[0].Reason != "invalid guestId" {
+		t.Fatalf("result = %+v, want skipped with invalid guestId", res)
+	}
+}
+
 func TestSync_NewestWins(t *testing.T) {
 	svc, db, wid := newGuestSyncService(t)
 	ctx := context.Background()

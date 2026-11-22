@@ -49,8 +49,8 @@ func TestLayoutSave_Version(t *testing.T) {
 	}{
 		{"current version saves", `{"version":0,"hallWidth":900,"hallHeight":900,` + table + `}`, http.StatusOK, 1},
 		{"stale version conflicts", `{"version":0,"hallWidth":900,"hallHeight":900,` + table + `}`, http.StatusConflict, 1},
-		{"no version saves", `{"hallWidth":900,"hallHeight":900,` + table + `}`, http.StatusOK, 2},
-		{"capacity below seated", `{"version":2,"hallWidth":900,"hallHeight":900,"tables":[{"id":"` + tid.String() + `","x":1,"y":1,"capacity":4}]}`, http.StatusBadRequest, 2},
+		{"no version rejected", `{"hallWidth":900,"hallHeight":900,` + table + `}`, http.StatusBadRequest, 1},
+		{"capacity below seated", `{"version":1,"hallWidth":900,"hallHeight":900,"tables":[{"id":"` + tid.String() + `","x":1,"y":1,"capacity":4}]}`, http.StatusBadRequest, 1},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
