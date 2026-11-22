@@ -2,6 +2,7 @@ package repository
 
 import (
 	"context"
+	"fmt"
 
 	"weddingdb/internal/models"
 
@@ -32,6 +33,24 @@ func (r *TableRepo) FindByID(ctx context.Context, id, weddingID uuid.UUID) (*mod
 
 func (r *TableRepo) Create(ctx context.Context, t *models.BanquetTable) error {
 	return r.db.WithContext(ctx).Create(t).Error
+}
+
+// CheckCapacity refuses a capacity below the last occupied seat, so shrinking a
+// table cannot strand a guest who is already seated past it. The caller holds
+// the table row lock inside its transaction.
+func (r *TableRepo) CheckCapacity(ctx context.Context, weddingID, tableID uuid.UUID, capacity int) error {
+	row := r.db.WithContext(ctx).Model(&models.GuestRecord{}).
+		Select("COALESCE(MAX(seat_num + pax - 1), 0)").
+		Where("wedding_id = ? AND table_id = ? AND seat_num IS NOT NULL", weddingID, tableID).
+		Row()
+	var highest int
+	if err := row.Scan(&highest); err != nil {
+		return err
+	}
+	if highest > capacity {
+		return fmt.Errorf("%w: seats up to %d are taken", ErrCapacityBelowSeated, highest)
+	}
+	return nil
 }
 
 func (r *TableRepo) Update(ctx context.Context, t *models.BanquetTable) error {

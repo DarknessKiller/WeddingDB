@@ -11,4 +11,8 @@ var (
 
 	// ErrLastAdmin is returned when a delete or demotion would leave no admin.
 	ErrLastAdmin = errors.New("cannot remove the last admin")
+
+	// ErrCapacityBelowSeated refuses a table shrink that would strand a guest
+	// already seated past the new capacity.
+	ErrCapacityBelowSeated = errors.New("capacity is below an already seated guest")
 )
