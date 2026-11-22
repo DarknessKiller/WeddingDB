@@ -16,6 +16,13 @@ Files: all of `backend/` and `frontend/`.
 - Keep diffs small. No unrequested refactors, features, or new dependencies.
 - Secrets live in env or a vault, never in code or logs.
 - Handle every error (see Go errors below). Nothing vanishes silently.
+- One shared function per shape conversion. Backend: `guestToEventData` builds SSE
+  guest data, `SSEHub.publishGuest` publishes it, `toPublicGuests` builds public
+  rows. Frontend: `frontend/src/lib/utils/guestTransform.ts` (`toGuest`,
+  `reviveGuest`, `applyGuestPatch`) is the only API-row-to-`Guest` mapping. Do not
+  map fields by hand in a page, store, or API wrapper.
+- Measure and truncate user text by runes (Go) or code points, never bytes. A byte
+  cut can split a CJK character and the database rejects it.
 
 ## Go
 
@@ -29,11 +36,9 @@ Files: `backend/**/*.go`.
 
 ### Go errors
 
-- Sentinel errors live in an `errors.go` file in the package that owns them.
-  `backend/internal/services/errors.go` exists. `backend/internal/repository/errors.go`
-  is created with the first repository sentinel. Existing repository sentinels
-  (`ErrInvalidCursor`, `ErrAlreadyCheckedIn`, `ErrTokenClaimed`) move there when
-  their file changes. Each message is written once. No `errors.New` next to the
+- Sentinel errors live in an `errors.go` file in the package that owns them:
+  `backend/internal/services/errors.go` and `backend/internal/repository/errors.go`.
+  Each message is written once. No `errors.New` next to the
   code that returns it, and no duplicate sentinel in another package. The handler
   maps a sentinel to a typed `fuego` error.
 - Wrap with context when the error crosses a layer:
@@ -60,6 +65,14 @@ Files: `backend/internal/{handlers,services,repository,models,utils}`.
   `context.Background()` belongs in bootstrap and detached workers.
 - `internal/utils` stays pure: no db, no http, no shared state. Model methods
   stay pure too: JSON marshaling and derivation.
+- Lock order: a write that touches guests or tables locks the wedding row first,
+  then the table row (`lockWedding`, `lockTable` in `services`). Another order
+  can deadlock against guest writes.
+- A check-then-write guard (last admin, guest cap, seat overlap) runs the check
+  and the write in one transaction that holds a row lock. A count outside the
+  write's transaction races.
+- A missing row on a lookup by id maps to the package's not-found sentinel and
+  HTTP 404. It never returns a zero value with a nil error.
 
 ### Go tests
 
@@ -68,6 +81,9 @@ Files: `backend/internal/{handlers,services,repository,models,utils}`.
 - No new test dependency.
 - A test that asserts an invariant carries the invariant's name. A test that
   disagrees with an invariant is a bug in the test.
+- Not required, by owner decision: a concurrency test for the SSE keepalive token
+  recheck, and a concurrent (Postgres) test for the last-admin lock. The sequential
+  `TestAdminRepo_LastAdminGuard` is enough. Do not report their absence as a gap.
 
 ### Go bitwise ban
 
@@ -117,13 +133,17 @@ Files: `backend/internal/config/{config,server}.go`,
 - Upload rejects non-admin callers without wedding scope before parsing or
   writing files. Wedding authorization follows the existing JWT scope;
   admins retain cross-wedding access. SSE admits at most 100 concurrent streams
-  per wedding across the deployment using atomic Redis leases; overflow returns
+  per wedding and 5 per user across the deployment using atomic Redis leases;
+  overflow returns
   HTTP 429 and Redis admission errors return HTTP 503 before stream headers.
   Disconnect releases its lease, crashed servers' leases expire, and active
   streams renew leases. Failed or expired renewal closes the stream; write
   deadlines bound blocked writes to the locally confirmed lease lifetime. Other
   weddings retain independent capacity. Redis must preserve lease keys and its
-  clock must not jump forward while streams are active.
+  clock must not jump forward while streams are active. Each keepalive tick
+  re-runs `ValidateToken`; a rejected token closes the stream, an outage keeps it.
+- Uploads have a per-file limit (5 MiB) and no rate limit or disk quota, by
+  owner decision.
 
 ### Verify
 
@@ -132,7 +152,7 @@ Run the Go verify block above. Also run the focused security regressions with
 integration test executes rather than skips:
 
 ```sh
-cd backend && CGO_ENABLED=1 go test -race -p 1 ./internal/config ./internal/handlers ./internal/services -run 'TestLoadEnvJWTSecretLength|TestUntypedErrorsAreGeneric|TestRegisterRoutesJSONBodyLimit|TestNewFuegoServer_TimeoutsForLongTransfers|TestUpload_|TestGenerateCSV_FormulaInjection|TestSSEHub_ConcurrentWeddingLimit|TestSSEWeddingStreamLimit|TestRegisteredGuestSeatDatabaseErrorIsGeneric|TestSyncDatabaseErrorIsGeneric' -count=1
+cd backend && CGO_ENABLED=1 go test -race -p 1 ./internal/config ./internal/handlers ./internal/services -run 'TestLoadEnvJWTSecretLength|TestUntypedErrorsAreGeneric|TestRegisterRoutesJSONBodyLimit|TestNewFuegoServer_TimeoutsForLongTransfers|TestUpload_|TestGenerateCSV_FormulaInjection|TestSSEHub_ConcurrentWeddingLimit|TestSSEHub_PerUserLimit|TestSSEWeddingStreamLimit|TestRegisteredGuestSeatDatabaseErrorIsGeneric|TestSyncDatabaseErrorIsGeneric' -count=1
 cd backend && TEST_REDIS_ADDR=127.0.0.1:6379 CGO_ENABLED=1 go test -race ./internal/services -run '^TestSSEHub_(DistributedWeddingLimit|RenewalFailureClosesStream)$' -count=1
 ```
 
@@ -151,6 +171,12 @@ Files: `frontend/src/lib/api/*.ts`, `frontend/src/routes/[wid]/**/+page.svelte`.
   selector, prev/next buttons, or a "load more" button.
 - Reference: `listGuests` and `fetchAllGuests` in `frontend/src/lib/api/guests.ts`.
   Find other callers with CodeGraph.
+- Guest store writes go through `upsertGuest` and `removeGuest` in
+  `frontend/src/lib/stores/guestEvents.ts`, so `guestList`, `guestMap`, and table
+  occupancy stay in step.
+- Dialogs use `role="dialog"`, `aria-modal="true"`, an accessible label, Escape to
+  close, `use:trapFocus`, and a labeled close button. A clickable row also has a
+  real button inside it for keyboard users.
 
 ### Verify
 
@@ -200,7 +226,11 @@ Design record: [ADR 001](docs/adr/001-offline-sync.md) and
 - Mutation ops: `create`, `update`, `delete`, `checkin`, `checkout`.
 - `localStorage` key `offline_queue_{wid}`: a FIFO of `QueuedMutation`, capped
   at 500. A full queue drops the oldest mutation with a toast.
-- `localStorage` key `offline_cache_{wid}`: the last complete guest list.
+- `localStorage` key `offline_cache_{wid}`: the last complete staff guest list,
+  stored as app-shaped `Guest` objects. Read it back with `reviveGuest`, never
+  `toGuest`. The kiosk uses its own key, `kiosk_cache_{wid}`.
+- Sync posts at most 100 mutations per request, so a batch stays under the 1 MiB
+  body limit.
 - A mutation carries `clientUpdatedAt` and `baseUpdatedAt`.
 - Sync runs on `online`, visibility change, mount, and manual retry. The queue
   drains before the guest list is reseeded.
@@ -262,9 +292,12 @@ list does not cover is a question for the owner, not a bug to fix.
    mutation without retry. Test: `TestSync_UpdateValidatesLikeOnline`.
 8. **One bad mutation fails alone.** A body item that cannot be decoded is
    answered `failed` with `retryable: false`. The rest of the batch applies.
-   Target test: `TestSync_MalformedMutationFailsAlone` (not written yet).
+   Test: `TestSync_MalformedMutationFailsAlone`.
 9. **Queued edits follow their owner.** A different account logging in on the
    device replays every queue first, then asks before discarding what is left.
+   `claimQueues` runs after wedding selection. The owner is the user id (JWT
+   `sub`) at `offline_owner`; the prompt names the previous account by its masked
+   email (`j***@x.io`) from `offline_owner_label`. Never store a plain email.
    Test: `a different user logging in drops the previous user edits` (storage test).
 
 ### Data flow
@@ -287,13 +320,16 @@ list does not cover is a question for the owner, not a bug to fix.
   then `cacheGuests(wid, list)`.
 - Ranking in `frontend/src/lib/utils/guestSearch.ts`: exact name, name prefix,
   pinyin prefix, name substring, pinyin substring.
-- A failed load falls back to `offline_cache_{wid}`. The UI labels it as a cache result.
-- Attendance status is staff-only. Public responses never include it.
+- A failed kiosk load falls back to `kiosk_cache_{wid}`. The UI labels it as a cache result.
+- Attendance status and RSVP are staff-only. Public responses never include
+  `rsvp`, `checkedInAt`, `notes`, or `email`. Test: `TestPublicGuestJSONOmitsPrivateFields`.
 - `namePinyin` is hidden on the admin model and sent as `pinyin` in guest JSON.
 
 ### Edge cases
 
-- Clock skew: `baseUpdatedAt` detects a stale read. Future client clocks are clamped.
+- Clock skew: future client clocks are clamped. `enqueue` stamps `baseUpdatedAt`
+  with the guest `updatedAt` the device last saw (null for a create). The server
+  accepts it but per-column LWW decides; it does not reject stale reads today.
 - Refresh fails offline: the queue is kept and the header shows the queued count.
   Access tokens are still required to sync.
 - SSE echo of your own sync: upserting the same guest is harmless.
@@ -327,12 +363,25 @@ Files: `backend/internal/services/auth_service.go`, `backend/internal/middleware
   The loser gets the successor token.
 - A consumed refresh token returns the same successor for 60 seconds
   (`refreshGraceWindow`). After that it is rejected as replayed. The family is not revoked.
-- Consumed rows are removed by `TokenRepo.DeleteExpired` after `expires_at`.
+- Expired refresh token rows are removed by the boot-time cleanup in
+  `backend/internal/bootstrap/bootstrap.go`. Rows pile up between restarts.
+- Wedding selection (`POST /api/auth/select-wedding`, body `weddingId` and
+  `refreshToken`) scopes only the caller's refresh token. Other sessions of the
+  same user keep their scope.
 
 ### Rules
 
 - Middleware is fail-closed. A Redis error on the version or blacklist check rejects
-  the request with "service temporarily unavailable".
+  the request with HTTP 503 "service temporarily unavailable".
+- Token rejections (bad, expired, revoked, blacklisted, version mismatch, replayed,
+  missing row) wrap `services.ErrTokenRejected` and return 401 with a fixed title.
+  Any other Redis or DB error returns 503, never 401, so an outage does not log
+  staff out. `middleware.WriteAuthError` does the mapping.
+- The frontend has one refresh path: `refreshIfNeeded` in
+  `frontend/src/lib/api/client.ts`. Only a 401 from refresh clears auth; a 503
+  keeps the session. SSE reconnects call it before retrying.
+- Tokens live in memory. Never navigate with `window.location.href` while signed
+  in; use `goto`.
 - Logout is best-effort for the blacklist. A Redis error does not block logout. The
   access token lives until its expiry, at most 15 minutes.
 - Revoke returns 500 on a Redis error. The admin retries.
@@ -350,7 +399,7 @@ Files: `backend/internal/services/auth_service.go`, `backend/internal/middleware
 ### Verify
 
 ```sh
-cd backend && CGO_ENABLED=1 go test -race -p 1 ./internal/services/ ./internal/handlers/
+cd backend && CGO_ENABLED=1 go test -race -p 1 ./internal/services/ ./internal/handlers/ ./internal/middleware/ ./internal/repository/
 ```
 
 ## Multi-tab and multi-device
