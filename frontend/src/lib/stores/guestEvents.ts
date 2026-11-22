@@ -95,7 +95,14 @@ export async function refreshGuests(fetchFn: () => Promise<Guest[]>, wid = get(w
  * the wedding the fetch was for, not the one selected when it finished.
  */
 export function seedGuests(guests: Guest[], wid = get(weddingId)) {
-	if (wid !== get(weddingId)) return;
+	if (wid !== get(weddingId)) {
+		// A load that started for another wedding: drop the rows, and close the
+		// syncing window now. Nothing will seed it, and leaving it open would queue
+		// every later event forever.
+		syncing = false;
+		queuedEvents = [];
+		return;
+	}
 	guestList.set(guests);
 	const map = new Map<string, Guest>();
 	for (const g of guests) {

@@ -186,6 +186,18 @@ describe('stale wedding data', () => {
 		} finally { vi.unstubAllGlobals(); }
 	});
 
+	it('a dropped result closes the syncing window so live events still apply', async () => {
+		const { initializeSSE, seedGuests, guestList } = await freshModule();
+		initializeSSE(() => Promise.resolve([]));
+		// Late rows for the wedding we already left.
+		seedGuests([makeGuest({ id: 'late' })], 'w0');
+
+		// A queued-and-never-replayed sync window would swallow this event.
+		sseState.eventHandler!(makeEvent({ type: 'create', guest: { id: 'g9', name: 'Zoe', email: '', pax: 1, rsvp: 'confirmed', isVip: false, notes: '', dietary: [], tableId: null, seatNum: null, checkedInAt: null, angbaoAmt: null, giftItem: null } }));
+
+		expect(get(guestList).map(g => g.id)).toEqual(['g9']);
+	});
+
 	it('clearGuestStores empties the stores and the selected guest', async () => {
 		const { seedGuests, clearGuestStores, guestList, guestMap, tableOccupancy } = await freshModule();
 		seedGuests([makeGuest({ id: 'g1', tableId: 't1', pax: 2 })]);
