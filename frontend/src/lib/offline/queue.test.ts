@@ -130,3 +130,18 @@ describe('logout data', () => {
 		expect(localStorage.getItem('offline_owner')).toBe('user-b');
 	});
 });
+
+describe('guest cache', () => {
+	it('drops guest data older than the cache TTL', async () => {
+		const { cacheGuests, loadCachedGuests } = await import('./queue');
+		cacheGuests('w1', [{ id: 'g1', name: 'Guest' }]);
+		expect(loadCachedGuests('w1')).toHaveLength(1);
+
+		const entry = JSON.parse(localStorage.getItem('offline_cache_w1')!);
+		entry.savedAt = Date.now() - 13 * 60 * 60 * 1000;
+		localStorage.setItem('offline_cache_w1', JSON.stringify(entry));
+
+		expect(loadCachedGuests('w1')).toBeNull();
+		expect(localStorage.getItem('offline_cache_w1')).toBeNull();
+	});
+});

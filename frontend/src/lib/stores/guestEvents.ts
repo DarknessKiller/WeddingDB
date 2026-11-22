@@ -8,6 +8,11 @@ import type { GuestResponse } from '#lib/api/guests.ts';
 // All guests for the current wedding, kept in sync via SSE.
 export const guestList = writable<Guest[]>([]);
 
+// Whether the initial snapshot has landed and whether the last refresh failed.
+// The guests page renders from this instead of assuming an empty list is
+// emptier than the server's.
+export const guestSync = writable<{ loading: boolean; error: string | null }>({ loading: true, error: null });
+
 // Table occupancy: tableId -> total pax seated. Derived so every guestList
 // write (seed, SSE, optimistic offline patch) keeps it current.
 export const tableOccupancy = derived(guestList, (guests) => {
@@ -45,8 +50,10 @@ export function initializeSSE(onResync?: () => Promise<Guest[]>): (() => void) |
 	const client = connectSSE(wid);
 	const unsubscribeStatus = client.onStatus((status, reconnect) => {
 		if (status === 'connected' && reconnect && resync) {
-			// On failure keep the current list; refreshGuests replays queued events.
-			refreshGuests(resync).catch(() => {});
+			// Show the failure instead of keeping a silently stale list.
+			refreshGuests(resync).catch((e: unknown) => {
+				guestSync.set({ loading: false, error: e instanceof Error ? e.message : 'Failed to refresh guests' });
+			});
 		}
 	});
 	const unsubscribe = client.onEvent((event: GuestEvent) => {
@@ -79,11 +86,13 @@ export function refreshGuests(fetchFn: () => Promise<Guest[]>): Promise<Guest[]>
 
 async function runRefresh(fetchFn: () => Promise<Guest[]>): Promise<Guest[]> {
 	syncing = true;
+	guestSync.set({ loading: true, error: null });
 	try {
 		const guests = await fetchFn();
 		seedGuests(guests);
 		return guests;
 	} catch (e) {
+		guestSync.set({ loading: false, error: e instanceof Error ? e.message : 'Failed to load guests' });
 		// Abandon the window; replay anything that queued up meanwhile.
 		syncing = false;
 		const pending = queuedEvents;
@@ -93,11 +102,18 @@ async function runRefresh(fetchFn: () => Promise<Guest[]>): Promise<Guest[]> {
 	}
 }
 
+/** Retry the last snapshot fetch after a failed load or reconnect resync. */
+export async function retryGuestSync(): Promise<void> {
+	if (!resync) return;
+	await refreshGuests(resync).catch(() => {});
+}
+
 /**
  * Seed the stores with the initial guest list (called after first fetch).
  */
 export function seedGuests(guests: Guest[]) {
 	guestList.set(guests);
+	guestSync.set({ loading: false, error: null });
 	if (syncing) {
 		syncing = false;
 		const pending = queuedEvents;

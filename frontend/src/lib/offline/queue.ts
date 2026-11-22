@@ -38,34 +38,49 @@ function setQueue(wid: string, q: QueuedMutation[]) {
 	}
 }
 
-export function enqueue(wid: string, m: QueuedMutation) {
-	const q = getQueue(wid);
-	if (q.length >= 500) {
-		q.shift();
-		addToast('Offline queue is full (500 changes): the oldest unsynced change was dropped. Reconnect to sync.', 'error');
-	}
-	const current = get(guestList).find(g => g.id === m.guestId);
-	if (m.previous === undefined) {
-		m.previous = current ? JSON.parse(JSON.stringify(current)) as Guest : null;
-	}
-	q.push(m);
-	try {
-		setQueue(wid, q);
-	} catch {
-		addToast('Could not save this change on the device: storage is full.', 'error');
-	}
-	notifyChanged();
+// Queue mutations are read-modify-write on localStorage shared by every tab.
+// Run them under one lock so a sync finishing in another tab cannot write back
+// the queue it read before this tab enqueued, silently dropping the new edit.
+function withQueueLock<T>(wid: string, fn: () => T): Promise<T> {
+	const locks = typeof navigator !== 'undefined' ? navigator.locks : undefined;
+	if (!locks) return Promise.resolve(fn());
+	return locks.request(`offline-queue-${wid}`, () => fn());
 }
 
-export function dequeueByIds(wid: string, ids: string[]) {
-	const s = new Set(ids);
-	setQueue(wid, getQueue(wid).filter(x => !s.has(x.mutationId)));
-	notifyChanged();
+export function enqueue(wid: string, m: QueuedMutation): Promise<void> {
+	return withQueueLock(wid, () => {
+		const q = getQueue(wid);
+		if (q.length >= 500) {
+			q.shift();
+			addToast('Offline queue is full (500 changes): the oldest unsynced change was dropped. Reconnect to sync.', 'error');
+		}
+		const current = get(guestList).find(g => g.id === m.guestId);
+		if (m.previous === undefined) {
+			m.previous = current ? JSON.parse(JSON.stringify(current)) as Guest : null;
+		}
+		q.push(m);
+		try {
+			setQueue(wid, q);
+		} catch {
+			addToast('Could not save this change on the device: storage is full.', 'error');
+		}
+		notifyChanged();
+	});
 }
 
-export function clearQueue(wid: string) {
-	localStorage.removeItem(qkey(wid));
-	notifyChanged();
+export function dequeueByIds(wid: string, ids: string[]): Promise<void> {
+	return withQueueLock(wid, () => {
+		const s = new Set(ids);
+		setQueue(wid, getQueue(wid).filter(x => !s.has(x.mutationId)));
+		notifyChanged();
+	});
+}
+
+export function clearQueue(wid: string): Promise<void> {
+	return withQueueLock(wid, () => {
+		localStorage.removeItem(qkey(wid));
+		notifyChanged();
+	});
 }
 
 function offlineKeys(): string[] {
@@ -121,13 +136,24 @@ function rollbackOptimistic(m: QueuedMutation) {
 		: [...list, restored]);
 }
 
+// Guest rows carry names, contacts and gift amounts; the offline cache must not
+// outlive the day it was written.
+const CACHE_TTL_MS = 12 * 60 * 60 * 1000;
+
 export function cacheGuests(wid: string, guests: unknown[]) {
-	try { localStorage.setItem(ckey(wid), JSON.stringify(guests)); } catch {}
+	try { localStorage.setItem(ckey(wid), JSON.stringify({ savedAt: Date.now(), guests })); } catch {}
 }
 export function loadCachedGuests<T>(wid: string): T[] | null {
 	try {
 		const v = localStorage.getItem(ckey(wid));
-		return v ? JSON.parse(v) as T[] : null;
+		if (!v) return null;
+		const entry = JSON.parse(v) as { savedAt?: number; guests?: T[] };
+		// Entries from before the TTL was added are dropped rather than trusted.
+		if (!entry.savedAt || !entry.guests || Date.now() - entry.savedAt > CACHE_TTL_MS) {
+			localStorage.removeItem(ckey(wid));
+			return null;
+		}
+		return entry.guests;
 	} catch { return null; }
 }
 
@@ -183,7 +209,7 @@ async function runSync(wid: string): Promise<SyncSummary> {
 			retrying.push(r.reason || 'unknown error');
 		}
 	}
-	dequeueByIds(wid, appliedIds);
+	await dequeueByIds(wid, appliedIds);
 	if (skipped > 0) {
 		addToast(`${skipped} offline change${skipped === 1 ? '' : 's'} rejected: the server had a newer version`, 'error');
 	}

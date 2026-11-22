@@ -64,7 +64,11 @@ import ArrowUpDown from 'lucide-svelte/icons/arrow-up-down';
         checkedInAt: fresh.checkedInAt ? new Date(fresh.checkedInAt) : undefined,
         angbaoAmount: fresh.angbaoAmt ?? undefined,
         giftItem: fresh.giftItem ?? undefined,
+        updatedAt: new Date(fresh.updatedAt),
       } as Guest;
+      // A retry must be judged against the row the server just returned, or the
+      // same 409 repeats until the drawer is reopened.
+      baseUpdatedAt = fresh.updatedAt;
     } catch {}
   }
 
