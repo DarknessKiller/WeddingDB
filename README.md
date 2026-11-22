@@ -73,7 +73,7 @@ Update with `docker compose pull app && docker compose up -d`.
 - Optional OpenTelemetry tracing to Jaeger, covering requests and DB queries end to end.
 - Docker Compose runs `app`, `postgres`, and `redis`. Optional `jaeger` behind the `tracing` profile.
 
-Setup for development, environment variables, and the API reference are in the [developer documentation](docs/dev/README.md). Design decisions are in [docs/adr](docs/adr), and behaviour specs are in [docs/specs](docs/specs).
+Setup for development, environment variables, and the API reference are in the [developer documentation](docs/dev/README.md). Design decisions are in [docs/adr](docs/adr), and coding rules and feature behaviour are in [CODING_STANDARDS.md](CODING_STANDARDS.md).
 
 ## License
 

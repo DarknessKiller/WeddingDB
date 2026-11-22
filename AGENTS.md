@@ -11,9 +11,11 @@ If there is no `.codegraph/` directory, initialize it for the user before search
 
 ## Coding standards
 
-Default routine for any Go or frontend-list change:
+`CODING_STANDARDS.md` is the single rule set for people and agents. Its feature sections (Offline sync, Auth and token revocation, Frontend pagination, Frontend input limits, Multi-tab) name the files and tests for each area.
 
-1. Read `CODING_STANDARDS.md` before editing.
+Default routine for any change:
+
+1. Find the code with CodeGraph, then read the `CODING_STANDARDS.md` sections for the areas you touch.
 2. Load the `use-modern-go` skill before editing Go, and follow its list for Go 1.27.
 3. Run the verify block for each area you touched before handoff, and check each changed line against the standard.
 4. Before handoff, commit, push, or PR, run the `change-verification` skill (or dispatch it to a subagent).

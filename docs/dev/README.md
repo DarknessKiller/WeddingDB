@@ -347,7 +347,7 @@ Existing Postgres volumes keep their old password: changing `.env` does not upda
 
 ## Reference docs
 
-- [`docs/specs/jwt-revocation-spec.md`](../specs/jwt-revocation-spec.md): JWT refresh rotation and revocation design
+- [`CODING_STANDARDS.md`](../../CODING_STANDARDS.md): rules and behaviour for offline sync, auth and token revocation, pagination, and input limits
 - [`docs/adr/001-offline-sync.md`](../adr/001-offline-sync.md): local-first door operations and offline sync
-- [`docs/specs/offline-sync-spec.md`](../specs/offline-sync-spec.md): offline queue, cache, local search, and kiosk idle reset
 - [`docs/adr/002-otel-tracing.md`](../adr/002-otel-tracing.md): OpenTelemetry tracing design
+- [`docs/adr/003-per-column-lww.md`](../adr/003-per-column-lww.md): per-column last-write-wins for guest edits

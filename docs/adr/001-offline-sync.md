@@ -68,4 +68,4 @@ using it.
 
 ## Status
 
-Accepted. Implements `docs/specs/offline-sync-spec.md`.
+Accepted. Sync rules live in [CODING_STANDARDS.md](../../CODING_STANDARDS.md#offline-sync). The per-field merge rejected here is superseded by [ADR 003](003-per-column-lww.md).
