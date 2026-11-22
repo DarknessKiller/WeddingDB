@@ -65,6 +65,14 @@ func (h *AdminHandler) Create(c fuego.ContextWithBody[AdminRequest]) (any, error
 	if err != nil {
 		return nil, fuego.InternalServerError{Title: "Failed to hash password"}
 	}
+	var ids []uuid.UUID
+	for _, ws := range body.Weddings {
+		id, err := DecodeID(ws)
+		if err != nil {
+			return nil, fuego.BadRequestError{Title: "Invalid weddings: invalid wedding ID"}
+		}
+		ids = append(ids, id)
+	}
 	admin := &models.AdminUser{
 		Email:    body.Email,
 		Password: string(hash),
@@ -75,17 +83,9 @@ func (h *AdminHandler) Create(c fuego.ContextWithBody[AdminRequest]) (any, error
 		return nil, err
 	}
 	// Assign weddings if provided
-	if len(body.Weddings) > 0 {
-		var ids []uuid.UUID
-		for _, ws := range body.Weddings {
-			if id, err := DecodeID(ws); err == nil {
-				ids = append(ids, id)
-			}
-		}
-		if len(ids) > 0 {
-			if err := h.adminRepo.SetUserWeddings(ctx, admin.ID, ids); err != nil {
-				return nil, err
-			}
+	if len(ids) > 0 {
+		if err := h.adminRepo.SetUserWeddings(ctx, admin.ID, ids); err != nil {
+			return nil, err
 		}
 	}
 	c.SetStatus(201)
@@ -147,9 +147,11 @@ func (h *AdminHandler) AssignWeddings(c fuego.ContextWithBody[AssignWeddingsRequ
 	}
 	var ids []uuid.UUID
 	for _, ws := range body.Weddings {
-		if wid, err := DecodeID(ws); err == nil {
-			ids = append(ids, wid)
+		wid, err := DecodeID(ws)
+		if err != nil {
+			return nil, fuego.BadRequestError{Title: "Invalid weddings: invalid wedding ID"}
 		}
+		ids = append(ids, wid)
 	}
 	// Fetch the old grants so removing access can revoke live sessions. Without
 	// them the revocation below cannot run, so the request fails instead of

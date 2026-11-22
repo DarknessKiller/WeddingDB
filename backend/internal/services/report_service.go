@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/csv"
+	"errors"
 	"fmt"
 	"sort"
 	"strconv"
@@ -15,6 +16,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/xuri/excelize/v2"
+	"gorm.io/gorm"
 )
 
 type ReportService struct {
@@ -56,8 +58,11 @@ type angpaoSummary struct {
 
 func (s *ReportService) GenerateCSV(ctx context.Context, weddingID uuid.UUID) ([]byte, string, error) {
 	wedding, err := s.weddingRepo.FindByID(ctx, weddingID)
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, "", ErrWeddingNotFound
+	}
 	if err != nil {
-		return nil, "", fmt.Errorf("wedding not found")
+		return nil, "", err
 	}
 
 	guests, err := s.guestRepo.ListAllByWedding(ctx, weddingID)
@@ -136,8 +141,11 @@ func csvSafe(value string) string {
 
 func (s *ReportService) GenerateXLSX(ctx context.Context, weddingID uuid.UUID) ([]byte, string, error) {
 	wedding, err := s.weddingRepo.FindByID(ctx, weddingID)
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, "", ErrWeddingNotFound
+	}
 	if err != nil {
-		return nil, "", fmt.Errorf("wedding not found")
+		return nil, "", err
 	}
 
 	guests, err := s.guestRepo.ListAllByWedding(ctx, weddingID)
@@ -362,8 +370,11 @@ func (s *ReportService) sanitizeFilename(name string) string {
 	name = strings.ReplaceAll(name, `/`, `-`)
 	name = strings.ReplaceAll(name, `\n`, `-`)
 	name = strings.TrimSpace(name)
-	if len(name) > 50 {
-		name = name[:50]
+	if runes := []rune(name); len(runes) > 50 {
+		name = string(runes[:50])
+	}
+	if name == "" {
+		name = "report"
 	}
 	return name
 }

@@ -116,6 +116,19 @@ func (h *GuestHandler) Create(c fuego.ContextWithBody[GuestCreateRequest]) (any,
 	if err := services.ValidateGuestText(guest); err != nil {
 		return nil, fuego.BadRequestError{Title: err.Error()}
 	}
+	// Decode the seat before creating so guest and seat land in one transaction.
+	if body.TableID != nil && *body.TableID != "" {
+		tid, err := DecodeID(*body.TableID)
+		if err != nil {
+			return nil, fuego.BadRequestError{Title: "Invalid table ID"}
+		}
+		seatNum := 1
+		if body.SeatNum != nil {
+			seatNum = *body.SeatNum
+		}
+		guest.TableID = &tid
+		guest.SeatNum = &seatNum
+	}
 	if err := h.guestService.Create(ctx, guest); err != nil {
 		var lenErr services.FieldLenError
 		if errors.As(err, &lenErr) {
@@ -124,30 +137,14 @@ func (h *GuestHandler) Create(c fuego.ContextWithBody[GuestCreateRequest]) (any,
 		if errors.Is(err, services.ErrGuestCapExceeded) {
 			return nil, fuego.BadRequestError{Title: err.Error()}
 		}
+		if errors.Is(err, services.ErrSeatOverlap) || errors.Is(err, services.ErrTableNotFound) ||
+			errors.Is(err, services.ErrInvalidGuestPax) || errors.Is(err, services.ErrSeatRange) ||
+			errors.Is(err, services.ErrGuestPatchInvalid) {
+			return nil, seatAssignmentError(err)
+		}
 		return nil, err
 	}
 	c.SetStatus(201)
-	if body.TableID != nil && *body.TableID != "" {
-		tid, err := DecodeID(*body.TableID)
-		if err != nil {
-			if err := h.guestService.Delete(ctx, guest.ID, wid); err != nil {
-				slog.Warn("rollback guest after invalid table failed", "guest", guest.ID, "err", err)
-			}
-			return nil, fuego.BadRequestError{Title: "Invalid table ID"}
-		}
-		seatNum := 1
-		if body.SeatNum != nil {
-			seatNum = *body.SeatNum
-		}
-		if err := h.guestService.AssignSeat(ctx, guest.ID, wid, tid, seatNum); err != nil {
-			if err := h.guestService.Delete(ctx, guest.ID, wid); err != nil {
-				slog.Warn("rollback guest after seat assignment failed", "guest", guest.ID, "err", err)
-			}
-			return nil, seatAssignmentError(err)
-		}
-		guest.TableID = &tid
-		guest.SeatNum = &seatNum
-	}
 	return guest, nil
 }
 
@@ -324,7 +321,7 @@ func (h *GuestHandler) BulkImport(c fuego.ContextWithBody[BulkImportRequest]) (a
 		return nil, fuego.BadRequestError{Title: "Invalid wedding ID"}
 	}
 	var guests []models.GuestRecord
-	for _, g := range body.Guests {
+	for i, g := range body.Guests {
 		if g.Name == "" {
 			continue
 		}
@@ -346,9 +343,11 @@ func (h *GuestHandler) BulkImport(c fuego.ContextWithBody[BulkImportRequest]) (a
 			Dietary:   g.Dietary,
 		}
 		if g.TableID != nil {
-			if tid, err := DecodeID(*g.TableID); err == nil {
-				gr.TableID = &tid
+			tid, err := DecodeID(*g.TableID)
+			if err != nil {
+				return nil, fuego.BadRequestError{Title: "Invalid guests[" + strconv.Itoa(i) + "].tableId"}
 			}
+			gr.TableID = &tid
 		}
 		if g.SeatNum != nil {
 			gr.SeatNum = g.SeatNum
@@ -364,7 +363,8 @@ func (h *GuestHandler) BulkImport(c fuego.ContextWithBody[BulkImportRequest]) (a
 		if errors.Is(err, services.ErrGuestCapExceeded) {
 			return nil, fuego.BadRequestError{Title: err.Error()}
 		}
-		return nil, fuego.BadRequestError{Title: "Bulk import failed"}
+		slog.ErrorContext(ctx, "bulk import failed", "err", err)
+		return nil, fuego.InternalServerError{Title: "Bulk import failed"}
 	}
 	return map[string]any{"imported": count}, nil
 }

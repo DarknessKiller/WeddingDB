@@ -9,6 +9,7 @@ import (
 	"weddingdb/internal/services"
 
 	"github.com/go-fuego/fuego"
+	"gorm.io/gorm"
 )
 
 type LayoutHandler struct {
@@ -75,6 +76,9 @@ func (h *LayoutHandler) Get(c fuego.ContextNoBody) (any, error) {
 		return nil, err
 	}
 	wedding, err := h.weddingService.Get(ctx, wid)
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, fuego.NotFoundError{Title: "Wedding not found"}
+	}
 	if err != nil {
 		return nil, err
 	}

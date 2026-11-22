@@ -55,7 +55,14 @@ func (h *WeddingHandler) Get(c fuego.ContextNoBody) (any, error) {
 	if err := requireWeddingAccess(ctx, id); err != nil {
 		return nil, fuego.ForbiddenError{Title: err.Error()}
 	}
-	return h.weddingService.Get(ctx, id)
+	w, err := h.weddingService.Get(ctx, id)
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, fuego.NotFoundError{Title: "Wedding not found"}
+	}
+	if err != nil {
+		return nil, err
+	}
+	return w, nil
 }
 
 func (h *WeddingHandler) Create(c fuego.ContextWithBody[WeddingRequest]) (any, error) {

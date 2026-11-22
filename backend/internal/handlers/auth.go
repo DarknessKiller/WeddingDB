@@ -125,8 +125,11 @@ func (h *AuthHandler) Login(c fuego.ContextWithBody[LoginRequest]) (TokenRespons
 	}
 	result, err := h.authService.Login(c.Context(), body.Email, body.Password)
 	if err != nil {
-		h.authService.RecordLoginFailure(c.Context(), body.Email, ip)
-		return TokenResponse{}, fuego.UnauthorizedError{Title: err.Error()}
+		if errors.Is(err, services.ErrInvalidCredentials) {
+			h.authService.RecordLoginFailure(c.Context(), body.Email, ip)
+			return TokenResponse{}, fuego.UnauthorizedError{Title: "Invalid email or password"}
+		}
+		return TokenResponse{}, authError(err)
 	}
 	return TokenResponse{
 		AccessToken:         result.AccessToken,

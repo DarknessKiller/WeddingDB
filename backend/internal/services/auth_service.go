@@ -76,12 +76,15 @@ var dummyHash = sync.OnceValue(func() []byte {
 
 func (s *AuthService) Login(ctx context.Context, email, password string) (*LoginResult, error) {
 	admin, err := s.adminRepo.FindByEmail(ctx, email)
-	if err != nil {
+	if errors.Is(err, gorm.ErrRecordNotFound) {
 		compareHash(dummyHash(), []byte(password)) //nolint:errcheck // timing equalizer only; result is always a mismatch
-		return nil, errors.New("invalid credentials")
+		return nil, ErrInvalidCredentials
+	}
+	if err != nil {
+		return nil, fmt.Errorf("find admin for login: %w", err)
 	}
 	if err := compareHash([]byte(admin.Password), []byte(password)); err != nil {
-		return nil, errors.New("invalid credentials")
+		return nil, ErrInvalidCredentials
 	}
 	accessToken, err := s.generateAccessToken(ctx, admin, nil)
 	if err != nil {

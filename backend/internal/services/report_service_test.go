@@ -162,6 +162,8 @@ func TestSanitizeFilename(t *testing.T) {
 		{`Has"Quote`, `Has\"Quote`},
 		{"  Trimmed  ", "Trimmed"},
 		{strings.Repeat("A", 60), strings.Repeat("A", 50)},
+		{strings.Repeat("婚", 60), strings.Repeat("婚", 50)},
+		{"   ", "report"},
 	}
 	for _, tt := range tests {
 		got := svc.sanitizeFilename(tt.in)

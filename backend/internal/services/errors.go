@@ -33,3 +33,11 @@ var (
 	ErrAdminNotFound   = errors.New("admin not found")
 	ErrNoWeddingAccess = errors.New("no access to this wedding")
 )
+
+// ErrInvalidCredentials is returned by Login for an unknown email or a wrong
+// password. Any other login error is an outage, not a rejection.
+var ErrInvalidCredentials = errors.New("invalid credentials")
+
+// ErrWeddingNotFound is returned by report generation when the wedding row
+// does not exist.
+var ErrWeddingNotFound = errors.New("wedding not found")
