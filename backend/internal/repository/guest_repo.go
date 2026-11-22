@@ -109,11 +109,14 @@ func (r *GuestRepo) Create(ctx context.Context, g *models.GuestRecord) error {
 	return r.db.WithContext(ctx).Create(g).Error
 }
 
-// Update writes the editable columns of a guest. checked_in_at is left out:
-// only check-in and check-out own it, so a stale edit form cannot undo them.
-func (r *GuestRepo) Update(ctx context.Context, g *models.GuestRecord) error {
+// ErrGuestChanged reports that the guest changed after the caller loaded it.
+var ErrGuestChanged = errors.New("guest changed since it was loaded")
+
+// editableColumns are the fields an edit form owns. checked_in_at is left out:
+// only check-in and check-out own it, so a stale edit form cannot undo it.
+func editableColumns(g *models.GuestRecord) map[string]any {
 	g.NamePinyin = models.GenerateNamePinyin(g.Name)
-	return r.db.WithContext(ctx).Model(g).Where("id = ? AND wedding_id = ?", g.ID, g.WeddingID).Updates(map[string]interface{}{
+	return map[string]any{
 		"name":        g.Name,
 		"name_pinyin": g.NamePinyin,
 		"email":       g.Email,
@@ -126,7 +129,35 @@ func (r *GuestRepo) Update(ctx context.Context, g *models.GuestRecord) error {
 		"is_vip":      g.IsVip,
 		"angbao_amt":  g.AngbaoAmt,
 		"gift_item":   g.GiftItem,
-	}).Error
+	}
+}
+
+// Update writes the editable columns of a guest.
+func (r *GuestRepo) Update(ctx context.Context, g *models.GuestRecord) error {
+	return r.db.WithContext(ctx).Model(g).Where("id = ? AND wedding_id = ?", g.ID, g.WeddingID).
+		Updates(editableColumns(g)).Error
+}
+
+// UpdateIfUnchanged writes the editable columns only while the row still
+// matches the version the caller loaded, so a stale edit form cannot revert a
+// concurrent check-in, angbao entry or seat move. Returns ErrGuestChanged when
+// it lost that race.
+func (r *GuestRepo) UpdateIfUnchanged(ctx context.Context, g *models.GuestRecord, expectedUpdatedAt time.Time, expectedCheckedInAt *time.Time) error {
+	q := r.db.WithContext(ctx).Model(g).
+		Where("id = ? AND wedding_id = ? AND updated_at = ?", g.ID, g.WeddingID, expectedUpdatedAt)
+	if expectedCheckedInAt == nil {
+		q = q.Where("checked_in_at IS NULL")
+	} else {
+		q = q.Where("checked_in_at = ?", *expectedCheckedInAt)
+	}
+	res := q.Updates(editableColumns(g))
+	if res.Error != nil {
+		return res.Error
+	}
+	if res.RowsAffected == 0 {
+		return ErrGuestChanged
+	}
+	return nil
 }
 
 // UpdateFields writes only the given columns of one guest, so a concurrent

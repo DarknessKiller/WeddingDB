@@ -238,7 +238,14 @@ import ArrowUpDown from 'lucide-svelte/icons/arrow-up-down';
         await refreshGuest();
       }
     } catch (e: any) {
-      addToast(e.message ?? 'Save failed', 'error');
+      if (e instanceof ConflictError) {
+        // Another device changed the guest after this form loaded it: keep the
+        // typed values, refresh the stored copy, and let the user decide.
+        addToast(e.message, 'error');
+        await refreshGuest();
+      } else {
+        addToast(e.message ?? 'Save failed', 'error');
+      }
     } finally {
       saving = false;
     }

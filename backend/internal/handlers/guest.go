@@ -218,6 +218,9 @@ func (h *GuestHandler) Update(c fuego.ContextWithBody[GuestCreateRequest]) (any,
 		if errors.Is(err, services.ErrGuestCapExceeded) {
 			return nil, fuego.BadRequestError{Title: err.Error()}
 		}
+		if errors.Is(err, repository.ErrGuestChanged) {
+			return nil, fuego.ConflictError{Title: "Guest changed on another device; reload and try again"}
+		}
 		return nil, err
 	}
 	return guest, nil

@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"weddingdb/internal/models"
+	"weddingdb/internal/repository"
 	"weddingdb/internal/testutil"
 	"weddingdb/internal/utils"
 
@@ -234,14 +235,47 @@ func TestUpdateWithSeat_StaleEditKeepsCheckIn(t *testing.T) {
 	testutil.NoErr(t, svc.CheckIn(ctx, gid, wid, ""))
 
 	stale.Name = "Alicia"
-	testutil.NoErr(t, svc.UpdateWithSeat(ctx, stale, nil, 0))
+	if err := svc.UpdateWithSeat(ctx, stale, nil, 0); !errors.Is(err, repository.ErrGuestChanged) {
+		t.Fatalf("stale edit after a check-in = %v, want ErrGuestChanged", err)
+	}
 
 	var got models.GuestRecord
 	testutil.NoErr(t, db.First(&got, "id = ?", gid).Error)
-	if got.Name != "Alicia" {
-		t.Fatalf("name = %q, want Alicia", got.Name)
+	if got.Name != "Alice" {
+		t.Fatalf("name = %q, want the stored Alice", got.Name)
 	}
-	if got.CheckedInAt == nil || stale.CheckedInAt == nil {
-		t.Fatalf("stale edit undid check-in: stored=%v returned=%v", got.CheckedInAt, stale.CheckedInAt)
+	if got.CheckedInAt == nil {
+		t.Fatal("stale edit undid check-in")
+	}
+}
+
+// A form loaded before another editor's save must not overwrite it either,
+// even when the two saves touch different fields.
+func TestUpdateWithSeat_StaleEditAfterSaveRejected(t *testing.T) {
+	svc, db, wid := newGuestSyncService(t)
+	ctx := t.Context()
+	gid := uuid.New()
+	testutil.NoErr(t, db.Create(&models.GuestRecord{ID: gid, WeddingID: wid, Name: "Alice", Pax: 1}).Error)
+
+	stale, err := svc.Get(ctx, gid, wid)
+	testutil.NoErr(t, err)
+	first, err := svc.Get(ctx, gid, wid)
+	testutil.NoErr(t, err)
+	angbao := 100
+	first.AngbaoAmt = &angbao
+	testutil.NoErr(t, svc.UpdateWithSeat(ctx, first, nil, 0))
+
+	stale.Notes = "late note"
+	if err := svc.UpdateWithSeat(ctx, stale, nil, 0); !errors.Is(err, repository.ErrGuestChanged) {
+		t.Fatalf("stale edit after another save = %v, want ErrGuestChanged", err)
+	}
+
+	var got models.GuestRecord
+	testutil.NoErr(t, db.First(&got, "id = ?", gid).Error)
+	if got.AngbaoAmt == nil || *got.AngbaoAmt != 100 {
+		t.Fatalf("angbao = %v, want the first editor's 100", got.AngbaoAmt)
+	}
+	if got.Notes != "" {
+		t.Fatalf("notes = %q, want the stale edit rejected", got.Notes)
 	}
 }

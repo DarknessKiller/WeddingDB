@@ -125,8 +125,14 @@ func (s *GuestService) updateGuestTx(ctx context.Context, tx *gorm.DB, g *models
 		return repo.SyncUpdate(ctx, g)
 	}
 	// Online edits never write checked_in_at; report the stored value.
+	expectedCheckedInAt := g.CheckedInAt
 	g.CheckedInAt = current.CheckedInAt
-	return repo.Update(ctx, g)
+	if g.UpdatedAt.IsZero() {
+		return repo.Update(ctx, g)
+	}
+	// The caller edited a loaded row: refuse the write if the row moved on, so
+	// a stale form cannot revert another receptionist's check-in or edit.
+	return repo.UpdateIfUnchanged(ctx, g, g.UpdatedAt, expectedCheckedInAt)
 }
 
 func (s *GuestService) List(ctx context.Context, weddingID uuid.UUID, cursor string, limit int) ([]models.GuestRecord, int64, error) {

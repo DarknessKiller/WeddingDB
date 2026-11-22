@@ -173,6 +173,7 @@ export async function updateGuest(weddingId: string, guestId: string, data: Gues
 	if (isOffline()) { doQueue(); const now = nowIso(); return { id: guestId, weddingId, name: data.name, email: data.email || '', pax: data.pax, rsvp: data.rsvp, isVip: data.isVip, notes: data.notes, dietary: data.dietary, tableId: (data.tableId as string | null) ?? null, seatNum: data.seatNum ?? null, checkedInAt: null, angbaoAmt: data.angbaoAmt ?? null, giftItem: data.giftItem ?? null, createdAt: now, updatedAt: now }; }
 	try {
 		const res = await apiFetch(`/api/weddings/${weddingId}/guests/${guestId}`, { method: 'PUT', body: JSON.stringify(data) });
+		if (res.status === 409) { const err = await res.json().catch(() => ({ title: 'Guest changed on another device' })); throw new ConflictError(err.title || 'Guest changed on another device'); }
 		if (!res.ok) throw new Error(`Failed to update guest: ${res.status}`);
 		const resp: GuestResponse = await res.json();
 		applyGuestResponse(resp);
