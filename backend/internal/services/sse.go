@@ -41,12 +41,43 @@ type GuestEventData struct {
 
 // SSEClient represents a connected SSE client.
 type SSEClient struct {
-	ID        string
-	WeddingID uuid.UUID
-	Chan      chan []byte
-	Done      chan struct{}
-	doneOnce  sync.Once
+	ID          string
+	WeddingID   uuid.UUID
+	Chan        chan []byte
+	Done        chan struct{}
+	doneOnce    sync.Once
+	releaseOnce sync.Once
+	mu          sync.RWMutex
+	deadline    time.Time
 }
+
+const sseLeaseDuration = 30 * time.Second
+
+var sseAcquire = redis.NewScript(`
+local now = redis.call('TIME')
+local ms = now[1] * 1000 + math.floor(now[2] / 1000)
+redis.call('ZREMRANGEBYSCORE', KEYS[1], '-inf', ms)
+if redis.call('ZCARD', KEYS[1]) >= 100 then return 0 end
+redis.call('ZADD', KEYS[1], ms + ARGV[2], ARGV[1])
+redis.call('PEXPIRE', KEYS[1], ARGV[2])
+return 1`)
+
+var sseRenew = redis.NewScript(`
+local now = redis.call('TIME')
+local ms = now[1] * 1000 + math.floor(now[2] / 1000)
+local expiry = redis.call('ZSCORE', KEYS[1], ARGV[1])
+if not expiry or tonumber(expiry) <= ms then return 0 end
+redis.call('ZADD', KEYS[1], ms + ARGV[2], ARGV[1])
+redis.call('PEXPIRE', KEYS[1], ARGV[2])
+return 1`)
+
+func (c *SSEClient) Deadline() time.Time {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.deadline
+}
+
+func (c *SSEClient) key() string { return "wedding:" + c.WeddingID.String() + ":sse-leases" }
 
 // SSEHub manages SSE connections per wedding and Redis pub/sub.
 type SSEHub struct {
@@ -106,28 +137,63 @@ func (h *SSEHub) subscribeRedis() {
 				case client.Chan <- []byte(msg.Payload):
 				default:
 					// A dropped event leaves the snapshot stale; force reconnect/resync instead.
-					h.Unsubscribe(client)
+					client.doneOnce.Do(func() { close(client.Done) })
 				}
 			}
 		}
 	}
 }
 
-// Subscribe registers a new SSE client for a wedding, or returns nil at capacity.
-func (h *SSEHub) Subscribe(weddingID uuid.UUID) *SSEClient {
-	h.mu.Lock()
-	if len(h.clients[weddingID]) >= 100 {
-		h.mu.Unlock()
-		return nil
-	}
+// Subscribe atomically acquires a deployment-wide lease before registering a client.
+func (h *SSEHub) Subscribe(ctx context.Context, weddingID uuid.UUID) (*SSEClient, error) {
 	client := &SSEClient{ID: uuid.New().String(), WeddingID: weddingID, Chan: make(chan []byte, 64), Done: make(chan struct{})}
+	start := time.Now()
+	result, err := sseAcquire.Run(ctx, h.redis, []string{client.key()}, client.ID, sseLeaseDuration.Milliseconds()).Int()
+	if err != nil {
+		return nil, fmt.Errorf("acquire SSE lease: %w", err)
+	}
+	if result == 0 {
+		return nil, ErrSSECapacity
+	}
+	client.deadline = start.Add(sseLeaseDuration)
+	if !time.Now().Before(client.deadline) {
+		return nil, fmt.Errorf("SSE lease expired during acquisition")
+	}
+	h.mu.Lock()
 	if h.clients[weddingID] == nil {
 		h.clients[weddingID] = make(map[string]*SSEClient)
 	}
 	h.clients[weddingID][client.ID] = client
 	h.mu.Unlock()
 	log.Printf("SSE: client %s connected for wedding %s", client.ID, weddingID)
-	return client
+	go h.renewLease(client)
+	return client, nil
+}
+
+func (h *SSEHub) renewLease(client *SSEClient) {
+	ticker := time.NewTicker(sseLeaseDuration / 3)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-client.Done:
+			return
+		case <-h.ctx.Done():
+			client.doneOnce.Do(func() { close(client.Done) })
+			return
+		case <-ticker.C:
+			start := time.Now()
+			ctx, cancel := context.WithDeadline(h.ctx, client.Deadline())
+			result, err := sseRenew.Run(ctx, h.redis, []string{client.key()}, client.ID, sseLeaseDuration.Milliseconds()).Int()
+			cancel()
+			if err != nil || result == 0 || !time.Now().Before(client.Deadline()) {
+				client.doneOnce.Do(func() { close(client.Done) })
+				return
+			}
+			client.mu.Lock()
+			client.deadline = start.Add(sseLeaseDuration)
+			client.mu.Unlock()
+		}
+	}
 }
 
 // Unsubscribe removes an SSE client.
@@ -141,6 +207,13 @@ func (h *SSEHub) Unsubscribe(client *SSEClient) {
 	}
 	h.mu.Unlock()
 	client.doneOnce.Do(func() { close(client.Done) })
+	client.releaseOnce.Do(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+		defer cancel()
+		if err := h.redis.ZRem(ctx, client.key(), client.ID).Err(); err != nil {
+			log.Printf("SSE: lease release failed: %v", err)
+		}
+	})
 	log.Printf("SSE: client %s disconnected from wedding %s", client.ID, client.WeddingID)
 }
 

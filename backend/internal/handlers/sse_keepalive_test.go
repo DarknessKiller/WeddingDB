@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"context"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -21,10 +22,22 @@ import (
 // newTestSSEServer spins up an SSEHub on miniredis plus a StreamHandler server
 // with a known-good admin JWT so tests can connect as EventSource would.
 func newTestSSEServer(t *testing.T) (*httptest.Server, *services.SSEHub, string, uuid.UUID) {
+	ts, hub, _, token, wid := newTestSSEServerWithLeaseClient(t)
+	return ts, hub, token, wid
+}
+
+func newTestSSEServerWithLeaseClient(t *testing.T) (*httptest.Server, *services.SSEHub, *redis.Client, string, uuid.UUID) {
 	t.Helper()
 	mr := miniredis.RunT(t)
 	rdb := redis.NewClient(&redis.Options{Addr: mr.Addr()})
-	hub := services.NewSSEHub(rdb)
+	leaseRedis := redis.NewClient(&redis.Options{Addr: mr.Addr()})
+	t.Cleanup(func() { testutil.NoErr(t, rdb.Close()) })
+	t.Cleanup(func() {
+		if err := leaseRedis.Close(); err != nil && err != redis.ErrClosed {
+			t.Errorf("close lease Redis: %v", err)
+		}
+	})
+	hub := services.NewSSEHub(leaseRedis)
 	t.Cleanup(hub.Shutdown)
 
 	// Mint admin JWT with the same secret the handler validates against.
@@ -47,13 +60,59 @@ func newTestSSEServer(t *testing.T) (*httptest.Server, *services.SSEHub, string,
 	h := NewSSEHandler(hub, auth)
 
 	testWID := uuid.New()
-	widStr := utils.EncodeUUID(testWID)
-	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		r.SetPathValue("wid", widStr)
-		h.StreamHandler()(w, r)
-	}))
+	mux := http.NewServeMux()
+	mux.HandleFunc("GET /api/weddings/{wid}/events", h.StreamHandler())
+	ts := httptest.NewServer(mux)
 	t.Cleanup(ts.Close)
-	return ts, hub, token, testWID
+	return ts, hub, leaseRedis, token, testWID
+}
+
+func TestSSEAdmissionRedisFailureReturns503(t *testing.T) {
+	ts, _, leaseRedis, token, wid := newTestSSEServerWithLeaseClient(t)
+	testutil.NoErr(t, leaseRedis.Close())
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, ts.URL+"/api/weddings/"+utils.EncodeUUID(wid)+"/events", nil)
+	testutil.NoErr(t, err)
+	req.Header.Set("Authorization", "Bearer "+token)
+	resp, err := http.DefaultClient.Do(req)
+	testutil.NoErr(t, err)
+	defer func() { testutil.NoErr(t, resp.Body.Close()) }()
+	if resp.StatusCode != http.StatusServiceUnavailable {
+		t.Fatalf("status = %d, want 503", resp.StatusCode)
+	}
+	if strings.Contains(resp.Header.Get("Content-Type"), "text/event-stream") {
+		t.Fatal("failure sent stream headers")
+	}
+}
+
+func TestSSERenewalRedisFailureClosesStream(t *testing.T) {
+	ts, _, leaseRedis, token, wid := newTestSSEServerWithLeaseClient(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, ts.URL+"/api/weddings/"+utils.EncodeUUID(wid)+"/events", nil)
+	testutil.NoErr(t, err)
+	req.Header.Set("Authorization", "Bearer "+token)
+	resp, err := http.DefaultClient.Do(req)
+	testutil.NoErr(t, err)
+	defer func() { testutil.NoErr(t, resp.Body.Close()) }()
+	if resp.StatusCode != http.StatusOK || resp.Header.Get("Content-Type") != "text/event-stream" {
+		t.Fatalf("stream response: status %d, content-type %q", resp.StatusCode, resp.Header.Get("Content-Type"))
+	}
+	initial := make([]byte, len(": keepalive\n\n"))
+	_, err = io.ReadFull(resp.Body, initial)
+	testutil.NoErr(t, err)
+	if string(initial) != ": keepalive\n\n" {
+		t.Fatalf("initial stream data = %q", initial)
+	}
+	testutil.NoErr(t, leaseRedis.Close())
+	data, err := io.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatalf("stream did not close cleanly after renewal failure: %v", err)
+	}
+	if len(data) != 0 {
+		t.Fatalf("unexpected data after Redis failure: %q", data)
+	}
 }
 
 // TestSSEKeepalive ensures the stream emits comment pings periodically instead
@@ -137,8 +196,10 @@ func TestSSERejectsQueryToken(t *testing.T) {
 func TestSSEWeddingStreamLimit(t *testing.T) {
 	ts, hub, token, wid := newTestSSEServer(t)
 	clients := make([]*services.SSEClient, 99)
+	var err error
 	for i := range clients {
-		clients[i] = hub.Subscribe(wid)
+		clients[i], err = hub.Subscribe(context.Background(), wid)
+		testutil.NoErr(t, err)
 		if clients[i] == nil {
 			t.Fatal("unexpected capacity rejection")
 		}
@@ -174,8 +235,8 @@ func TestSSEWeddingStreamLimit(t *testing.T) {
 	cancel()
 	deadline := time.Now().Add(time.Second)
 	for {
-		client := hub.Subscribe(wid)
-		if client != nil {
+		client, err := hub.Subscribe(context.Background(), wid)
+		if err == nil {
 			hub.Unsubscribe(client)
 			break
 		}

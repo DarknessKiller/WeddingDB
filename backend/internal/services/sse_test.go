@@ -3,23 +3,44 @@ package services
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"strings"
 	"sync"
 	"testing"
 	"time"
 
+	"github.com/alicebob/miniredis/v2"
 	"github.com/google/uuid"
+	"github.com/redis/go-redis/v9"
 
 	"weddingdb/internal/testutil"
 )
 
+func testSSEHub(t *testing.T) *SSEHub {
+	t.Helper()
+	mr := miniredis.RunT(t)
+	rdb := redis.NewClient(&redis.Options{Addr: mr.Addr()})
+	hub := NewSSEHub(rdb)
+	t.Cleanup(func() { hub.Shutdown(); testutil.NoErr(t, rdb.Close()) })
+	return hub
+}
+
+func testSubscribe(t *testing.T, hub *SSEHub, wid uuid.UUID) *SSEClient {
+	t.Helper()
+	client, err := hub.Subscribe(context.Background(), wid)
+	if err != nil && !errors.Is(err, ErrSSECapacity) {
+		t.Errorf("subscribe: %v", err)
+	}
+	return client
+}
+
 func TestSSEHub_ConcurrentWeddingLimit(t *testing.T) {
-	hub := &SSEHub{clients: make(map[uuid.UUID]map[string]*SSEClient)}
+	hub := testSSEHub(t)
 	wid := uuid.New()
 	clients := make([]*SSEClient, 200)
 	var wg sync.WaitGroup
 	for i := range clients {
-		wg.Go(func() { clients[i] = hub.Subscribe(wid) })
+		wg.Go(func() { clients[i] = testSubscribe(t, hub, wid) })
 	}
 	wg.Wait()
 	var accepted []*SSEClient
@@ -31,12 +52,12 @@ func TestSSEHub_ConcurrentWeddingLimit(t *testing.T) {
 	if len(accepted) != 100 {
 		t.Fatalf("accepted %d streams, want 100", len(accepted))
 	}
-	other := hub.Subscribe(uuid.New())
+	other := testSubscribe(t, hub, uuid.New())
 	if other == nil {
 		t.Fatal("another wedding was rejected")
 	}
 	hub.Unsubscribe(accepted[0])
-	replacement := hub.Subscribe(wid)
+	replacement := testSubscribe(t, hub, wid)
 	if replacement == nil {
 		t.Fatal("released slot was not reusable")
 	}
@@ -48,13 +69,10 @@ func TestSSEHub_ConcurrentWeddingLimit(t *testing.T) {
 }
 
 func TestSSEHub_SubscribeUnsubscribe(t *testing.T) {
-	hub := &SSEHub{
-		clients: make(map[uuid.UUID]map[string]*SSEClient),
-		ctx:     context.Background(),
-	}
+	hub := testSSEHub(t)
 
 	wid := uuid.New()
-	client := hub.Subscribe(wid)
+	client := testSubscribe(t, hub, wid)
 
 	if client == nil {
 		t.Fatal("Subscribe returned nil client")
@@ -84,16 +102,13 @@ func TestSSEHub_SubscribeUnsubscribe(t *testing.T) {
 }
 
 func TestSSEHub_FanOut(t *testing.T) {
-	hub := &SSEHub{
-		clients: make(map[uuid.UUID]map[string]*SSEClient),
-		ctx:     context.Background(),
-	}
+	hub := testSSEHub(t)
 
 	wid := uuid.New()
 	const numClients = 3
 	clients := make([]*SSEClient, numClients)
 	for i := range numClients {
-		clients[i] = hub.Subscribe(wid)
+		clients[i] = testSubscribe(t, hub, wid)
 	}
 
 	// Manually fan out an event (simulating what subscribeRedis does).
@@ -148,13 +163,10 @@ func TestSSEHub_PublishBeforeReady(t *testing.T) {
 }
 
 func TestSSEHub_BufferFull(t *testing.T) {
-	hub := &SSEHub{
-		clients: make(map[uuid.UUID]map[string]*SSEClient),
-		ctx:     context.Background(),
-	}
+	hub := testSSEHub(t)
 
 	wid := uuid.New()
-	client := hub.Subscribe(wid)
+	client := testSubscribe(t, hub, wid)
 
 	// Fill the buffer (capacity 64).
 	for range 64 {
@@ -186,15 +198,12 @@ func TestSSEHub_BufferFull(t *testing.T) {
 }
 
 func TestSSEHub_MultipleWeddings(t *testing.T) {
-	hub := &SSEHub{
-		clients: make(map[uuid.UUID]map[string]*SSEClient),
-		ctx:     context.Background(),
-	}
+	hub := testSSEHub(t)
 
 	wid1 := uuid.New()
 	wid2 := uuid.New()
-	client1 := hub.Subscribe(wid1)
-	client2 := hub.Subscribe(wid2)
+	client1 := testSubscribe(t, hub, wid1)
+	client2 := testSubscribe(t, hub, wid2)
 
 	// Send event to wedding 1.
 	event := GuestEvent{

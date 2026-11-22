@@ -19,6 +19,7 @@ var (
 	ErrTableNotFound   = errors.New("table not found")
 	ErrInvalidGuestPax = errors.New("guest pax must be at least 1")
 	ErrSeatRange       = errors.New("seat range exceeds table capacity")
+	ErrSSECapacity     = errors.New("too many streams for wedding")
 )
 
 // SelectWedding sentinels; handlers map them to 401/403.

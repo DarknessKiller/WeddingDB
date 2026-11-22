@@ -117,9 +117,13 @@ Files: `backend/internal/config/{config,server}.go`,
 - Upload rejects non-admin callers without wedding scope before parsing or
   writing files. Wedding authorization follows the existing JWT scope;
   admins retain cross-wedding access. SSE admits at most 100 concurrent streams
-  per wedding per server process, atomically; overflow returns HTTP 429 before
-  stream headers, disconnect releases capacity, and other weddings remain usable.
-  This is not a deployment-wide limit across replicas.
+  per wedding across the deployment using atomic Redis leases; overflow returns
+  HTTP 429 and Redis admission errors return HTTP 503 before stream headers.
+  Disconnect releases its lease, crashed servers' leases expire, and active
+  streams renew leases. Failed or expired renewal closes the stream; write
+  deadlines bound blocked writes to the locally confirmed lease lifetime. Other
+  weddings retain independent capacity. Redis must preserve lease keys and its
+  clock must not jump forward while streams are active.
 
 ### Verify
 
@@ -129,6 +133,7 @@ integration test executes rather than skips:
 
 ```sh
 cd backend && CGO_ENABLED=1 go test -race -p 1 ./internal/config ./internal/handlers ./internal/services -run 'TestLoadEnvJWTSecretLength|TestUntypedErrorsAreGeneric|TestRegisterRoutesJSONBodyLimit|TestNewFuegoServer_TimeoutsForLongTransfers|TestUpload_|TestGenerateCSV_FormulaInjection|TestSSEHub_ConcurrentWeddingLimit|TestSSEWeddingStreamLimit|TestRegisteredGuestSeatDatabaseErrorIsGeneric|TestSyncDatabaseErrorIsGeneric' -count=1
+cd backend && TEST_REDIS_ADDR=127.0.0.1:6379 CGO_ENABLED=1 go test -race ./internal/services -run '^TestSSEHub_(DistributedWeddingLimit|RenewalFailureClosesStream)$' -count=1
 ```
 
 Reviewers must check rejection before side effects, absence of internal error
