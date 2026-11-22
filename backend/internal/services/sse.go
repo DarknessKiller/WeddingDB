@@ -113,10 +113,14 @@ func (h *SSEHub) subscribeRedis() {
 	}
 }
 
-// Subscribe registers a new SSE client for a wedding.
+// Subscribe registers a new SSE client for a wedding, or returns nil at capacity.
 func (h *SSEHub) Subscribe(weddingID uuid.UUID) *SSEClient {
-	client := &SSEClient{ID: uuid.New().String(), WeddingID: weddingID, Chan: make(chan []byte, 64), Done: make(chan struct{})}
 	h.mu.Lock()
+	if len(h.clients[weddingID]) >= 100 {
+		h.mu.Unlock()
+		return nil
+	}
+	client := &SSEClient{ID: uuid.New().String(), WeddingID: weddingID, Chan: make(chan []byte, 64), Done: make(chan struct{})}
 	if h.clients[weddingID] == nil {
 		h.clients[weddingID] = make(map[string]*SSEClient)
 	}

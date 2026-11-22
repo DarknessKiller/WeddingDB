@@ -3,6 +3,7 @@ package config
 import (
 	"log"
 	"os"
+	"unicode/utf8"
 
 	"github.com/joho/godotenv"
 )
@@ -25,6 +26,9 @@ func LoadEnv() Env {
 	}
 	if secret == "change-me-in-production" || secret == "change-me-to-a-random-secret" {
 		log.Fatal("JWT_SECRET must not be a value shipped in .env.example; generate one with: openssl rand -hex 32")
+	}
+	if utf8.RuneCountInString(secret) < 32 {
+		log.Fatal("JWT_SECRET must contain at least 32 characters")
 	}
 	port := getEnv("PORT", "8080")
 	publicURL := getEnv("PUBLIC_URL", "http://localhost:"+port)

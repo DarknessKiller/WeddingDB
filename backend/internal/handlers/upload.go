@@ -47,6 +47,9 @@ func closeLogged(c io.Closer) {
 }
 
 func (h *UploadHandler) Upload(c fuego.ContextWithBody[any]) (any, error) {
+	if RoleFromContext(c.Context()) != "admin" && WeddingIDFromContext(c.Context()) == nil {
+		return nil, fuego.ForbiddenError{Title: "no wedding scope"}
+	}
 	r := c.Request()
 	r.Body = http.MaxBytesReader(c.Response(), r.Body, maxUploadBytes)
 	file, header, err := r.FormFile("file")

@@ -85,7 +85,7 @@ func (s *ReportService) GenerateCSV(ctx context.Context, weddingID uuid.UUID) ([
 
 	// Data rows
 	for _, r := range rows {
-		w.Write([]string{r.GuestName, r.TableName, r.SeatStr, r.AngbaoStr, r.GiftItem, r.CheckedIn})
+		w.Write([]string{csvSafe(r.GuestName), csvSafe(r.TableName), r.SeatStr, r.AngbaoStr, csvSafe(r.GiftItem), r.CheckedIn})
 	}
 
 	// Blank row separator
@@ -102,7 +102,7 @@ func (s *ReportService) GenerateCSV(ctx context.Context, weddingID uuid.UUID) ([
 	w.Write([]string{"TABLE TOTALS", "Angbao (RM)", "", "", "", ""})
 	sortedTableNames := s.sortedTableKeys(summary.TotalByTable)
 	for _, tName := range sortedTableNames {
-		w.Write([]string{tName, fmt.Sprintf("RM %d", summary.TotalByTable[tName]), "", "", "", ""})
+		w.Write([]string{csvSafe(tName), fmt.Sprintf("RM %d", summary.TotalByTable[tName]), "", "", "", ""})
 	}
 
 	// Gift items
@@ -110,7 +110,7 @@ func (s *ReportService) GenerateCSV(ctx context.Context, weddingID uuid.UUID) ([
 		w.Write([]string{})
 		w.Write([]string{"GIFT ITEMS", "", "", "", "", ""})
 		for _, g := range summary.GiftItems {
-			w.Write([]string{g, "", "", "", "", ""})
+			w.Write([]string{csvSafe(g), "", "", "", "", ""})
 		}
 	}
 
@@ -124,6 +124,14 @@ func (s *ReportService) GenerateCSV(ctx context.Context, weddingID uuid.UUID) ([
 		time.Now().Format("2006-01-02"))
 
 	return buf.Bytes(), filename, nil
+}
+
+func csvSafe(value string) string {
+	trimmed := strings.TrimLeft(value, " \t\r\n")
+	if len(trimmed) > 0 && strings.ContainsAny(trimmed[:1], "=+-@") || strings.HasPrefix(value, "\t") || strings.HasPrefix(value, "\r") || strings.HasPrefix(value, "\n") {
+		return "'" + value
+	}
+	return value
 }
 
 func (s *ReportService) GenerateXLSX(ctx context.Context, weddingID uuid.UUID) ([]byte, string, error) {

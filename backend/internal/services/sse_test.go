@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -11,6 +12,40 @@ import (
 
 	"weddingdb/internal/testutil"
 )
+
+func TestSSEHub_ConcurrentWeddingLimit(t *testing.T) {
+	hub := &SSEHub{clients: make(map[uuid.UUID]map[string]*SSEClient)}
+	wid := uuid.New()
+	clients := make([]*SSEClient, 200)
+	var wg sync.WaitGroup
+	for i := range clients {
+		wg.Go(func() { clients[i] = hub.Subscribe(wid) })
+	}
+	wg.Wait()
+	var accepted []*SSEClient
+	for _, client := range clients {
+		if client != nil {
+			accepted = append(accepted, client)
+		}
+	}
+	if len(accepted) != 100 {
+		t.Fatalf("accepted %d streams, want 100", len(accepted))
+	}
+	other := hub.Subscribe(uuid.New())
+	if other == nil {
+		t.Fatal("another wedding was rejected")
+	}
+	hub.Unsubscribe(accepted[0])
+	replacement := hub.Subscribe(wid)
+	if replacement == nil {
+		t.Fatal("released slot was not reusable")
+	}
+	for _, client := range accepted[1:] {
+		hub.Unsubscribe(client)
+	}
+	hub.Unsubscribe(replacement)
+	hub.Unsubscribe(other)
+}
 
 func TestSSEHub_SubscribeUnsubscribe(t *testing.T) {
 	hub := &SSEHub{

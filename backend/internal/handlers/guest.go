@@ -132,7 +132,7 @@ func (h *GuestHandler) Create(c fuego.ContextWithBody[GuestCreateRequest]) (any,
 			if err := h.guestService.Delete(ctx, guest.ID, wid); err != nil {
 				slog.Warn("rollback guest after seat assignment failed", "guest", guest.ID, "err", err)
 			}
-			return nil, fuego.BadRequestError{Title: err.Error()}
+			return nil, seatAssignmentError(err)
 		}
 		guest.TableID = &tid
 		guest.SeatNum = &seatNum
@@ -163,7 +163,10 @@ func (h *GuestHandler) Update(c fuego.ContextWithBody[*services.GuestPatch]) (an
 		}
 		if errors.Is(err, services.ErrGuestPatchInvalid) ||
 			errors.Is(err, services.ErrGuestCapExceeded) ||
-			errors.Is(err, services.ErrSeatOverlap) {
+			errors.Is(err, services.ErrSeatOverlap) ||
+			errors.Is(err, services.ErrTableNotFound) ||
+			errors.Is(err, services.ErrInvalidGuestPax) ||
+			errors.Is(err, services.ErrSeatRange) {
 			return nil, fuego.BadRequestError{Title: err.Error()}
 		}
 		return nil, err
@@ -358,10 +361,17 @@ func (h *GuestHandler) AssignSeat(c fuego.ContextWithBody[AssignSeatRequest]) (a
 		return nil, fuego.BadRequestError{Title: "Invalid table ID"}
 	}
 	if err := h.guestService.AssignSeat(ctx, guestID, wid, tableID, body.SeatNum); err != nil {
-		return nil, fuego.BadRequestError{Title: err.Error()}
+		return nil, seatAssignmentError(err)
 	}
 	c.SetStatus(204)
 	return nil, nil
+}
+
+func seatAssignmentError(err error) error {
+	if errors.Is(err, services.ErrSeatOverlap) || errors.Is(err, services.ErrTableNotFound) || errors.Is(err, services.ErrInvalidGuestPax) || errors.Is(err, services.ErrSeatRange) || errors.Is(err, services.ErrGuestCapExceeded) || errors.Is(err, services.ErrGuestPatchInvalid) {
+		return fuego.BadRequestError{Title: err.Error()}
+	}
+	return err
 }
 
 func (h *GuestHandler) UnassignSeat(c fuego.ContextNoBody) (any, error) {

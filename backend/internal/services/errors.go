@@ -15,6 +15,10 @@ var (
 	// ErrGuestPatchInvalid is returned when a sparse guest write carries a
 	// value the API refuses.
 	ErrGuestPatchInvalid = errors.New("invalid guest patch")
+
+	ErrTableNotFound   = errors.New("table not found")
+	ErrInvalidGuestPax = errors.New("guest pax must be at least 1")
+	ErrSeatRange       = errors.New("seat range exceeds table capacity")
 )
 
 // SelectWedding sentinels; handlers map them to 401/403.

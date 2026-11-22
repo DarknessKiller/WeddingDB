@@ -133,3 +133,55 @@ func TestSSERejectsQueryToken(t *testing.T) {
 		})
 	}
 }
+
+func TestSSEWeddingStreamLimit(t *testing.T) {
+	ts, hub, token, wid := newTestSSEServer(t)
+	clients := make([]*services.SSEClient, 99)
+	for i := range clients {
+		clients[i] = hub.Subscribe(wid)
+		if clients[i] == nil {
+			t.Fatal("unexpected capacity rejection")
+		}
+		defer hub.Unsubscribe(clients[i])
+	}
+	request := func(ctx context.Context) *http.Response {
+		t.Helper()
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, ts.URL+"/api/weddings/"+wid.String()+"/events", nil)
+		testutil.NoErr(t, err)
+		req.Header.Set("Authorization", "Bearer "+token)
+		resp, err := http.DefaultClient.Do(req)
+		testutil.NoErr(t, err)
+		return resp
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	stream := request(ctx)
+	if stream.StatusCode != http.StatusOK {
+		t.Fatalf("stream status = %d, want 200", stream.StatusCode)
+	}
+	defer func() {
+		cancel()
+		testutil.NoErr(t, stream.Body.Close())
+	}()
+	ctx2, cancel2 := context.WithTimeout(context.Background(), time.Second)
+	resp := request(ctx2)
+	defer func() {
+		cancel2()
+		testutil.NoErr(t, resp.Body.Close())
+	}()
+	if resp.StatusCode != http.StatusTooManyRequests {
+		t.Fatalf("full wedding status = %d, want 429", resp.StatusCode)
+	}
+	cancel()
+	deadline := time.Now().Add(time.Second)
+	for {
+		client := hub.Subscribe(wid)
+		if client != nil {
+			hub.Unsubscribe(client)
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("disconnect did not release slot")
+		}
+		time.Sleep(time.Millisecond)
+	}
+}

@@ -53,11 +53,6 @@ func (h *SSEHandler) StreamHandler() http.HandlerFunc {
 			}
 		}
 
-		w.Header().Set("Content-Type", "text/event-stream")
-		w.Header().Set("Cache-Control", "no-cache")
-		w.Header().Set("Connection", "keep-alive")
-		w.Header().Set("X-Accel-Buffering", "no")
-
 		flusher, ok := w.(http.Flusher)
 		if !ok {
 			http.Error(w, "streaming not supported", http.StatusInternalServerError)
@@ -66,7 +61,16 @@ func (h *SSEHandler) StreamHandler() http.HandlerFunc {
 
 		// Subscribe to wedding events.
 		client := h.sseHub.Subscribe(wid)
+		if client == nil {
+			http.Error(w, "too many streams for wedding", http.StatusTooManyRequests)
+			return
+		}
 		defer h.sseHub.Unsubscribe(client)
+
+		w.Header().Set("Content-Type", "text/event-stream")
+		w.Header().Set("Cache-Control", "no-cache")
+		w.Header().Set("Connection", "keep-alive")
+		w.Header().Set("X-Accel-Buffering", "no")
 
 		// Send initial keepalive comment.
 		if _, err := fmt.Fprintf(w, ": keepalive\n\n"); err != nil {

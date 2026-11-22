@@ -1,7 +1,11 @@
 package handlers
 
 import (
+	"bytes"
+	"errors"
+	"io"
 	"net/http"
+	"strings"
 	"weddingdb/internal/middleware"
 	"weddingdb/internal/repository"
 	"weddingdb/internal/services"
@@ -20,6 +24,25 @@ func RegisterRoutes(
 	reportService *services.ReportService,
 	adminRepo *repository.AdminRepo,
 ) {
+	fuego.Use(s, func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			contentType, _, _ := strings.Cut(r.Header.Get("Content-Type"), ";")
+			contentType = strings.ToLower(strings.TrimSpace(contentType))
+			if contentType != "multipart/form-data" && contentType != "application/x-www-form-urlencoded" && contentType != "application/octet-stream" && contentType != "application/xml" && contentType != "application/yaml" && contentType != "application/x-yaml" && contentType != "text/yaml" && contentType != "text/plain" {
+				body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, 1048576))
+				if err != nil {
+					if _, ok := errors.AsType[*http.MaxBytesError](err); ok {
+						http.Error(w, "Request body too large", http.StatusRequestEntityTooLarge)
+					} else {
+						http.Error(w, "Cannot read request body", http.StatusBadRequest)
+					}
+					return
+				}
+				r.Body = io.NopCloser(bytes.NewReader(body))
+			}
+			next.ServeHTTP(w, r)
+		})
+	})
 	authHandler := NewAuthHandler(authService, adminRepo)
 	adminHandler := NewAdminHandler(adminRepo, authService)
 	guestHandler := NewGuestHandler(guestService)
