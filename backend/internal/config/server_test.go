@@ -2,8 +2,16 @@ package config
 
 import (
 	"encoding/json"
+	"errors"
+	"net/http"
+	"net/http/httptest"
 	"os"
+	"os/exec"
+	"strings"
 	"testing"
+	"time"
+
+	"github.com/go-fuego/fuego"
 )
 
 func TestNewFuegoServer_SetsOpenAPIInfo(t *testing.T) {
@@ -36,6 +44,37 @@ func TestNewFuegoServer_SetsOpenAPIInfo(t *testing.T) {
 	}
 }
 
+func TestLoadEnvJWTSecretLength(t *testing.T) {
+	if os.Getenv("TEST_SECRET_CHILD") == "1" {
+		LoadEnv()
+		return
+	}
+	for _, n := range []int{31, 32} {
+		t.Run(strings.Repeat("x", n), func(t *testing.T) {
+			cmd := exec.Command(os.Args[0], "-test.run=^TestLoadEnvJWTSecretLength$")
+			cmd.Env = append(os.Environ(), "TEST_SECRET_CHILD=1", "JWT_SECRET="+strings.Repeat("x", n))
+			err := cmd.Run()
+			if (err == nil) != (n == 32) {
+				t.Fatalf("secret length %d: %v", n, err)
+			}
+		})
+	}
+}
+
+func TestUntypedErrorsAreGeneric(t *testing.T) {
+	s := NewFuegoServer(Env{Port: "0"}, "test")
+	fuego.Get(s, "/failure", func(fuego.ContextNoBody) (any, error) {
+		return nil, errors.New("driver secret query")
+	})
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest(http.MethodGet, "/failure", nil)
+	r.Header.Set("Accept", "text/plain")
+	s.Mux.ServeHTTP(w, r)
+	if w.Code != http.StatusInternalServerError || strings.Contains(w.Body.String(), "driver secret query") {
+		t.Fatalf("status %d, body %s", w.Code, w.Body.String())
+	}
+}
+
 func TestNewFuegoServer_DefaultVersion(t *testing.T) {
 	env := Env{Port: "0"}
 	s := NewFuegoServer(env, "dev")
@@ -60,7 +99,7 @@ func TestNewFuegoServer_EmptyPublicURL_NoServers(t *testing.T) {
 
 func TestLoadEnv_PublicURLDefault(t *testing.T) {
 	// LoadEnv requires JWT_SECRET; set it for test
-	t.Setenv("JWT_SECRET", "test-secret")
+	t.Setenv("JWT_SECRET", "01234567890123456789012345678901")
 	t.Setenv("PORT", "9999")
 	// PUBLIC_URL not set → should default to http://localhost:9999
 	env := LoadEnv()
@@ -71,7 +110,7 @@ func TestLoadEnv_PublicURLDefault(t *testing.T) {
 }
 
 func TestLoadEnv_PublicURLExplicit(t *testing.T) {
-	t.Setenv("JWT_SECRET", "test-secret")
+	t.Setenv("JWT_SECRET", "01234567890123456789012345678901")
 	t.Setenv("PUBLIC_URL", "https://prod.example.com")
 	env := LoadEnv()
 	if env.PublicURL != "https://prod.example.com" {
@@ -116,12 +155,9 @@ func TestOpenAPI_SpecJSON(t *testing.T) {
 }
 
 func TestNewFuegoServer_TimeoutsForLongTransfers(t *testing.T) {
-	// fuego defaults Read/WriteTimeout to 30s; both would reset large uploads
-	// and SSE streams mid-transfer. Zeroing them is the app-level contract
-	// behind "the reverse proxy owns request limits".
 	s := NewFuegoServer(Env{Port: "0"}, "test")
-	if s.ReadTimeout != 0 {
-		t.Errorf("ReadTimeout = %v, want 0 (proxy owns transfer duration)", s.ReadTimeout)
+	if s.ReadTimeout != 5*time.Minute {
+		t.Errorf("ReadTimeout = %v, want 5m", s.ReadTimeout)
 	}
 	if s.WriteTimeout != 0 {
 		t.Errorf("WriteTimeout = %v, want 0 (SSE must not be cut)", s.WriteTimeout)

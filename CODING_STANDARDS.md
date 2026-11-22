@@ -95,6 +95,50 @@ git diff -U0 origin/master -- 'backend/*.go' | grep '^+' | grep -nE '(<<|>>|&\^|
 The second command lists added lines that use bitwise operators. Each hit is a
 violation or a false positive in a string or comment. No hits means the rule holds.
 
+## Security boundaries
+
+Files: `backend/internal/config/{config,server}.go`,
+`backend/internal/handlers/{register,upload,sse,guest}.go`,
+`backend/internal/services/{report_service,sse,guest_service}.go`.
+
+- Startup rejects `JWT_SECRET` shorter than 32 characters, missing secrets, and
+  shipped placeholder secrets. Generate secrets with `openssl rand -hex 32`.
+- JSON request bodies have a 1 MiB limit, including requests without
+  `Content-Length`; reject oversized bodies with HTTP 413 before handler side
+  effects. Multipart uploads retain their separate file-size limit.
+  HTTP `ReadTimeout` is five minutes; `WriteTimeout` stays zero for SSE.
+- Untyped errors return a generic HTTP 500. Never expose driver/query details
+  through typed error titles, details, or per-item offline-sync failure reasons
+  (including HTTP 200 responses). Preserve known validation/business errors;
+  log unexpected failures server-side and return a generic message.
+- CSV export prefixes text cells starting with `=`, `+`, `-`, or `@` with an
+  apostrophe. Apply this to guest names, table names, gifts, and summary rows;
+  CSV quoting alone does not prevent formula injection.
+- Upload rejects non-admin callers without wedding scope before parsing or
+  writing files. Wedding authorization follows the existing JWT scope;
+  admins retain cross-wedding access. SSE admits at most 100 concurrent streams
+  per wedding across the deployment using atomic Redis leases; overflow returns
+  HTTP 429 and Redis admission errors return HTTP 503 before stream headers.
+  Disconnect releases its lease, crashed servers' leases expire, and active
+  streams renew leases. Failed or expired renewal closes the stream; write
+  deadlines bound blocked writes to the locally confirmed lease lifetime. Other
+  weddings retain independent capacity. Redis must preserve lease keys and its
+  clock must not jump forward while streams are active.
+
+### Verify
+
+Run the Go verify block above. Also run the focused security regressions with
+`TEST_DATABASE_URL` pointing to a dedicated PostgreSQL test database so the CSV
+integration test executes rather than skips:
+
+```sh
+cd backend && CGO_ENABLED=1 go test -race -p 1 ./internal/config ./internal/handlers ./internal/services -run 'TestLoadEnvJWTSecretLength|TestUntypedErrorsAreGeneric|TestRegisterRoutesJSONBodyLimit|TestNewFuegoServer_TimeoutsForLongTransfers|TestUpload_|TestGenerateCSV_FormulaInjection|TestSSEHub_ConcurrentWeddingLimit|TestSSEWeddingStreamLimit|TestRegisteredGuestSeatDatabaseErrorIsGeneric|TestSyncDatabaseErrorIsGeneric' -count=1
+cd backend && TEST_REDIS_ADDR=127.0.0.1:6379 CGO_ENABLED=1 go test -race ./internal/services -run '^TestSSEHub_(DistributedWeddingLimit|RenewalFailureClosesStream)$' -count=1
+```
+
+Reviewers must check rejection before side effects, absence of internal error
+text, CSV data and summary cells, and SSE capacity release, not only status codes.
+
 ## Frontend API and pagination
 
 Files: `frontend/src/lib/api/*.ts`, `frontend/src/routes/[wid]/**/+page.svelte`.

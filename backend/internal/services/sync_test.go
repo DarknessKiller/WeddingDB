@@ -571,6 +571,19 @@ func TestSync_WriteError_Failed(t *testing.T) {
 	}
 }
 
+func TestSyncDatabaseErrorIsGeneric(t *testing.T) {
+	svc, db, wid := newGuestSyncService(t)
+	testutil.NoErr(t, db.Exec("DROP TABLE guest_records").Error)
+	results, err := svc.Sync(context.Background(), wid, []SyncMutation{
+		{Op: SyncOpCreate, GuestID: uuid.NewString(), ClientUpdatedAt: time.Now(), Payload: &SyncPayload{Name: "Test"}},
+		{Op: "unknown", GuestID: uuid.NewString(), ClientUpdatedAt: time.Now()},
+	})
+	testutil.NoErr(t, err)
+	if results[0].Status != "failed" || results[0].Reason != "Internal error" || results[1].Status != "skipped" {
+		t.Fatalf("results = %+v", results)
+	}
+}
+
 // TestSync_TableSeatValidation covers fix 4: sync seat assignment validates
 // the table (scoped to the wedding) and capacity instead of blindly writing.
 func TestSync_TableSeatValidation(t *testing.T) {

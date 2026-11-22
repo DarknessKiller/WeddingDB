@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"log/slog"
 	"strings"
 	"time"
 
@@ -235,18 +236,24 @@ func checkSeatTx(ctx context.Context, tx *gorm.DB, weddingID, tableID uuid.UUID,
 	if tx.Name() == "postgres" {
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Select("id").
 			Where("id = ? AND wedding_id = ?", tableID, weddingID).First(&models.BanquetTable{}).Error; err != nil {
-			return errors.New("table not found")
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return ErrTableNotFound
+			}
+			return err
 		}
 	}
 	table, err := repository.NewTableRepo(tx).FindByID(ctx, tableID, weddingID)
 	if err != nil {
-		return errors.New("table not found")
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return ErrTableNotFound
+		}
+		return err
 	}
 	if pax < 1 {
-		return errors.New("guest pax must be at least 1")
+		return ErrInvalidGuestPax
 	}
 	if seatNum < 1 || seatNum+pax-1 > table.Capacity {
-		return errors.New("seat range exceeds table capacity")
+		return ErrSeatRange
 	}
 	existing, err := repository.NewGuestRepo(tx).FindByTable(ctx, weddingID, tableID)
 	if err != nil {
@@ -276,7 +283,10 @@ func checkSeatNotTaken(ctx context.Context, tx *gorm.DB, g *models.GuestRecord) 
 		// Table without a seat: only the wedding-scoped ownership check applies,
 		// but a cross-wedding table id must still be rejected.
 		if _, err := repository.NewTableRepo(tx).FindByID(ctx, *g.TableID, g.WeddingID); err != nil {
-			return errors.New("table not found")
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return ErrTableNotFound
+			}
+			return err
 		}
 		return nil
 	}
@@ -565,6 +575,14 @@ func (s *GuestService) Sync(ctx context.Context, weddingID uuid.UUID, mutations 
 	return results, nil
 }
 
+func syncErrorReason(ctx context.Context, err error) string {
+	if errors.Is(err, ErrGuestPatchInvalid) || errors.Is(err, ErrGuestCapExceeded) || errors.Is(err, ErrSeatOverlap) || errors.Is(err, ErrTableNotFound) || errors.Is(err, ErrInvalidGuestPax) || errors.Is(err, ErrSeatRange) {
+		return err.Error()
+	}
+	slog.ErrorContext(ctx, "sync mutation failed", "error", err)
+	return "Internal error"
+}
+
 func (s *GuestService) applySyncMutation(ctx context.Context, weddingID uuid.UUID, m SyncMutation) SyncResult {
 	gid, err := parseSyncID(m.GuestID)
 	if err != nil {
@@ -587,7 +605,7 @@ func (s *GuestService) applySyncMutation(ctx context.Context, weddingID uuid.UUI
 			// The guest already exists: treat the create as an update.
 			merged, applied, err := s.syncMerge(ctx, weddingID, gid, m.Payload, opTime)
 			if err != nil {
-				return SyncResult{GuestID: m.GuestID, Status: "failed", Reason: err.Error()}
+				return SyncResult{GuestID: m.GuestID, Status: "failed", Reason: syncErrorReason(ctx, err)}
 			}
 			if !applied {
 				return SyncResult{GuestID: m.GuestID, Status: "skipped", Reason: "older than server", ServerRecord: merged}
@@ -595,7 +613,7 @@ func (s *GuestService) applySyncMutation(ctx context.Context, weddingID uuid.UUI
 			s.publishEvent("update", merged, weddingID)
 			return SyncResult{GuestID: m.GuestID, Status: "applied", ServerRecord: merged}
 		} else if !errors.Is(err, gorm.ErrRecordNotFound) {
-			return SyncResult{GuestID: m.GuestID, Status: "failed", Reason: err.Error()}
+			return SyncResult{GuestID: m.GuestID, Status: "failed", Reason: syncErrorReason(ctx, err)}
 		}
 		if m.Payload == nil || m.Payload.Name == "" {
 			return SyncResult{GuestID: m.GuestID, Status: "failed", Reason: "name is required"}
@@ -626,12 +644,12 @@ func (s *GuestService) applySyncMutation(ctx context.Context, weddingID uuid.UUI
 			g.FieldTimes[key] = opTime
 		}
 		if _, err := patch.applyTo(g); err != nil {
-			return SyncResult{GuestID: m.GuestID, Status: "failed", Reason: err.Error()}
+			return SyncResult{GuestID: m.GuestID, Status: "failed", Reason: syncErrorReason(ctx, err)}
 		}
 		if err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 			return s.createGuestTx(ctx, tx, g)
 		}); err != nil {
-			return SyncResult{GuestID: m.GuestID, Status: "failed", Reason: err.Error()}
+			return SyncResult{GuestID: m.GuestID, Status: "failed", Reason: syncErrorReason(ctx, err)}
 		}
 		s.publishEvent("create", g, weddingID)
 		return SyncResult{GuestID: m.GuestID, Status: "applied", ServerRecord: g}
@@ -642,7 +660,7 @@ func (s *GuestService) applySyncMutation(ctx context.Context, weddingID uuid.UUI
 			return SyncResult{GuestID: m.GuestID, Status: "skipped", Reason: "not found"}
 		}
 		if err != nil {
-			return SyncResult{GuestID: m.GuestID, Status: "failed", Reason: err.Error()}
+			return SyncResult{GuestID: m.GuestID, Status: "failed", Reason: syncErrorReason(ctx, err)}
 		}
 		if !applied {
 			return SyncResult{GuestID: m.GuestID, Status: "skipped", Reason: "older than server", ServerRecord: merged}
@@ -674,7 +692,7 @@ func (s *GuestService) applySyncMutation(ctx context.Context, weddingID uuid.UUI
 			return nil
 		})
 		if err != nil {
-			return SyncResult{GuestID: m.GuestID, Status: "failed", Reason: err.Error()}
+			return SyncResult{GuestID: m.GuestID, Status: "failed", Reason: syncErrorReason(ctx, err)}
 		}
 		if losing != nil {
 			return SyncResult{GuestID: m.GuestID, Status: "failed", Reason: "older than server", ServerRecord: losing}
@@ -726,7 +744,7 @@ func (s *GuestService) applySyncMutation(ctx context.Context, weddingID uuid.UUI
 			return SyncResult{GuestID: m.GuestID, Status: "skipped", Reason: "not found"}
 		}
 		if err != nil {
-			return SyncResult{GuestID: m.GuestID, Status: "failed", Reason: err.Error()}
+			return SyncResult{GuestID: m.GuestID, Status: "failed", Reason: syncErrorReason(ctx, err)}
 		}
 		if !applied {
 			return SyncResult{GuestID: m.GuestID, Status: "skipped", Reason: "older than server", ServerRecord: merged}
@@ -756,7 +774,7 @@ func (s *GuestService) applySyncMutation(ctx context.Context, weddingID uuid.UUI
 			return SyncResult{GuestID: m.GuestID, Status: "skipped", Reason: "not found"}
 		}
 		if err != nil {
-			return SyncResult{GuestID: m.GuestID, Status: "failed", Reason: err.Error()}
+			return SyncResult{GuestID: m.GuestID, Status: "failed", Reason: syncErrorReason(ctx, err)}
 		}
 		if !applied {
 			return SyncResult{GuestID: m.GuestID, Status: "skipped", Reason: "older than server", ServerRecord: merged}

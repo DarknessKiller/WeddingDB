@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -53,11 +54,6 @@ func (h *SSEHandler) StreamHandler() http.HandlerFunc {
 			}
 		}
 
-		w.Header().Set("Content-Type", "text/event-stream")
-		w.Header().Set("Cache-Control", "no-cache")
-		w.Header().Set("Connection", "keep-alive")
-		w.Header().Set("X-Accel-Buffering", "no")
-
 		flusher, ok := w.(http.Flusher)
 		if !ok {
 			http.Error(w, "streaming not supported", http.StatusInternalServerError)
@@ -65,8 +61,26 @@ func (h *SSEHandler) StreamHandler() http.HandlerFunc {
 		}
 
 		// Subscribe to wedding events.
-		client := h.sseHub.Subscribe(wid)
+		client, err := h.sseHub.Subscribe(r.Context(), wid)
+		if err != nil {
+			if errors.Is(err, services.ErrSSECapacity) {
+				http.Error(w, "too many streams for wedding", http.StatusTooManyRequests)
+			} else {
+				http.Error(w, "service temporarily unavailable", http.StatusServiceUnavailable)
+			}
+			return
+		}
 		defer h.sseHub.Unsubscribe(client)
+		controller := http.NewResponseController(w)
+		if err := controller.SetWriteDeadline(client.Deadline()); err != nil {
+			http.Error(w, "streaming not supported", http.StatusServiceUnavailable)
+			return
+		}
+
+		w.Header().Set("Content-Type", "text/event-stream")
+		w.Header().Set("Cache-Control", "no-cache")
+		w.Header().Set("Connection", "keep-alive")
+		w.Header().Set("X-Accel-Buffering", "no")
 
 		// Send initial keepalive comment.
 		if _, err := fmt.Fprintf(w, ": keepalive\n\n"); err != nil {
@@ -80,17 +94,38 @@ func (h *SSEHandler) StreamHandler() http.HandlerFunc {
 
 		ctx := r.Context()
 		for {
-			select {
-			case <-ctx.Done():
+			if err := controller.SetWriteDeadline(client.Deadline()); err != nil || !time.Now().Before(client.Deadline()) {
 				return
+			}
+			select {
 			case <-client.Done:
 				return
+			default:
+			}
+			expiry := time.NewTimer(time.Until(client.Deadline()))
+			select {
+			case <-ctx.Done():
+				expiry.Stop()
+				return
+			case <-client.Done:
+				expiry.Stop()
+				return
+			case <-expiry.C:
+				continue
 			case <-keepalive.C:
+				expiry.Stop()
+				if !time.Now().Before(client.Deadline()) {
+					return
+				}
 				if _, err := fmt.Fprintf(w, ": ping\n\n"); err != nil {
 					return
 				}
 				flusher.Flush()
 			case data, ok := <-client.Chan:
+				expiry.Stop()
+				if !time.Now().Before(client.Deadline()) {
+					return
+				}
 				if !ok {
 					return
 				}

@@ -2,17 +2,66 @@ package services
 
 import (
 	"bytes"
+	"context"
 	"encoding/csv"
 	"strings"
 	"testing"
 	"time"
 
 	"weddingdb/internal/models"
+	"weddingdb/internal/repository"
 	"weddingdb/internal/testutil"
 
 	"github.com/google/uuid"
 	"github.com/xuri/excelize/v2"
+	"gorm.io/driver/postgres"
+	"gorm.io/gorm"
 )
+
+func TestGenerateCSV_FormulaInjection(t *testing.T) {
+	db, err := gorm.Open(postgres.Open(pgDSN(t)), &gorm.Config{})
+	testutil.NoErr(t, err)
+	var dbName string
+	testutil.NoErr(t, db.Raw("SELECT current_database()").Scan(&dbName).Error)
+	if !strings.HasSuffix(dbName, "_test") {
+		t.Fatalf("refusing to use database %q", dbName)
+	}
+	testutil.NoErr(t, db.AutoMigrate(&models.WeddingEvent{}, &models.BanquetTable{}, &models.GuestRecord{}))
+	wid := uuid.New()
+	tableID := uuid.New()
+	testutil.NoErr(t, db.Create(&models.WeddingEvent{ID: wid, Name: "CSV"}).Error)
+	t.Cleanup(func() {
+		testutil.NoErr(t, db.Where("wedding_id = ?", wid).Delete(&models.GuestRecord{}).Error)
+		testutil.NoErr(t, db.Where("wedding_id = ?", wid).Delete(&models.BanquetTable{}).Error)
+		testutil.NoErr(t, db.Delete(&models.WeddingEvent{}, "id = ?", wid).Error)
+	})
+	testutil.NoErr(t, db.Create(&models.BanquetTable{ID: tableID, WeddingID: wid, Name: "+table"}).Error)
+	for _, name := range []string{"=formula", "+formula", "-formula", "@formula", "  =formula", "Normal"} {
+		guest := models.GuestRecord{ID: uuid.New(), WeddingID: wid, Name: name, TableID: &tableID, GiftItem: strPtr("@gift"), AngbaoAmt: intPtr(1)}
+		testutil.NoErr(t, db.Create(&guest).Error)
+	}
+	svc := NewReportService(repository.NewGuestRepo(db), repository.NewTableRepo(db), repository.NewWeddingRepo(db))
+	data, _, err := svc.GenerateCSV(context.Background(), wid)
+	testutil.NoErr(t, err)
+	reader := csv.NewReader(bytes.NewReader(data))
+	reader.FieldsPerRecord = -1
+	records, err := reader.ReadAll()
+	testutil.NoErr(t, err)
+	seen := make(map[string]int)
+	for _, row := range records {
+		for _, value := range row {
+			seen[value]++
+		}
+	}
+	for _, value := range []string{"'=formula", "'+formula", "'-formula", "'@formula", "'  =formula", "Normal", "'+table", "'@gift", "'=formula: @gift"} {
+		if seen[value] == 0 {
+			t.Errorf("missing safe CSV cell %q: %v", value, records)
+		}
+	}
+	if seen["'+table"] != 7 {
+		t.Errorf("table name not escaped in data and summary: %v", records)
+	}
+}
 
 func intPtr(i int) *int       { return &i }
 func strPtr(s string) *string { return &s }

@@ -1,7 +1,11 @@
 package config
 
 import (
+	"context"
+	"errors"
+	"log/slog"
 	"net/http"
+	"time"
 
 	"github.com/getkin/kin-openapi/openapi3"
 	"github.com/go-fuego/fuego"
@@ -11,6 +15,13 @@ func NewFuegoServer(env Env, version string) *fuego.Server {
 	s := fuego.NewServer(
 		fuego.WithAddr(":"+env.Port),
 		fuego.WithEngineOptions(
+			fuego.WithErrorHandler(func(ctx context.Context, err error) error {
+				if _, ok := errors.AsType[fuego.ErrorWithStatus](err); ok {
+					return fuego.ErrorHandler(ctx, err)
+				}
+				slog.ErrorContext(ctx, "request failed", "error", err)
+				return fuego.InternalServerError{Title: "Internal Server Error"}
+			}),
 			fuego.WithOpenAPIConfig(fuego.OpenAPIConfig{
 				Info: &openapi3.Info{
 					Title:       "WeddingDB API",
@@ -28,10 +39,8 @@ func NewFuegoServer(env Env, version string) *fuego.Server {
 	// deadline and fuego's 30s default would kill every stream at 30s, forcing
 	// a reconnect/resync loop. Keepalive pings cannot extend it.
 	s.WriteTimeout = 0
-	// Large/slow uploads must not be reset mid-transfer (fuego defaults
-	// ReadTimeout to 30s). The reverse proxy owns body-size limits and request
-	// timeouts; ReadHeaderTimeout still applies so slowloris headers die.
-	s.ReadTimeout = 0
+	// Allow large uploads while bounding request duration.
+	s.ReadTimeout = 5 * time.Minute
 
 	// Set the public server URL in the OpenAPI spec
 	if env.PublicURL != "" {
