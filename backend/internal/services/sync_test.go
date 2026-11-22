@@ -3,6 +3,7 @@ package services
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"testing"
 	"time"
 
@@ -699,5 +700,27 @@ func TestCreate_RejectsOversizedParty(t *testing.T) {
 	})
 	if err == nil {
 		t.Fatal("expected oversized party size to be rejected")
+	}
+}
+
+// Offline sync invariant 7: a negative angbao amount fails online and offline.
+func TestSync_NegativeAngbaoRejected(t *testing.T) {
+	svc, db, wid := newGuestSyncService(t)
+	ctx := context.Background()
+	gid := uuid.New()
+	base := time.Now().Add(-10 * time.Minute)
+	db.Create(&models.GuestRecord{ID: gid, WeddingID: wid, Name: "Gift", Pax: 1, CreatedAt: base, UpdatedAt: base})
+
+	var patch SyncPayload
+	testutil.NoErr(t, json.Unmarshal([]byte(`{"angbaoAmt":-5}`), &patch))
+	if _, err := svc.UpdatePatch(ctx, gid, wid, &patch); !errors.Is(err, ErrGuestPatchInvalid) {
+		t.Fatalf("online err = %v, want ErrGuestPatchInvalid", err)
+	}
+	res, err := svc.Sync(ctx, wid, []SyncMutation{{
+		Op: SyncOpUpdate, GuestID: gid.String(), ClientUpdatedAt: base.Add(time.Minute), Payload: &patch,
+	}})
+	testutil.NoErr(t, err)
+	if res[0].Status != "failed" {
+		t.Fatalf("offline result = %+v, want failed", res[0])
 	}
 }

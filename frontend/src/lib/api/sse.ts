@@ -1,24 +1,12 @@
 import { getAuth } from '#lib/stores/index.ts';
+import { refreshIfNeeded } from '#lib/api/client.ts';
+import type { GuestRow } from '#lib/utils/guestTransform.ts';
 
 export interface GuestEvent {
 	type: 'create' | 'update' | 'delete' | 'checkin' | 'checkout' | 'seat_assign';
 	guestId: string;
 	weddingId: string;
-	guest?: {
-		id: string;
-		name: string;
-		email: string;
-		pax: number;
-		rsvp: string;
-		isVip: boolean;
-		notes: string;
-		dietary: string[];
-		tableId: string | null;
-		seatNum: number | null;
-		checkedInAt: string | null;
-		angbaoAmt: number | null;
-		giftItem: string | null;
-	};
+	guest?: GuestRow;
 	timestamp: number;
 }
 
@@ -53,6 +41,8 @@ class SSEClient {
 				headers: { Authorization: `Bearer ${accessToken}` },
 				signal: controller.signal
 			});
+			// An expired token would fail every retry: refresh it before reconnecting.
+			if (response.status === 401) await refreshIfNeeded();
 			if (!response.ok || !response.body) throw new Error(`SSE request failed: ${response.status}`);
 
 			const reconnect = this.reconnectDelay > 1000;

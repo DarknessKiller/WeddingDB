@@ -4,6 +4,7 @@
   import { weddingId, setWeddingId } from '#lib/stores/weddingId.ts';
   import { get } from 'svelte/store';
   import { LIMITS } from '#lib/utils/limits.ts';
+  import { claimQueues } from '#lib/offline/queue.ts';
   import Eye from 'lucide-svelte/icons/eye';
 import EyeOff from 'lucide-svelte/icons/eye-off';
 import LogIn from 'lucide-svelte/icons/log-in';
@@ -103,6 +104,11 @@ import ChevronRight from 'lucide-svelte/icons/chevron-right';
     }
   }
 
+  // User id from the JWT payload. Read only for the offline owner check; the server verifies tokens.
+  function tokenSubject(token: string): string {
+    try { return JSON.parse(atob(token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/'))).sub ?? ''; } catch { return ''; }
+  }
+
   async function selectWedding(weddingIdValue: string) {
     loading = true;
     try {
@@ -112,7 +118,7 @@ import ChevronRight from 'lucide-svelte/icons/chevron-right';
           'Content-Type': 'application/json',
           Authorization: `Bearer ${loginAccessToken}`
         },
-        body: JSON.stringify({ weddingId: weddingIdValue })
+        body: JSON.stringify({ weddingId: weddingIdValue, refreshToken: loginRefreshToken })
       });
       if (!res.ok) {
         const err = await res.json().catch(() => ({ title: 'Failed to select wedding' }));
@@ -122,6 +128,8 @@ import ChevronRight from 'lucide-svelte/icons/chevron-right';
       const data = await res.json();
       setAuth(data.accessToken, loginRefreshToken, loginRole, loginName);
       setWeddingId(weddingIdValue);
+      await claimQueues(tokenSubject(data.accessToken), email.trim().toLowerCase(), (n, prev) =>
+        confirm(`${n} offline edit${n === 1 ? '' : 's'} from ${prev} could not sync. Discard them?`));
       addToast('Login successful', 'success');
       goto(`/${weddingIdValue}/dashboard`, { replaceState: true });
     } catch (err) {

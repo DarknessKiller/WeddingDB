@@ -12,7 +12,8 @@
   import { syncQueue } from '#lib/offline/queue.ts';
   import { getWedding } from '#lib/api/weddings.ts';
   import { listTables } from '#lib/api/tables.ts';
-  import { initializeSSE, refreshGuests } from '#lib/stores/guestEvents.ts';
+  import { initializeSSE, readCachedGuests, refreshGuests } from '#lib/stores/guestEvents.ts';
+  import { toGuest } from '#lib/utils/guestTransform.ts';
   import type { BanquetTable } from '#lib/types/index.ts';
 
   let { children } = $props();
@@ -40,29 +41,19 @@
     }
     authChecked = true;
 
-    const toGuest = (g: any) => {
-      const createdAt = g.createdAt ? new Date(g.createdAt) : new Date();
-      return {
-        id: g.id, name: g.name, email: g.email,
-        pinyin: g.pinyin,
-        rsvp: g.rsvp as any, pax: g.pax, tableId: g.tableId, seatNumber: g.seatNum,
-        checkedIn: !!g.checkedInAt, checkedInAt: g.checkedInAt ? new Date(g.checkedInAt) : undefined,
-        notes: g.notes, dietaryRequirements: g.dietary ?? [], isVip: g.isVip,
-        angbaoAmount: g.angbaoAmt ?? undefined, giftItem: g.giftItem ?? undefined,
-        createdAt, updatedAt: g.updatedAt ? new Date(g.updatedAt) : createdAt,
-      };
-    };
     const loadGuests = async () => {
       try {
-        const guests = (await fetchAllGuests($weddingId)).map(toGuest);
-        return guests;
+        return (await fetchAllGuests($weddingId)).map(toGuest);
       } catch {
-        try {
-          const cached = JSON.parse(localStorage.getItem(`offline_cache_${$weddingId}`) || 'null');
-          if (cached) return (cached as any[]).map(toGuest);
-        } catch {}
+        const cached = readCachedGuests($weddingId);
+        if (cached) return cached;
         throw new Error('offline');
       }
+    };
+    // Queue drains before reseed, on SSE reconnect too.
+    const syncThenLoad = async () => {
+      try { await syncQueue(wid); } catch {}
+      return loadGuests();
     };
 
     async function doSync() {
@@ -100,7 +91,7 @@
 
     if (destroyed) return;
     // Subscribe before the snapshot; guestEvents queues mutations until seeding completes.
-    cleanupSSE = initializeSSE(loadGuests);
+    cleanupSSE = initializeSSE(syncThenLoad);
     try {
       // refreshGuests keeps the syncing window open across fetch+seed even if
       // initializeSSE early-returned, so mid-fetch SSE events can't be clobbered.

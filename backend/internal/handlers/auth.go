@@ -81,6 +81,8 @@ type TokenResponse struct {
 
 type SelectWeddingRequest struct {
 	WeddingID string `json:"weddingId"`
+	// RefreshToken names the caller's session; only that session is rescoped.
+	RefreshToken string `json:"refreshToken"`
 }
 
 type SelectWeddingResponse struct {
@@ -145,7 +147,7 @@ func (h *AuthHandler) SelectWedding(c fuego.ContextWithBody[SelectWeddingRequest
 		return SelectWeddingResponse{}, fuego.BadRequestError{Title: "Invalid wedding ID"}
 	}
 	adminID := AdminIDFromContext(c.Context())
-	accessToken, err := h.authService.SelectWedding(c.Context(), adminID, weddingID)
+	accessToken, err := h.authService.SelectWedding(c.Context(), adminID, body.RefreshToken, weddingID)
 	if err != nil {
 		switch {
 		case errors.Is(err, services.ErrNoWeddingAccess):
@@ -171,7 +173,7 @@ func (h *AuthHandler) Refresh(c fuego.ContextWithBody[RefreshRequest]) (TokenRes
 	}
 	result, err := h.authService.Refresh(c.Context(), body.RefreshToken, oldAccessToken)
 	if err != nil {
-		return TokenResponse{}, fuego.UnauthorizedError{Title: err.Error()}
+		return TokenResponse{}, authError(err)
 	}
 	return TokenResponse{
 		AccessToken:         result.AccessToken,
@@ -299,4 +301,14 @@ func clientIP(r *http.Request) string {
 		return r.RemoteAddr
 	}
 	return host
+}
+
+// authError maps a token rejection to 401 and anything else to 503, so the
+// client keeps its session through an outage. No driver text reaches the body.
+func authError(err error) error {
+	if errors.Is(err, services.ErrTokenRejected) {
+		return fuego.UnauthorizedError{Title: "Invalid or expired session"}
+	}
+	slog.Error("auth check failed", "err", err)
+	return fuego.HTTPError{Status: http.StatusServiceUnavailable, Title: "service temporarily unavailable"}
 }

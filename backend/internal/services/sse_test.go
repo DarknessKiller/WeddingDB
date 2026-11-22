@@ -27,7 +27,7 @@ func testSSEHub(t *testing.T) *SSEHub {
 
 func testSubscribe(t *testing.T, hub *SSEHub, wid uuid.UUID) *SSEClient {
 	t.Helper()
-	client, err := hub.Subscribe(context.Background(), wid)
+	client, err := hub.Subscribe(context.Background(), wid, uuid.New())
 	if err != nil && !errors.Is(err, ErrSSECapacity) {
 		t.Errorf("subscribe: %v", err)
 	}
@@ -359,4 +359,26 @@ type mockGuestRecord struct {
 	checkedInAt *time.Time
 	angbaoAmt   *int
 	giftItem    *string
+}
+
+func TestSSEHub_PerUserLimit(t *testing.T) {
+	hub := testSSEHub(t)
+	user := uuid.New()
+	clients := make([]*SSEClient, 0, 5)
+	for range 5 {
+		c, err := hub.Subscribe(context.Background(), uuid.New(), user)
+		testutil.NoErr(t, err)
+		clients = append(clients, c)
+	}
+	if _, err := hub.Subscribe(context.Background(), uuid.New(), user); !errors.Is(err, ErrSSEUserCapacity) {
+		t.Fatalf("sixth stream err = %v, want ErrSSEUserCapacity", err)
+	}
+	other, err := hub.Subscribe(context.Background(), clients[0].WeddingID, uuid.New())
+	testutil.NoErr(t, err)
+	hub.Unsubscribe(clients[0])
+	again, err := hub.Subscribe(context.Background(), uuid.New(), user)
+	testutil.NoErr(t, err)
+	for _, c := range append(clients[1:], other, again) {
+		hub.Unsubscribe(c)
+	}
 }

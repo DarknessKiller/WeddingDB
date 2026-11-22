@@ -1,21 +1,5 @@
 import { apiFetch } from './client';
-import type { DashboardStats, TableOccupancy } from '#lib/types/index.ts';
-
-interface RawGuest {
-  id: string;
-  name: string;
-  email?: string;
-  pax: number;
-  rsvp: string;
-  checkedInAt?: string | null;
-  notes?: string;
-  dietary?: string[];
-  isVip?: boolean;
-  angbaoAmt?: number | null;
-  giftItem?: string | null;
-  createdAt: string;
-  updatedAt: string;
-}
+import type { TableOccupancy } from '#lib/types/index.ts';
 
 interface RawOccupancy {
   TableID: string;
@@ -26,32 +10,6 @@ async function fetchJSON<T>(path: string): Promise<T> {
   const res = await apiFetch(path);
   if (!res.ok) throw new Error(`API ${res.status}`);
   return res.json();
-}
-
-export async function getDashboardStats(weddingId: string): Promise<DashboardStats> {
-  const [guestData, occData] = await Promise.all([
-    fetchJSON<{ guests: RawGuest[]; total: number }>(`/api/weddings/${weddingId}/guests?limit=500`),
-    fetchJSON<RawOccupancy[]>(`/api/weddings/${weddingId}/occupancy`)
-  ]);
-
-  const guests = guestData.guests ?? [];
-  const confirmed = guests.filter(g => g.rsvp === 'confirmed').length;
-  const pending = guests.filter(g => g.rsvp === 'pending').length;
-  const declined = guests.filter(g => g.rsvp === 'declined').length;
-  const checkedIn = guests.filter(g => g.checkedInAt != null).length;
-  const totalPax = guests.reduce((s, g) => s + (g.pax ?? 0), 0);
-
-  return {
-    totalGuests: guests.length,
-    confirmedGuests: confirmed,
-    pendingRsvp: pending,
-    declined,
-    checkedIn,
-    totalPax,
-    totalTables: (occData ?? []).length,
-    occupiedTables: (occData ?? []).filter(o => o.Pax > 0).length,
-    averageOccupancy: 0
-  };
 }
 
 export async function getOccupancy(weddingId: string): Promise<TableOccupancy[]> {

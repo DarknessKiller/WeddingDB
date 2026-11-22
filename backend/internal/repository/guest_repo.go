@@ -4,9 +4,9 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"strings"
+	"unicode/utf8"
 
 	"weddingdb/internal/models"
 	"weddingdb/internal/utils"
@@ -15,8 +15,6 @@ import (
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
-
-var ErrInvalidCursor = errors.New("invalid cursor")
 
 type GuestRepo struct{ db *gorm.DB }
 
@@ -85,9 +83,10 @@ func (r *GuestRepo) SearchByWedding(ctx context.Context, weddingID uuid.UUID, qu
 	escaped := strings.ReplaceAll(query, "%", "\\%")
 	escaped = strings.ReplaceAll(escaped, "_", "\\_")
 	q := fmt.Sprintf("%%%s%%", escaped)
-	pinyinQ := fmt.Sprintf("%%%s%%", strings.ToLower(models.GenerateNamePinyin(query)))
+	lowerPy := strings.ToLower(models.GenerateNamePinyin(query))
+	pinyinQ := fmt.Sprintf("%%%s%%", lowerPy)
 	lowerQ := strings.ToLower(query)
-	prefix := fmt.Sprintf("%s%%", lowerQ)
+	// LEFT counts characters, so the prefix length is a rune count, not bytes.
 	err := r.db.WithContext(ctx).Raw(`
 		SELECT * FROM guest_records
 		WHERE wedding_id = ? AND (name ILIKE ? OR name_pinyin ILIKE ?)
@@ -100,7 +99,7 @@ func (r *GuestRepo) SearchByWedding(ctx context.Context, weddingID uuid.UUID, qu
 			END, name
 		LIMIT 101`,
 		weddingID, q, pinyinQ,
-		lowerQ, len(lowerQ), prefix, len(lowerQ), strings.ToLower(models.GenerateNamePinyin(query))).
+		lowerQ, utf8.RuneCountInString(lowerQ), lowerQ, utf8.RuneCountInString(lowerPy), lowerPy).
 		Scan(&guests).Error
 	return guests, err
 }

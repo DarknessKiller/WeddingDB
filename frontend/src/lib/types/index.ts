@@ -47,18 +47,6 @@ export interface TableOccupancy {
   isVip?: boolean;
 }
 
-export interface DashboardStats {
-  totalGuests: number;
-  confirmedGuests: number;
-  pendingRsvp: number;
-  declined: number;
-  checkedIn: number;
-  totalPax: number;
-  totalTables: number;
-  occupiedTables: number;
-  averageOccupancy: number;
-}
-
 export interface ActivityItem {
   id: string;
   type: 'check_in' | 'rsvp_update' | 'table_assignment' | 'reservation';

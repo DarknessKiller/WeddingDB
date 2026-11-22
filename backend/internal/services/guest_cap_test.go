@@ -51,16 +51,11 @@ func TestGuestCap_CountsPartySize(t *testing.T) {
 		t.Fatalf("full wedding should reject another guest, got %v", err)
 	}
 
-	fetched, err := svc.Get(ctx, couple.ID, wid)
-	if err != nil {
-		t.Fatalf("get couple: %v", err)
-	}
-	fetched.Pax = 3
-	if err := svc.Update(ctx, fetched); !errors.Is(err, ErrGuestCapExceeded) {
+	paxPatch := func(n int) *GuestPatch { return &GuestPatch{Pax: n, set: map[string]bool{"pax": true}} }
+	if _, err := svc.UpdatePatch(ctx, couple.ID, wid, paxPatch(3)); !errors.Is(err, ErrGuestCapExceeded) {
 		t.Fatalf("growing pax past the cap should be rejected, got %v", err)
 	}
-	fetched.Pax = 1
-	if err := svc.Update(ctx, fetched); err != nil {
+	if _, err := svc.UpdatePatch(ctx, couple.ID, wid, paxPatch(1)); err != nil {
 		t.Fatalf("shrinking pax should fit: %v", err)
 	}
 }
@@ -118,8 +113,7 @@ func TestGuestCap_LegacyOverCapAllowsDecrease(t *testing.T) {
 	if err := db.Where("wedding_id = ?", wid).First(&first).Error; err != nil {
 		t.Fatalf("load first guest: %v", err)
 	}
-	first.Pax = 1
-	if err := svc.Update(ctx, &first); err != nil {
+	if _, err := svc.UpdatePatch(ctx, first.ID, wid, &GuestPatch{Pax: 1, set: map[string]bool{"pax": true}}); err != nil {
 		t.Fatalf("non-increasing update must be allowed: %v", err)
 	}
 	if err := svc.Delete(ctx, first.ID, wid); err != nil {

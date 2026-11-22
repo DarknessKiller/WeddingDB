@@ -2,6 +2,8 @@ package middleware
 
 import (
 	"context"
+	"errors"
+	"log/slog"
 	"net/http"
 	"strings"
 	"weddingdb/internal/services"
@@ -29,7 +31,7 @@ func AuthMiddleware(authService *services.AuthService) func(http.Handler) http.H
 			// Redis calls respect context cancellation and the request is rejected.
 			claims, err := authService.ValidateToken(r.Context(), token)
 			if err != nil {
-				http.Error(w, `{"error":"Invalid token"}`, http.StatusUnauthorized)
+				WriteAuthError(w, err)
 				return
 			}
 
@@ -39,6 +41,17 @@ func AuthMiddleware(authService *services.AuthService) func(http.Handler) http.H
 			next.ServeHTTP(w, r.WithContext(ctx))
 		})
 	}
+}
+
+// WriteAuthError answers a failed ValidateToken: 401 for a rejected token,
+// 503 for an outage so the client keeps its session and retries.
+func WriteAuthError(w http.ResponseWriter, err error) {
+	if errors.Is(err, services.ErrTokenRejected) {
+		http.Error(w, `{"error":"Invalid token"}`, http.StatusUnauthorized)
+		return
+	}
+	slog.Error("token validation unavailable", "err", err)
+	http.Error(w, `{"error":"service temporarily unavailable"}`, http.StatusServiceUnavailable)
 }
 
 // ExtractBearer returns the token from an HTTP Bearer authorization header.

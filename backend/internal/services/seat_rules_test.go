@@ -108,9 +108,15 @@ func TestBulkCreate_RejectsForeignTable(t *testing.T) {
 	}
 }
 
-// UpdateWithSeat is one transaction: a failed seat check must leave the edited
+// renameAndSeat is one online edit that renames the guest and moves the seat.
+func renameAndSeat(tid uuid.UUID, seat int) *GuestPatch {
+	table := tid.String()
+	return &GuestPatch{Name: "Renamed", TableID: &table, SeatNum: &seat, set: map[string]bool{"name": true, "tableId": true}}
+}
+
+// UpdatePatch is one transaction: a failed seat check must leave the edited
 // fields untouched.
-func TestUpdateWithSeat_FailedSeatLeavesFieldsUntouched(t *testing.T) {
+func TestUpdatePatch_FailedSeatLeavesFieldsUntouched(t *testing.T) {
 	svc, _, wid := newGuestSyncService(t)
 	tid := seedTable(t, svc, wid, "T1", 10)
 	g := seedGuest(t, svc, wid, "Alice")
@@ -119,8 +125,7 @@ func TestUpdateWithSeat_FailedSeatLeavesFieldsUntouched(t *testing.T) {
 		t.Fatalf("assign seat: %v", err)
 	}
 
-	g.Name = "Renamed"
-	err := svc.UpdateWithSeat(context.Background(), g, &tid, 2)
+	_, err := svc.UpdatePatch(context.Background(), g.ID, wid, renameAndSeat(tid, 2))
 	if !errors.Is(err, ErrSeatOverlap) {
 		t.Fatalf("error = %v, want ErrSeatOverlap", err)
 	}
@@ -138,13 +143,12 @@ func TestUpdateWithSeat_FailedSeatLeavesFieldsUntouched(t *testing.T) {
 }
 
 // The happy path still moves the guest and saves the fields together.
-func TestUpdateWithSeat_AppliesBoth(t *testing.T) {
+func TestUpdatePatch_AppliesNameAndSeat(t *testing.T) {
 	svc, _, wid := newGuestSyncService(t)
 	tid := seedTable(t, svc, wid, "T1", 10)
 	g := seedGuest(t, svc, wid, "Alice")
 
-	g.Name = "Renamed"
-	if err := svc.UpdateWithSeat(context.Background(), g, &tid, 4); err != nil {
+	if _, err := svc.UpdatePatch(context.Background(), g.ID, wid, renameAndSeat(tid, 4)); err != nil {
 		t.Fatalf("update: %v", err)
 	}
 	stored, err := repository.NewGuestRepo(svc.db).FindByID(context.Background(), g.ID, wid)

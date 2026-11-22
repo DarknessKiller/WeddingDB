@@ -1,7 +1,7 @@
 <script lang="ts">
   import X from 'lucide-svelte/icons/x';
 import AlertTriangle from 'lucide-svelte/icons/alert-triangle';
-  import { onMount } from 'svelte';
+  import { trapFocus } from '#lib/utils/focus.ts';
   import { fade } from 'svelte/transition';
 
   let {
@@ -24,8 +24,6 @@ import AlertTriangle from 'lucide-svelte/icons/alert-triangle';
     onCancel: () => void;
   } = $props();
 
-  let dialogEl: HTMLDivElement | null = $state(null);
-
   function handleKeydown(e: KeyboardEvent) {
     if (e.key === 'Escape') onCancel();
   }
@@ -36,13 +34,6 @@ import AlertTriangle from 'lucide-svelte/icons/alert-triangle';
 
   function handleConfirm() {
     onConfirm();
-  }
-
-  function handleOverlayKeydown(e: KeyboardEvent) {
-    if (e.key === 'Enter' || e.key === ' ') {
-      e.preventDefault();
-      handleConfirm();
-    }
   }
 </script>
 
@@ -68,7 +59,7 @@ import AlertTriangle from 'lucide-svelte/icons/alert-triangle';
     <!-- svelte-ignore a11y_no_static_element_interactions -->
     <!-- svelte-ignore a11y_click_events_have_key_events -->
     <div
-      bind:this={dialogEl}
+      use:trapFocus
       class="relative bg-white/95 backdrop-blur-xl rounded-2xl shadow-2xl w-full max-w-sm overflow-hidden dialog-motion"
       onclick={(e) => e.stopPropagation()}
     >

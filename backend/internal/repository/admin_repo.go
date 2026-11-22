@@ -2,11 +2,13 @@ package repository
 
 import (
 	"context"
+	"slices"
 
 	"weddingdb/internal/models"
 
 	"github.com/google/uuid"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 type AdminRepo struct{ db *gorm.DB }
@@ -41,16 +43,43 @@ func (r *AdminRepo) Update(ctx context.Context, admin *models.AdminUser) error {
 	return r.db.WithContext(ctx).Save(admin).Error
 }
 
-// CountByRole returns the number of admins with the given role.
-func (r *AdminRepo) CountByRole(ctx context.Context, role string) (int64, error) {
-	var count int64
-	err := r.db.WithContext(ctx).Model(&models.AdminUser{}).Where("role = ?", role).Count(&count).Error
-	return count, err
+// keepAnotherAdmin locks every admin row and returns ErrLastAdmin when id is
+// the only admin left. Two concurrent removals serialize on these locks, so
+// they cannot both pass. The row lock is Postgres-only; sqlite has one writer.
+func keepAnotherAdmin(tx *gorm.DB, id uuid.UUID) error {
+	q := tx.Model(&models.AdminUser{}).Where("role = ?", "admin")
+	if tx.Name() == "postgres" {
+		q = q.Clauses(clause.Locking{Strength: "UPDATE"})
+	}
+	var ids []uuid.UUID
+	if err := q.Pluck("id", &ids).Error; err != nil {
+		return err
+	}
+	if len(ids) <= 1 && slices.Contains(ids, id) {
+		return ErrLastAdmin
+	}
+	return nil
+}
+
+// UpdateRole sets the account's role. Demoting the last admin fails with ErrLastAdmin.
+func (r *AdminRepo) UpdateRole(ctx context.Context, id uuid.UUID, role string) error {
+	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if role != "admin" {
+			if err := keepAnotherAdmin(tx, id); err != nil {
+				return err
+			}
+		}
+		return tx.Model(&models.AdminUser{}).Where("id = ?", id).Update("role", role).Error
+	})
 }
 
 // Delete removes the account and its wedding grants in one transaction.
+// Deleting the last admin fails with ErrLastAdmin.
 func (r *AdminRepo) Delete(ctx context.Context, id uuid.UUID) error {
 	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := keepAnotherAdmin(tx, id); err != nil {
+			return err
+		}
 		if err := tx.Where("user_id = ?", id).Delete(&models.UserWedding{}).Error; err != nil {
 			return err
 		}

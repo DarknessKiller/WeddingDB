@@ -20,7 +20,7 @@ import ExternalLink from 'lucide-svelte/icons/external-link';
   import dayjs from 'dayjs';
   import relativeTime from 'dayjs/plugin/relativeTime';
   import { onMount } from 'svelte';
-  import type { DashboardStats, TableOccupancy, ActivityItem, Guest } from '#lib/types/index.ts';
+  import type { TableOccupancy, ActivityItem, Guest } from '#lib/types/index.ts';
   import { getActivityTimestamp } from '#lib/utils/activity.ts';
   import NumberTicker from '#lib/components/ui/NumberTicker.svelte';
 

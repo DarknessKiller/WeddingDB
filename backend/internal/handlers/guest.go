@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"encoding/json"
 	"errors"
 	"log/slog"
 	"strconv"
@@ -199,6 +200,9 @@ func (h *GuestHandler) Delete(c fuego.ContextWithBody[any]) (any, error) {
 		return nil, fuego.BadRequestError{Title: "Invalid ID"}
 	}
 	if err := h.guestService.Delete(ctx, id, wid); err != nil {
+		if errors.Is(err, services.ErrGuestNotFound) {
+			return nil, fuego.NotFoundError{Title: "Guest not found"}
+		}
 		return nil, err
 	}
 	c.SetStatus(204)
@@ -263,6 +267,9 @@ func (h *GuestHandler) CheckOut(c fuego.ContextWithBody[any]) (any, error) {
 		return nil, fuego.BadRequestError{Title: "Invalid ID"}
 	}
 	if err := h.guestService.CheckOut(ctx, id, wid); err != nil {
+		if errors.Is(err, services.ErrGuestNotFound) {
+			return nil, fuego.NotFoundError{Title: "Guest not found"}
+		}
 		return nil, err
 	}
 	c.SetStatus(204)
@@ -420,7 +427,8 @@ func (h *GuestHandler) UnassignSeat(c fuego.ContextNoBody) (any, error) {
 }
 
 type SyncRequest struct {
-	Mutations []services.SyncMutation `json:"mutations"`
+	// Raw items so one undecodable mutation fails alone (Offline sync invariant 8).
+	Mutations []json.RawMessage `json:"mutations"`
 }
 
 func (h *GuestHandler) Sync(c fuego.ContextWithBody[SyncRequest]) (any, error) {
@@ -436,9 +444,24 @@ func (h *GuestHandler) Sync(c fuego.ContextWithBody[SyncRequest]) (any, error) {
 	if len(body.Mutations) > 500 {
 		return nil, fuego.BadRequestError{Title: "Too many mutations (max 500)"}
 	}
-	results, err := h.guestService.Sync(ctx, wid, body.Mutations)
+	results := make([]services.SyncResult, len(body.Mutations))
+	valid := make([]services.SyncMutation, 0, len(body.Mutations))
+	at := make([]int, 0, len(body.Mutations))
+	for i, raw := range body.Mutations {
+		var m services.SyncMutation
+		if err := json.Unmarshal(raw, &m); err != nil {
+			results[i] = services.SyncResult{Status: "failed", Reason: "malformed mutation", Retryable: new(false)}
+			continue
+		}
+		valid = append(valid, m)
+		at = append(at, i)
+	}
+	applied, err := h.guestService.Sync(ctx, wid, valid)
 	if err != nil {
 		return nil, err
+	}
+	for j, r := range applied {
+		results[at[j]] = r
 	}
 	return map[string]any{"results": results}, nil
 }

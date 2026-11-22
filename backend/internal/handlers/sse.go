@@ -34,7 +34,7 @@ func (h *SSEHandler) StreamHandler() http.HandlerFunc {
 		}
 		claims, err := h.authService.ValidateToken(r.Context(), token)
 		if err != nil {
-			http.Error(w, `{"error":"Invalid token"}`, http.StatusUnauthorized)
+			middleware.WriteAuthError(w, err)
 			return
 		}
 
@@ -61,10 +61,10 @@ func (h *SSEHandler) StreamHandler() http.HandlerFunc {
 		}
 
 		// Subscribe to wedding events.
-		client, err := h.sseHub.Subscribe(r.Context(), wid)
+		client, err := h.sseHub.Subscribe(r.Context(), wid, claims.AdminID)
 		if err != nil {
-			if errors.Is(err, services.ErrSSECapacity) {
-				http.Error(w, "too many streams for wedding", http.StatusTooManyRequests)
+			if errors.Is(err, services.ErrSSECapacity) || errors.Is(err, services.ErrSSEUserCapacity) {
+				http.Error(w, err.Error(), http.StatusTooManyRequests)
 			} else {
 				http.Error(w, "service temporarily unavailable", http.StatusServiceUnavailable)
 			}
@@ -116,6 +116,14 @@ func (h *SSEHandler) StreamHandler() http.HandlerFunc {
 				expiry.Stop()
 				if !time.Now().Before(client.Deadline()) {
 					return
+				}
+				// Expired, revoked or logged-out tokens end the stream; an outage
+				// on the recheck does not, matching the 503 "keep session" contract.
+				if _, err := h.authService.ValidateToken(ctx, token); err != nil {
+					if errors.Is(err, services.ErrTokenRejected) {
+						return
+					}
+					slog.Warn("SSE: token recheck unavailable", "wedding", wid, "err", err)
 				}
 				if _, err := fmt.Fprintf(w, ": ping\n\n"); err != nil {
 					return

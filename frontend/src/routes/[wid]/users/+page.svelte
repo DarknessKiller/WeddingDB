@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onMount } from 'svelte';
+  import { trapFocus } from '#lib/utils/focus.ts';
   import { goto } from '$app/navigation';
   import { addToast, getAuth } from '#lib/stores/index.ts';
   import { weddingId } from '#lib/stores/weddingId.ts';
@@ -347,10 +348,10 @@ import LogOut from 'lucide-svelte/icons/log-out';
 {#if showCreate}
   <div class="fixed inset-0 z-50 flex items-center justify-center p-4">
     <div class="absolute inset-0 bg-black/30 backdrop-blur-md" onclick={() => showCreate = false} role="presentation"></div>
-    <div class="relative bg-white/95 backdrop-blur-xl rounded-2xl shadow-2xl w-full max-w-md overflow-hidden">
+    <div use:trapFocus role="dialog" aria-modal="true" aria-label="Add user" tabindex="-1" onkeydown={(e) => { if (e.key === 'Escape') showCreate = false; }} class="relative bg-white/95 backdrop-blur-xl rounded-2xl shadow-2xl w-full max-w-md overflow-hidden">
       <div class="flex items-center justify-between p-5 border-b border-gray-100">
         <h3 class="font-bold text-gray-900">Add User</h3>
-        <button onclick={() => showCreate = false} class="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-gray-100 transition-colors">
+        <button onclick={() => showCreate = false} aria-label="Close" class="w-11 h-11 rounded-lg flex items-center justify-center hover:bg-gray-100 transition-colors">
           <X class="w-4 h-4 text-gray-500" />
         </button>
       </div>
@@ -402,10 +403,10 @@ import LogOut from 'lucide-svelte/icons/log-out';
 {#if assignTarget}
   <div class="fixed inset-0 z-50 flex items-center justify-center p-4">
     <div class="absolute inset-0 bg-black/30 backdrop-blur-md" onclick={() => assignTarget = null} role="presentation"></div>
-    <div class="relative bg-white/95 backdrop-blur-xl rounded-2xl shadow-2xl w-full max-w-sm overflow-hidden">
+    <div use:trapFocus role="dialog" aria-modal="true" aria-label="Assign weddings" tabindex="-1" onkeydown={(e) => { if (e.key === 'Escape') assignTarget = null; }} class="relative bg-white/95 backdrop-blur-xl rounded-2xl shadow-2xl w-full max-w-sm overflow-hidden">
       <div class="flex items-center justify-between p-5 border-b border-gray-100">
         <h3 class="font-bold text-gray-900">Assign Weddings</h3>
-        <button onclick={() => assignTarget = null} class="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-gray-100 transition-colors">
+        <button onclick={() => assignTarget = null} aria-label="Close" class="w-11 h-11 rounded-lg flex items-center justify-center hover:bg-gray-100 transition-colors">
           <X class="w-4 h-4 text-gray-500" />
         </button>
       </div>
@@ -441,10 +442,10 @@ import LogOut from 'lucide-svelte/icons/log-out';
 {#if resetTarget}
   <div class="fixed inset-0 z-50 flex items-center justify-center p-4">
     <div class="absolute inset-0 bg-black/30 backdrop-blur-md" onclick={() => resetTarget = null} role="presentation"></div>
-    <div class="relative bg-white/95 backdrop-blur-xl rounded-2xl shadow-2xl w-full max-w-md overflow-hidden">
+    <div use:trapFocus role="dialog" aria-modal="true" aria-label="Reset password" tabindex="-1" onkeydown={(e) => { if (e.key === 'Escape') resetTarget = null; }} class="relative bg-white/95 backdrop-blur-xl rounded-2xl shadow-2xl w-full max-w-md overflow-hidden">
       <div class="flex items-center justify-between p-5 border-b border-gray-100">
         <h3 class="font-bold text-gray-900">Reset Password</h3>
-        <button onclick={() => resetTarget = null} class="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-gray-100 transition-colors">
+        <button onclick={() => resetTarget = null} aria-label="Close" class="w-11 h-11 rounded-lg flex items-center justify-center hover:bg-gray-100 transition-colors">
           <X class="w-4 h-4 text-gray-500" />
         </button>
       </div>

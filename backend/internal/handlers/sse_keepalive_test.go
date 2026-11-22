@@ -198,7 +198,7 @@ func TestSSEWeddingStreamLimit(t *testing.T) {
 	clients := make([]*services.SSEClient, 99)
 	var err error
 	for i := range clients {
-		clients[i], err = hub.Subscribe(context.Background(), wid)
+		clients[i], err = hub.Subscribe(context.Background(), wid, uuid.New())
 		testutil.NoErr(t, err)
 		if clients[i] == nil {
 			t.Fatal("unexpected capacity rejection")
@@ -235,7 +235,7 @@ func TestSSEWeddingStreamLimit(t *testing.T) {
 	cancel()
 	deadline := time.Now().Add(time.Second)
 	for {
-		client, err := hub.Subscribe(context.Background(), wid)
+		client, err := hub.Subscribe(context.Background(), wid, uuid.New())
 		if err == nil {
 			hub.Unsubscribe(client)
 			break

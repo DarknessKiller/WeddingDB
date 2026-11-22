@@ -6,14 +6,15 @@
   import { z } from 'zod';
   import CheckCircle2 from 'lucide-svelte/icons/check-circle-2';
 import AlertCircle from 'lucide-svelte/icons/alert-circle';
-  import { fetchAllGuests, createGuest, type GuestResponse } from '#lib/api/guests.ts';
+  import { fetchAllGuests, createGuest } from '#lib/api/guests.ts';
+  import { toGuest } from '#lib/utils/guestTransform.ts';
   import { listTables } from '#lib/api/tables.ts';
   import { getLayout } from '#lib/api/layout.ts';
   import { weddingId } from '#lib/stores/weddingId.ts';
   import { get } from 'svelte/store';
   import { onMount } from 'svelte';
   import { LIMITS } from '#lib/utils/limits.ts';
-  import type { BanquetTable, Guest, HallElement, RSVPStatus } from '#lib/types/index.ts';
+  import type { BanquetTable, Guest, HallElement } from '#lib/types/index.ts';
   import HallMap from '#lib/components/seating/HallMap.svelte';
 
   let apiTables = $state<BanquetTable[]>([]);
@@ -23,32 +24,12 @@ import AlertCircle from 'lucide-svelte/icons/alert-circle';
   let hallHeight = $state(1000);
   let dataLoaded = $state(false);
 
-  function mapGuest(r: GuestResponse): Guest {
-    return {
-      id: r.id,
-      name: r.name,
-      email: r.email,
-      rsvp: (r.rsvp as RSVPStatus) ?? 'no_response',
-      pax: r.pax,
-      tableId: r.tableId ?? null,
-      seatNumber: r.seatNum,
-      checkedIn: r.checkedInAt !== null,
-      checkedInAt: r.checkedInAt ? new Date(r.checkedInAt) : undefined,
-      notes: r.notes,
-      dietaryRequirements: r.dietary ?? [],
-      isVip: r.isVip,
-      angbaoAmount: r.angbaoAmt ?? undefined,
-      giftItem: r.giftItem ?? undefined,
-      createdAt: new Date(r.createdAt),
-    };
-  }
-
   onMount(async () => {
     const wid = get(weddingId);
     try {
       const [tablesRes, guestRows, layout] = await Promise.all([listTables(wid), fetchAllGuests(wid), getLayout(wid)]);
       apiTables = tablesRes;
-      apiGuests = guestRows.map(mapGuest);
+      apiGuests = guestRows.map(toGuest);
       elements = layout.elements;
       hallWidth = layout.hallWidth;
       hallHeight = layout.hallHeight;

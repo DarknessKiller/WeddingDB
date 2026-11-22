@@ -42,14 +42,35 @@ func guestCapError(current, delta int) error {
 		ErrGuestCapExceeded, current, current+delta, MaxGuestsPerWedding)
 }
 
+// lockWedding takes the wedding row lock every guest write takes first.
+// The row lock is Postgres-only; sqlite (tests) has one writer.
+func lockWedding(tx *gorm.DB, weddingID uuid.UUID) error {
+	if tx.Name() != "postgres" {
+		return nil
+	}
+	return tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+		Select("id").Where("id = ?", weddingID).First(&models.WeddingEvent{}).Error
+}
+
+// lockTable takes the table row lock that seat writes serialize on.
+// The row lock is Postgres-only; sqlite (tests) has one writer.
+func lockTable(tx *gorm.DB, weddingID, tableID uuid.UUID) error {
+	if tx.Name() != "postgres" {
+		return nil
+	}
+	err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Select("id").
+		Where("id = ? AND wedding_id = ?", tableID, weddingID).First(&models.BanquetTable{}).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return ErrTableNotFound
+	}
+	return err
+}
+
 // guestCountLocked serializes guest additions for one wedding and returns the
-// current count. The row lock is Postgres-only; sqlite (tests) has one writer.
+// current count.
 func (s *GuestService) guestCountLocked(tx *gorm.DB, weddingID uuid.UUID) (int, error) {
-	if tx.Name() == "postgres" {
-		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
-			Select("id").Where("id = ?", weddingID).First(&models.WeddingEvent{}).Error; err != nil {
-			return 0, err
-		}
+	if err := lockWedding(tx, weddingID); err != nil {
+		return 0, err
 	}
 	var total int
 	if err := tx.Model(&models.GuestRecord{}).
@@ -152,48 +173,8 @@ func (s *GuestService) Create(ctx context.Context, g *models.GuestRecord) error 
 	if err != nil {
 		return err
 	}
-	s.publishEvent("create", g, g.WeddingID)
+	s.sseHub.publishGuest("create", g, g.WeddingID)
 	return nil
-}
-
-// Update writes a full guest row (all column groups) at server time.
-func (s *GuestService) Update(ctx context.Context, g *models.GuestRecord) error {
-	var merged *models.GuestRecord
-	applied := false
-	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		var err error
-		merged, applied, err = s.mergeGuestUpdate(ctx, tx, g.WeddingID, g.ID, guestPatchFromRecord(g), time.Now())
-		return err
-	})
-	if err != nil {
-		return err
-	}
-	if applied {
-		s.publishEvent("update", merged, g.WeddingID)
-	}
-	return nil
-}
-
-// guestPatchFromRecord turns a full row into a patch that carries every group.
-func guestPatchFromRecord(g *models.GuestRecord) *GuestPatch {
-	p := &GuestPatch{
-		Name:      g.Name,
-		Email:     g.Email,
-		Pax:       g.Pax,
-		RSVP:      g.RSVP,
-		IsVip:     g.IsVip,
-		Notes:     g.Notes,
-		Dietary:   g.Dietary,
-		AngbaoAmt: g.AngbaoAmt,
-		GiftItem:  g.GiftItem,
-		set:       map[string]bool{"name": true, "email": true, "pax": true, "rsvp": true, "isVip": true, "notes": true, "dietary": true, "angbaoAmt": true, "giftItem": true, "tableId": true},
-	}
-	if g.TableID != nil {
-		table := g.TableID.String()
-		p.TableID = &table
-		p.SeatNum = g.SeatNum
-	}
-	return p
 }
 
 // UpdatePatch merges a sparse online edit into the locked row and returns the
@@ -213,7 +194,7 @@ func (s *GuestService) UpdatePatch(ctx context.Context, id, weddingID uuid.UUID,
 		return nil, err
 	}
 	if applied {
-		s.publishEvent("update", merged, weddingID)
+		s.sseHub.publishGuest("update", merged, weddingID)
 	}
 	return merged, nil
 }
@@ -221,15 +202,16 @@ func (s *GuestService) UpdatePatch(ctx context.Context, id, weddingID uuid.UUID,
 func (s *GuestService) Delete(ctx context.Context, id, weddingID uuid.UUID) error {
 	// Fetch guest before deletion so we can broadcast the event.
 	guest, err := s.guestRepo.FindByID(ctx, id, weddingID)
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return ErrGuestNotFound
+	}
 	if err != nil {
-		log.Printf("guest lookup before delete failed: %v", err)
+		return err
 	}
 	if err := s.guestRepo.Delete(ctx, id, weddingID); err != nil {
 		return err
 	}
-	if guest != nil {
-		s.publishEvent("delete", guest, weddingID)
-	}
+	s.sseHub.publishGuest("delete", guest, weddingID)
 	return nil
 }
 
@@ -240,16 +222,9 @@ func (s *GuestService) Search(ctx context.Context, weddingID uuid.UUID, query st
 // checkSeatTx validates a seat assignment inside tx and returns the table row
 // lock. Every write path that sets a seat calls this, so all of them serialize
 // on the same table row and share the capacity/overlap rules.
-// The row lock is Postgres-only; sqlite (tests) has one writer.
 func checkSeatTx(ctx context.Context, tx *gorm.DB, weddingID, tableID uuid.UUID, guestID uuid.UUID, pax, seatNum int) error {
-	if tx.Name() == "postgres" {
-		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Select("id").
-			Where("id = ? AND wedding_id = ?", tableID, weddingID).First(&models.BanquetTable{}).Error; err != nil {
-			if errors.Is(err, gorm.ErrRecordNotFound) {
-				return ErrTableNotFound
-			}
-			return err
-		}
+	if err := lockTable(tx, weddingID, tableID); err != nil {
+		return err
 	}
 	table, err := repository.NewTableRepo(tx).FindByID(ctx, tableID, weddingID)
 	if err != nil {
@@ -316,38 +291,7 @@ func (s *GuestService) AssignSeat(ctx context.Context, guestID, weddingID, table
 	if err != nil {
 		return err
 	}
-	s.publishEvent("seat_assign", merged, weddingID)
-	return nil
-}
-
-// UpdateWithSeat saves edited fields and, when tableID is set, moves the guest
-// to that table in the same transaction — a failed seat check leaves the
-// fields untouched and a failed field write leaves the seat where it was.
-// A nil tableID preserves the current seat assignment.
-func (s *GuestService) UpdateWithSeat(ctx context.Context, g *models.GuestRecord, tableID *uuid.UUID, seatNum int) error {
-	patch := guestPatchFromRecord(g)
-	if tableID == nil {
-		delete(patch.set, "tableId")
-		patch.TableID = nil
-		patch.SeatNum = nil
-	} else {
-		table := tableID.String()
-		patch.TableID = &table
-		patch.SeatNum = &seatNum
-	}
-	var merged *models.GuestRecord
-	applied := false
-	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		var err error
-		merged, applied, err = s.mergeGuestUpdate(ctx, tx, g.WeddingID, g.ID, patch, time.Now())
-		return err
-	})
-	if err != nil {
-		return err
-	}
-	if applied {
-		s.publishEvent("update", merged, g.WeddingID)
-	}
+	s.sseHub.publishGuest("seat_assign", merged, weddingID)
 	return nil
 }
 
@@ -403,7 +347,7 @@ func (s *GuestService) CheckIn(ctx context.Context, id, weddingID uuid.UUID, not
 		return err
 	}
 	if applied {
-		s.publishEvent("checkin", merged, weddingID)
+		s.sseHub.publishGuest("checkin", merged, weddingID)
 	}
 	return nil
 }
@@ -414,6 +358,9 @@ func (s *GuestService) CheckOut(ctx context.Context, id, weddingID uuid.UUID) er
 	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		repo := repository.NewGuestRepo(tx)
 		locked, err := repo.FindByIDForUpdate(ctx, id, weddingID)
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return ErrGuestNotFound
+		}
 		if err != nil {
 			return err
 		}
@@ -431,7 +378,7 @@ func (s *GuestService) CheckOut(ctx context.Context, id, weddingID uuid.UUID) er
 		return err
 	}
 	if applied {
-		s.publishEvent("checkout", merged, weddingID)
+		s.sseHub.publishGuest("checkout", merged, weddingID)
 	}
 	return nil
 }
@@ -525,7 +472,7 @@ func (s *GuestService) BulkCreate(ctx context.Context, guests []models.GuestReco
 		return 0, err
 	}
 	for _, e := range events {
-		s.publishEvent(e.eventType, e.guest, e.guest.WeddingID)
+		s.sseHub.publishGuest(e.eventType, e.guest, e.guest.WeddingID)
 	}
 	return created, nil
 }
@@ -534,11 +481,12 @@ func (s *GuestService) Occupancy(ctx context.Context, weddingID uuid.UUID) ([]re
 	return s.guestRepo.TableOccupancy(ctx, weddingID)
 }
 
-// publishEvent broadcasts a guest mutation to all connected SSE clients via Redis.
-// Uses context.Background() because the service layer does not yet propagate request
-// context. The goroutine ensures publishing never blocks the caller.
-func (s *GuestService) publishEvent(eventType string, guest *models.GuestRecord, weddingID uuid.UUID) {
-	if s.sseHub == nil {
+// publishGuest broadcasts a guest mutation to all connected SSE clients via
+// Redis. It is the one publish path for guest and table services. Uses
+// context.Background() so publishing outlives the request; the goroutine
+// ensures publishing never blocks the caller. A nil hub publishes nothing.
+func (h *SSEHub) publishGuest(eventType string, guest *models.GuestRecord, weddingID uuid.UUID) {
+	if h == nil {
 		return
 	}
 
@@ -551,7 +499,7 @@ func (s *GuestService) publishEvent(eventType string, guest *models.GuestRecord,
 	}
 
 	go func() {
-		if err := s.sseHub.Publish(context.Background(), weddingID, event); err != nil {
+		if err := h.Publish(context.Background(), weddingID, event); err != nil {
 			log.Printf("SSE: publish %s for guest %s in wedding %s: %v", eventType, guest.ID, weddingID, err)
 		}
 	}()
@@ -582,6 +530,7 @@ type SyncResult struct {
 	GuestID      string              `json:"guestId"`
 	Status       string              `json:"status"` // applied | skipped | failed
 	Reason       string              `json:"reason,omitempty"`
+	Retryable    *bool               `json:"retryable,omitempty"`
 	ServerRecord *models.GuestRecord `json:"serverRecord,omitempty"`
 }
 
@@ -635,7 +584,7 @@ func (s *GuestService) applySyncMutation(ctx context.Context, weddingID uuid.UUI
 			if !applied {
 				return SyncResult{GuestID: m.GuestID, Status: "skipped", Reason: "older than server", ServerRecord: merged}
 			}
-			s.publishEvent("update", merged, weddingID)
+			s.sseHub.publishGuest("update", merged, weddingID)
 			return SyncResult{GuestID: m.GuestID, Status: "applied", ServerRecord: merged}
 		} else if !errors.Is(err, gorm.ErrRecordNotFound) {
 			return SyncResult{GuestID: m.GuestID, Status: "failed", Reason: syncErrorReason(ctx, err)}
@@ -676,7 +625,7 @@ func (s *GuestService) applySyncMutation(ctx context.Context, weddingID uuid.UUI
 		}); err != nil {
 			return SyncResult{GuestID: m.GuestID, Status: "failed", Reason: syncErrorReason(ctx, err)}
 		}
-		s.publishEvent("create", g, weddingID)
+		s.sseHub.publishGuest("create", g, weddingID)
 		return SyncResult{GuestID: m.GuestID, Status: "applied", ServerRecord: g}
 
 	case SyncOpUpdate:
@@ -690,7 +639,7 @@ func (s *GuestService) applySyncMutation(ctx context.Context, weddingID uuid.UUI
 		if !applied {
 			return SyncResult{GuestID: m.GuestID, Status: "skipped", Reason: "older than server", ServerRecord: merged}
 		}
-		s.publishEvent("update", merged, weddingID)
+		s.sseHub.publishGuest("update", merged, weddingID)
 		return SyncResult{GuestID: m.GuestID, Status: "applied", ServerRecord: merged}
 
 	case SyncOpDelete:
@@ -723,7 +672,7 @@ func (s *GuestService) applySyncMutation(ctx context.Context, weddingID uuid.UUI
 			return SyncResult{GuestID: m.GuestID, Status: "failed", Reason: "older than server", ServerRecord: losing}
 		}
 		if deleted != nil {
-			s.publishEvent("delete", deleted, weddingID)
+			s.sseHub.publishGuest("delete", deleted, weddingID)
 		}
 		return SyncResult{GuestID: m.GuestID, Status: "applied"}
 
@@ -780,7 +729,7 @@ func (s *GuestService) applySyncMutation(ctx context.Context, weddingID uuid.UUI
 		if !applied {
 			return SyncResult{GuestID: m.GuestID, Status: "skipped", Reason: "older than server", ServerRecord: merged}
 		}
-		s.publishEvent("checkin", merged, weddingID)
+		s.sseHub.publishGuest("checkin", merged, weddingID)
 		return SyncResult{GuestID: m.GuestID, Status: "applied", ServerRecord: merged}
 
 	case SyncOpCheckOut:
@@ -810,7 +759,7 @@ func (s *GuestService) applySyncMutation(ctx context.Context, weddingID uuid.UUI
 		if !applied {
 			return SyncResult{GuestID: m.GuestID, Status: "skipped", Reason: "older than server", ServerRecord: merged}
 		}
-		s.publishEvent("checkout", merged, weddingID)
+		s.sseHub.publishGuest("checkout", merged, weddingID)
 		return SyncResult{GuestID: m.GuestID, Status: "applied", ServerRecord: merged}
 
 	default:
@@ -870,6 +819,7 @@ func guestToEventData(g *models.GuestRecord) *GuestEventData {
 		IsVip:   g.IsVip,
 		Notes:   g.Notes,
 		Dietary: []string(g.Dietary),
+		Pinyin:  g.NamePinyin,
 	}
 	if g.TableID != nil {
 		id := utils.EncodeUUID(*g.TableID)

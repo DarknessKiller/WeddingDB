@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"strconv"
+	"weddingdb/internal/models"
 	"weddingdb/internal/services"
 	"weddingdb/internal/utils"
 
@@ -11,7 +12,6 @@ import (
 type publicGuest struct {
 	ID      string  `json:"id"`
 	Name    string  `json:"name"`
-	Rsvp    string  `json:"rsvp"`
 	TableID *string `json:"tableId"`
 	SeatNum *int    `json:"seatNum"`
 	Pax     int     `json:"pax"`
@@ -52,6 +52,11 @@ func (h *PublicGuestHandler) List(c fuego.ContextNoBody) (any, error) {
 		nextCursor = utils.EncodeUUID(guests[limit-1].ID)
 		guests = guests[:limit]
 	}
+	return map[string]any{"guests": toPublicGuests(guests), "nextCursor": nextCursor}, nil
+}
+
+// toPublicGuests is the one model-to-response mapping for public guest lists.
+func toPublicGuests(guests []models.GuestRecord) []publicGuest {
 	out := make([]publicGuest, 0, len(guests))
 	for _, g := range guests {
 		var tid *string
@@ -62,7 +67,6 @@ func (h *PublicGuestHandler) List(c fuego.ContextNoBody) (any, error) {
 		out = append(out, publicGuest{
 			ID:      utils.EncodeUUID(g.ID),
 			Name:    g.Name,
-			Rsvp:    g.RSVP,
 			TableID: tid,
 			SeatNum: g.SeatNum,
 			Pax:     g.Pax,
@@ -70,7 +74,7 @@ func (h *PublicGuestHandler) List(c fuego.ContextNoBody) (any, error) {
 			Pinyin:  g.NamePinyin,
 		})
 	}
-	return map[string]any{"guests": out, "nextCursor": nextCursor}, nil
+	return out
 }
 
 type PublicKioskHandler struct {
@@ -118,8 +122,8 @@ func (h *PublicGuestHandler) Search(c fuego.ContextNoBody) (any, error) {
 		return nil, fuego.BadRequestError{Title: "Invalid wedding ID"}
 	}
 	query := c.QueryParam("q")
-	if len(query) > 100 {
-		query = query[:100]
+	if r := []rune(query); len(r) > 100 {
+		query = string(r[:100])
 	}
 	guests, err := h.guestService.Search(ctx, wid, query)
 	if err != nil {
@@ -128,23 +132,5 @@ func (h *PublicGuestHandler) Search(c fuego.ContextNoBody) (any, error) {
 	if len(guests) > 50 {
 		guests = guests[:50]
 	}
-	out := make([]publicGuest, 0, len(guests))
-	for _, g := range guests {
-		var tid *string
-		if g.TableID != nil {
-			s := utils.EncodeUUID(*g.TableID)
-			tid = &s
-		}
-		out = append(out, publicGuest{
-			ID:      utils.EncodeUUID(g.ID),
-			Name:    g.Name,
-			Rsvp:    g.RSVP,
-			TableID: tid,
-			SeatNum: g.SeatNum,
-			Pax:     g.Pax,
-			IsVip:   g.IsVip,
-			Pinyin:  g.NamePinyin,
-		})
-	}
-	return out, nil
+	return toPublicGuests(guests), nil
 }
