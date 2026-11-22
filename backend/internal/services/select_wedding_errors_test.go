@@ -26,4 +26,13 @@ func TestSelectWedding_SentinelErrors(t *testing.T) {
 	if _, err := svc.SelectWedding(ctx, user.ID, "", uuid.New()); !errors.Is(err, ErrNoWeddingAccess) {
 		t.Fatalf("no access: got %v, want ErrNoWeddingAccess", err)
 	}
+
+	// Access is granted but the caller's refresh token matches no live row: the
+	// scope cannot be persisted, so the selection is rejected instead of handing
+	// back a session that forgets the wedding on its next refresh.
+	granted := uuid.New()
+	testutil.NoErr(t, db.Create(&models.UserWedding{ID: uuid.New(), UserID: user.ID, WeddingID: granted}).Error)
+	if _, err := svc.SelectWedding(ctx, user.ID, "no-such-token", granted); !errors.Is(err, ErrTokenRejected) {
+		t.Fatalf("missing refresh token: got %v, want ErrTokenRejected", err)
+	}
 }

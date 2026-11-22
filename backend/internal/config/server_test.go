@@ -97,6 +97,32 @@ func TestNewFuegoServer_EmptyPublicURL_NoServers(t *testing.T) {
 	}
 }
 
+func TestNewFuegoServer_LimitsEveryBodyType(t *testing.T) {
+	s := NewFuegoServer(Env{Port: "0"}, "test")
+	fuego.Post(s, "/text", func(c fuego.ContextWithBody[string]) (string, error) {
+		_, err := c.Body()
+		return "", err
+	})
+	fuego.Post(s, "/binary", func(c fuego.ContextWithBody[[]byte]) (string, error) {
+		_, err := c.Body()
+		return "", err
+	})
+	for _, tc := range []struct{ name, path, contentType string }{
+		{"text/plain", "/text", "text/plain"},
+		{"application/octet-stream", "/binary", "application/octet-stream"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			r := httptest.NewRequest(http.MethodPost, tc.path, strings.NewReader(strings.Repeat("x", 1024*1024+1)))
+			r.Header.Set("Content-Type", tc.contentType)
+			w := httptest.NewRecorder()
+			s.Mux.ServeHTTP(w, r)
+			if w.Code != http.StatusRequestEntityTooLarge {
+				t.Fatalf("status %d, want %d", w.Code, http.StatusRequestEntityTooLarge)
+			}
+		})
+	}
+}
+
 func TestLoadEnv_PublicURLDefault(t *testing.T) {
 	// LoadEnv requires JWT_SECRET; set it for test
 	t.Setenv("JWT_SECRET", "01234567890123456789012345678901")

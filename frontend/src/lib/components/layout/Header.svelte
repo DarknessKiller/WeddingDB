@@ -2,6 +2,7 @@
   import { page } from '$app/state';
   import { sidebarCollapsed, getAuth, clearAuth } from '#lib/stores/index.ts';
   import { setWeddingId } from '#lib/stores/weddingId.ts';
+  import { clearGuestCaches, clearGuestStores } from '#lib/stores/guestEvents.ts';
   import { goto } from '$app/navigation';
   import Menu from 'lucide-svelte/icons/menu';
 import X from 'lucide-svelte/icons/x';
@@ -42,6 +43,10 @@ import LogOut from 'lucide-svelte/icons/log-out';
     }
     clearAuth();
     setWeddingId('');
+    // Signing out must not leave the previous wedding's guests (or their cached
+    // emails, notes and angbao amounts) on this device.
+    clearGuestStores();
+    clearGuestCaches();
     goto('/login', { replaceState: true });
   }
 </script>

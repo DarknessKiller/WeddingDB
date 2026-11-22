@@ -60,9 +60,24 @@ export function loadCachedGuests<T>(wid: string): T[] | null {
 // The backend caps request bodies at 1 MiB, so the queue goes up in chunks.
 const SYNC_CHUNK = 100;
 
-export async function syncQueue(wid: string): Promise<{ applied: number; skipped: number }> {
+export type SyncSummary = { applied: number; skipped: number; dropped: number };
+
+// One drain per wedding at a time. The mount, the SSE reconnect, `online` and a
+// manual retry can all fire together, and two overlapping drains replay the same
+// mutations twice.
+const inFlight = new Map<string, Promise<SyncSummary>>();
+
+export function syncQueue(wid: string): Promise<SyncSummary> {
+	const running = inFlight.get(wid);
+	if (running) return running;
+	const run = drainQueue(wid).finally(() => { inFlight.delete(wid); });
+	inFlight.set(wid, run);
+	return run;
+}
+
+async function drainQueue(wid: string): Promise<SyncSummary> {
 	const q = getQueue(wid);
-	let applied = 0, skipped = 0;
+	let applied = 0, skipped = 0, dropped = 0;
 	for (let start = 0; start < q.length; start += SYNC_CHUNK) {
 		const chunk = q.slice(start, start + SYNC_CHUNK);
 		const res = await apiFetch(`/api/weddings/${wid}/guests/sync`, {
@@ -71,10 +86,18 @@ export async function syncQueue(wid: string): Promise<{ applied: number; skipped
 		});
 		if (!res.ok) {
 			const t = await res.text().catch(() => '');
+			// A rejected body is rejected every time: keeping it would block the
+			// queue for good. Drop the chunk and say so.
+			if (res.status >= 400 && res.status < 500 && res.status !== 401 && res.status !== 429) {
+				dequeueByIds(wid, chunk.map((m) => m.mutationId));
+				addToast(`${chunk.length} offline edit${chunk.length === 1 ? '' : 's'} discarded: rejected by the server`, 'error');
+				continue;
+			}
 			throw new Error(`sync failed ${res.status} ${t}`);
 		}
-		const data = await res.json() as { results: { guestId: string; status: string; serverRecord?: GuestResponse; reason?: string }[] };
+		const data = await res.json() as { results: { guestId: string; status: string; serverRecord?: GuestResponse; reason?: string; retryable?: boolean }[] };
 		const doneIds: string[] = [];
+		const droppedReasons: string[] = [];
 		for (let i = 0; i < chunk.length && i < data.results.length; i++) {
 			const r = data.results[i];
 			if (r.status === 'applied') { applied++; doneIds.push(chunk[i].mutationId); }
@@ -82,12 +105,20 @@ export async function syncQueue(wid: string): Promise<{ applied: number; skipped
 				// No column won: show the server's row instead of the optimistic one.
 				skipped++; doneIds.push(chunk[i].mutationId);
 				if (r.serverRecord) applyGuestResponse(r.serverRecord);
+			} else if (r.status === 'failed' && r.retryable === false) {
+				// Validation or business rejection: re-sending it can never succeed,
+				// so it must leave the queue for the rest to drain.
+				dropped++; doneIds.push(chunk[i].mutationId);
+				if (r.reason) droppedReasons.push(r.reason);
 			}
 		}
 		dequeueByIds(wid, doneIds);
+		if (droppedReasons.length) {
+			addToast(`${droppedReasons.length} offline edit${droppedReasons.length === 1 ? '' : 's'} discarded: ${droppedReasons[0]}`, 'error');
+		}
 	}
 	if (skipped) addToast(`${skipped} offline edit${skipped === 1 ? '' : 's'} reverted: newer changes won`, 'info');
-	return { applied, skipped };
+	return { applied, skipped, dropped };
 }
 
 // Owner is the user id (JWT `sub`), never the email: localStorage on a shared

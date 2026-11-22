@@ -38,6 +38,9 @@ type GuestEventData struct {
 	AngbaoAmt   *int     `json:"angbaoAmt"`
 	GiftItem    *string  `json:"giftItem"`
 	Pinyin      string   `json:"pinyin"`
+	// UpdatedAt is the row's write time, so a client can drop an event that
+	// arrives after a newer one (out-of-order delivery, reconnect replay).
+	UpdatedAt string `json:"updatedAt"`
 }
 
 // SSEClient represents a connected SSE client.
@@ -102,16 +105,30 @@ type SSEHub struct {
 	pubsub  *redis.PubSub
 	ctx     context.Context
 	cancel  context.CancelFunc
+	// publish serializes outgoing events through one goroutine, so a check-in
+	// and its undo keep the order they were written in instead of the order two
+	// goroutines happened to run.
+	publish chan publishRequest
 	// ponytail: closed after PSubscribe ACKs so the first Publish is not lost during Redis warm-up.
 	// Race B (client joins SSE mid-publish) is not addressed here — fix needs a per-wedding replay buffer.
 	ready chan struct{}
 }
 
+// ssePublishQueue bounds the ordered publish queue. A full queue slows the
+// caller instead of dropping an event.
+const ssePublishQueue = 1024
+
+type publishRequest struct {
+	weddingID uuid.UUID
+	event     GuestEvent
+}
+
 // NewSSEHub creates a new SSEHub and starts the Redis subscriber.
 func NewSSEHub(rdb *redis.Client) *SSEHub {
 	ctx, cancel := context.WithCancel(context.Background())
-	hub := &SSEHub{clients: make(map[uuid.UUID]map[string]*SSEClient), redis: rdb, ctx: ctx, cancel: cancel, ready: make(chan struct{})}
+	hub := &SSEHub{clients: make(map[uuid.UUID]map[string]*SSEClient), redis: rdb, ctx: ctx, cancel: cancel, publish: make(chan publishRequest, ssePublishQueue), ready: make(chan struct{})}
 	go hub.subscribeRedis()
+	go hub.publishLoop()
 	select {
 	case <-hub.ready:
 	case <-time.After(5 * time.Second):
@@ -236,6 +253,20 @@ func (h *SSEHub) Unsubscribe(client *SSEClient) {
 		}
 	})
 	log.Printf("SSE: client %s disconnected from wedding %s", client.ID, client.WeddingID)
+}
+
+// publishLoop drains the publish queue in order.
+func (h *SSEHub) publishLoop() {
+	for {
+		select {
+		case <-h.ctx.Done():
+			return
+		case req := <-h.publish:
+			if err := h.Publish(context.Background(), req.weddingID, req.event); err != nil {
+				log.Printf("SSE: publish %s for guest %s in wedding %s: %v", req.event.Type, req.event.GuestID, req.weddingID, err)
+			}
+		}
+	}
 }
 
 // Publish sends a guest event to Redis for cross-instance broadcasting.

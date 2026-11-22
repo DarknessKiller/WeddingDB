@@ -17,6 +17,7 @@ import (
 	"github.com/go-fuego/fuego"
 	"github.com/google/uuid"
 	"golang.org/x/crypto/bcrypt"
+	"gorm.io/gorm"
 )
 
 func validatePassword(password string) error {
@@ -154,6 +155,8 @@ func (h *AuthHandler) SelectWedding(c fuego.ContextWithBody[SelectWeddingRequest
 			return SelectWeddingResponse{}, fuego.ForbiddenError{Title: "No access to this wedding"}
 		case errors.Is(err, services.ErrAdminNotFound):
 			return SelectWeddingResponse{}, fuego.UnauthorizedError{Title: "Unauthorized"}
+		case errors.Is(err, services.ErrTokenRejected):
+			return SelectWeddingResponse{}, fuego.UnauthorizedError{Title: "Invalid or expired session"}
 		}
 		slog.Error("select wedding failed", "user", adminID, "err", err)
 		return SelectWeddingResponse{}, fuego.InternalServerError{Title: "Internal error"}
@@ -233,6 +236,9 @@ func (h *AuthHandler) ChangePassword(c fuego.ContextWithBody[ChangePasswordReque
 	admin.Password = string(hash)
 	admin.ForcePasswordChange = false
 	if err := h.adminRepo.Update(ctx, admin); err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, fuego.NotFoundError{Title: "User not found"}
+		}
 		return nil, fuego.InternalServerError{Title: "Failed to update password"}
 	}
 	// Revoke all existing sessions so compromised tokens are invalidated

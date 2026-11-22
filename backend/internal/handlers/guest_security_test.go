@@ -29,7 +29,7 @@ func TestRegisteredGuestSeatDatabaseErrorIsGeneric(t *testing.T) {
 	t.Cleanup(func() { testutil.NoErr(t, rdb.Close()) })
 	const secret = "test-secret"
 	auth := services.NewAuthService(nil, nil, nil, secret, rdb)
-	guest := services.NewGuestService(repository.NewGuestRepo(db), repository.NewTableRepo(db), nil, db)
+	guest := services.NewGuestService(repository.NewGuestRepo(db), nil, db)
 	s := config.NewFuegoServer(config.Env{Port: "0"}, "test")
 	RegisterRoutes(s, auth, guest, nil, nil, nil, nil, nil)
 	wid := uuid.New()

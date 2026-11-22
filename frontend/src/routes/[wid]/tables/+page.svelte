@@ -223,7 +223,9 @@ import Map from 'lucide-svelte/icons/map';
     editMode = false;
   }
 
-  onMount(async () => {
+  async function retry() {
+    loading = true;
+    tablesError = null;
     try {
       await loadData();
     } catch (e: any) {
@@ -232,7 +234,9 @@ import Map from 'lucide-svelte/icons/map';
     } finally {
       loading = false;
     }
-  });
+  }
+
+  onMount(() => retry());
 </script>
 
 <svelte:head> <title>{$weddingTitle ? `${$weddingTitle} – Tables` : 'Tables – WeddingDB'}</title></svelte:head>
@@ -292,7 +296,7 @@ import Map from 'lucide-svelte/icons/map';
       </div>
       <p class="text-red font-medium">Failed to load tables</p>
       <p class="text-sm text-gray-500 mt-1 mb-4">{tablesError}</p>
-      <button onclick={() => location.reload()} class="px-4 py-2 bg-red text-white rounded-xl text-sm font-semibold hover:bg-red-light transition-colors">
+      <button onclick={() => retry()} class="px-4 py-2 bg-red text-white rounded-xl text-sm font-semibold hover:bg-red-light transition-colors">
         Retry
       </button>
     </div>

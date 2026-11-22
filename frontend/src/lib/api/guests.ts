@@ -173,6 +173,8 @@ export async function deleteGuest(weddingId: string, guestId: string): Promise<v
 	try {
 		const res = await apiFetch(`/api/weddings/${weddingId}/guests/${guestId}`, { method: 'DELETE' });
 		if (!res.ok) throw new Error(`Failed to delete guest: ${res.status}`);
+		// Don't wait for the SSE echo: the row is gone from every store now.
+		optimisticPatch('delete', guestId);
 	} catch (e) {
 		if (isNetworkError(e)) { doQueue(); return; }
 		throw e;
@@ -190,6 +192,7 @@ export async function checkInGuest(weddingId: string, guestId: string, notes?: s
 		const res = await apiFetch(`/api/weddings/${weddingId}/guests/${guestId}/checkin`, { method: 'POST', body: JSON.stringify({ notes: trimmed }) });
 		if (res.status === 409) { const err = await res.json().catch(() => ({ title: 'Guest already checked in' })); throw new ConflictError(err.title || 'Guest already checked in'); }
 		if (!res.ok) throw new Error(`Failed to check in guest: ${res.status}`);
+		optimisticPatch('checkin', guestId, payload);
 	} catch (e) {
 		if (e instanceof ConflictError) throw e;
 		if (isNetworkError(e)) { doQueue(); return; }
@@ -203,6 +206,7 @@ export async function checkOutGuest(weddingId: string, guestId: string): Promise
 	try {
 		const res = await apiFetch(`/api/weddings/${weddingId}/guests/${guestId}/checkout`, { method: 'POST' });
 		if (!res.ok) throw new Error(`Failed to check out guest: ${res.status}`);
+		optimisticPatch('checkout', guestId);
 	} catch (e) {
 		if (isNetworkError(e)) { doQueue(); return; }
 		throw e;
@@ -216,6 +220,9 @@ export async function assignSeat(weddingId: string, guestId: string, tableId: st
 	try {
 		const res = await apiFetch(`/api/weddings/${weddingId}/guests/${guestId}/seat`, { method: 'POST', body: JSON.stringify(payload) });
 		if (!res.ok) throw new Error(`Failed to assign seat: ${res.status}`);
+		// Seating maps read the shared guest store; patch it instead of relying on
+		// the SSE echo, so a save shows its new occupancy immediately.
+		optimisticPatch('update', guestId, payload);
 	} catch (e) {
 		if (isNetworkError(e)) { doQueue(); return; }
 		throw e;
@@ -228,6 +235,7 @@ export async function unassignSeat(weddingId: string, guestId: string): Promise<
 	try {
 		const res = await apiFetch(`/api/weddings/${weddingId}/guests/${guestId}/seat`, { method: 'DELETE' });
 		if (!res.ok) throw new Error(`Failed to unassign seat: ${res.status}`);
+		optimisticPatch('update', guestId, { tableId: null, seatNum: null });
 	} catch (e) {
 		if (isNetworkError(e)) { doQueue(); return; }
 		throw e;

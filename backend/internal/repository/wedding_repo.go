@@ -7,6 +7,7 @@ import (
 
 	"github.com/google/uuid"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 type WeddingRepo struct{ db *gorm.DB }
@@ -31,8 +32,41 @@ func (r *WeddingRepo) Create(ctx context.Context, w *models.WeddingEvent) error 
 	return r.db.WithContext(ctx).Create(w).Error
 }
 
+// Update writes the mutable columns only, under the row lock. Save would
+// re-insert a deleted wedding: this report is 404 instead.
 func (r *WeddingRepo) Update(ctx context.Context, w *models.WeddingEvent) error {
-	return r.db.WithContext(ctx).Save(w).Error
+	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		q := tx.Model(&models.WeddingEvent{}).Where("id = ?", w.ID)
+		if tx.Name() == "postgres" {
+			q = q.Clauses(clause.Locking{Strength: "UPDATE"})
+		}
+		// Read the row under the lock. A count would be invalid here: Postgres
+		// rejects FOR UPDATE with an aggregate.
+		var existing models.WeddingEvent
+		if err := q.First(&existing).Error; err != nil {
+			return err
+		}
+		return tx.Model(&models.WeddingEvent{}).Where("id = ?", w.ID).Updates(map[string]any{
+			"name":                     w.Name,
+			"date":                     w.Date,
+			"venue_name":               w.VenueName,
+			"venue_address":            w.VenueAddress,
+			"kiosk_description":        w.KioskDescription,
+			"kiosk_logo_url":           w.KioskLogoUrl,
+			"kiosk_background_url":     w.KioskBackgroundUrl,
+			"kiosk_background_blur":    w.KioskBackgroundBlur,
+			"kiosk_background_size":    w.KioskBackgroundSize,
+			"kiosk_background_pos_x":   w.KioskBackgroundPosX,
+			"kiosk_background_pos_y":   w.KioskBackgroundPosY,
+			"kiosk_logo_size":          w.KioskLogoSize,
+			"kiosk_logo_pos_x":         w.KioskLogoPosX,
+			"kiosk_logo_pos_y":         w.KioskLogoPosY,
+			"show_seat_numbers":        w.ShowSeatNumbers,
+			"kiosk_idle_reset_seconds": w.KioskIdleResetSeconds,
+			"hall_width":               w.HallWidth,
+			"hall_height":              w.HallHeight,
+		}).Error
+	})
 }
 
 func (r *WeddingRepo) Delete(ctx context.Context, id uuid.UUID) error {

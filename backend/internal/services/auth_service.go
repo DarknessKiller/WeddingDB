@@ -144,6 +144,11 @@ func (s *AuthService) SelectWedding(ctx context.Context, adminID uuid.UUID, refr
 		// refresh after SelectWedding drops the wedding and the user gets 403
 		// until they log in again. Admins keep a nil scope (all weddings).
 		if err := s.tokenRepo.UpdateWeddingScope(ctx, adminID, refreshToken, weddingID); err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				// No live refresh token to scope: the caller would receive a
+				// session that forgets the wedding on its next refresh.
+				return "", ErrTokenRejected
+			}
 			return "", fmt.Errorf("failed to persist wedding scope: %w", err)
 		}
 	}

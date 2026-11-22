@@ -26,6 +26,9 @@ const (
 	MaxURLLen              = 500
 	MaxColorLen            = 20
 	MaxGuestPartySize      = 50
+	// MaxLayoutElements bounds one hall layout, so a save cannot write an
+	// unbounded element set in a single request.
+	MaxLayoutElements = 200
 )
 
 // FieldLenError reports a text field over its cap. Handlers map it to a 400.
@@ -46,8 +49,13 @@ func checkLen(field, value string, max int) error {
 }
 
 // ValidateGuestText enforces the caps for every guest write path: online
-// create/update, bulk import and offline sync.
+// create/update, bulk import and offline sync. Angbao is checked here as well
+// as on the patch, so the offline check-in path (which writes the amount
+// directly) obeys the same rule as an online edit.
 func ValidateGuestText(g *models.GuestRecord) error {
+	if err := validateAngbaoAmt(g.AngbaoAmt); err != nil {
+		return err
+	}
 	if err := checkLen("Name", g.Name, MaxNameLen); err != nil {
 		return err
 	}
@@ -69,6 +77,14 @@ func ValidateGuestText(g *models.GuestRecord) error {
 		if err := checkLen("Dietary item", item, MaxDietaryItemLen); err != nil {
 			return err
 		}
+	}
+	return nil
+}
+
+// validateAngbaoAmt rejects a negative angbao amount on every write path.
+func validateAngbaoAmt(v *int) error {
+	if v != nil && *v < 0 {
+		return fmt.Errorf("%w: angbaoAmt must not be negative", ErrGuestPatchInvalid)
 	}
 	return nil
 }

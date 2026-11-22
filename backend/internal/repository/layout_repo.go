@@ -7,6 +7,7 @@ import (
 
 	"github.com/google/uuid"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 type LayoutRepo struct{ db *gorm.DB }
@@ -14,20 +15,35 @@ type LayoutRepo struct{ db *gorm.DB }
 func NewLayoutRepo(db *gorm.DB) *LayoutRepo { return &LayoutRepo{db: db} }
 
 func (r *LayoutRepo) ElementsByWedding(ctx context.Context, weddingID uuid.UUID) ([]models.HallElement, error) {
+	return elementsByWedding(r.db.WithContext(ctx), weddingID)
+}
+
+func elementsByWedding(db *gorm.DB, weddingID uuid.UUID) ([]models.HallElement, error) {
 	els := make([]models.HallElement, 0)
-	err := r.db.WithContext(ctx).Where("wedding_id = ?", weddingID).Order("z_index").Find(&els).Error
+	err := db.Where("wedding_id = ?", weddingID).Order("z_index").Find(&els).Error
 	return els, err
 }
 
+// SaveLayout writes the hall size, tables and the reconciled element set in one
+// transaction. The stored elements are read inside it after the wedding row
+// lock, so a concurrent save cannot reconcile against a stale list and leave
+// duplicates behind.
 func (r *LayoutRepo) SaveLayout(
 	ctx context.Context,
 	weddingID uuid.UUID,
 	hallWidth, hallHeight int,
 	tables []models.TableUpdate,
-	toCreate, toUpdate []models.HallElement,
-	toDelete []uuid.UUID,
+	incoming []models.HallElement,
 ) error {
 	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := lockWeddingRow(tx, weddingID); err != nil {
+			return err
+		}
+		existing, err := elementsByWedding(tx.WithContext(ctx), weddingID)
+		if err != nil {
+			return err
+		}
+		toCreate, toUpdate, toDelete := models.ReconcileElements(existing, incoming)
 		if hallWidth > 0 && hallHeight > 0 {
 			if err := tx.Model(&models.WeddingEvent{}).Where("id = ?", weddingID).
 				Updates(map[string]any{"hall_width": hallWidth, "hall_height": hallHeight}).Error; err != nil {
@@ -35,6 +51,9 @@ func (r *LayoutRepo) SaveLayout(
 			}
 		}
 		for _, t := range tables {
+			if err := NewTableRepo(tx.WithContext(ctx)).CheckCapacity(ctx, weddingID, t.ID, t.Capacity); err != nil {
+				return err
+			}
 			res := tx.Model(&models.BanquetTable{}).Where("id = ? AND wedding_id = ?", t.ID, weddingID).
 				Updates(map[string]any{
 					"x": t.X, "y": t.Y, "degree": t.Degree,
@@ -77,4 +96,14 @@ func (r *LayoutRepo) SaveLayout(
 		}
 		return nil
 	})
+}
+
+// lockWeddingRow takes the wedding row lock the layout save shares with every
+// guest and table write. The row lock is Postgres-only; sqlite has one writer.
+func lockWeddingRow(tx *gorm.DB, weddingID uuid.UUID) error {
+	if tx.Name() != "postgres" {
+		return nil
+	}
+	return tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+		Select("id").Where("id = ?", weddingID).First(&models.WeddingEvent{}).Error
 }

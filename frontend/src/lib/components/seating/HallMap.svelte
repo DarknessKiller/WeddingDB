@@ -7,6 +7,8 @@
   import ConfirmDialog from '#lib/components/ui/ConfirmDialog.svelte';
   import type { BanquetTable as BanquetTableType, HallElement, Guest } from '#lib/types/index.ts';
   import { reorderElements } from '#lib/utils/layout.ts';
+  import { LIMITS } from '#lib/utils/limits.ts';
+  import { addToast } from '#lib/stores/index.ts';
   import ZoomIn from 'lucide-svelte/icons/zoom-in';
 import ZoomOut from 'lucide-svelte/icons/zoom-out';
 import RotateCcw from 'lucide-svelte/icons/rotate-ccw';
@@ -631,6 +633,11 @@ import RotateCcw from 'lucide-svelte/icons/rotate-ccw';
   }
 
   function handleAddElement(el: HallElement) {
+    // Mirror of the backend's MaxLayoutElements: a save over the cap is rejected.
+    if (editElements.length >= LIMITS.maxLayoutElements) {
+      addToast(`A layout holds at most ${LIMITS.maxLayoutElements} elements`, 'error');
+      return;
+    }
     editElements = [...editElements, el];
     commit();
   }

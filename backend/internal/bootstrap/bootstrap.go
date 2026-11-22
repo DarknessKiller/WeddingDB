@@ -159,7 +159,7 @@ func Init(env config.Env, version string) *App {
 
 	authService := services.NewAuthService(adminRepo, weddingRepo, tokenRepo, env.JWTSecret, rdb)
 	tableService := services.NewTableService(tableRepo, sseHub, db)
-	guestService := services.NewGuestService(guestRepo, tableRepo, sseHub, db)
+	guestService := services.NewGuestService(guestRepo, sseHub, db)
 	weddingService := services.NewWeddingService(weddingRepo)
 	layoutService := services.NewLayoutService(layoutRepo)
 	reportService := services.NewReportService(guestRepo, tableRepo, weddingRepo)

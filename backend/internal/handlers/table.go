@@ -4,6 +4,7 @@ import (
 	"errors"
 	"strings"
 	"weddingdb/internal/models"
+	"weddingdb/internal/repository"
 	"weddingdb/internal/services"
 
 	"github.com/go-fuego/fuego"
@@ -106,6 +107,9 @@ func (h *TableHandler) Update(c fuego.ContextWithBody[TableRequest]) (any, error
 	table.Degree = body.Degree
 	table.IsVip = body.IsVip
 	if err := h.tableService.Update(ctx, table); err != nil {
+		if errors.Is(err, repository.ErrCapacityBelowSeated) {
+			return nil, fuego.BadRequestError{Title: err.Error()}
+		}
 		return nil, err
 	}
 	return table, nil

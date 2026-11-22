@@ -1,6 +1,6 @@
 <script lang="ts">
   import type { Guest, BanquetTable, RSVPStatus } from '#lib/types/index.ts';
-  import { trapFocus } from '#lib/utils/focus.ts';
+  import { trapFocus, registerEscape } from '#lib/utils/focus.ts';
   import { LIMITS } from '#lib/utils/limits.ts';
   import X from 'lucide-svelte/icons/x';
 import Mail from 'lucide-svelte/icons/mail';
@@ -25,6 +25,7 @@ import ArrowUpDown from 'lucide-svelte/icons/arrow-up-down';
   import { updateGuest, createGuest, checkInGuest, checkOutGuest, unassignSeat, getGuest, ConflictError } from '#lib/api/guests.ts';
   import { toGuest } from '#lib/utils/guestTransform.ts';
   import { get } from 'svelte/store';
+  import { onMount } from 'svelte';
   import { fade } from 'svelte/transition';
   import { slideOut as drawerSlideOut } from '#lib/utils/motion.ts';
 
@@ -34,6 +35,8 @@ import ArrowUpDown from 'lucide-svelte/icons/arrow-up-down';
   }
 
   let { guest, tables = [], onClose, startEditing = false, createMode = false, readonly = false, showSeatNumbers = false }: { guest?: Guest; tables?: BanquetTable[]; onClose: () => void; startEditing?: boolean; createMode?: boolean; readonly?: boolean; showSeatNumbers?: boolean } = $props();
+
+  onMount(() => registerEscape(onClose));
 
   let tableName = $derived(guest ? (tables.find(t => t.id === guest.tableId)?.name ?? guest.tableId ?? '—') : '—');
 
@@ -291,7 +294,6 @@ import ArrowUpDown from 'lucide-svelte/icons/arrow-up-down';
 </script>
 
 <!-- svelte-ignore a11y_no_static_element_interactions -->
-<svelte:window onkeydown={(e) => { if (e.key === 'Escape') onClose(); }} />
 <div class="drawer-overlay" onclick={onClose} role="presentation">
   <div class="drawer-backdrop" style="opacity: {dragging ? Math.max(0, 1 - dragY / 400) : 1}" aria-hidden="true" transition:fade={{ duration: 250 }}></div>
   <!-- svelte-ignore a11y_no_static_element_interactions -->

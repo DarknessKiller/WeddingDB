@@ -39,8 +39,22 @@ func (r *AdminRepo) List(ctx context.Context) ([]models.AdminUser, error) {
 	return admins, err
 }
 
+// Update writes the credential columns only, so a stale struct cannot restore
+// a role or name another request changed, and a deleted account stays deleted.
 func (r *AdminRepo) Update(ctx context.Context, admin *models.AdminUser) error {
-	return r.db.WithContext(ctx).Save(admin).Error
+	res := r.db.WithContext(ctx).Model(&models.AdminUser{}).
+		Where("id = ?", admin.ID).
+		Updates(map[string]any{
+			"password":              admin.Password,
+			"force_password_change": admin.ForcePasswordChange,
+		})
+	if res.Error != nil {
+		return res.Error
+	}
+	if res.RowsAffected == 0 {
+		return gorm.ErrRecordNotFound
+	}
+	return nil
 }
 
 // keepAnotherAdmin locks every admin row and returns ErrLastAdmin when id is

@@ -5,8 +5,8 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
-	"log"
 	"log/slog"
+	"slices"
 	"strings"
 	"time"
 
@@ -21,13 +21,12 @@ import (
 
 type GuestService struct {
 	guestRepo *repository.GuestRepo
-	tableRepo *repository.TableRepo
 	sseHub    *SSEHub
 	db        *gorm.DB
 }
 
-func NewGuestService(guestRepo *repository.GuestRepo, tableRepo *repository.TableRepo, sseHub *SSEHub, db *gorm.DB) *GuestService {
-	return &GuestService{guestRepo: guestRepo, tableRepo: tableRepo, sseHub: sseHub, db: db}
+func NewGuestService(guestRepo *repository.GuestRepo, sseHub *SSEHub, db *gorm.DB) *GuestService {
+	return &GuestService{guestRepo: guestRepo, sseHub: sseHub, db: db}
 }
 
 // MaxGuestsPerWedding caps a wedding at 1000 guests. Party size counts: a
@@ -128,14 +127,20 @@ func (s *GuestService) mergeGuestUpdate(ctx context.Context, tx *gorm.DB, weddin
 	if err != nil {
 		return nil, false, err
 	}
-	if won := mergeGuestWrite(locked, &candidate, at, carried); len(won) == 0 {
+	won := mergeGuestWrite(locked, &candidate, at, carried)
+	if len(won) == 0 {
 		return locked, false, nil
 	}
 	if locked.Pax > existingPax && total-existingPax+locked.Pax > MaxGuestsPerWedding {
 		return nil, false, guestCapError(total, locked.Pax-existingPax)
 	}
-	if err := checkSeatNotTaken(ctx, tx, locked); err != nil {
-		return nil, false, err
+	// A guest seated past the table's current capacity must still be able to
+	// edit every other field, so the seat rules run only when the write moves
+	// the seat or changes the party size.
+	if slices.Contains(won, groupTableID) || slices.Contains(won, groupPax) {
+		if err := checkSeatNotTaken(ctx, tx, locked); err != nil {
+			return nil, false, err
+		}
 	}
 	if err := ValidateGuestText(locked); err != nil {
 		return nil, false, err
@@ -482,9 +487,9 @@ func (s *GuestService) Occupancy(ctx context.Context, weddingID uuid.UUID) ([]re
 }
 
 // publishGuest broadcasts a guest mutation to all connected SSE clients via
-// Redis. It is the one publish path for guest and table services. Uses
-// context.Background() so publishing outlives the request; the goroutine
-// ensures publishing never blocks the caller. A nil hub publishes nothing.
+// Redis. It is the one publish path for guest and table services. Events go
+// through one ordered queue, so a later write is never delivered before an
+// earlier one (a check-in followed by its undo). A nil hub publishes nothing.
 func (h *SSEHub) publishGuest(eventType string, guest *models.GuestRecord, weddingID uuid.UUID) {
 	if h == nil {
 		return
@@ -498,11 +503,10 @@ func (h *SSEHub) publishGuest(eventType string, guest *models.GuestRecord, weddi
 		Timestamp: time.Now().UnixMilli(),
 	}
 
-	go func() {
-		if err := h.Publish(context.Background(), weddingID, event); err != nil {
-			log.Printf("SSE: publish %s for guest %s in wedding %s: %v", eventType, guest.ID, weddingID, err)
-		}
-	}()
+	select {
+	case h.publish <- publishRequest{weddingID: weddingID, event: event}:
+	case <-h.ctx.Done():
+	}
 }
 
 // Sync types for offline queue
@@ -546,15 +550,35 @@ func (s *GuestService) Sync(ctx context.Context, weddingID uuid.UUID, mutations 
 }
 
 func syncErrorReason(ctx context.Context, err error) string {
-	var fieldErr FieldLenError
-	if errors.As(err, &fieldErr) {
-		return err.Error()
-	}
-	if errors.Is(err, ErrGuestPatchInvalid) || errors.Is(err, ErrGuestCapExceeded) || errors.Is(err, ErrSeatOverlap) || errors.Is(err, ErrTableNotFound) || errors.Is(err, ErrInvalidGuestPax) || errors.Is(err, ErrSeatRange) {
+	if !syncErrorRetryable(err) {
 		return err.Error()
 	}
 	slog.ErrorContext(ctx, "sync mutation failed", "error", err)
 	return "Internal error"
+}
+
+// syncErrorRetryable reports whether re-sending a failed mutation could ever
+// succeed. Validation and business rules reject the same input every time, so
+// the client drops those instead of retrying them forever.
+func syncErrorRetryable(err error) bool {
+	var fieldErr FieldLenError
+	if errors.As(err, &fieldErr) {
+		return false
+	}
+	if errors.Is(err, ErrGuestPatchInvalid) || errors.Is(err, ErrGuestCapExceeded) || errors.Is(err, ErrSeatOverlap) || errors.Is(err, ErrTableNotFound) || errors.Is(err, ErrInvalidGuestPax) || errors.Is(err, ErrSeatRange) || errors.Is(err, repository.ErrCapacityBelowSeated) {
+		return false
+	}
+	return true
+}
+
+// failedSync builds a failed result, marking the mutation non-retryable when
+// the reason is a rule the input will always break (Offline sync invariant 7).
+func failedSync(ctx context.Context, guestID string, err error) SyncResult {
+	res := SyncResult{GuestID: guestID, Status: "failed", Reason: syncErrorReason(ctx, err)}
+	if !syncErrorRetryable(err) {
+		res.Retryable = new(false)
+	}
+	return res
 }
 
 func (s *GuestService) applySyncMutation(ctx context.Context, weddingID uuid.UUID, m SyncMutation) SyncResult {
@@ -563,7 +587,7 @@ func (s *GuestService) applySyncMutation(ctx context.Context, weddingID uuid.UUI
 		return SyncResult{GuestID: m.GuestID, Status: "skipped", Reason: "invalid guestId"}
 	}
 	if m.ClientUpdatedAt.IsZero() {
-		return SyncResult{GuestID: m.GuestID, Status: "failed", Reason: "clientUpdatedAt required"}
+		return SyncResult{GuestID: m.GuestID, Status: "failed", Reason: "clientUpdatedAt required", Retryable: new(false)}
 	}
 
 	// Skew clamp: never trust a client clock in the future, or a skewed device
@@ -579,7 +603,7 @@ func (s *GuestService) applySyncMutation(ctx context.Context, weddingID uuid.UUI
 			// The guest already exists: treat the create as an update.
 			merged, applied, err := s.syncMerge(ctx, weddingID, gid, m.Payload, opTime)
 			if err != nil {
-				return SyncResult{GuestID: m.GuestID, Status: "failed", Reason: syncErrorReason(ctx, err)}
+				return failedSync(ctx, m.GuestID, err)
 			}
 			if !applied {
 				return SyncResult{GuestID: m.GuestID, Status: "skipped", Reason: "older than server", ServerRecord: merged}
@@ -587,10 +611,10 @@ func (s *GuestService) applySyncMutation(ctx context.Context, weddingID uuid.UUI
 			s.sseHub.publishGuest("update", merged, weddingID)
 			return SyncResult{GuestID: m.GuestID, Status: "applied", ServerRecord: merged}
 		} else if !errors.Is(err, gorm.ErrRecordNotFound) {
-			return SyncResult{GuestID: m.GuestID, Status: "failed", Reason: syncErrorReason(ctx, err)}
+			return failedSync(ctx, m.GuestID, err)
 		}
 		if m.Payload == nil || m.Payload.Name == "" {
-			return SyncResult{GuestID: m.GuestID, Status: "failed", Reason: "name is required"}
+			return SyncResult{GuestID: m.GuestID, Status: "failed", Reason: "name is required", Retryable: new(false)}
 		}
 		patch := m.Payload
 		if patch.set == nil {
@@ -618,12 +642,12 @@ func (s *GuestService) applySyncMutation(ctx context.Context, weddingID uuid.UUI
 			g.FieldTimes[key] = opTime
 		}
 		if _, err := patch.applyTo(g); err != nil {
-			return SyncResult{GuestID: m.GuestID, Status: "failed", Reason: syncErrorReason(ctx, err)}
+			return failedSync(ctx, m.GuestID, err)
 		}
 		if err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 			return s.createGuestTx(ctx, tx, g)
 		}); err != nil {
-			return SyncResult{GuestID: m.GuestID, Status: "failed", Reason: syncErrorReason(ctx, err)}
+			return failedSync(ctx, m.GuestID, err)
 		}
 		s.sseHub.publishGuest("create", g, weddingID)
 		return SyncResult{GuestID: m.GuestID, Status: "applied", ServerRecord: g}
@@ -634,7 +658,7 @@ func (s *GuestService) applySyncMutation(ctx context.Context, weddingID uuid.UUI
 			return SyncResult{GuestID: m.GuestID, Status: "skipped", Reason: "not found"}
 		}
 		if err != nil {
-			return SyncResult{GuestID: m.GuestID, Status: "failed", Reason: syncErrorReason(ctx, err)}
+			return failedSync(ctx, m.GuestID, err)
 		}
 		if !applied {
 			return SyncResult{GuestID: m.GuestID, Status: "skipped", Reason: "older than server", ServerRecord: merged}
@@ -666,7 +690,7 @@ func (s *GuestService) applySyncMutation(ctx context.Context, weddingID uuid.UUI
 			return nil
 		})
 		if err != nil {
-			return SyncResult{GuestID: m.GuestID, Status: "failed", Reason: syncErrorReason(ctx, err)}
+			return failedSync(ctx, m.GuestID, err)
 		}
 		if losing != nil {
 			return SyncResult{GuestID: m.GuestID, Status: "failed", Reason: "older than server", ServerRecord: losing}
@@ -724,7 +748,7 @@ func (s *GuestService) applySyncMutation(ctx context.Context, weddingID uuid.UUI
 			return SyncResult{GuestID: m.GuestID, Status: "skipped", Reason: "not found"}
 		}
 		if err != nil {
-			return SyncResult{GuestID: m.GuestID, Status: "failed", Reason: syncErrorReason(ctx, err)}
+			return failedSync(ctx, m.GuestID, err)
 		}
 		if !applied {
 			return SyncResult{GuestID: m.GuestID, Status: "skipped", Reason: "older than server", ServerRecord: merged}
@@ -754,7 +778,7 @@ func (s *GuestService) applySyncMutation(ctx context.Context, weddingID uuid.UUI
 			return SyncResult{GuestID: m.GuestID, Status: "skipped", Reason: "not found"}
 		}
 		if err != nil {
-			return SyncResult{GuestID: m.GuestID, Status: "failed", Reason: syncErrorReason(ctx, err)}
+			return failedSync(ctx, m.GuestID, err)
 		}
 		if !applied {
 			return SyncResult{GuestID: m.GuestID, Status: "skipped", Reason: "older than server", ServerRecord: merged}
@@ -811,15 +835,16 @@ func parseBase64ID(s string) (uuid.UUID, error) {
 
 func guestToEventData(g *models.GuestRecord) *GuestEventData {
 	d := &GuestEventData{
-		ID:      utils.EncodeUUID(g.ID),
-		Name:    g.Name,
-		Email:   g.Email,
-		Pax:     g.Pax,
-		RSVP:    g.RSVP,
-		IsVip:   g.IsVip,
-		Notes:   g.Notes,
-		Dietary: []string(g.Dietary),
-		Pinyin:  g.NamePinyin,
+		ID:        utils.EncodeUUID(g.ID),
+		Name:      g.Name,
+		Email:     g.Email,
+		Pax:       g.Pax,
+		RSVP:      g.RSVP,
+		IsVip:     g.IsVip,
+		Notes:     g.Notes,
+		Dietary:   []string(g.Dietary),
+		Pinyin:    g.NamePinyin,
+		UpdatedAt: g.UpdatedAt.Format(time.RFC3339Nano),
 	}
 	if g.TableID != nil {
 		id := utils.EncodeUUID(*g.TableID)

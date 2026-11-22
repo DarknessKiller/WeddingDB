@@ -6,12 +6,12 @@
   import { guestList, tableOccupancy } from '#lib/stores/guestEvents.ts';
   import { goto } from '$app/navigation';
   import { assignSeat, checkInGuest, checkOutGuest, ConflictError } from '#lib/api/guests.ts';
-  import { getOccupancy, listTables } from '#lib/api/tables.ts';
+  import { listTables } from '#lib/api/tables.ts';
   import { getLayout, saveLayout } from '#lib/api/layout.ts';
   import Badge from '#lib/components/ui/Badge.svelte';
   import { cn } from '#lib/utils/index.ts';
   import { page } from '$app/state';
-  import { onMount, onDestroy } from 'svelte';
+  import { onMount } from 'svelte';
   import Users from 'lucide-svelte/icons/users';
 import Star from 'lucide-svelte/icons/star';
 import X from 'lucide-svelte/icons/x';
@@ -31,7 +31,6 @@ import Pencil from 'lucide-svelte/icons/pencil';
   let elements = $state<HallElement[]>([]);
   let hallWidth = $state(860);
   let hallHeight = $state(1000);
-  let occupancyData: Record<string, number> = $state.raw({});
   let loading = $state(true);
   let errored = $state(false);
   let error = $state<string | null>(null);
@@ -67,23 +66,15 @@ import Pencil from 'lucide-svelte/icons/pencil';
     panelDragY = 0;
   }
   let checkinGuest = $state<Guest | null>(null);
-  let unsubGuests: (() => void) | null = null;
 
-  // Local state derived from SSE-backed store — updates in real time.
-  let allGuests = $state<Guest[]>([]);
+  // Guest rows and occupancy live in the SSE-backed stores: a local mirror went
+  // stale and needed a hand-written patch on every mutation.
+  let allGuests = $derived($guestList);
   let unassignedGuests = $derived(allGuests.filter(g => g.tableId === null));
-
-  // Initialize from store on mount
-  function syncGuestsFromStore(list: Guest[]) {
-    allGuests = list;
-  }
 
   async function loadData() {
     const wid = get(weddingId);
-    const [rawOcc, layout] = await Promise.all([
-      getOccupancy(wid).catch(() => []),
-      getLayout(wid).catch(() => null),
-    ]);
+    const layout = await getLayout(wid);
     if (layout) {
       allTables = layout.tables ?? [];
       elements = layout.elements ?? [];
@@ -92,14 +83,24 @@ import Pencil from 'lucide-svelte/icons/pencil';
     } else {
       allTables = await listTables(wid).catch(() => []);
     }
-    const occMap: Record<string, number> = {};
-    for (const o of rawOcc) occMap[o.TableID] = o.Pax;
-    occupancyData = occMap;
+  }
+
+  async function retry() {
+    loading = true;
+    errored = false;
+    error = null;
+    try {
+      await loadData();
+    } catch (e: any) {
+      errored = true;
+      error = e.message ?? 'Failed to load seating data';
+      addToast(error ?? 'Failed to load seating data', 'error');
+    } finally {
+      loading = false;
+    }
   }
 
   onMount(async () => {
-    // Subscribe to SSE-backed guest list
-    unsubGuests = guestList.subscribe(list => syncGuestsFromStore(list));
     try {
       await loadData();
       errored = false;
@@ -118,10 +119,6 @@ import Pencil from 'lucide-svelte/icons/pencil';
         }
       }
     }
-  });
-
-  onDestroy(() => {
-    unsubGuests?.();
   });
 
   let selectedTable = $derived(selectedTableId ? allTables.find(t => t.id === selectedTableId) ?? null : null);
@@ -179,10 +176,6 @@ import Pencil from 'lucide-svelte/icons/pencil';
     const wid = get(weddingId);
     try {
       await assignSeat(wid, guest.id, String(selectedTable.id), seatNum);
-      allGuests = allGuests.map(g => g.id === guest.id
-        ? { ...g, tableId: selectedTable.id, seatNumber: seatNum }
-        : g
-      );
       assigningSeat = null;
       guestSearch = '';
       addToast(`${guest.name} assigned to seat ${seatNum}`, 'success');
@@ -205,20 +198,12 @@ import Pencil from 'lucide-svelte/icons/pencil';
     const wid = get(weddingId);
     try {
       await checkInGuest(wid, checkinGuest.id, notes);
-      // Notes come back from the server via SSE (or offline optimisticPatch);
-      // appending them here too duplicated the input.
-      allGuests = allGuests.map(g => g.id === checkinGuest!.id ? {
-        ...g,
-        checkedIn: true,
-        checkedInAt: new Date(),
-        rsvp: 'confirmed' as const,
-      } : g);
+      // Notes and the check-in flags come back through the store.
       showCheckinModal = false;
       addToast(`${checkinGuest.name} checked in`, 'success');
     } catch (e: any) {
       if (e instanceof ConflictError) {
         // Another receptionist checked the guest in first.
-        allGuests = allGuests.map(g => g.id === checkinGuest!.id ? { ...g, checkedIn: true, rsvp: 'confirmed' as const } : g);
         showCheckinModal = false;
         addToast(`${checkinGuest.name} was already checked in by another receptionist`, 'error');
         return;
@@ -231,7 +216,6 @@ import Pencil from 'lucide-svelte/icons/pencil';
     const wid = get(weddingId);
     try {
       await checkOutGuest(wid, guest.id);
-      allGuests = allGuests.map(g => g.id === guest.id ? { ...g, checkedIn: false, checkedInAt: undefined } : g);
       addToast(`${guest.name} checked out`, 'success');
     } catch (e: any) {
       addToast(e.message ?? 'Check-out failed', 'error');
@@ -278,7 +262,7 @@ import Pencil from 'lucide-svelte/icons/pencil';
       </div>
       <p class="text-red font-medium">Failed to load seating data</p>
       <p class="text-sm text-gray-500">{error}</p>
-      <button onclick={() => location.reload()} class="px-4 py-2 bg-red text-white rounded-xl text-sm font-semibold hover:bg-red-light transition-colors">
+      <button onclick={() => retry()} class="px-4 py-2 bg-red text-white rounded-xl text-sm font-semibold hover:bg-red-light transition-colors">
         Retry
       </button>
     </div>

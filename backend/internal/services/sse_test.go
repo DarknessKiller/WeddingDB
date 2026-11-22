@@ -13,6 +13,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/redis/go-redis/v9"
 
+	"weddingdb/internal/models"
 	"weddingdb/internal/testutil"
 )
 
@@ -380,5 +381,42 @@ func TestSSEHub_PerUserLimit(t *testing.T) {
 	testutil.NoErr(t, err)
 	for _, c := range append(clients[1:], other, again) {
 		hub.Unsubscribe(c)
+	}
+}
+
+// Events keep the order they were written in, and each carries the row's
+// write time so a client can drop one that arrives late.
+func TestSSEHub_PublishKeepsOrder(t *testing.T) {
+	hub := testSSEHub(t)
+	wid := uuid.New()
+	client := testSubscribe(t, hub, wid)
+	g := &models.GuestRecord{ID: uuid.New(), WeddingID: wid, Name: "A", Pax: 1, UpdatedAt: time.Now().UTC()}
+
+	const events = 20
+	for i := range events {
+		if i%2 == 0 {
+			hub.publishGuest("checkin", g, wid)
+		} else {
+			hub.publishGuest("checkout", g, wid)
+		}
+	}
+	for i := range events {
+		want := "checkin"
+		if i%2 == 1 {
+			want = "checkout"
+		}
+		select {
+		case msg := <-client.Chan:
+			var ev GuestEvent
+			testutil.NoErr(t, json.Unmarshal(msg, &ev))
+			if ev.Type != want {
+				t.Fatalf("event %d = %q, want %q", i, ev.Type, want)
+			}
+			if ev.Guest == nil || ev.Guest.UpdatedAt != g.UpdatedAt.Format(time.RFC3339Nano) {
+				t.Fatalf("event %d updatedAt = %+v, want %s", i, ev.Guest, g.UpdatedAt.Format(time.RFC3339Nano))
+			}
+		case <-time.After(2 * time.Second):
+			t.Fatalf("timed out waiting for event %d", i)
+		}
 	}
 }

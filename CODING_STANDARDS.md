@@ -23,6 +23,11 @@ Files: all of `backend/` and `frontend/`.
   map fields by hand in a page, store, or API wrapper.
 - Measure and truncate user text by runes (Go) or code points, never bytes. A byte
   cut can split a CJK character and the database rejects it.
+- Seating has two hard limits: a table's capacity may never drop below the pax
+  already seated at it (`repository.ErrCapacityBelowSeated`), and one layout holds
+  at most 200 elements (`services.MaxLayoutElements`, mirrored by
+  `LIMITS.maxLayoutElements`). Both are rejected with 400 by the API and blocked in
+  the UI before the request is sent.
 
 ## Go
 
@@ -59,7 +64,14 @@ Files: `backend/internal/{handlers,services,repository,models,utils}`.
   - A service owns business rules and orchestration across repositories.
   - A repository owns gorm queries and takes `ctx`.
   - Wiring lives in `handlers.RegisterRoutes`. Start from `register.go`.
-- Constructors inject dependencies: `NewGuestService(guestRepo, tableRepo, sseHub, db)`.
+- Constructors inject dependencies: `NewGuestService(guestRepo, sseHub, db)`.
+- Never `db.Save` a whole row. Write the intended columns (`Updates`, `Select`) or
+  a model-specific column list. `Save` writes every column from a copy read
+  earlier: it restores an admin's previous role and re-inserts a row someone else
+  deleted. A `Save`/`Updates` that matches no row is a missing row, not a no-op.
+- SSE events are published through `SSEHub.publishGuest`, which queues them so one
+  wedding's events leave in publish order. Never publish from a goroutine per
+  event: out-of-order delivery makes a deleted guest reappear.
 - Package-level vars hold sentinel errors and constant tables only. No mutable state.
 - Thread `c.Context()` from the handler through services and repositories.
   `context.Background()` belongs in bootstrap and detached workers.
@@ -119,9 +131,12 @@ Files: `backend/internal/config/{config,server}.go`,
 
 - Startup rejects `JWT_SECRET` shorter than 32 characters, missing secrets, and
   shipped placeholder secrets. Generate secrets with `openssl rand -hex 32`.
-- JSON request bodies have a 1 MiB limit, including requests without
-  `Content-Length`; reject oversized bodies with HTTP 413 before handler side
-  effects. Multipart uploads retain their separate file-size limit.
+- Every request body has a 1 MiB limit, whatever its content type, including
+  requests without `Content-Length`. `config.NewFuegoServer` sets it once with
+  `fuego.WithMaxBodySize`, so no handler ever sees an unbounded body, and the
+  engine error handler maps the resulting `*http.MaxBytesError` to HTTP 413 before
+  handler side effects. Multipart uploads retain their separate file-size limit.
+  Test: `TestNewFuegoServer_LimitsEveryBodyType`.
   HTTP `ReadTimeout` is five minutes; `WriteTimeout` stays zero for SSE.
 - Untyped errors return a generic HTTP 500. Never expose driver/query details
   through typed error titles, details, or per-item offline-sync failure reasons
@@ -129,7 +144,9 @@ Files: `backend/internal/config/{config,server}.go`,
   log unexpected failures server-side and return a generic message.
 - CSV export prefixes text cells starting with `=`, `+`, `-`, or `@` with an
   apostrophe. Apply this to guest names, table names, gifts, and summary rows;
-  CSV quoting alone does not prevent formula injection.
+  CSV quoting alone does not prevent formula injection. Frontend and backend have
+  one helper each: `csvField` in `routes/[wid]/guests/+page.svelte` and
+  `GenerateCSV` in `services/report_service.go`. Numbers are never prefixed.
 - Upload rejects non-admin callers without wedding scope before parsing or
   writing files. Wedding authorization follows the existing JWT scope;
   admins retain cross-wedding access. SSE admits at most 100 concurrent streams
@@ -173,10 +190,21 @@ Files: `frontend/src/lib/api/*.ts`, `frontend/src/routes/[wid]/**/+page.svelte`.
   Find other callers with CodeGraph.
 - Guest store writes go through `upsertGuest` and `removeGuest` in
   `frontend/src/lib/stores/guestEvents.ts`, so `guestList`, `guestMap`, and table
-  occupancy stay in step.
+  occupancy stay in step. A page or component never calls `guestList.update`
+  itself.
+- An online mutation patches the same stores from the API wrapper in
+  `frontend/src/lib/api/guests.ts` as soon as the request succeeds. The SSE echo is
+  confirmation, not the only path: seating maps and drawers must not wait for it.
+- An SSE event older than the row the store already holds is dropped
+  (`updatedAt` comparison in `guestEvents.ts`). The server's per-column rule picked
+  the winner; a late event must not undo it.
 - Dialogs use `role="dialog"`, `aria-modal="true"`, an accessible label, Escape to
   close, `use:trapFocus`, and a labeled close button. A clickable row also has a
   real button inside it for keyboard users.
+- Escape closes only the topmost dialog: register it with `registerEscape`
+  (`frontend/src/lib/utils/focus.ts`) in `onMount` or an `$effect`, never with a
+  component-level `<svelte:window onkeydown>`. Otherwise one keypress closes the
+  dialog and the drawer under it, dropping unsaved edits.
 
 ### Verify
 
@@ -230,7 +258,8 @@ Design record: [ADR 001](docs/adr/001-offline-sync.md) and
   stored as app-shaped `Guest` objects. Read it back with `reviveGuest`, never
   `toGuest`. The kiosk uses its own key, `kiosk_cache_{wid}`.
 - Sync posts at most 100 mutations per request, so a batch stays under the 1 MiB
-  body limit.
+  body limit. The handler enforces the same number (`maxSyncMutations`) and answers
+  HTTP 400 above it.
 - A mutation carries `clientUpdatedAt` and `baseUpdatedAt`.
 - Sync runs on `online`, visibility change, mount, and manual retry. The queue
   drains before the guest list is reseeded.
@@ -289,10 +318,13 @@ list does not cover is a question for the owner, not a bug to fix.
    A missing one fails. Tests: `TestSync_FutureClockClamped`,
    `TestSync_ZeroClientTimeFails`.
 7. **Offline validates like online.** A field the online API refuses fails the
-   mutation without retry. Test: `TestSync_UpdateValidatesLikeOnline`.
+   mutation without retry. Test: `TestSync_UpdateValidatesLikeOnline`,
+   `TestSync_CheckInRejectsNegativeAngbao`.
 8. **One bad mutation fails alone.** A body item that cannot be decoded is
    answered `failed` with `retryable: false`. The rest of the batch applies.
-   Test: `TestSync_MalformedMutationFailsAlone`.
+   Test: `TestSync_MalformedMutationFailsAlone`. A `failed` mutation is dropped by
+   the client only when `retryable` is `false`; a retryable failure stays queued.
+   Test: `TestSync_ValidationFailureIsNotRetryable`.
 9. **Queued edits follow their owner.** A different account logging in on the
    device replays every queue first, then asks before discarding what is left.
    `claimQueues` runs after wedding selection. The owner is the user id (JWT
@@ -309,7 +341,9 @@ list does not cover is a question for the owner, not a bug to fix.
 - Sync (reconnect): `queue.syncQueue(wid)` → `POST /api/weddings/{wid}/guests/sync`.
   `applied` drops the mutation and keeps the optimistic state until SSE confirms.
   `skipped` reverts the guest to `serverRecord`, drops it, and toasts. `failed`
-  keeps it queued. After the batch, `seedGuests(fetchAllGuests)` reloads.
+  keeps it queued, unless the server marked it `retryable: false`: that one is
+  dropped with its reason, so it cannot block the queue forever. After the batch,
+  `seedGuests(fetchAllGuests)` reloads.
 - Network failure detection covers Chrome `Failed to fetch`, Safari `Load failed`,
   and Firefox `NetworkError`.
 
@@ -410,6 +444,15 @@ Files: `frontend/src/lib/stores/index.ts`, `frontend/src/lib/api/client.ts`,
 
 - Each tab reads the shared store. Events from another tab or device arrive over
   SSE and update the same store.
+- Signing out empties the guest stores and deletes every `offline_cache_{wid}`:
+  the cache holds emails, notes, and angbao amounts. Queued edits stay, they follow
+  their owner (invariant 9).
+- A guest list fetched for one wedding is seeded under that wedding only. If the
+  wedding changed while the request was in flight, the result is dropped, not
+  shown and not cached (`seedGuests(list, wid)`).
+- One queue drain at a time: `syncQueue` keeps one in-flight promise per
+  wedding, so the mount drain, the SSE reconnect, `online` and the manual retry
+  join the drain already running instead of replaying the same mutations.
 - Revocation and refresh rotation apply to every tab through the 401 path in
   `client.ts`. A tab that retries a consumed refresh token gets the successor
   inside the grace window.

@@ -1,6 +1,30 @@
 const FOCUSABLE =
   'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
 
+// Only the dialog opened last handles Escape. Without this, one keypress closed
+// the whole stack underneath it, dropping a drawer's unsaved edits.
+const escapeStack: symbol[] = [];
+
+/** Registers an Escape handler for the duration of the returned cleanup. */
+export function registerEscape(handler: () => void): () => void {
+  const token = Symbol('escape');
+  escapeStack.push(token);
+  function onKeydown(e: KeyboardEvent) {
+    if (e.key !== 'Escape') return;
+    if (escapeStack[escapeStack.length - 1] !== token) return;
+    // Capture phase + stopImmediatePropagation: the page's own Escape listeners
+    // (window bubble) must not also close what is underneath this dialog.
+    e.stopImmediatePropagation();
+    handler();
+  }
+  window.addEventListener('keydown', onKeydown, true);
+  return () => {
+    window.removeEventListener('keydown', onKeydown, true);
+    const i = escapeStack.lastIndexOf(token);
+    if (i >= 0) escapeStack.splice(i, 1);
+  };
+}
+
 // Keeps Tab inside a modal panel and restores focus to the trigger on close.
 export function trapFocus(node: HTMLElement) {
   const previous = document.activeElement as HTMLElement | null;

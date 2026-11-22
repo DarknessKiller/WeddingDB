@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"errors"
 	"strconv"
 	"strings"
 	"time"
@@ -10,6 +11,7 @@ import (
 
 	"github.com/go-fuego/fuego"
 	"github.com/google/uuid"
+	"gorm.io/gorm"
 )
 
 type WeddingHandler struct {
@@ -123,7 +125,7 @@ func (h *WeddingHandler) Update(c fuego.ContextWithBody[WeddingRequest]) (any, e
 		return nil, fuego.BadRequestError{Title: err.Error()}
 	}
 	if err := h.weddingService.Update(ctx, w); err != nil {
-		return nil, err
+		return nil, weddingUpdateError(err)
 	}
 	return w, nil
 }
@@ -225,9 +227,21 @@ func (h *WeddingHandler) UpdateKioskSettings(c fuego.ContextWithBody[KioskSettin
 		return nil, fuego.BadRequestError{Title: err.Error()}
 	}
 	if err := h.weddingService.Update(ctx, w); err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, fuego.NotFoundError{Title: "Wedding not found"}
+		}
 		return nil, fuego.InternalServerError{Title: "Failed to update kiosk settings"}
 	}
 	return w, nil
+}
+
+// weddingUpdateError maps a save that matched no row to 404, so a wedding
+// deleted between the read and the write is reported instead of re-created.
+func weddingUpdateError(err error) error {
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return fuego.NotFoundError{Title: "Wedding not found"}
+	}
+	return err
 }
 
 func (h *WeddingHandler) Delete(c fuego.ContextWithBody[any]) (any, error) {

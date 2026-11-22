@@ -33,7 +33,19 @@ func (s *TableService) Create(ctx context.Context, t *models.BanquetTable) error
 }
 
 func (s *TableService) Update(ctx context.Context, t *models.BanquetTable) error {
-	return s.tableRepo.Update(ctx, t)
+	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := lockWedding(tx, t.WeddingID); err != nil {
+			return err
+		}
+		if err := lockTable(tx, t.WeddingID, t.ID); err != nil {
+			return err
+		}
+		repo := repository.NewTableRepo(tx)
+		if err := repo.CheckCapacity(ctx, t.WeddingID, t.ID, t.Capacity); err != nil {
+			return err
+		}
+		return repo.Update(ctx, t)
+	})
 }
 
 func (s *TableService) Delete(ctx context.Context, id, weddingID uuid.UUID) error {

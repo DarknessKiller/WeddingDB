@@ -1,9 +1,11 @@
 package handlers
 
 import (
+	"errors"
 	"log"
 	"weddingdb/internal/middleware"
 	"weddingdb/internal/models"
+	"weddingdb/internal/repository"
 	"weddingdb/internal/services"
 
 	"github.com/go-fuego/fuego"
@@ -95,6 +97,9 @@ func (h *LayoutHandler) Save(c fuego.ContextWithBody[LayoutRequest]) (any, error
 	if body.HallWidth <= 0 || body.HallHeight <= 0 {
 		return nil, fuego.BadRequestError{Title: "HallWidth and HallHeight must be > 0"}
 	}
+	if len(body.Elements) > services.MaxLayoutElements {
+		return nil, fuego.BadRequestError{Title: "Too many elements (max 200)"}
+	}
 	for _, e := range body.Elements {
 		if e.X < 0 || e.X > 100 || e.Y < 0 || e.Y > 100 {
 			return nil, fuego.BadRequestError{Title: "Element X/Y must be 0–100"}
@@ -144,6 +149,9 @@ func (h *LayoutHandler) Save(c fuego.ContextWithBody[LayoutRequest]) (any, error
 		elements = append(elements, el)
 	}
 	if err := h.layoutService.Save(ctx, wid, body.HallWidth, body.HallHeight, tables, elements); err != nil {
+		if errors.Is(err, repository.ErrCapacityBelowSeated) {
+			return nil, fuego.BadRequestError{Title: err.Error()}
+		}
 		log.Printf("layout save error: %v", err)
 		return nil, fuego.InternalServerError{Title: "Failed to save layout"}
 	}
