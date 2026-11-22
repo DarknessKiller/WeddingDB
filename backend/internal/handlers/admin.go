@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"log/slog"
+	"net/mail"
 	"weddingdb/internal/models"
 	"weddingdb/internal/repository"
 	"weddingdb/internal/services"
@@ -44,6 +45,12 @@ func (h *AdminHandler) Create(c fuego.ContextWithBody[AdminRequest]) (any, error
 	body, err := c.Body()
 	if err != nil {
 		return nil, fuego.BadRequestError{Title: "Invalid request"}
+	}
+	if _, err := mail.ParseAddress(body.Email); err != nil {
+		return nil, fuego.BadRequestError{Title: "Invalid email format"}
+	}
+	if err := services.ValidateAdminText(body.Name, body.Email); err != nil {
+		return nil, fuego.BadRequestError{Title: err.Error()}
 	}
 	if err := validatePassword(body.Password); err != nil {
 		return nil, err

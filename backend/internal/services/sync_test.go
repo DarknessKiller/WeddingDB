@@ -691,3 +691,13 @@ func TestBulkCreate_RollsBackOnError(t *testing.T) {
 		t.Fatalf("clean batch should create 2, got %d err %v", count, err)
 	}
 }
+
+func TestCreate_RejectsOversizedParty(t *testing.T) {
+	svc, _, wid := newGuestSyncService(t)
+	err := svc.Create(context.Background(), &models.GuestRecord{
+		ID: uuid.New(), WeddingID: wid, Name: "Big", Pax: MaxGuestPartySize + 1,
+	})
+	if err == nil {
+		t.Fatal("expected oversized party size to be rejected")
+	}
+}

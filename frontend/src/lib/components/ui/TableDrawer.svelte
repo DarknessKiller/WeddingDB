@@ -6,6 +6,7 @@ import Star from 'lucide-svelte/icons/star';
 import Users from 'lucide-svelte/icons/users';
   import { cn } from '#lib/utils/index.ts';
   import { trapFocus } from '#lib/utils/focus.ts';
+  import { LIMITS } from '#lib/utils/limits.ts';
   import { untrack } from 'svelte';
 
   let {
@@ -60,7 +61,7 @@ import Users from 'lucide-svelte/icons/users';
         <div class="form-grid">
           <div class="form-field">
             <label for="table-name" class="form-label">Table Name</label>
-            <input id="table-name" type="text" bind:value={name} placeholder="e.g. Table 1, VIP A, 圆桌" class="form-input" />
+            <input id="table-name" type="text" bind:value={name} maxlength={LIMITS.tableName} placeholder="e.g. Table 1, VIP A, 圆桌" class="form-input" />
           </div>
           <div class="form-field">
             <label for="table-capacity" class="form-label">Capacity</label>

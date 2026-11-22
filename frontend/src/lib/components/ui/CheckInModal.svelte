@@ -5,6 +5,7 @@ import Loader2 from 'lucide-svelte/icons/loader-2';
   import { fade } from 'svelte/transition';
   import { onMount } from 'svelte';
   import { slideOut as sheetSlideOut } from '#lib/utils/motion.ts';
+  import { LIMITS } from '#lib/utils/limits.ts';
 
   function outfade(node: HTMLElement) {
     return { duration: sheetSlideOut(node, { dir: 'y', duration: 300 }) };
@@ -101,6 +102,7 @@ import Loader2 from 'lucide-svelte/icons/loader-2';
           id="checkin-notes"
           type="text"
           bind:value={notes}
+          maxlength={LIMITS.checkInNote}
           onkeydown={onNotesKeydown}
           placeholder="e.g. arrived with 2 kids"
           class="w-full px-4 py-3 rounded-xl border border-black/[0.08] bg-white text-sm text-gray-900 placeholder:text-gray-500 focus:outline-none focus:ring-2 focus:ring-red/20 focus:border-red transition-shadow"

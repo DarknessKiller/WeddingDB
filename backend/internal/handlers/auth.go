@@ -6,6 +6,7 @@ import (
 	"net"
 	"net/http"
 	"net/mail"
+	"strconv"
 	"unicode"
 	"weddingdb/internal/middleware"
 	"weddingdb/internal/models"
@@ -19,8 +20,18 @@ import (
 )
 
 func validatePassword(password string) error {
+	// ASCII only, so bytes and characters are the same number and bcrypt's
+	// 72-byte ceiling matches MaxPasswordLen.
+	for _, c := range password {
+		if c < '!' || c > '~' {
+			return fuego.BadRequestError{Title: "Password may only use letters, digits, and ASCII punctuation (no spaces)"}
+		}
+	}
 	if len(password) < 8 {
 		return fuego.BadRequestError{Title: "Password must be at least 8 characters"}
+	}
+	if len(password) > services.MaxPasswordLen {
+		return fuego.BadRequestError{Title: "Password must be at most " + strconv.Itoa(services.MaxPasswordLen) + " characters"}
 	}
 	var hasLetter, hasDigit, hasSymbol bool
 	for _, c := range password {
@@ -245,6 +256,9 @@ func (h *AuthHandler) Register(c fuego.ContextWithBody[RegisterRequest]) (any, e
 	}
 	if err := validatePassword(body.Password); err != nil {
 		return nil, err
+	}
+	if err := services.ValidateAdminText(body.Name, body.Email); err != nil {
+		return nil, fuego.BadRequestError{Title: err.Error()}
 	}
 	ctx := c.Context()
 	if err := h.authService.CheckAuthRate(ctx, clientIP(c.Request())); err != nil {

@@ -6,6 +6,7 @@ import EyeOff from 'lucide-svelte/icons/eye-off';
 import UserPlus from 'lucide-svelte/icons/user-plus';
 import Mail from 'lucide-svelte/icons/mail';
   import PasswordRequirements from '#lib/components/ui/PasswordRequirements.svelte';
+  import { LIMITS, PASSWORD_PATTERN } from '#lib/utils/limits.ts';
 
   let name = $state('');
   let email = $state('');
@@ -67,12 +68,12 @@ import Mail from 'lucide-svelte/icons/mail';
       <form onsubmit={handleRegister} class="auth-form">
       <div class="form-field">
         <label for="name" class="form-label">Full Name</label>
-        <input id="name" type="text" bind:value={name} required class="form-input" placeholder="Your name" />
+        <input id="name" type="text" bind:value={name} required maxlength={LIMITS.name} class="form-input" placeholder="Your name" />
       </div>
 
       <div class="form-field">
         <label for="email" class="form-label">Email</label>
-        <input id="email" type="email" bind:value={email} required class="form-input" placeholder="you@example.com" />
+        <input id="email" type="email" bind:value={email} required maxlength={LIMITS.email} class="form-input" placeholder="you@example.com" />
       </div>
 
       <div class="form-field">
@@ -84,6 +85,8 @@ import Mail from 'lucide-svelte/icons/mail';
             bind:value={password}
             required
             minlength="8"
+            maxlength={LIMITS.password}
+            pattern={PASSWORD_PATTERN}
             class="form-input password-input"
             placeholder="Min 8 characters"
           />
@@ -102,6 +105,8 @@ import Mail from 'lucide-svelte/icons/mail';
           bind:value={confirmPassword}
           required
           minlength="8"
+          maxlength={LIMITS.password}
+          pattern={PASSWORD_PATTERN}
           class="form-input"
           class:input-error={passwordMismatch}
           placeholder="Repeat password"

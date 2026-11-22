@@ -12,6 +12,7 @@ import Calendar from 'lucide-svelte/icons/calendar';
 import Check from 'lucide-svelte/icons/check';
 import ChevronRight from 'lucide-svelte/icons/chevron-right';
   import dayjs from 'dayjs';
+  import { LIMITS } from '#lib/utils/limits.ts';
   import { validateToken } from '#lib/utils/auth.ts';
   import { apiFetch } from '#lib/api/client.ts';
 
@@ -217,7 +218,7 @@ import ChevronRight from 'lucide-svelte/icons/chevron-right';
       <div class="p-5 space-y-4">
         <div>
           <label for="wedding-name" class="text-sm font-semibold text-gray-700 mb-1.5 block">Wedding Name</label>
-          <input id="wedding-name" type="text" bind:value={formName} placeholder="e.g. John & Jane's Wedding"
+          <input id="wedding-name" type="text" bind:value={formName} maxlength={LIMITS.name} placeholder="e.g. John & Jane's Wedding"
             class="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm bg-white focus:border-gold focus:ring-2 focus:ring-gold/15 transition-all" />
         </div>
         <div>
