@@ -5,9 +5,9 @@ import Pencil from 'lucide-svelte/icons/pencil';
 import Star from 'lucide-svelte/icons/star';
 import Users from 'lucide-svelte/icons/users';
   import { cn } from '#lib/utils/index.ts';
-  import { trapFocus } from '#lib/utils/focus.ts';
+  import { trapFocus, registerEscape } from '#lib/utils/focus.ts';
   import { LIMITS } from '#lib/utils/limits.ts';
-  import { untrack } from 'svelte';
+  import { untrack, onMount } from 'svelte';
 
   let {
     title = 'Add Table',
@@ -32,12 +32,12 @@ import Users from 'lucide-svelte/icons/users';
   } = $props();
 
   let editing = $state(untrack(() => startEditing));
+  onMount(() => registerEscape(onClose));
   const isEdit = $derived(title === 'Edit Table');
   const percentage = $derived(capacity > 0 ? Math.round((occupied / capacity) * 100) : 0);
 </script>
 
 <!-- svelte-ignore a11y_no_static_element_interactions -->
-<svelte:window onkeydown={(e) => { if (e.key === 'Escape') onClose(); }} />
 <!-- svelte-ignore a11y_no_static_element_interactions -->
 <div class="drawer-overlay" onclick={onClose} role="presentation">
   <div class="drawer-backdrop" aria-hidden="true"></div>

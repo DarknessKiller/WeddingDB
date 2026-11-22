@@ -17,7 +17,9 @@ export const LIMITS = {
 	venueAddress: 500,
 	kioskDescription: 500,
 	url: 500,
-	color: 20
+	color: 20,
+	// Mirrors services.MaxLayoutElements (not a text length: one saved layout).
+	maxLayoutElements: 200
 } as const;
 
 // Passwords are ASCII only, so bcrypt's 72-byte ceiling equals 72 characters.

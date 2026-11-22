@@ -4,7 +4,7 @@ import UserCheck from 'lucide-svelte/icons/user-check';
 import Loader2 from 'lucide-svelte/icons/loader-2';
   import { fade } from 'svelte/transition';
   import { onMount, tick } from 'svelte';
-  import { trapFocus } from '#lib/utils/focus.ts';
+  import { trapFocus, registerEscape } from '#lib/utils/focus.ts';
   import { slideOut as sheetSlideOut } from '#lib/utils/motion.ts';
   import { LIMITS } from '#lib/utils/limits.ts';
 
@@ -58,11 +58,13 @@ import Loader2 from 'lucide-svelte/icons/loader-2';
     if (dragY > 80) onClose();
     dragY = 0;
   }
-  // After tick: trapFocus focuses the first control (Close) on mount; Confirm is the default.
-  onMount(async () => { await tick(); confirmBtn?.focus(); });
+  onMount(async () => {
+    await tick();
+    confirmBtn?.focus();
+  });
+  onMount(() => registerEscape(() => { if (!loading) onClose(); }));
 </script>
 
-<svelte:window onkeydown={(e) => { if (e.key === 'Escape' && !loading) onClose(); }} />
 <div class="fixed inset-0 z-[60] flex items-end sm:items-center justify-center p-0 sm:p-4" role="dialog" aria-modal="true" aria-labelledby="check-in-title">
   <div class="absolute inset-0 bg-black/30 backdrop-blur-md" onclick={onClose} role="presentation" transition:fade={{ duration: 250 }}></div>
   <!-- svelte-ignore a11y_no_static_element_interactions -->

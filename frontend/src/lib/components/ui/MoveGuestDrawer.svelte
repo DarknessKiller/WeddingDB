@@ -3,8 +3,8 @@
 import ArrowUpDown from 'lucide-svelte/icons/arrow-up-down';
   import { getInitials } from '#lib/utils/index.ts';
   import type { Guest, BanquetTable } from '#lib/types/index.ts';
-  import { trapFocus } from '#lib/utils/focus.ts';
-  import { untrack } from 'svelte';
+  import { trapFocus, registerEscape } from '#lib/utils/focus.ts';
+  import { untrack, onMount } from 'svelte';
 
   let {
     guest,
@@ -22,7 +22,7 @@ import ArrowUpDown from 'lucide-svelte/icons/arrow-up-down';
     onClose: () => void;
   } = $props();
 
-  // Initial values only; user picks override them afterwards
+  onMount(() => registerEscape(onClose));
   let tableId = $state(untrack(() => guest.tableId != null ? String(guest.tableId) : (tables.length ? String(tables[0].id) : '')));
   let seatNum = $state(untrack(() => guest.seatNumber ?? 1));
 
@@ -76,8 +76,6 @@ import ArrowUpDown from 'lucide-svelte/icons/arrow-up-down';
   }
 </script>
 
-<!-- svelte-ignore a11y_no_static_element_interactions -->
-<svelte:window onkeydown={(e) => { if (e.key === 'Escape') onClose(); }} />
 <!-- svelte-ignore a11y_no_static_element_interactions -->
 <div class="drawer-overlay" onclick={onClose} role="presentation">
   <div class="drawer-backdrop" aria-hidden="true"></div>

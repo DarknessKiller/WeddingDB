@@ -1,7 +1,7 @@
 <script lang="ts">
   import X from 'lucide-svelte/icons/x';
 import AlertTriangle from 'lucide-svelte/icons/alert-triangle';
-  import { trapFocus } from '#lib/utils/focus.ts';
+  import { trapFocus, registerEscape } from '#lib/utils/focus.ts';
   import { fade } from 'svelte/transition';
 
   let {
@@ -24,10 +24,6 @@ import AlertTriangle from 'lucide-svelte/icons/alert-triangle';
     onCancel: () => void;
   } = $props();
 
-  function handleKeydown(e: KeyboardEvent) {
-    if (e.key === 'Escape') onCancel();
-  }
-
   function handleBackdropClick() {
     onCancel();
   }
@@ -35,9 +31,14 @@ import AlertTriangle from 'lucide-svelte/icons/alert-triangle';
   function handleConfirm() {
     onConfirm();
   }
-</script>
 
-<svelte:window onkeydown={handleKeydown} />
+  // Registered only while open: ConfirmDialog is always mounted, so a permanent
+  // entry would swallow Escape meant for the drawer underneath it.
+  $effect(() => {
+    if (!open) return;
+    return registerEscape(onCancel);
+  });
+</script>
 
 {#if open}
   <!-- svelte-ignore a11y_no_static_element_interactions -->

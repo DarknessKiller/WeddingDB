@@ -57,6 +57,23 @@ import CheckCircle2 from 'lucide-svelte/icons/check-circle-2';
     return r;
   });
 
+  // Infinite scroll: rows render in steps of PAGE as the sentinel comes into view.
+  const PAGE = 50;
+  let visible = $state(PAGE);
+  let displayGuests = $derived(sortedGuests.slice(0, visible));
+  $effect(() => { sortCol; sortDir; visible = PAGE; });
+
+  function loadMoreOnView(node: HTMLElement, _shown: number) {
+    const io = new IntersectionObserver((entries) => {
+      if (entries.some((e) => e.isIntersecting)) visible += PAGE;
+    });
+    io.observe(node);
+    return {
+      update() { io.unobserve(node); io.observe(node); },
+      destroy: () => io.disconnect()
+    };
+  }
+
   // Track drawer open/close to refresh data
   let prevDrawerOpen = $state(false);
   $effect(() => {
@@ -236,7 +253,7 @@ import CheckCircle2 from 'lucide-svelte/icons/check-circle-2';
       <div class="md:w-80 lg:w-96 md:border-r border-gray-200 bg-white overflow-y-auto flex-shrink-0 max-h-[35vh] md:max-h-none">
         {#if allGuests.length === 0}
           <div class="p-8 text-center text-gray-500">
-            <p class="text-sm">Loading guests...</p>
+            <p class="text-sm">No guests yet</p>
           </div>
         {:else}
           <div class="flex items-center gap-2 px-3 py-1.5 border-b border-gray-100 bg-gray-50 text-xs">
@@ -245,7 +262,7 @@ import CheckCircle2 from 'lucide-svelte/icons/check-circle-2';
             <button onclick={() => toggleSort('checkedIn')} class="py-1 {sortCol === 'checkedIn' ? 'text-red font-bold' : 'text-gray-500'}">Status</button>
           </div>
           <div class="divide-y divide-gray-100">
-            {#each sortedGuests as guest (guest.id)}
+            {#each displayGuests as guest (guest.id)}
               <button
                 class="w-full flex items-center gap-3 px-4 py-3 hover:bg-gray-50 transition-colors text-left"
                 onclick={() => openGuest(guest)}
@@ -275,6 +292,9 @@ import CheckCircle2 from 'lucide-svelte/icons/check-circle-2';
                 {/if}
               </button>
             {/each}
+            {#if sortedGuests.length > displayGuests.length}
+              <div use:loadMoreOnView={visible} class="h-8"></div>
+            {/if}
           </div>
         {/if}
       </div>

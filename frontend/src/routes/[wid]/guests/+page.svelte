@@ -1,10 +1,11 @@
 <script lang="ts">
   import { onDestroy } from 'svelte';
+  import { get } from 'svelte/store';
   import type { Guest, RSVPStatus } from '#lib/types/index.ts';
   import { weddingTitle } from '#lib/stores/weddingTitle.ts';
   import { selectedGuest, isDrawerOpen, drawerStartEditing, drawerCreateMode, addToast, showSeatNumbers } from '#lib/stores/index.ts';
   import { weddingId } from '#lib/stores/weddingId.ts';
-  import { guestList } from '#lib/stores/guestEvents.ts';
+  import { guestList, guestMap } from '#lib/stores/guestEvents.ts';
   import { goto } from '$app/navigation';
   import { deleteGuest as apiDeleteGuest, assignSeat, unassignSeat, bulkImportGuests } from '#lib/api/guests.ts';
   import type { GuestImportData } from '#lib/api/guests.ts';
@@ -165,8 +166,12 @@ import Users from 'lucide-svelte/icons/users';
   );
 
   // Quote every field: double quotes around the value, internal quotes escaped as "".
+  // Excel and Sheets run a cell starting with =, +, -, @ or a control character
+  // as a formula, so guest text is prefixed with an apostrophe (numbers are not).
   function csvField(v: unknown): string {
-    const s = v === null || v === undefined ? '' : String(v);
+    if (v === null || v === undefined) return '""';
+    if (typeof v !== 'string') return `"${v}"`;
+    const s = /^[=+\-@\t\r]/.test(v) ? `'${v}` : v;
     return `"${s.replace(/"/g, '""')}"`;
   }
 
@@ -226,7 +231,6 @@ import Users from 'lucide-svelte/icons/users';
   async function deleteGuest(guest: Guest) {
     try {
       await apiDeleteGuest(wid, guest.id);
-      guestList.update(list => list.filter(g => g.id !== guest.id));
       addToast(`${guest.name} deleted`, 'info');
     } catch (e: any) {
       addToast(e.message ?? 'Delete failed', 'error');
@@ -258,7 +262,6 @@ import Users from 'lucide-svelte/icons/users';
     showUnassignConfirm = false;
     try {
       await unassignSeat(wid, unassignTarget.id);
-      guestList.update(list => list.map(g => g.id === unassignTarget!.id ? { ...g, tableId: null, seatNumber: null } : g));
       addToast(`${unassignTarget.name} unassigned from table`, 'success');
     } catch (e: any) {
       addToast(e.message ?? 'Unassign failed', 'error');
@@ -403,7 +406,6 @@ import Users from 'lucide-svelte/icons/users';
     const ids = [...selectedIds];
     try {
       await Promise.all(ids.map(id => apiDeleteGuest(wid, id)));
-      guestList.update(list => list.filter(g => !selectedIds.has(g.id)));
       addToast(`Deleted ${ids.length} guests`, 'info');
       selectedIds = new Set();
     } catch (e: any) {
@@ -421,7 +423,7 @@ import Users from 'lucide-svelte/icons/users';
   function getNextBulkSeatNum(): number {
     if (!bulkMoveTableId) return 1;
     const cap = getBulkTableCapacity();
-    const occ = filtered.filter(g => g.tableId === bulkMoveTableId && !selectedIds.has(g.id) && g.seatNumber != null)
+    const occ = allGuests.filter(g => g.tableId === bulkMoveTableId && !selectedIds.has(g.id) && g.seatNumber != null)
       .flatMap(g => Array.from({ length: g.pax }, (_, i) => g.seatNumber! + i));
     for (let s = 1; s <= cap; s++) {
       if (!occ.includes(s)) return s;
@@ -432,7 +434,7 @@ import Users from 'lucide-svelte/icons/users';
   let bulkOccupiedSeats = $derived.by((): Set<number> => {
     if (!bulkMoveTableId) return new Set();
     return new Set(
-      filtered
+      allGuests
         .filter(g => g.tableId === bulkMoveTableId && !selectedIds.has(g.id) && g.seatNumber != null)
         .flatMap(g => {
           const start = g.seatNumber!;
@@ -451,10 +453,14 @@ import Users from 'lucide-svelte/icons/users';
     if (!bulkMoveTableId || selectedIds.size === 0) return;
     const capacity = getBulkTableCapacity();
     const ids = [...selectedIds];
-    const seatsNeeded = ids.reduce((sum, id) => {
-      const g = filtered.find(g => g.id === id);
-      return sum + (g?.pax ?? 1);
-    }, 0);
+    // Selection survives filtering, so pax must come from the full list: reading
+    // it from the filtered rows undercounts seats and moves half the batch.
+    const moving = ids.map(id => get(guestMap).get(id)).filter((g): g is Guest => !!g);
+    if (moving.length !== ids.length) {
+      addToast('Some selected guests are no longer loaded; refresh and try again', 'error');
+      return;
+    }
+    const seatsNeeded = moving.reduce((sum, g) => sum + g.pax, 0);
     // reject unless every pax fits after the starting seat
     if (bulkMoveSeatStart + seatsNeeded - 1 > capacity) {
       addToast(`Not enough seats. Need ${seatsNeeded}, available from seat ${bulkMoveSeatStart}: ${capacity - bulkMoveSeatStart + 1}`, 'error');
@@ -470,13 +476,8 @@ import Users from 'lucide-svelte/icons/users';
     bulkMoveSaving = true;
     try {
       let seat = bulkMoveSeatStart;
-      for (const id of ids) {
-        const g = filtered.find(gg => gg.id === id);
-        if (!g) continue;
-        await assignSeat(wid, id, bulkMoveTableId, seat);
-        // Push through the store so off-page rows and the next loop
-        // iterations see the new seat even if the SSE echo is slow.
-        guestList.update(list => list.map(gg => gg.id === id ? { ...gg, tableId: bulkMoveTableId, seatNumber: seat } : gg));
+      for (const g of moving) {
+        await assignSeat(wid, g.id, bulkMoveTableId, seat);
         seat += g.pax;
       }
       addToast(`Moved ${ids.length} guests to table`, 'success');
