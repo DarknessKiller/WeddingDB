@@ -11,7 +11,6 @@ import (
 	"weddingdb/internal/repository"
 	"weddingdb/internal/testutil"
 
-	"github.com/alicebob/miniredis/v2"
 	"github.com/google/uuid"
 )
 
@@ -19,18 +18,19 @@ import (
 // in its place, which logged the user out for good. Minting now happens before
 // the consume, so the token survives and the retry succeeds.
 func TestRefresh_MintFailureKeepsTokenUsable(t *testing.T) {
-	svc, mr, db := newIntegrationAuthService(t, "test-secret")
+	svc, _, db := newIntegrationAuthService(t, "test-secret")
 	adminID := uuid.New()
 	refreshStr := "grace-mint-failure"
 
 	seedAdmin(t, db, adminID, "admin")
 	seedRefreshToken(t, db, adminID, nil, refreshStr)
 
-	addr := mr.Addr()
-	mr.Close() // generateAccessToken -> GetTokenVersion now fails
+	// Simulate a token-version read failure: generateAccessToken must fail
+	// before Rotate consumes the presented token.
+	testutil.NoErr(t, db.Exec("ALTER TABLE admin_users DROP COLUMN token_version").Error)
 
 	if _, err := svc.Refresh(context.Background(), refreshStr, ""); err == nil {
-		t.Fatal("expected Refresh to fail while Redis is down")
+		t.Fatal("expected Refresh to fail while the token version is unreadable")
 	}
 
 	var live int64
@@ -39,11 +39,7 @@ func TestRefresh_MintFailureKeepsTokenUsable(t *testing.T) {
 		t.Fatalf("failed Refresh consumed the token: %d unrotated rows left", live)
 	}
 
-	restarted := miniredis.NewMiniRedis()
-	if err := restarted.StartAddr(addr); err != nil {
-		t.Fatalf("restart miniredis: %v", err)
-	}
-	t.Cleanup(restarted.Close)
+	testutil.NoErr(t, db.Exec("ALTER TABLE admin_users ADD COLUMN token_version INTEGER NOT NULL DEFAULT 0").Error)
 
 	result, err := svc.Refresh(context.Background(), refreshStr, "")
 	if err != nil {

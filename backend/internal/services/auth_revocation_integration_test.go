@@ -55,6 +55,7 @@ func newIntegrationAuthService(t *testing.T, secret string) (*AuthService, *mini
 		name TEXT,
 		role TEXT NOT NULL,
 		force_password_change INTEGER DEFAULT 0,
+		token_version INTEGER NOT NULL DEFAULT 0,
 		created_at DATETIME,
 		updated_at DATETIME
 	)`)
@@ -412,6 +413,7 @@ func TestRevokeUserTokens_DeletesRefreshTokensAndBumpsTV(t *testing.T) {
 	svc, _, db := newIntegrationAuthService(t, "test-secret")
 	adminID := uuid.New()
 	wid := uuid.New()
+	seedAdmin(t, db, adminID, "admin")
 
 	seedRefreshToken(t, db, adminID, &wid, "token-1")
 	seedRefreshToken(t, db, adminID, &wid, "token-2")
@@ -444,6 +446,7 @@ func TestRevokeUserTokens_InvalidatesExistingTokens(t *testing.T) {
 	svc, _, db := newIntegrationAuthService(t, "test-secret")
 	adminID := uuid.New()
 	wid := uuid.New()
+	seedAdmin(t, db, adminID, "admin")
 
 	tok := signTestToken(t, "test-secret", AccessClaims{
 		AdminID:      adminID,
@@ -476,6 +479,7 @@ func TestRevokeUserTokens_InvalidatesExistingTokens(t *testing.T) {
 func TestRevokeUserTokens_DeleteBeforeIncrOrdering(t *testing.T) {
 	svc, _, db := newIntegrationAuthService(t, "test-secret")
 	adminID := uuid.New()
+	seedAdmin(t, db, adminID, "admin")
 
 	seedRefreshToken(t, db, adminID, nil, "orphan-token")
 
@@ -502,10 +506,67 @@ func TestRevokeUserTokens_DeleteBeforeIncrOrdering(t *testing.T) {
 	}
 }
 
+// Postgres is authoritative: bumping the stored version rejects a token minted
+// under the old one even when Redis knows nothing about the change.
+func TestValidateToken_PostgresVersionBumpRejectsOldToken(t *testing.T) {
+	svc, _, db := newIntegrationAuthService(t, "test-secret")
+	adminID := uuid.New()
+	seedAdmin(t, db, adminID, "admin")
+
+	tok := signTestToken(t, "test-secret", AccessClaims{
+		AdminID:      adminID,
+		Role:         "admin",
+		TokenVersion: 0,
+		RegisteredClaims: jwt.RegisteredClaims{
+			ID:        uuid.NewString(),
+			IssuedAt:  jwt.NewNumericDate(time.Now()),
+			ExpiresAt: jwt.NewNumericDate(time.Now().Add(15 * time.Minute)),
+		},
+	})
+	if _, err := svc.ValidateToken(context.Background(), tok); err != nil {
+		t.Fatalf("token should be valid before the bump: %v", err)
+	}
+
+	testutil.NoErr(t, db.Model(&models.AdminUser{}).Where("id = ?", adminID).
+		Update("token_version", gorm.Expr("token_version + 1")).Error)
+
+	if _, err := svc.ValidateToken(context.Background(), tok); err == nil {
+		t.Fatal("old token still valid after a Postgres token-version bump")
+	}
+}
+
+// A Redis restart loses every key. Revocation must still hold because the
+// version lives in Postgres.
+func TestRevokeUserTokens_SurvivesRedisFlush(t *testing.T) {
+	svc, mr, db := newIntegrationAuthService(t, "test-secret")
+	adminID := uuid.New()
+	seedAdmin(t, db, adminID, "admin")
+
+	tok := signTestToken(t, "test-secret", AccessClaims{
+		AdminID:      adminID,
+		Role:         "admin",
+		TokenVersion: 0,
+		RegisteredClaims: jwt.RegisteredClaims{
+			ID:        uuid.NewString(),
+			IssuedAt:  jwt.NewNumericDate(time.Now()),
+			ExpiresAt: jwt.NewNumericDate(time.Now().Add(15 * time.Minute)),
+		},
+	})
+	if err := svc.RevokeUserTokens(context.Background(), adminID); err != nil {
+		t.Fatalf("RevokeUserTokens failed: %v", err)
+	}
+	mr.FlushAll() // Redis restart: token-version keys and blacklist are gone
+
+	if _, err := svc.ValidateToken(context.Background(), tok); err == nil {
+		t.Fatal("revoked token became valid again after Redis lost its data")
+	}
+}
+
 func TestDiscardIfRevoked_RemovesSuccessorMintedUnderOldVersion(t *testing.T) {
 	svc, _, db := newIntegrationAuthService(t, "test-secret")
 	ctx := context.Background()
 	adminID := uuid.New()
+	seedAdmin(t, db, adminID, "admin")
 
 	access := signTestToken(t, "test-secret", AccessClaims{
 		AdminID:      adminID,
@@ -534,9 +595,10 @@ func TestDiscardIfRevoked_RemovesSuccessorMintedUnderOldVersion(t *testing.T) {
 }
 
 func TestDiscardIfRevoked_KeepsCurrentSession(t *testing.T) {
-	svc, _, _ := newIntegrationAuthService(t, "test-secret")
+	svc, _, db := newIntegrationAuthService(t, "test-secret")
 	ctx := context.Background()
 	adminID := uuid.New()
+	seedAdmin(t, db, adminID, "admin")
 
 	access := signTestToken(t, "test-secret", AccessClaims{
 		AdminID: adminID,

@@ -2,6 +2,7 @@ package services
 
 import (
 	"fmt"
+	"unicode"
 	"unicode/utf8"
 
 	"weddingdb/internal/models"
@@ -116,6 +117,40 @@ func ValidateElementText(e *models.HallElement) error {
 		if err := checkLen(f.field, f.value, f.max); err != nil {
 			return err
 		}
+	}
+	return nil
+}
+
+// ValidatePassword is the single password policy: ASCII-only, 8..MaxPasswordLen
+// bytes, with at least one letter, one digit and one symbol. Handlers and
+// bootstrap both call it.
+func ValidatePassword(password string) error {
+	// ASCII only, so bytes and characters are the same number and bcrypt's
+	// 72-byte ceiling matches MaxPasswordLen.
+	for _, c := range password {
+		if c < '!' || c > '~' {
+			return fmt.Errorf("password may only use letters, digits, and ASCII punctuation (no spaces)")
+		}
+	}
+	if len(password) < 8 {
+		return fmt.Errorf("password must be at least 8 characters")
+	}
+	if len(password) > MaxPasswordLen {
+		return fmt.Errorf("password must be at most %d characters", MaxPasswordLen)
+	}
+	var hasLetter, hasDigit, hasSymbol bool
+	for _, c := range password {
+		switch {
+		case unicode.IsLetter(c):
+			hasLetter = true
+		case unicode.IsDigit(c):
+			hasDigit = true
+		case unicode.IsPunct(c) || unicode.IsSymbol(c):
+			hasSymbol = true
+		}
+	}
+	if !hasLetter || !hasDigit || !hasSymbol {
+		return fmt.Errorf("password must contain at least one letter, one number, and one symbol")
 	}
 	return nil
 }

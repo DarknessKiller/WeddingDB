@@ -11,6 +11,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/redis/go-redis/v9"
 
+	"weddingdb/internal/models"
 	"weddingdb/internal/testutil"
 )
 
@@ -30,8 +31,9 @@ func signTestToken(t *testing.T, secret string, claims AccessClaims) string {
 }
 
 func TestValidateToken_Valid(t *testing.T) {
-	svc, _ := newTestAuthService(t, "test-secret-123")
+	svc, _, db := newIntegrationAuthService(t, "test-secret-123")
 	adminID := uuid.New()
+	seedAdmin(t, db, adminID, "admin")
 	wid := uuid.New()
 	now := time.Now()
 
@@ -111,8 +113,9 @@ func TestValidateToken_Malformed(t *testing.T) {
 }
 
 func TestValidateToken_NilWeddingID(t *testing.T) {
-	svc, _ := newTestAuthService(t, "test-secret-123")
+	svc, _, db := newIntegrationAuthService(t, "test-secret-123")
 	adminID := uuid.New()
+	seedAdmin(t, db, adminID, "admin")
 	now := time.Now()
 
 	tok := signTestToken(t, "test-secret-123", AccessClaims{
@@ -160,8 +163,9 @@ func TestValidateToken_Blacklisted(t *testing.T) {
 }
 
 func TestValidateToken_StaleTokenVersion(t *testing.T) {
-	svc, mr := newTestAuthService(t, "test-secret-123")
+	svc, _, db := newIntegrationAuthService(t, "test-secret-123")
 	adminID := uuid.New()
+	seedAdmin(t, db, adminID, "admin")
 	now := time.Now()
 
 	// Sign token with tv=0
@@ -177,7 +181,7 @@ func TestValidateToken_StaleTokenVersion(t *testing.T) {
 	})
 
 	// Set stored version to 1 (simulates admin revoke)
-	testutil.NoErr(t, mr.Set("user:"+adminID.String()+":tv", "1"))
+	testutil.NoErr(t, db.Model(&models.AdminUser{}).Where("id = ?", adminID).Update("token_version", 1).Error)
 
 	_, err := svc.ValidateToken(context.Background(), tok)
 	if err == nil {
@@ -243,24 +247,33 @@ func TestBlacklistAccessToken_SkipsExpiredToken(t *testing.T) {
 	}
 }
 
-func TestGetTokenVersion_MissingReturnsZero(t *testing.T) {
-	svc, _ := newTestAuthService(t, "test-secret-123")
+func TestGetTokenVersion_NewAccountIsZero(t *testing.T) {
+	svc, _, db := newIntegrationAuthService(t, "test-secret-123")
 	adminID := uuid.New()
+	seedAdmin(t, db, adminID, "admin")
 
 	tv, err := svc.GetTokenVersion(context.Background(), adminID)
 	if err != nil {
 		t.Fatalf("GetTokenVersion failed: %v", err)
 	}
 	if tv != 0 {
-		t.Errorf("expected tv=0 for missing key, got %d", tv)
+		t.Errorf("expected tv=0 for a new account, got %d", tv)
+	}
+}
+
+func TestGetTokenVersion_MissingAccountFailsClosed(t *testing.T) {
+	svc, _, _ := newIntegrationAuthService(t, "test-secret-123")
+
+	if _, err := svc.GetTokenVersion(context.Background(), uuid.New()); err == nil {
+		t.Fatal("expected an error for a missing account so validation fails closed")
 	}
 }
 
 func TestGetTokenVersion_ReturnsStoredValue(t *testing.T) {
-	svc, mr := newTestAuthService(t, "test-secret-123")
+	svc, _, db := newIntegrationAuthService(t, "test-secret-123")
 	adminID := uuid.New()
-
-	testutil.NoErr(t, mr.Set("user:"+adminID.String()+":tv", "5"))
+	seedAdmin(t, db, adminID, "admin")
+	testutil.NoErr(t, db.Model(&models.AdminUser{}).Where("id = ?", adminID).Update("token_version", 5).Error)
 
 	tv, err := svc.GetTokenVersion(context.Background(), adminID)
 	if err != nil {

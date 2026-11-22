@@ -6,8 +6,6 @@ import (
 	"net"
 	"net/http"
 	"net/mail"
-	"strconv"
-	"unicode"
 	"weddingdb/internal/middleware"
 	"weddingdb/internal/models"
 	"weddingdb/internal/repository"
@@ -20,32 +18,8 @@ import (
 )
 
 func validatePassword(password string) error {
-	// ASCII only, so bytes and characters are the same number and bcrypt's
-	// 72-byte ceiling matches MaxPasswordLen.
-	for _, c := range password {
-		if c < '!' || c > '~' {
-			return fuego.BadRequestError{Title: "Password may only use letters, digits, and ASCII punctuation (no spaces)"}
-		}
-	}
-	if len(password) < 8 {
-		return fuego.BadRequestError{Title: "Password must be at least 8 characters"}
-	}
-	if len(password) > services.MaxPasswordLen {
-		return fuego.BadRequestError{Title: "Password must be at most " + strconv.Itoa(services.MaxPasswordLen) + " characters"}
-	}
-	var hasLetter, hasDigit, hasSymbol bool
-	for _, c := range password {
-		switch {
-		case unicode.IsLetter(c):
-			hasLetter = true
-		case unicode.IsDigit(c):
-			hasDigit = true
-		case unicode.IsPunct(c) || unicode.IsSymbol(c):
-			hasSymbol = true
-		}
-	}
-	if !hasLetter || !hasDigit || !hasSymbol {
-		return fuego.BadRequestError{Title: "Password must contain at least one letter, one number, and one symbol"}
+	if err := services.ValidatePassword(password); err != nil {
+		return fuego.BadRequestError{Title: err.Error()}
 	}
 	return nil
 }
@@ -123,8 +97,12 @@ func (h *AuthHandler) Login(c fuego.ContextWithBody[LoginRequest]) (TokenRespons
 	}
 	result, err := h.authService.Login(c.Context(), body.Email, body.Password)
 	if err != nil {
-		h.authService.RecordLoginFailure(c.Context(), body.Email, ip)
-		return TokenResponse{}, fuego.UnauthorizedError{Title: err.Error()}
+		if errors.Is(err, services.ErrInvalidCredentials) {
+			h.authService.RecordLoginFailure(c.Context(), body.Email, ip)
+			return TokenResponse{}, fuego.UnauthorizedError{Title: services.ErrInvalidCredentials.Error()}
+		}
+		slog.Error("login failed", "err", err)
+		return TokenResponse{}, fuego.HTTPError{Status: http.StatusServiceUnavailable, Title: "Service temporarily unavailable"}
 	}
 	return TokenResponse{
 		UserID:              result.UserID,
@@ -239,11 +217,11 @@ func (h *AuthHandler) ChangePassword(c fuego.ContextWithBody[ChangePasswordReque
 	if err := h.adminRepo.UpdateFields(ctx, adminID, map[string]any{"password": string(hash), "force_password_change": false}); err != nil {
 		return nil, fuego.InternalServerError{Title: "Failed to update password"}
 	}
-	// Revoke all existing sessions so compromised tokens are invalidated
-	// Password was already changed; log but don't fail the request.
-	// ponytail: best-effort revocation — password hash is already updated
+	// Revoke all existing sessions so compromised tokens are invalidated. The
+	// password is already changed, so the caller must learn the revocation failed.
 	if err := h.authService.RevokeUserTokens(ctx, adminID); err != nil {
-		slog.Warn("revoke tokens after password change failed", "user", adminID, "err", err)
+		slog.Error("revoke tokens after password change failed", "user", adminID, "err", err)
+		return nil, fuego.InternalServerError{Title: "Password changed but session revocation failed"}
 	}
 	return map[string]any{"message": "Password updated"}, nil
 }

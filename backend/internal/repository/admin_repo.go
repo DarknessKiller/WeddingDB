@@ -73,6 +73,23 @@ func (r *AdminRepo) List(ctx context.Context) ([]models.AdminUser, error) {
 	return admins, err
 }
 
+// GetTokenVersion reads the account's token version. A missing account is an
+// error so callers fail closed instead of treating it as version 0.
+func (r *AdminRepo) GetTokenVersion(ctx context.Context, id uuid.UUID) (int, error) {
+	var admin models.AdminUser
+	if err := r.db.WithContext(ctx).Select("token_version").First(&admin, id).Error; err != nil {
+		return 0, err
+	}
+	return admin.TokenVersion, nil
+}
+
+// IncrementTokenVersion bumps the version atomically, invalidating every access
+// token minted before the call.
+func (r *AdminRepo) IncrementTokenVersion(ctx context.Context, id uuid.UUID) error {
+	return r.db.WithContext(ctx).Model(&models.AdminUser{}).Where("id = ?", id).
+		UpdateColumn("token_version", gorm.Expr("token_version + 1")).Error
+}
+
 // UpdateFields writes only the given columns of one account, so a role change
 // cannot write back a password hash read before a concurrent reset.
 func (r *AdminRepo) UpdateFields(ctx context.Context, id uuid.UUID, fields map[string]any) error {

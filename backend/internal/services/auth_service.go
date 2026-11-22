@@ -86,10 +86,13 @@ func (s *AuthService) Login(ctx context.Context, email, password string) (*Login
 	admin, err := s.adminRepo.FindByEmail(ctx, email)
 	if err != nil {
 		compareHash(dummyHash(), []byte(password)) //nolint:errcheck // timing equalizer only; result is always a mismatch
-		return nil, errors.New("invalid credentials")
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, ErrInvalidCredentials
+		}
+		return nil, fmt.Errorf("find admin for login: %w", err)
 	}
 	if err := compareHash([]byte(admin.Password), []byte(password)); err != nil {
-		return nil, errors.New("invalid credentials")
+		return nil, ErrInvalidCredentials
 	}
 	refreshToken, err := s.generateRefreshToken(ctx, admin.ID, nil)
 	if err != nil {
@@ -483,23 +486,19 @@ func (s *AuthService) IsTokenBlacklisted(ctx context.Context, jti string) (bool,
 	return exists > 0, nil
 }
 
-// GetTokenVersion returns the current token version for a user from Redis.
-// Returns 0 if the key doesn't exist (lazy init: default tv=0).
+// GetTokenVersion reads the current token version from Postgres, the
+// authoritative store. Redis is deliberately not consulted: losing Redis must
+// not reset every revocation.
 func (s *AuthService) GetTokenVersion(ctx context.Context, userID uuid.UUID) (int, error) {
-	key := fmt.Sprintf("user:%s:tv", userID.String())
-	val, err := s.redisClient.Get(ctx, key).Int()
-	if errors.Is(err, redis.Nil) {
-		// Key doesn't exist — user has never been revoked, tv=0
-		return 0, nil
-	}
+	tv, err := s.adminRepo.GetTokenVersion(ctx, userID)
 	if err != nil {
-		return 0, err
+		return 0, fmt.Errorf("read token version: %w", err)
 	}
-	return val, nil
+	return tv, nil
 }
 
-// RevokeUserTokens bumps the token version in Redis and deletes all refresh tokens for the user.
-// Delete first, then INCR — closes the TOCTOU race where an attacker refreshes between INCR and delete.
+// RevokeUserTokens bumps the token version in Postgres and deletes all refresh tokens for the user.
+// Delete first, then bump — closes the TOCTOU race where an attacker refreshes between bump and delete.
 func (s *AuthService) RevokeUserTokens(ctx context.Context, userID uuid.UUID) error {
 	// Step 1: Delete refresh tokens from Postgres first.
 	// Any concurrent Refresh call after this point will fail at FindByToken.
@@ -507,11 +506,10 @@ func (s *AuthService) RevokeUserTokens(ctx context.Context, userID uuid.UUID) er
 		return fmt.Errorf("failed to delete refresh tokens: %w", err)
 	}
 	// Step 2: Bump token version. Any existing access token with old tv is now rejected by middleware.
-	// Retry on transient Redis failures — can't undo the Postgres delete.
-	key := fmt.Sprintf("user:%s:tv", userID.String())
+	// Retry on transient database failures — can't undo the delete above.
 	var lastErr error
-	for attempt := 0; attempt < 3; attempt++ {
-		if err := s.redisClient.Incr(ctx, key).Err(); err != nil {
+	for range 3 {
+		if err := s.adminRepo.IncrementTokenVersion(ctx, userID); err != nil {
 			lastErr = err
 			continue
 		}

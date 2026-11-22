@@ -23,6 +23,10 @@ var (
 	// replayed. Every other Refresh error is an infrastructure fault, so the
 	// handler answers 503 and the client keeps its session and offline queue.
 	ErrInvalidToken = errors.New("invalid refresh token")
+
+	// ErrInvalidCredentials is returned for a wrong email/password. Any other
+	// Login error is an infrastructure fault, so the handler answers 503.
+	ErrInvalidCredentials = errors.New("invalid credentials")
 )
 
 // SelectWedding sentinels; handlers map them to 401/403.

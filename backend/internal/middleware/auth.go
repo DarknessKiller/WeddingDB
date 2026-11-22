@@ -29,7 +29,7 @@ func AuthMiddleware(authService *services.AuthService) func(http.Handler) http.H
 				return
 			}
 
-			// ValidateToken now handles blacklist + token_version checks via Redis.
+			// ValidateToken handles the blacklist and token-version checks.
 			// Uses r.Context() for cancellation safety — if the client disconnects,
 			// Redis calls respect context cancellation and the request is rejected.
 			claims, err := authService.ValidateToken(r.Context(), token)

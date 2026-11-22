@@ -16,7 +16,8 @@ func TestAdminUpdateFields_LeavesOtherColumns(t *testing.T) {
 	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
 	testutil.NoErr(t, err)
 	testutil.NoErr(t, db.Exec(`CREATE TABLE admin_users (id TEXT PRIMARY KEY, email TEXT NOT NULL, password TEXT NOT NULL,
-		name TEXT, role TEXT NOT NULL, force_password_change INTEGER DEFAULT 0, created_at DATETIME, updated_at DATETIME)`).Error)
+		name TEXT, role TEXT NOT NULL, force_password_change INTEGER DEFAULT 0, token_version INTEGER NOT NULL DEFAULT 0,
+		created_at DATETIME, updated_at DATETIME)`).Error)
 	repo := NewAdminRepo(db)
 	ctx := t.Context()
 	id := uuid.New()
@@ -37,7 +38,8 @@ func TestLastAdminGuard(t *testing.T) {
 	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
 	testutil.NoErr(t, err)
 	testutil.NoErr(t, db.Exec(`CREATE TABLE admin_users (id TEXT PRIMARY KEY, email TEXT NOT NULL, password TEXT NOT NULL,
-		name TEXT, role TEXT NOT NULL, force_password_change INTEGER DEFAULT 0, created_at DATETIME, updated_at DATETIME)`).Error)
+		name TEXT, role TEXT NOT NULL, force_password_change INTEGER DEFAULT 0, token_version INTEGER NOT NULL DEFAULT 0,
+		created_at DATETIME, updated_at DATETIME)`).Error)
 	testutil.NoErr(t, db.Exec(`CREATE TABLE user_weddings (id TEXT PRIMARY KEY, user_id TEXT, wedding_id TEXT, created_at DATETIME)`).Error)
 	repo := NewAdminRepo(db)
 	ctx := t.Context()

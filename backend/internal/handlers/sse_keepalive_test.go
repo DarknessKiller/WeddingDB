@@ -14,9 +14,13 @@ import (
 	"github.com/google/uuid"
 	"github.com/redis/go-redis/v9"
 
+	"weddingdb/internal/repository"
 	"weddingdb/internal/services"
 	"weddingdb/internal/testutil"
 	"weddingdb/internal/utils"
+
+	"gorm.io/driver/sqlite"
+	"gorm.io/gorm"
 )
 
 // newTestSSEServer spins up an SSEHub on miniredis plus a StreamHandler server
@@ -35,8 +39,9 @@ func newTestSSEServerRedis(t *testing.T) (*httptest.Server, *services.SSEHub, st
 
 	// Mint admin JWT with the same secret the handler validates against.
 	secret := "test-secret"
+	adminID := uuid.MustParse("00000000-0000-0000-0000-000000000001")
 	claims := services.AccessClaims{
-		AdminID:      uuid.MustParse("00000000-0000-0000-0000-000000000001"),
+		AdminID:      adminID,
 		Role:         "admin",
 		TokenVersion: 1,
 		RegisteredClaims: jwt.RegisteredClaims{
@@ -49,7 +54,16 @@ func newTestSSEServerRedis(t *testing.T) (*httptest.Server, *services.SSEHub, st
 		t.Fatalf("mint token: %v", err)
 	}
 
-	auth := services.NewAuthService(nil, nil, nil, secret, rdb)
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	testutil.NoErr(t, err)
+	sqlDB, err := db.DB()
+	testutil.NoErr(t, err)
+	sqlDB.SetMaxOpenConns(1)
+	testutil.NoErr(t, db.Exec(`CREATE TABLE admin_users (id TEXT PRIMARY KEY, email TEXT NOT NULL, password TEXT NOT NULL,
+		name TEXT, role TEXT NOT NULL, force_password_change INTEGER DEFAULT 0, token_version INTEGER NOT NULL DEFAULT 0,
+		created_at DATETIME, updated_at DATETIME)`).Error)
+	testutil.NoErr(t, db.Exec(`INSERT INTO admin_users (id, email, password, role) VALUES (?, 'sse@x.test', 'h', 'admin')`, adminID).Error)
+	auth := services.NewAuthService(repository.NewAdminRepo(db), nil, nil, secret, rdb)
 	h := NewSSEHandler(hub, auth)
 
 	testWID := uuid.New()
