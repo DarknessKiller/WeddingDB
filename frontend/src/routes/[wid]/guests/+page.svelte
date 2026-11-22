@@ -6,8 +6,10 @@
   import { weddingId } from '#lib/stores/weddingId.ts';
   import { guestList } from '#lib/stores/guestEvents.ts';
   import { goto } from '$app/navigation';
-  import { deleteGuest as apiDeleteGuest, searchGuests, assignSeat, unassignSeat, bulkImportGuests } from '#lib/api/guests.ts';
-  import type { GuestResponse, GuestImportData } from '#lib/api/guests.ts';
+  import { deleteGuest as apiDeleteGuest, assignSeat, unassignSeat, bulkImportGuests } from '#lib/api/guests.ts';
+  import type { GuestImportData } from '#lib/api/guests.ts';
+  import { rankGuests } from '#lib/utils/guestSearch.ts';
+  import { trapFocus } from '#lib/utils/focus.ts';
   import { listTables } from '#lib/api/tables.ts';
   import type { BanquetTable } from '#lib/types/index.ts';
   import Badge from '#lib/components/ui/Badge.svelte';
@@ -18,8 +20,6 @@
 import Download from 'lucide-svelte/icons/download';
 import Upload from 'lucide-svelte/icons/upload';
 import Plus from 'lucide-svelte/icons/plus';
-import ChevronLeft from 'lucide-svelte/icons/chevron-left';
-import ChevronRight from 'lucide-svelte/icons/chevron-right';
 import MoreHorizontal from 'lucide-svelte/icons/more-horizontal';
 import Pencil from 'lucide-svelte/icons/pencil';
 import Trash2 from 'lucide-svelte/icons/trash-2';
@@ -32,8 +32,9 @@ import Users from 'lucide-svelte/icons/users';
 
   let searchQuery = $state('');
   let rsvpFilter = $state<RSVPStatus | 'all'>('all');
-  let currentPage = $state(0);
-  let pageSize = $state(20);
+  // Infinite scroll: rows render in steps of PAGE as the sentinel comes into view.
+  const PAGE = 50;
+  let visible = $state(PAGE);
   let sortCol = $state<string>('name');
   let sortDir = $state<'asc' | 'desc'>('asc');
   let selectedIds = $state<Set<string>>(new Set());
@@ -48,50 +49,28 @@ import Users from 'lucide-svelte/icons/users';
   let errored = $state(false);
   let error = $state<string | null>(null);
 
-  // Server-side search results (pinyin-aware)
-  let searchResults = $state<Guest[] | null>(null);
-  let searching = $state(false);
-  let searchError = $state<string | null>(null);
-  let searchSeq = 0; // ponytail: stale-response guard, monotonically increasing
-
   // Derive guest list from SSE store — updates in real time.
   let allGuests = $derived($guestList);
   let totalGuests = $derived(allGuests.length);
 
-  async function doSearch(q: string) {
-    const seq = ++searchSeq;
-    try {
-      const results = await searchGuests(wid, q);
-      if (seq !== searchSeq) return; // stale — discard
-      searchResults = results.map(toGuest);
-      searchError = null;
-      currentPage = 0;
-    } catch (cause) {
-      if (seq !== searchSeq) return;
-      searchResults = [];
-      searchError = cause instanceof Error ? cause.message : 'Failed to search guests';
-    } finally {
-      if (seq === searchSeq) searching = false;
-    }
-  }
-
-  // Server-side search with debounce (pinyin support)
-  let searchTimer: ReturnType<typeof setTimeout> | undefined;
+  // Back to the first rows whenever the result set changes.
   $effect(() => {
-    const q = searchQuery.trim();
-    clearTimeout(searchTimer);
-    ++searchSeq;
-    searchError = null;
-    if (!q) {
-      searchResults = null;
-      searching = false;
-      currentPage = 0;
-      return;
-    }
-    searching = true;
-    searchTimer = setTimeout(() => { doSearch(q); }, 300);
-    return () => clearTimeout(searchTimer);
+    searchQuery; rsvpFilter;
+    visible = PAGE;
   });
+
+  // Grows the rendered rows while the node is in view. Re-observing on each
+  // update re-checks a sentinel that is still visible after a short step.
+  function loadMoreOnView(node: HTMLElement, _shown: number) {
+    const io = new IntersectionObserver((entries) => {
+      if (entries.some((e) => e.isIntersecting)) visible += PAGE;
+    });
+    io.observe(node);
+    return {
+      update() { io.unobserve(node); io.observe(node); },
+      destroy: () => io.disconnect()
+    };
+  }
 
   let showMoveModal = $state(false);
   let moveGuest = $state<Guest | null>(null);
@@ -113,7 +92,7 @@ import Users from 'lucide-svelte/icons/users';
   $effect(() => {
     const isOpen = $isDrawerOpen;
     if (prevDrawerOpen && !isOpen) {
-      currentPage = 0;
+      visible = PAGE;
     }
     prevDrawerOpen = isOpen;
   });
@@ -127,6 +106,8 @@ import Users from 'lucide-svelte/icons/users';
       if (e.key === 'Escape') {
         contextMenu = null;
         showMoveModal = false;
+        showBulkMoveModal = false;
+        showImportModal = false;
       }
     }
     window.addEventListener('keydown', onKey);
@@ -139,13 +120,13 @@ import Users from 'lucide-svelte/icons/users';
     } catch {}
   }
 
-  // Search and status filters apply before client-side pagination.
+  // Local search (no request while typing), then the status filter.
+  // A query keeps its relevance order; without one the column sort applies.
   let filtered = $derived.by(() => {
-    const latest = new Map(allGuests.map(g => [g.id, g]));
-    let r = searchResults
-      ? searchResults.filter(g => latest.has(g.id)).map(g => latest.get(g.id)!)
-      : [...allGuests];
+    const q = searchQuery.trim();
+    let r = q ? rankGuests(allGuests, q) : [...allGuests];
     if (rsvpFilter !== 'all') r = r.filter(g => g.rsvp === rsvpFilter);
+    if (q) return r;
     r.sort((a, b) => {
       let av: string | number | null, bv: string | number | null;
       switch (sortCol) {
@@ -163,50 +144,11 @@ import Users from 'lucide-svelte/icons/users';
     return r;
   });
 
-  // Paginated slice of the already-filtered list.
-  let guests = $derived(filtered.slice(currentPage * pageSize, (currentPage + 1) * pageSize));
-  let hasNextPage = $derived((currentPage + 1) * pageSize < filtered.length);
+  let displayGuests = $derived(filtered.slice(0, visible));
 
   function clearFilters() {
     searchQuery = '';
     rsvpFilter = 'all';
-    searchResults = null;
-    searchError = null;
-    currentPage = 0;
-  }
-
-  function nextPage() {
-    if (!hasNextPage) return;
-    currentPage++;
-  }
-
-  function prevPage() {
-    if (currentPage === 0) return;
-    currentPage--;
-  }
-
-  let displayGuests = $derived(guests);
-  let displayTotal = $derived(filtered.length);
-  let totalPages = $derived(Math.ceil(displayTotal / pageSize));
-
-  function toGuest(r: GuestResponse): Guest {
-    return {
-      id: r.id,
-      name: r.name,
-      email: r.email || undefined,
-      rsvp: r.rsvp as RSVPStatus,
-      pax: r.pax,
-      tableId: r.tableId ?? null,
-      seatNumber: r.seatNum,
-      checkedIn: !!r.checkedInAt,
-      checkedInAt: r.checkedInAt ? new Date(r.checkedInAt) : undefined,
-      notes: r.notes,
-      dietaryRequirements: r.dietary ?? [],
-      isVip: r.isVip,
-      angbaoAmount: r.angbaoAmt ?? undefined,
-      giftItem: r.giftItem ?? undefined,
-      createdAt: new Date(r.createdAt),
-    };
   }
 
   const allColumns = [
@@ -556,7 +498,7 @@ import Users from 'lucide-svelte/icons/users';
   <!-- Toolbar -->
   <div class="flex items-center justify-between gap-2 sm:gap-4 mb-5 flex-wrap">
     <div class="relative flex-1 min-w-[160px] sm:min-w-[200px] max-w-md">
-      <Search class="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 sm:w-[18px] sm:h-[18px] text-gray-500 pointer-events-none {searching ? 'animate-pulse' : ''}" />
+      <Search class="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 sm:w-[18px] sm:h-[18px] text-gray-500 pointer-events-none " />
       <input
         type="text" placeholder="Search guests..." bind:value={searchQuery}
         aria-label="Search guests by name"
@@ -602,15 +544,9 @@ import Users from 'lucide-svelte/icons/users';
       </div>
       <p class="text-red font-medium">Failed to load guests</p>
       <p class="text-sm text-gray-500 mt-1 mb-4">{error}</p>
-      <button onclick={() => { currentPage = 0; }} class="px-4 py-2 bg-red text-white rounded-xl text-sm font-semibold hover:bg-red-light transition-colors">
+      <button onclick={() => { visible = PAGE; }} class="px-4 py-2 bg-red text-white rounded-xl text-sm font-semibold hover:bg-red-light transition-colors">
         Retry
       </button>
-    </div>
-  {:else if searchError}
-    <div class="flex flex-col items-center justify-center py-20 text-center">
-      <AlertCircle class="w-8 h-8 text-red mb-4" />
-      <p class="text-red font-medium">Search failed</p>
-      <p class="text-sm text-gray-500 mt-1">{searchError}</p>
     </div>
   {:else if allGuests.length === 0}
     <div class="flex flex-col items-center justify-center py-20 text-center">
@@ -670,7 +606,7 @@ import Users from 'lucide-svelte/icons/users';
                 <td class="px-4 py-3.5">
                   <div class="flex items-center gap-3">
                     <div class="w-8 h-8 rounded-full bg-red-50 flex items-center justify-center text-red text-xs font-bold flex-shrink-0">{getInitials(guest.name)}</div>
-                    <span class="font-semibold text-gray-900">{guest.name}</span>
+                    <button type="button" class="font-semibold text-gray-900 text-left hover:underline" onclick={(e) => { e.stopPropagation(); openGuest(guest); }}>{guest.name}</button>
                   </div>
                 </td>
                 <td class="px-4 py-3.5"><Badge status={guest.rsvp as RSVPStatus} /></td>
@@ -701,22 +637,13 @@ import Users from 'lucide-svelte/icons/users';
         </table>
       </div>
 
-      <!-- Pagination -->
-      <div class="px-5 py-4 border-t border-gray-100 flex items-center justify-between text-sm">
-        <span class="text-gray-500">
-          Page {currentPage + 1}{totalPages > 0 ? ` of ${totalPages}` : ''} · {displayTotal} guests
-        </span>
-        <div class="flex items-center gap-2">
-          <button onclick={prevPage} disabled={currentPage === 0}
-            class="p-2 rounded-lg border border-gray-200 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed" aria-label="Previous page">
-            <ChevronLeft class="w-4 h-4" />
-          </button>
-          <button onclick={nextPage} disabled={!hasNextPage}
-            class="p-2 rounded-lg border border-gray-200 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed" aria-label="Next page">
-            <ChevronRight class="w-4 h-4" />
-          </button>
-      </div>
-    </div>
+      {#if displayGuests.length < filtered.length}
+        <div use:loadMoreOnView={visible} class="px-5 py-4 border-t border-gray-100 text-sm text-gray-500" aria-live="polite">
+          Showing {displayGuests.length} of {filtered.length} guests
+        </div>
+      {:else}
+        <div class="px-5 py-4 border-t border-gray-100 text-sm text-gray-500">{filtered.length} guests</div>
+      {/if}
   </div>
 {/if}
 
@@ -727,7 +654,7 @@ import Users from 'lucide-svelte/icons/users';
   <div class="fixed inset-0 z-[700] flex items-center justify-center bg-black/30 backdrop-blur-md" onclick={() => showBulkMoveModal = false}>
     <!-- svelte-ignore a11y_no_static_element_interactions -->
     <!-- svelte-ignore a11y_click_events_have_key_events -->
-    <div class="bg-white/95 backdrop-blur-xl rounded-2xl shadow-2xl w-full max-w-md p-6" onclick={(e) => e.stopPropagation()}>
+    <div use:trapFocus role="dialog" aria-modal="true" aria-label="Move {selectedIds.size} guests" tabindex="-1" class="bg-white/95 backdrop-blur-xl rounded-2xl shadow-2xl w-full max-w-md p-6" onclick={(e) => e.stopPropagation()}>
       <h3 class="text-lg font-semibold text-gray-900 mb-4">Move {selectedIds.size} Guests</h3>
       <div class="space-y-3 mb-6">
         <div>
@@ -794,7 +721,7 @@ import Users from 'lucide-svelte/icons/users';
   <MoveGuestDrawer
     guest={g}
     tables={moveTables}
-    guests={filtered}
+    guests={allGuests}
     currentTableName={tables.find(t => t.id === g.tableId)?.name ?? '—'}
     onSave={confirmMoveTable}
     onClose={() => { showMoveModal = false; moveGuest = null; }}
@@ -806,10 +733,10 @@ import Users from 'lucide-svelte/icons/users';
 <!-- svelte-ignore a11y_click_events_have_key_events -->
 <!-- svelte-ignore a11y_no_static_element_interactions -->
     <div class="absolute inset-0 bg-black/30 backdrop-blur-md" onclick={() => showImportModal = false} role="presentation"></div>
-    <div class="relative bg-white/95 backdrop-blur-xl rounded-2xl shadow-2xl w-full max-w-lg overflow-hidden">
+    <div use:trapFocus role="dialog" aria-modal="true" aria-label="Import guests from CSV" tabindex="-1" class="relative bg-white/95 backdrop-blur-xl rounded-2xl shadow-2xl w-full max-w-lg overflow-hidden">
       <div class="flex items-center justify-between p-5 border-b border-gray-100">
         <h3 class="font-bold text-gray-900">Import Guests from CSV</h3>
-        <button onclick={() => showImportModal = false} class="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-gray-100 transition-colors">
+        <button onclick={() => showImportModal = false} aria-label="Close" class="w-11 h-11 rounded-lg flex items-center justify-center hover:bg-gray-100 transition-colors">
           <X class="w-4 h-4 text-gray-500" />
         </button>
       </div>
