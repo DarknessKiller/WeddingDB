@@ -450,9 +450,9 @@ Files: `frontend/src/lib/stores/index.ts`, `frontend/src/lib/api/client.ts`,
 - A guest list fetched for one wedding is seeded under that wedding only. If the
   wedding changed while the request was in flight, the result is dropped, not
   shown and not cached (`seedGuests(list, wid)`).
-- One queue drain at a time (`doSync` in `routes/[wid]/+layout.svelte`): `online`
-  and `visibilitychange` can fire together, and two drains replay the same
-  mutations.
+- One queue drain at a time: `syncQueue` keeps one in-flight promise per
+  wedding, so the mount drain, the SSE reconnect, `online` and the manual retry
+  join the drain already running instead of replaying the same mutations.
 - Revocation and refresh rotation apply to every tab through the 401 path in
   `client.ts`. A tab that retries a consumed refresh token gets the successor
   inside the grace window.
