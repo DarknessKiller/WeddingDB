@@ -152,6 +152,23 @@ func (h *SSEHub) Unsubscribe(client *SSEClient) {
 	log.Printf("SSE: client %s disconnected from wedding %s", client.ID, client.WeddingID)
 }
 
+// CloseClients disconnects every open stream so server shutdown does not wait
+// on long-lived SSE handlers until the client goes away.
+func (h *SSEHub) CloseClients() {
+	h.mu.Lock()
+	clients := make([]*SSEClient, 0, len(h.clients))
+	for _, byID := range h.clients {
+		for _, client := range byID {
+			clients = append(clients, client)
+		}
+	}
+	h.clients = make(map[uuid.UUID]map[string]*SSEClient)
+	h.mu.Unlock()
+	for _, client := range clients {
+		client.doneOnce.Do(func() { close(client.Done) })
+	}
+}
+
 // Publish sends a guest event to Redis for cross-instance broadcasting.
 func (h *SSEHub) Publish(ctx context.Context, weddingID uuid.UUID, event GuestEvent) error {
 	select {

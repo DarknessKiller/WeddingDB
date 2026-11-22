@@ -50,6 +50,34 @@ func TestSSEHub_SubscribeUnsubscribe(t *testing.T) {
 	}
 }
 
+// Shutdown disconnects open streams so the HTTP drain does not wait on them.
+func TestSSEHub_CloseClients(t *testing.T) {
+	hub := &SSEHub{
+		clients: make(map[uuid.UUID]map[string]*SSEClient),
+		ctx:     context.Background(),
+	}
+	first, err := hub.Subscribe(uuid.New())
+	testutil.NoErr(t, err)
+	second, err := hub.Subscribe(uuid.New())
+	testutil.NoErr(t, err)
+
+	hub.CloseClients()
+
+	for i, client := range []*SSEClient{first, second} {
+		select {
+		case <-client.Done:
+		case <-time.After(time.Second):
+			t.Fatalf("client %d still open after CloseClients", i)
+		}
+	}
+	hub.mu.RLock()
+	remaining := len(hub.clients)
+	hub.mu.RUnlock()
+	if remaining != 0 {
+		t.Fatalf("clients left after CloseClients = %d, want 0", remaining)
+	}
+}
+
 func TestSSEHub_FanOut(t *testing.T) {
 	hub := &SSEHub{
 		clients: make(map[uuid.UUID]map[string]*SSEClient),
