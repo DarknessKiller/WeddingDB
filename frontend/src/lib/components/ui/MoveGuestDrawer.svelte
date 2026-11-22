@@ -4,6 +4,7 @@ import ArrowUpDown from 'lucide-svelte/icons/arrow-up-down';
   import { getInitials } from '#lib/utils/index.ts';
   import type { Guest, BanquetTable } from '#lib/types/index.ts';
   import { trapFocus } from '#lib/utils/focus.ts';
+  import { firstFittingSeat } from '#lib/utils/seats.ts';
   import { untrack } from 'svelte';
 
   let {
@@ -47,20 +48,6 @@ import ArrowUpDown from 'lucide-svelte/icons/arrow-up-down';
   });
   const freeCount = $derived(available.length);
 
-  // Auto-select the lowest empty seat that fits the party size
-  $effect(() => {
-    if (!tableId) return;
-    let best: number | null = null;
-    for (const s of available) {
-      let ok = true;
-      for (let k = 1; k < guest.pax; k++) {
-        if (occupiedSeats.has(s + k) || s + k > capacity) { ok = false; break; }
-      }
-      if (ok) { best = s; break; }
-    }
-    seatNum = best ?? (capacity > 0 ? capacity + 1 : 1);
-  });
-
   const rangeOk = $derived.by(() => {
     if (seatNum < 1) return false;
     if (seatNum + guest.pax - 1 > capacity) return false;
@@ -68,6 +55,18 @@ import ArrowUpDown from 'lucide-svelte/icons/arrow-up-down';
       if (occupiedSeats.has(seatNum + k)) return false;
     }
     return true;
+  });
+
+  // Auto-select the lowest empty seat that fits the party size. Re-pick only
+  // when the table changes or the chosen range stops fitting: a live guest
+  // update must not overwrite the seat the user picked.
+  let autoPickedTable: string | null = null;
+  $effect(() => {
+    if (!tableId) return;
+    const sameTable = autoPickedTable === tableId;
+    autoPickedTable = tableId;
+    if (sameTable && rangeOk) return;
+    seatNum = firstFittingSeat(available, occupiedSeats, guest.pax, capacity);
   });
 
   function save() {
