@@ -40,12 +40,11 @@ func (r *WeddingRepo) Update(ctx context.Context, w *models.WeddingEvent) error 
 		if tx.Name() == "postgres" {
 			q = q.Clauses(clause.Locking{Strength: "UPDATE"})
 		}
-		var count int64
-		if err := q.Count(&count).Error; err != nil {
+		// Read the row under the lock. A count would be invalid here: Postgres
+		// rejects FOR UPDATE with an aggregate.
+		var existing models.WeddingEvent
+		if err := q.First(&existing).Error; err != nil {
 			return err
-		}
-		if count == 0 {
-			return gorm.ErrRecordNotFound
 		}
 		return tx.Model(&models.WeddingEvent{}).Where("id = ?", w.ID).Updates(map[string]any{
 			"name":                     w.Name,
