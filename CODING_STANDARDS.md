@@ -72,6 +72,7 @@ cd backend && TEST_DATABASE_URL=... CGO_ENABLED=1 go test -race -p 1 ./...
 Files: `frontend/src/lib/api/client.ts` (`doRefresh`), `frontend/src/lib/utils/auth.ts` (`toLogin`), `frontend/src/lib/offline/queue.ts` (`clearOfflineData`), stateful components under `frontend/src/lib/components/ui`.
 
 - Every path that ends the session (explicit logout, dead refresh token, `validateToken` redirect) calls `clearOfflineData()` before `clearAuth()`. The offline queue and guest cache hold another user's edits and guest PII; a shared front-desk browser must not pass them on.
+- Discarding a non-empty queue is a data-loss tradeoff, accepted to protect the next user. Logout asks first (`Header.svelte`). A path that cannot ask (dead refresh token) is a known cost of this rule: report it as policy cost, not as a bug in the wipe.
 - An effect that seeds a form or a selection from live props must be pinned to the identity it belongs to (guest id, table id) or to explicit user edit, never to the whole live array (`Drawer`, `MoveGuestDrawer`). A background SSE update must not overwrite unsaved input or a manual choice.
 - Server-side races surface as `ConflictError` in the API layer; the component keeps the user's input, refreshes the stored copy, and says what happened. Never swallow a 409 into a generic failure toast.
 
@@ -157,8 +158,10 @@ cd frontend && npm run check && npx vitest run
 ## Audits
 
 - A finding names severity, `file:line`, the concrete failure scenario, and the fix. No finding without a scenario a reviewer can reproduce by reading the cited code.
+- Read this file before reporting. A behavior this file mandates is policy, not a bug: cite the rule and report the policy's real cost as one separate finding (for example "wipe on token expiry has no warning"). Do not re-report a mandated behavior as a bug each wave.
 - Critical and high findings get one adversarial pass that tries to refute them (guards, middleware, existing tests) before they are reported. Report refuted findings as refuted.
 - A fix ships with the test that is red without it; the commit says which test. If no test can cover the defect, the commit says so and why.
-- After a fix wave, re-check every prior finding against current HEAD and report fixed / partial / unchanged with file:line evidence. Do not assume a commit with a matching message closed the gap.
+- After a fix wave, re-check every finding from the previous wave against current HEAD and report fixed / partial / unchanged with `file:line` evidence. Do not assume a commit with a matching message closed the gap.
+- A finding that repeats an earlier one means its rule is missing from this file or the earlier report was never verified. Add the rule or re-verify the code; reporting the same behavior again is not progress.
 
 

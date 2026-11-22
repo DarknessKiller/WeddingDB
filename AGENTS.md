@@ -11,9 +11,9 @@ If there is no `.codegraph/` directory, initialize it for the user before search
 
 ## Coding standards
 
-Default routine for any Go or frontend-list change:
+Default routine for any change, audit, or review:
 
-1. Read `CODING_STANDARDS.md` before editing.
+1. Read `CODING_STANDARDS.md` before editing or auditing. For audit work, re-check prior findings against current HEAD before reporting new ones.
 2. Load the `use-modern-go` skill before editing Go, and follow its list for Go 1.27.
 3. Run the verify block for each area you touched before handoff, and check each changed line against the standard.
 4. Before handoff, commit, push, or PR, run the `change-verification` skill (or dispatch it to a subagent).
