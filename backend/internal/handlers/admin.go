@@ -161,10 +161,13 @@ func (h *AdminHandler) AssignWeddings(c fuego.ContextWithBody[AssignWeddingsRequ
 	if err != nil {
 		return nil, err
 	}
-	// Fetch the old grants so removing access can revoke live sessions.
+	// Fetch the old grants so removing access can revoke live sessions. Without
+	// them the revoke below would be skipped and removed access would survive
+	// until the token expired, so this must fail before the write.
 	oldWeddings, err := h.adminRepo.GetUserWeddings(ctx, admin.ID)
 	if err != nil {
-		slog.Warn("fetch current wedding grants failed", "user", admin.ID, "err", err)
+		slog.Error("fetch current wedding grants failed", "user", admin.ID, "err", err)
+		return nil, fuego.InternalServerError{Title: "Failed to assign weddings"}
 	}
 	if err := h.adminRepo.SetUserWeddings(ctx, admin.ID, ids); err != nil {
 		return nil, fuego.InternalServerError{Title: "Failed to assign weddings"}

@@ -547,6 +547,26 @@ func TestSync_RejectsOverlongGuestText(t *testing.T) {
 	}
 }
 
+// Invariant 5: a mutation with no client time cannot be ordered against server
+// writes, so it is rejected permanently instead of silently losing the edit.
+func TestSync_ZeroClientTimeFails(t *testing.T) {
+	svc, db, wid := newGuestSyncService(t)
+	ctx := t.Context()
+	gid := uuid.New()
+	testutil.NoErr(t, db.Create(&models.GuestRecord{ID: gid, WeddingID: wid, Name: "A", Pax: 1}).Error)
+
+	results, err := svc.Sync(ctx, wid, []SyncMutation{{
+		MutationID: uuid.NewString(),
+		Op:         SyncOpUpdate,
+		GuestID:    gid.String(),
+		Payload:    &SyncPayload{Name: "B"},
+	}})
+	testutil.NoErr(t, err)
+	if results[0].Status != "failed" || results[0].Retryable {
+		t.Fatalf("zero client time: got %+v, want failed and not retryable", results[0])
+	}
+}
+
 // An invalid RSVP must fail permanently: it can never fit the column, so a
 // retryable answer would keep the mutation queued forever.
 func TestSync_RejectsInvalidRSVP(t *testing.T) {

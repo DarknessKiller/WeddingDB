@@ -6,6 +6,10 @@ var (
 	// ErrAlreadyCheckedIn is returned when a guest is already checked in (FIFO conflict).
 	ErrAlreadyCheckedIn = errors.New("guest already checked in")
 
+	// ErrCheckInChanged is returned when a check-out targets a check-in that
+	// was replaced after the caller loaded its list.
+	ErrCheckInChanged = errors.New("guest was checked in again since it was loaded")
+
 	// ErrSeatOverlap is returned when a seat assignment overlaps with another guest.
 	ErrSeatOverlap = errors.New("seat overlaps with another guest")
 

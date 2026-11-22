@@ -358,8 +358,28 @@ func (s *GuestService) CheckIn(ctx context.Context, id, weddingID uuid.UUID, not
 	return nil
 }
 
-func (s *GuestService) CheckOut(ctx context.Context, id, weddingID uuid.UUID) error {
-	if err := s.guestRepo.UpdateFields(ctx, id, weddingID, map[string]any{"checked_in_at": nil}); err != nil {
+// CheckOut clears the check-in. expectedCheckIn, when given, is the check-in
+// time the caller saw; if the guest was checked in again since, the checkout
+// would undo a newer attendance and is rejected instead.
+func (s *GuestService) CheckOut(ctx context.Context, id, weddingID uuid.UUID, expectedCheckIn *time.Time) error {
+	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		repo := repository.NewGuestRepo(tx)
+		guest, err := repo.FindByIDForUpdate(ctx, id, weddingID)
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return ErrGuestNotFound
+		}
+		if err != nil {
+			return err
+		}
+		if guest.CheckedInAt == nil {
+			return nil
+		}
+		if expectedCheckIn != nil && !guest.CheckedInAt.Equal(*expectedCheckIn) {
+			return ErrCheckInChanged
+		}
+		return repo.UpdateFields(ctx, id, weddingID, map[string]any{"checked_in_at": nil})
+	})
+	if err != nil {
 		return err
 	}
 	s.publishFresh(ctx, "checkout", id, weddingID)
@@ -679,6 +699,13 @@ func (s *GuestService) applySyncMutation(ctx context.Context, weddingID uuid.UUI
 	gid, err := parseSyncID(m.GuestID)
 	if err != nil {
 		return SyncResult{GuestID: m.GuestID, Status: "skipped", Reason: "invalid guestId"}
+	}
+
+	// Invariant 5: a mutation without a client time cannot be ordered against
+	// the server's writes. Accepting it would either lose the edit silently or
+	// let it win arbitrarily, so reject it permanently.
+	if m.ClientUpdatedAt.IsZero() {
+		return SyncResult{GuestID: m.GuestID, Status: "failed", Reason: "clientUpdatedAt is required"}
 	}
 
 	// Skew clamp: never trust a client clock in the future, or a skewed device

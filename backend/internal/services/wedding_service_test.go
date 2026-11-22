@@ -25,14 +25,24 @@ func TestWeddingCreate_SeedsDefaultHall(t *testing.T) {
 		id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))), wedding_id TEXT NOT NULL, name TEXT NOT NULL, type TEXT NOT NULL,
 		x REAL, y REAL, degree REAL, width REAL, height REAL, color TEXT, text_color TEXT,
 		stroke_color TEXT, opacity REAL, z_index INTEGER, created_at DATETIME, updated_at DATETIME)`).Error)
+	testutil.NoErr(t, db.Exec(`CREATE TABLE user_weddings (
+		id TEXT PRIMARY KEY, user_id TEXT NOT NULL, wedding_id TEXT NOT NULL, created_at DATETIME)`).Error)
 	svc := NewWeddingService(repository.NewWeddingRepo(db))
 
+	creator := uuid.New()
 	w := &models.WeddingEvent{ID: uuid.New(), Name: "W"}
-	testutil.NoErr(t, svc.Create(t.Context(), w))
+	testutil.NoErr(t, svc.Create(t.Context(), w, creator))
 
 	var n int64
 	testutil.NoErr(t, db.Model(&models.HallElement{}).Where("wedding_id = ?", w.ID).Count(&n).Error)
 	if want := len(models.DefaultElements(w.ID)); int(n) != want {
 		t.Fatalf("hall elements = %d, want %d", n, want)
+	}
+	// The creator's grant is written in the same transaction.
+	var grants int64
+	testutil.NoErr(t, db.Model(&models.UserWedding{}).
+		Where("user_id = ? AND wedding_id = ?", creator, w.ID).Count(&grants).Error)
+	if grants != 1 {
+		t.Fatalf("creator grants = %d, want 1", grants)
 	}
 }

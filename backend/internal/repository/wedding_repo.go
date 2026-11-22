@@ -27,14 +27,21 @@ func (r *WeddingRepo) List(ctx context.Context) ([]models.WeddingEvent, error) {
 	return weddings, err
 }
 
-// Create inserts the wedding and the hall elements elements(w.ID) returns, in
-// one transaction; the ID exists only after the insert.
-func (r *WeddingRepo) Create(ctx context.Context, w *models.WeddingEvent, elements func(uuid.UUID) []models.HallElement) error {
+// Create inserts the wedding, the hall elements elements(w.ID) returns and, for
+// a non-nil creator, that admin's grant, in one transaction; the ID exists only
+// after the insert. A partial write must not leave a wedding nobody can see.
+func (r *WeddingRepo) Create(ctx context.Context, w *models.WeddingEvent, elements func(uuid.UUID) []models.HallElement, creatorID uuid.UUID) error {
 	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if err := tx.Create(w).Error; err != nil {
 			return err
 		}
-		return tx.Create(elements(w.ID)).Error
+		if err := tx.Create(elements(w.ID)).Error; err != nil {
+			return err
+		}
+		if creatorID == uuid.Nil {
+			return nil
+		}
+		return tx.Create(&models.UserWedding{ID: uuid.New(), UserID: creatorID, WeddingID: w.ID}).Error
 	})
 }
 

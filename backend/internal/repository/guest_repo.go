@@ -288,11 +288,23 @@ func (r *GuestRepo) Delete(ctx context.Context, id, weddingID uuid.UUID) error {
 	return r.db.WithContext(ctx).Where("id = ? AND wedding_id = ?", id, weddingID).Delete(&models.GuestRecord{}).Error
 }
 
-// UnassignByTable clears table_id and seat_num for all guests at a given table.
+// UnassignByTable clears table_id and seat_num for all guests at a given
+// table. It goes through UpdateFields so each guest's per-field versions are
+// stamped; a plain bulk UPDATE would leave an older queued offline move looking
+// like the newest write for those columns.
 func (r *GuestRepo) UnassignByTable(ctx context.Context, weddingID, tableID uuid.UUID) error {
-	return r.db.WithContext(ctx).Model(&models.GuestRecord{}).
+	var ids []uuid.UUID
+	if err := r.db.WithContext(ctx).Model(&models.GuestRecord{}).
 		Where("wedding_id = ? AND table_id = ?", weddingID, tableID).
-		Updates(map[string]interface{}{"table_id": nil, "seat_num": nil}).Error
+		Pluck("id", &ids).Error; err != nil {
+		return err
+	}
+	for _, id := range ids {
+		if err := r.UpdateFields(ctx, id, weddingID, map[string]any{"table_id": nil, "seat_num": nil}); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // FindByIDForUpdate loads a guest under a row lock so the caller's read and

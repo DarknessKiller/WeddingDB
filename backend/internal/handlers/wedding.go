@@ -9,7 +9,6 @@ import (
 	"weddingdb/internal/services"
 
 	"github.com/go-fuego/fuego"
-	"github.com/google/uuid"
 )
 
 type WeddingHandler struct {
@@ -80,15 +79,10 @@ func (h *WeddingHandler) Create(c fuego.ContextWithBody[WeddingRequest]) (any, e
 	if err := services.ValidateWeddingText(w); err != nil {
 		return nil, fuego.BadRequestError{Title: err.Error()}
 	}
-	if err := h.weddingService.Create(ctx, w); err != nil {
+	// The creator's grant is written in the same transaction, so a failure
+	// cannot leave a wedding no admin can see.
+	if err := h.weddingService.Create(ctx, w, AdminIDFromContext(c.Context())); err != nil {
 		return nil, err
-	}
-	// Link the creating admin to this wedding
-	adminID := AdminIDFromContext(c.Context())
-	if adminID != uuid.Nil {
-		if err := h.adminRepo.AddUserWedding(ctx, adminID, w.ID); err != nil {
-			return nil, err
-		}
 	}
 	c.SetStatus(201)
 	return w, nil

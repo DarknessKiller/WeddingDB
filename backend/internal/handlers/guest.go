@@ -303,7 +303,13 @@ func (h *GuestHandler) CheckIn(c fuego.ContextWithBody[CheckInRequest]) (any, er
 	return guest, nil
 }
 
-func (h *GuestHandler) CheckOut(c fuego.ContextWithBody[any]) (any, error) {
+// CheckOutRequest carries the check-in the caller is undoing, so a stale list
+// cannot clear a newer check-in.
+type CheckOutRequest struct {
+	CheckedInAt *time.Time `json:"checkedInAt"`
+}
+
+func (h *GuestHandler) CheckOut(c fuego.ContextWithBody[CheckOutRequest]) (any, error) {
 	ctx := c.Context()
 	wid, err := DecodeWID(c)
 	if err != nil {
@@ -313,8 +319,18 @@ func (h *GuestHandler) CheckOut(c fuego.ContextWithBody[any]) (any, error) {
 	if err != nil {
 		return nil, fuego.BadRequestError{Title: "Invalid ID"}
 	}
-	if err := h.guestService.CheckOut(ctx, id, wid); err != nil {
-		return nil, notFoundIfMissing(err, "Guest not found")
+	body, err := c.Body()
+	if err != nil {
+		return nil, fuego.BadRequestError{Title: "Invalid request"}
+	}
+	if err := h.guestService.CheckOut(ctx, id, wid, body.CheckedInAt); err != nil {
+		switch {
+		case errors.Is(err, services.ErrCheckInChanged):
+			return nil, fuego.ConflictError{Title: err.Error()}
+		case errors.Is(err, services.ErrGuestNotFound):
+			return nil, fuego.NotFoundError{Title: "Guest not found"}
+		}
+		return nil, err
 	}
 	c.SetStatus(204)
 	return nil, nil
@@ -435,7 +451,15 @@ func (h *GuestHandler) AssignSeat(c fuego.ContextWithBody[AssignSeatRequest]) (a
 		return nil, fuego.BadRequestError{Title: "Invalid table ID"}
 	}
 	if err := h.guestService.AssignSeat(ctx, guestID, wid, tableID, body.SeatNum); err != nil {
-		return nil, fuego.BadRequestError{Title: err.Error()}
+		switch {
+		case errors.Is(err, services.ErrSeatOverlap):
+			return nil, fuego.ConflictError{Title: err.Error()}
+		case errors.Is(err, gorm.ErrRecordNotFound), errors.Is(err, services.ErrGuestNotFound):
+			return nil, fuego.NotFoundError{Title: "Guest not found"}
+		case services.IsRuleError(err):
+			return nil, fuego.BadRequestError{Title: err.Error()}
+		}
+		return nil, err
 	}
 	c.SetStatus(204)
 	return nil, nil

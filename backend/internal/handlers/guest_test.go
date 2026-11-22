@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -50,6 +51,7 @@ func newGuestTestServer(db *gorm.DB) *fuego.Server {
 	fuego.Post(s, "/api/weddings/{wid}/guests", h.Create)
 	fuego.Put(s, "/api/weddings/{wid}/guests/{id}", h.Update)
 	fuego.Delete(s, "/api/weddings/{wid}/guests/{id}/seat", h.UnassignSeat)
+	fuego.Post(s, "/api/weddings/{wid}/guests/{id}/checkout", h.CheckOut)
 	fuego.Delete(s, "/api/weddings/{wid}/guests/{id}", h.Delete)
 	return s
 }
@@ -137,11 +139,52 @@ func TestGuestCheckOut_OnlyClearsCheckIn(t *testing.T) {
 	testutil.NoErr(t, db.Create(&models.GuestRecord{ID: gid, WeddingID: wid, Name: "Cara", Pax: 1, CheckedInAt: &checkedIn, Notes: "n"}).Error)
 	svc := services.NewGuestService(repository.NewGuestRepo(db), repository.NewTableRepo(db), nil, db)
 
-	testutil.NoErr(t, svc.CheckOut(t.Context(), gid, wid))
+	testutil.NoErr(t, svc.CheckOut(t.Context(), gid, wid, nil))
 	var got models.GuestRecord
 	testutil.NoErr(t, db.First(&got, "id = ?", gid).Error)
 	if got.CheckedInAt != nil || got.Notes != "n" {
 		t.Fatalf("checkout: %+v", got)
+	}
+}
+
+// The route must decode the observed check-in and answer 409 when a newer one
+// exists; the same body with the current time clears it.
+func TestGuestCheckOut_RouteRejectsStaleCheckIn(t *testing.T) {
+	db := newGuestTestDB(t)
+	wid, gid := uuid.New(), uuid.New()
+	observed := time.Now().Add(-time.Hour).UTC().Truncate(time.Second)
+	rechecked := observed.Add(time.Minute)
+	testutil.NoErr(t, db.Create(&models.GuestRecord{ID: gid, WeddingID: wid, Name: "Eve", Pax: 1, CheckedInAt: &rechecked}).Error)
+	s := newGuestTestServer(db)
+	path := "/api/weddings/" + wid.String() + "/guests/" + gid.String() + "/checkout"
+
+	stale := `{"checkedInAt":"` + observed.Format(time.RFC3339Nano) + `"}`
+	if rec := serveJSON(s, http.MethodPost, path, stale); rec.Code != http.StatusConflict {
+		t.Fatalf("stale checkout status = %d, want 409; body %s", rec.Code, rec.Body)
+	}
+	fresh := `{"checkedInAt":"` + rechecked.Format(time.RFC3339Nano) + `"}`
+	if rec := serveJSON(s, http.MethodPost, path, fresh); rec.Code != http.StatusNoContent {
+		t.Fatalf("fresh checkout status = %d, want 204; body %s", rec.Code, rec.Body)
+	}
+}
+
+// A checkout from a list that still shows an older check-in must not clear a
+// check-in recorded since.
+func TestGuestCheckOut_RejectsStaleExpectedCheckIn(t *testing.T) {
+	db := newGuestTestDB(t)
+	wid, gid := uuid.New(), uuid.New()
+	observed := time.Now().Add(-time.Hour).UTC().Truncate(time.Second)
+	rechecked := observed.Add(time.Minute)
+	testutil.NoErr(t, db.Create(&models.GuestRecord{ID: gid, WeddingID: wid, Name: "Dana", Pax: 1, CheckedInAt: &rechecked}).Error)
+	svc := services.NewGuestService(repository.NewGuestRepo(db), repository.NewTableRepo(db), nil, db)
+
+	if err := svc.CheckOut(t.Context(), gid, wid, &observed); !errors.Is(err, services.ErrCheckInChanged) {
+		t.Fatalf("stale checkout err = %v, want ErrCheckInChanged", err)
+	}
+	var got models.GuestRecord
+	testutil.NoErr(t, db.First(&got, "id = ?", gid).Error)
+	if got.CheckedInAt == nil {
+		t.Fatal("stale checkout cleared the newer check-in")
 	}
 }
 

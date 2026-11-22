@@ -79,7 +79,7 @@ func (h *LayoutHandler) Get(c fuego.ContextNoBody) (any, error) {
 	}
 	wedding, err := h.weddingService.Get(ctx, wid)
 	if err != nil {
-		return nil, err
+		return nil, notFoundIfMissing(err, "Wedding not found")
 	}
 	return LayoutResponse{
 		Version:   wedding.LayoutVersion,

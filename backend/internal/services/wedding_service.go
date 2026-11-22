@@ -25,9 +25,10 @@ func (s *WeddingService) Get(ctx context.Context, id uuid.UUID) (*models.Wedding
 	return s.weddingRepo.FindByID(ctx, id)
 }
 
-// Create stores a new wedding with the default hall layout.
-func (s *WeddingService) Create(ctx context.Context, w *models.WeddingEvent) error {
-	return s.weddingRepo.Create(ctx, w, models.DefaultElements)
+// Create stores a new wedding with the default hall layout and grants the
+// creating admin access in the same transaction.
+func (s *WeddingService) Create(ctx context.Context, w *models.WeddingEvent, creatorID uuid.UUID) error {
+	return s.weddingRepo.Create(ctx, w, models.DefaultElements, creatorID)
 }
 
 func (s *WeddingService) UpdateFields(ctx context.Context, w *models.WeddingEvent, columns ...string) error {
