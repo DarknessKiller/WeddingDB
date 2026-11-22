@@ -61,7 +61,7 @@ docker compose up -d
 
 First login uses `admin@weddingdb.local` and the password in `ADMIN_BOOTSTRAP_PASSWORD`. The first login asks for a new password. Bootstrap runs only when the admin table is empty.
 
-Update with `docker compose pull app && docker compose up -d`.
+Update with `docker compose pull migrate app && docker compose up -d`. The `migrate` service runs the schema/data migration once and must finish before `app` starts.
 
 ## Under the hood
 

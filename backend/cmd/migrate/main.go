@@ -12,9 +12,9 @@ import (
 
 // Migrate runs the schema and data migrations once. Run it before the server
 // on every deploy; the server no longer applies DDL at boot.
+// Only the database settings are read: the job needs no JWT secret or Redis.
 func main() {
-	env := config.LoadEnv()
-	db, err := gorm.Open(postgres.Open(bootstrap.DatabaseURL(env)), &gorm.Config{})
+	db, err := gorm.Open(postgres.Open(bootstrap.DatabaseURL(config.Env{})), &gorm.Config{})
 	if err != nil {
 		log.Fatal("Failed to connect to database:", err)
 	}

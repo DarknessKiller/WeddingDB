@@ -153,7 +153,7 @@ Store backups off-host and rehearse restores before relying on them.
 ### Updating
 
 ```sh
-docker compose pull app && docker compose up -d
+docker compose pull migrate app && docker compose up -d
 ```
 
 New releases are tagged `v*`, and `latest` tracks the newest tag. To pin a version for reproducibility, use `ghcr.io/darknesskiller/weddingdb:v0.1.0`.
