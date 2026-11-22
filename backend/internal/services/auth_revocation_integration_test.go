@@ -36,7 +36,8 @@ func newIntegrationAuthService(t *testing.T, secret string) (*AuthService, *mini
 		expires_at DATETIME,
 		created_at DATETIME,
 		rotated_at DATETIME,
-		replaced_by TEXT
+		replaced_by TEXT,
+		token_version INTEGER DEFAULT 0
 	)`)
 	db.Exec(`CREATE INDEX idx_refresh_tokens_admin_id ON refresh_tokens(admin_id)`)
 
@@ -491,23 +492,13 @@ func TestDiscardIfRevoked_RemovesSuccessorMintedUnderOldVersion(t *testing.T) {
 	ctx := context.Background()
 	adminID := uuid.New()
 
-	access := signTestToken(t, "test-secret", AccessClaims{
-		AdminID:      adminID,
-		Role:         "admin",
-		TokenVersion: 0,
-		RegisteredClaims: jwt.RegisteredClaims{
-			ID:        uuid.NewString(),
-			IssuedAt:  jwt.NewNumericDate(time.Now()),
-			ExpiresAt: jwt.NewNumericDate(time.Now().Add(time.Minute)),
-		},
-	})
 	if err := svc.RevokeUserTokens(ctx, adminID); err != nil {
 		t.Fatalf("RevokeUserTokens failed: %v", err)
 	}
 	// The Rotate that raced the revoke commits its successor after the deletes.
 	seedRefreshToken(t, db, adminID, nil, "successor")
 
-	if err := svc.discardIfRevoked(ctx, adminID, access, "successor"); err == nil {
+	if err := svc.discardIfRevoked(ctx, adminID, "successor", 0); err == nil {
 		t.Fatal("expected successor minted under the old version to be rejected")
 	}
 	var count int64
@@ -522,16 +513,7 @@ func TestDiscardIfRevoked_KeepsCurrentSession(t *testing.T) {
 	ctx := context.Background()
 	adminID := uuid.New()
 
-	access := signTestToken(t, "test-secret", AccessClaims{
-		AdminID: adminID,
-		Role:    "admin",
-		RegisteredClaims: jwt.RegisteredClaims{
-			ID:        uuid.NewString(),
-			IssuedAt:  jwt.NewNumericDate(time.Now()),
-			ExpiresAt: jwt.NewNumericDate(time.Now().Add(time.Minute)),
-		},
-	})
-	if err := svc.discardIfRevoked(ctx, adminID, access, "unused"); err != nil {
+	if err := svc.discardIfRevoked(ctx, adminID, "unused", 0); err != nil {
 		t.Fatalf("current-version session should survive, got %v", err)
 	}
 }

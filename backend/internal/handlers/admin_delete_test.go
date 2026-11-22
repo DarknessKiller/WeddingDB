@@ -36,7 +36,7 @@ func TestAdminDelete_RevokesSessionsAndGrants(t *testing.T) {
 		name TEXT, role TEXT NOT NULL, force_password_change INTEGER DEFAULT 0, revoked INTEGER DEFAULT 0,
 		created_at DATETIME, updated_at DATETIME)`).Error)
 	testutil.NoErr(t, db.Exec(`CREATE TABLE refresh_tokens (id TEXT PRIMARY KEY, admin_id TEXT NOT NULL, wedding_id TEXT,
-		token TEXT NOT NULL UNIQUE, expires_at DATETIME, created_at DATETIME, rotated_at DATETIME, replaced_by TEXT)`).Error)
+		token TEXT NOT NULL UNIQUE, expires_at DATETIME, created_at DATETIME, rotated_at DATETIME, replaced_by TEXT, token_version INTEGER DEFAULT 0)`).Error)
 	testutil.NoErr(t, db.Exec(`CREATE TABLE wedding_events (id TEXT PRIMARY KEY, name TEXT NOT NULL, date DATETIME,
 		venue_name TEXT, venue_address TEXT, kiosk_description TEXT, kiosk_logo_url TEXT, kiosk_background_url TEXT,
 		kiosk_background_blur INTEGER DEFAULT 0, kiosk_background_size TEXT, kiosk_background_pos_x TEXT,

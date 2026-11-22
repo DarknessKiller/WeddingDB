@@ -181,6 +181,20 @@ func (s *AuthService) Refresh(ctx context.Context, refreshTokenStr string, oldAc
 		return nil, errors.New("admin not found")
 	}
 
+	// The row carries the version it was minted under. A Rotate that committed
+	// after a revoke bump can leave such a row behind; reject it here instead of
+	// minting a successor for a session that is already over.
+	tv, err := s.GetTokenVersion(ctx, admin.ID)
+	if err != nil {
+		return nil, err
+	}
+	if token.TokenVersion != tv {
+		if _, err := s.tokenRepo.DeleteByToken(ctx, refreshTokenStr); err != nil {
+			return nil, fmt.Errorf("failed to delete revoked refresh token: %w", err)
+		}
+		return nil, errors.New("session revoked")
+	}
+
 	// Mint before consuming: if Redis or the token generator fails here, the
 	// presented token stays usable and the client can simply retry.
 	// Re-check wedding scope: the grant may have been revoked since mint.
@@ -188,18 +202,18 @@ func (s *AuthService) Refresh(ctx context.Context, refreshTokenStr string, oldAc
 	if err != nil {
 		return nil, err
 	}
-	accessToken, err := s.generateAccessToken(ctx, admin, weddingID)
+	accessToken, err := s.signAccessToken(admin, weddingID, tv)
 	if err != nil {
 		return nil, err
 	}
-	replacement, err := s.buildRefreshToken(admin.ID, weddingID)
+	replacement, err := s.buildRefreshToken(admin.ID, weddingID, tv)
 	if err != nil {
 		return nil, err
 	}
 
 	err = s.tokenRepo.Rotate(ctx, refreshTokenStr, replacement)
 	if err == nil {
-		if err := s.discardIfRevoked(ctx, admin.ID, accessToken, replacement.Token); err != nil {
+		if err := s.discardIfRevoked(ctx, admin.ID, replacement.Token, replacement.TokenVersion); err != nil {
 			return nil, err
 		}
 		return s.sessionResult(ctx, admin, accessToken, replacement.Token)
@@ -230,11 +244,25 @@ func (s *AuthService) resumeRotation(ctx context.Context, consumed *models.Refre
 	if err != nil {
 		return nil, errors.New("admin not found")
 	}
+
+	// The successor must still match the live version; otherwise it was minted
+	// before a revoke bump and the session is already over.
+	current, err := s.GetTokenVersion(ctx, admin.ID)
+	if err != nil {
+		return nil, err
+	}
+	if replacement.TokenVersion != current {
+		if _, err := s.tokenRepo.DeleteByToken(ctx, replacement.Token); err != nil {
+			return nil, fmt.Errorf("failed to delete revoked successor: %w", err)
+		}
+		return nil, errors.New("session revoked")
+	}
+
 	weddingID, err := s.activeWeddingScope(ctx, admin.ID, replacement.WeddingID)
 	if err != nil {
 		return nil, err
 	}
-	accessToken, err := s.generateAccessToken(ctx, admin, weddingID)
+	accessToken, err := s.signAccessToken(admin, weddingID, current)
 	if err != nil {
 		return nil, err
 	}
@@ -479,19 +507,15 @@ func (s *AuthService) RevokeUserTokens(ctx context.Context, userID uuid.UUID) er
 	return nil
 }
 
-// discardIfRevoked closes the refresh/revoke race: a Rotate that committed
-// after the token bump leaves a successor minted for a session revocation has
-// already ended. Remove it and reject instead of handing it out.
-func (s *AuthService) discardIfRevoked(ctx context.Context, userID uuid.UUID, accessToken, refreshToken string) error {
-	claims, err := s.parseTokenClaims(accessToken)
-	if err != nil {
-		return nil
-	}
+// discardIfRevoked rejects successor refresh token minted under a version a
+// revoke has since superseded: the Rotate committed after the bump, so the row
+// outlived the session. Remove it and reject instead of handing it out.
+func (s *AuthService) discardIfRevoked(ctx context.Context, userID uuid.UUID, refreshToken string, mintedVersion int) error {
 	current, err := s.GetTokenVersion(ctx, userID)
 	if err != nil {
 		return fmt.Errorf("failed to read token version: %w", err)
 	}
-	if claims.TokenVersion == current {
+	if mintedVersion == current {
 		return nil
 	}
 	if _, err := s.tokenRepo.DeleteByToken(ctx, refreshToken); err != nil {
@@ -523,7 +547,12 @@ func (s *AuthService) generateAccessToken(ctx context.Context, admin *models.Adm
 	if err != nil {
 		return "", fmt.Errorf("failed to read token version: %w", err)
 	}
+	return s.signAccessToken(admin, weddingID, tv)
+}
 
+// signAccessToken mints a JWT for an already-resolved token version, so callers
+// that read the version up front cannot mint under a newer one.
+func (s *AuthService) signAccessToken(admin *models.AdminUser, weddingID *uuid.UUID, tv int) (string, error) {
 	now := time.Now()
 	expiry := now.Add(15 * time.Minute)
 	claims := AccessClaims{
@@ -541,23 +570,29 @@ func (s *AuthService) generateAccessToken(ctx context.Context, admin *models.Adm
 	return token.SignedString(s.secret)
 }
 
-// buildRefreshToken returns an unsaved refresh token row.
-func (s *AuthService) buildRefreshToken(adminID uuid.UUID, weddingID *uuid.UUID) (*models.RefreshToken, error) {
+// buildRefreshToken returns an unsaved refresh token row stamped with the
+// version it was minted under.
+func (s *AuthService) buildRefreshToken(adminID uuid.UUID, weddingID *uuid.UUID, tv int) (*models.RefreshToken, error) {
 	b := make([]byte, 32)
 	if _, err := rand.Read(b); err != nil {
 		return nil, err
 	}
 	return &models.RefreshToken{
-		ID:        uuid.New(),
-		AdminID:   adminID,
-		WeddingID: weddingID,
-		Token:     hex.EncodeToString(b),
-		ExpiresAt: time.Now().Add(7 * 24 * time.Hour),
+		ID:           uuid.New(),
+		AdminID:      adminID,
+		TokenVersion: tv,
+		WeddingID:    weddingID,
+		Token:        hex.EncodeToString(b),
+		ExpiresAt:    time.Now().Add(7 * 24 * time.Hour),
 	}, nil
 }
 
 func (s *AuthService) generateRefreshToken(ctx context.Context, adminID uuid.UUID, weddingID *uuid.UUID) (string, error) {
-	token, err := s.buildRefreshToken(adminID, weddingID)
+	tv, err := s.GetTokenVersion(ctx, adminID)
+	if err != nil {
+		return "", fmt.Errorf("failed to read token version: %w", err)
+	}
+	token, err := s.buildRefreshToken(adminID, weddingID, tv)
 	if err != nil {
 		return "", err
 	}
