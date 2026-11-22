@@ -142,3 +142,86 @@ func TestGuestTableOnlyAssignmentWaitsForTableLock_Postgres(t *testing.T) {
 	testutil.NoErr(t, lockTx.Rollback().Error)
 	testutil.NoErr(t, <-done)
 }
+
+// A sync update that blocks on the guest row lock must re-read the committed
+// row and lose the LWW comparison instead of writing its stale snapshot.
+func TestSyncUpdate_KeepsNewerEditMadeWhileWaitingForLock_Postgres(t *testing.T) {
+	db := openAuditPG(t)
+	wid, gid := uuid.New(), uuid.New()
+	base := time.Now().Add(-time.Hour)
+	testutil.NoErr(t, db.Create(&models.WeddingEvent{ID: wid, Name: "Sync lock PG"}).Error)
+	testutil.NoErr(t, db.Create(&models.GuestRecord{ID: gid, WeddingID: wid, Name: "Before", Pax: 1, CreatedAt: base, UpdatedAt: base}).Error)
+	svc := NewGuestService(repository.NewGuestRepo(db), repository.NewTableRepo(db), nil, db)
+
+	lockTx := db.Begin()
+	testutil.NoErr(t, lockTx.Clauses(clause.Locking{Strength: "UPDATE"}).Select("id").Where("id = ?", gid).First(&models.GuestRecord{}).Error)
+
+	done := make(chan []SyncResult, 1)
+	go func() {
+		res, _ := svc.Sync(t.Context(), wid, []SyncMutation{{
+			MutationID: uuid.NewString(), Op: SyncOpUpdate, GuestID: gid.String(),
+			ClientUpdatedAt: base.Add(time.Second), Payload: &SyncPayload{Name: "Old Offline"},
+		}})
+		done <- res
+	}()
+	time.Sleep(100 * time.Millisecond) // let the sync request block on the row lock
+
+	// A newer online edit commits first.
+	testutil.NoErr(t, lockTx.Model(&models.GuestRecord{}).Where("id = ?", gid).
+		Updates(map[string]any{"name": "Server New", "updated_at": base.Add(time.Minute)}).Error)
+	testutil.NoErr(t, lockTx.Commit().Error)
+
+	res := <-done
+	if res[0].Status != "skipped" {
+		t.Fatalf("status = %q, want skipped (sync op is older than the committed edit)", res[0].Status)
+	}
+	var got models.GuestRecord
+	testutil.NoErr(t, db.First(&got, "id = ?", gid).Error)
+	if got.Name != "Server New" {
+		t.Fatalf("name = %q, want the newer server edit preserved", got.Name)
+	}
+}
+
+// A queued check-in must not revert a seat assignment committed while it
+// waited: only the check-in columns are written.
+func TestSyncCheckIn_KeepsConcurrentSeatAssignment_Postgres(t *testing.T) {
+	db := openAuditPG(t)
+	wid, gid, table1, table2 := uuid.New(), uuid.New(), uuid.New(), uuid.New()
+	base := time.Now().Add(-time.Hour)
+	seat1, seat2 := 3, 5
+	testutil.NoErr(t, db.Create(&models.WeddingEvent{ID: wid, Name: "Sync seat PG"}).Error)
+	testutil.NoErr(t, db.Create(&models.GuestRecord{ID: gid, WeddingID: wid, Name: "Ann", Pax: 1,
+		TableID: &table1, SeatNum: &seat1, CreatedAt: base, UpdatedAt: base}).Error)
+	svc := NewGuestService(repository.NewGuestRepo(db), repository.NewTableRepo(db), nil, db)
+
+	lockTx := db.Begin()
+	testutil.NoErr(t, lockTx.Clauses(clause.Locking{Strength: "UPDATE"}).Select("id").Where("id = ?", gid).First(&models.GuestRecord{}).Error)
+
+	done := make(chan []SyncResult, 1)
+	go func() {
+		res, _ := svc.Sync(t.Context(), wid, []SyncMutation{{
+			MutationID: uuid.NewString(), Op: SyncOpCheckIn, GuestID: gid.String(),
+			ClientUpdatedAt: base.Add(time.Second),
+		}})
+		done <- res
+	}()
+	time.Sleep(100 * time.Millisecond) // let the check-in block on the row lock
+
+	// The seat move commits first; updated_at stays put, so the check-in still wins.
+	testutil.NoErr(t, lockTx.Model(&models.GuestRecord{}).Where("id = ?", gid).
+		Updates(map[string]any{"table_id": table2, "seat_num": seat2, "updated_at": base}).Error)
+	testutil.NoErr(t, lockTx.Commit().Error)
+
+	res := <-done
+	if res[0].Status != "applied" {
+		t.Fatalf("status = %q, want applied", res[0].Status)
+	}
+	var got models.GuestRecord
+	testutil.NoErr(t, db.First(&got, "id = ?", gid).Error)
+	if got.TableID == nil || *got.TableID != table2 || got.SeatNum == nil || *got.SeatNum != seat2 {
+		t.Fatalf("seat assignment reverted: table=%v seat=%v", got.TableID, got.SeatNum)
+	}
+	if got.CheckedInAt == nil {
+		t.Fatal("check-in was not applied")
+	}
+}

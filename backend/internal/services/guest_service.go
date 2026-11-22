@@ -660,164 +660,208 @@ func (s *GuestService) applySyncMutation(ctx context.Context, weddingID uuid.UUI
 		opTime = time.Now()
 	}
 
-	// Load server record if exists
-	existing, err := s.guestRepo.FindByID(ctx, gid, weddingID)
-	found := err == nil
+	var (
+		res        SyncResult
+		eventKind  string
+		eventGuest *models.GuestRecord
+	)
+	// One transaction for the read, the LWW comparison and the write, with the
+	// guest row locked (syncLoadForUpdate): two devices' mutations cannot both
+	// pass the comparison against the same pre-write snapshot, and the write
+	// never carries a row older than the lock.
+	err = s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		svc := &GuestService{guestRepo: repository.NewGuestRepo(tx), tableRepo: repository.NewTableRepo(tx), sseHub: s.sseHub, db: tx}
+		existing, found, loadErr := svc.syncLoadForUpdate(ctx, tx, gid, weddingID)
+		if loadErr != nil {
+			return loadErr
+		}
 
-	switch m.Op {
-	case SyncOpCreate:
-		if found {
-			// treat as update with LWW; equal timestamps count as newer (tie-break)
+		applied := func(g *models.GuestRecord, kind string) error {
+			res = SyncResult{GuestID: m.GuestID, Status: "applied", ServerRecord: g}
+			eventKind, eventGuest = kind, g
+			return nil
+		}
+		skipped := func(reason string, g *models.GuestRecord) error {
+			res = SyncResult{GuestID: m.GuestID, Status: "skipped", Reason: reason, ServerRecord: g}
+			return nil
+		}
+
+		switch m.Op {
+		case SyncOpCreate:
+			if found {
+				// treat as update with LWW; equal timestamps count as newer (tie-break)
+				if opTime.Before(existing.UpdatedAt) {
+					return skipped("older than server", existing)
+				}
+				if m.Payload != nil {
+					if err := svc.validateSyncTableSeat(ctx, weddingID, m.Payload); err != nil {
+						return err
+					}
+					applySyncPayload(existing, m.Payload, &gid)
+				}
+				existing.UpdatedAt = opTime
+				if err := svc.updateGuestTx(ctx, tx, existing, true); err != nil {
+					return err
+				}
+				return applied(existing, "update")
+			}
+			if m.Payload == nil || m.Payload.Name == "" {
+				return skipped("name required", nil)
+			}
+			if m.Payload.Pax < 1 {
+				m.Payload.Pax = 1
+			}
+			if err := svc.validateSyncTableSeat(ctx, weddingID, m.Payload); err != nil {
+				return err
+			}
+			g := &models.GuestRecord{
+				ID:        gid,
+				WeddingID: weddingID,
+				Name:      m.Payload.Name,
+				Email:     m.Payload.Email,
+				Pax:       m.Payload.Pax,
+				RSVP:      m.Payload.RSVP,
+				IsVip:     m.Payload.IsVip,
+				Notes:     m.Payload.Notes,
+				Dietary:   m.Payload.Dietary,
+				AngbaoAmt: m.Payload.AngbaoAmt,
+				GiftItem:  m.Payload.GiftItem,
+				CreatedAt: opTime,
+				UpdatedAt: opTime,
+			}
+			if m.Payload.TableID != nil && *m.Payload.TableID != "" {
+				if tid, err := parseSyncID(*m.Payload.TableID); err == nil {
+					g.TableID = &tid
+				}
+			}
+			g.SeatNum = m.Payload.SeatNum
+			if g.TableID == nil {
+				g.SeatNum = nil // a seat without a table is not a valid assignment
+			}
+			if err := svc.createGuestTx(ctx, tx, g, true); err != nil {
+				return err
+			}
+			return applied(g, "create")
+
+		case SyncOpUpdate:
+			if !found {
+				return skipped("not found", nil)
+			}
+			// Equal timestamps win the tie-break: only strictly older ops lose.
 			if opTime.Before(existing.UpdatedAt) {
-				return SyncResult{GuestID: m.GuestID, Status: "skipped", Reason: "older than server", ServerRecord: existing}
+				return skipped("older than server", existing)
 			}
 			if m.Payload != nil {
-				if err := s.validateSyncTableSeat(ctx, weddingID, m.Payload); err != nil {
-					return syncFailed(m, err)
+				if err := svc.validateSyncTableSeat(ctx, weddingID, m.Payload); err != nil {
+					return err
 				}
-				applySyncPayload(existing, m.Payload, &gid)
+				applySyncPayload(existing, m.Payload, nil)
 			}
 			existing.UpdatedAt = opTime
-			if err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-				return s.updateGuestTx(ctx, tx, existing, true)
-			}); err != nil {
-				return syncFailed(m, err)
+			if err := svc.updateGuestTx(ctx, tx, existing, true); err != nil {
+				return err
 			}
-			s.publishEvent("update", existing, weddingID)
-			return SyncResult{GuestID: m.GuestID, Status: "applied", ServerRecord: existing}
-		}
-		if m.Payload == nil || m.Payload.Name == "" {
-			return SyncResult{GuestID: m.GuestID, Status: "skipped", Reason: "name required"}
-		}
-		if m.Payload.Pax < 1 {
-			m.Payload.Pax = 1
-		}
-		if err := s.validateSyncTableSeat(ctx, weddingID, m.Payload); err != nil {
-			return syncFailed(m, err)
-		}
-		g := &models.GuestRecord{
-			ID:        gid,
-			WeddingID: weddingID,
-			Name:      m.Payload.Name,
-			Email:     m.Payload.Email,
-			Pax:       m.Payload.Pax,
-			RSVP:      m.Payload.RSVP,
-			IsVip:     m.Payload.IsVip,
-			Notes:     m.Payload.Notes,
-			Dietary:   m.Payload.Dietary,
-			AngbaoAmt: m.Payload.AngbaoAmt,
-			GiftItem:  m.Payload.GiftItem,
-			CreatedAt: opTime,
-			UpdatedAt: opTime,
-		}
-		if m.Payload.TableID != nil && *m.Payload.TableID != "" {
-			if tid, err := parseSyncID(*m.Payload.TableID); err == nil {
-				g.TableID = &tid
-			}
-		}
-		g.SeatNum = m.Payload.SeatNum
-		if g.TableID == nil {
-			g.SeatNum = nil // a seat without a table is not a valid assignment
-		}
-		if err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-			return s.createGuestTx(ctx, tx, g, true)
-		}); err != nil {
-			return syncFailed(m, err)
-		}
-		s.publishEvent("create", g, weddingID)
-		return SyncResult{GuestID: m.GuestID, Status: "applied", ServerRecord: g}
+			return applied(existing, "update")
 
-	case SyncOpUpdate:
-		if !found {
-			return SyncResult{GuestID: m.GuestID, Status: "skipped", Reason: "not found", ServerRecord: nil}
-		}
-		// Equal timestamps win the tie-break: only strictly older ops lose.
-		if opTime.Before(existing.UpdatedAt) {
-			return SyncResult{GuestID: m.GuestID, Status: "skipped", Reason: "older than server", ServerRecord: existing}
-		}
-		if m.Payload != nil {
-			if err := s.validateSyncTableSeat(ctx, weddingID, m.Payload); err != nil {
-				return syncFailed(m, err)
+		case SyncOpDelete:
+			if !found {
+				return applied(nil, "")
 			}
-			applySyncPayload(existing, m.Payload, nil)
-		}
-		existing.UpdatedAt = opTime
-		if err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-			return s.updateGuestTx(ctx, tx, existing, true)
-		}); err != nil {
-			return syncFailed(m, err)
-		}
-		s.publishEvent("update", existing, weddingID)
-		return SyncResult{GuestID: m.GuestID, Status: "applied", ServerRecord: existing}
+			if opTime.Before(existing.UpdatedAt) {
+				// Report "failed", not "skipped": the client keeps failed items
+				// queued instead of dequeuing and losing the delete intent.
+				// Not retryable: the server copy only gets newer, so a retry loses again.
+				res = SyncResult{GuestID: m.GuestID, Status: "failed", Reason: "older than server", ServerRecord: existing, Retryable: true} // spec invariant 3: an older delete stays queued
+				return nil
+			}
+			if err := svc.guestRepo.Delete(ctx, gid, weddingID); err != nil {
+				return err
+			}
+			return applied(existing, "delete")
 
-	case SyncOpDelete:
-		if !found {
-			return SyncResult{GuestID: m.GuestID, Status: "applied"}
-		}
-		if opTime.Before(existing.UpdatedAt) {
-			// Report "failed", not "skipped": the client keeps failed items
-			// queued instead of dequeuing and losing the delete intent.
-			// Not retryable: the server copy only gets newer, so a retry loses again.
-			return SyncResult{GuestID: m.GuestID, Status: "failed", Reason: "older than server", ServerRecord: existing, Retryable: true} // spec invariant 3: an older delete stays queued
-		}
-		if err := s.guestRepo.Delete(ctx, gid, weddingID); err != nil {
-			return syncFailed(m, err)
-		}
-		s.publishEvent("delete", existing, weddingID)
-		return SyncResult{GuestID: m.GuestID, Status: "applied"}
+		case SyncOpCheckIn:
+			if !found {
+				return skipped("not found", nil)
+			}
+			if opTime.Before(existing.UpdatedAt) {
+				return skipped("older than server", existing)
+			}
+			existing.CheckedInAt = &opTime
+			existing.RSVP = "confirmed"
+			existing.UpdatedAt = opTime
+			// Only the columns a check-in owns: a full-row write would revert a
+			// concurrent seat assignment or edit with this mutation's snapshot.
+			fields := map[string]any{"checked_in_at": opTime, "rsvp": "confirmed", "updated_at": opTime}
+			if m.Payload != nil {
+				if m.Payload.AngbaoAmt != nil {
+					existing.AngbaoAmt = m.Payload.AngbaoAmt
+					fields["angbao_amt"] = *m.Payload.AngbaoAmt
+				}
+				if m.Payload.GiftItem != nil {
+					existing.GiftItem = m.Payload.GiftItem
+					fields["gift_item"] = *m.Payload.GiftItem
+				}
+				// A notes value in a checkin payload is appended to the guest's notes,
+				// never replacing them, so a queued note never wipes existing notes.
+				note := strings.TrimSpace(m.Payload.Notes)
+				if err := checkLen("Check-in notes", note, MaxCheckInNoteLen); err != nil {
+					return ruleError{err}
+				}
+				existing.Notes = appendNote(existing.Notes, note)
+				fields["notes"] = existing.Notes
+				if err := ValidateGuestText(existing); err != nil {
+					return ruleError{err}
+				}
+			}
+			if err := svc.guestRepo.UpdateFields(ctx, gid, weddingID, fields); err != nil {
+				return err
+			}
+			return applied(existing, "checkin")
 
-	case SyncOpCheckIn:
-		if !found {
-			return SyncResult{GuestID: m.GuestID, Status: "skipped", Reason: "not found"}
-		}
-		if opTime.Before(existing.UpdatedAt) {
-			return SyncResult{GuestID: m.GuestID, Status: "skipped", Reason: "older than server", ServerRecord: existing}
-		}
-		existing.CheckedInAt = &opTime
-		existing.RSVP = "confirmed"
-		if m.Payload != nil {
-			if m.Payload.AngbaoAmt != nil {
-				existing.AngbaoAmt = m.Payload.AngbaoAmt
+		case SyncOpCheckOut:
+			if !found {
+				return skipped("not found", nil)
 			}
-			if m.Payload.GiftItem != nil {
-				existing.GiftItem = m.Payload.GiftItem
+			if opTime.Before(existing.UpdatedAt) {
+				return skipped("older than server", existing)
 			}
-			// A notes value in a checkin payload is appended to the guest's notes,
-			// never replacing them, so a queued note never wipes existing notes.
-			note := strings.TrimSpace(m.Payload.Notes)
-			if err := checkLen("Check-in notes", note, MaxCheckInNoteLen); err != nil {
-				return syncFailed(m, ruleError{err})
+			existing.CheckedInAt = nil
+			existing.UpdatedAt = opTime
+			if err := svc.guestRepo.UpdateFields(ctx, gid, weddingID, map[string]any{"checked_in_at": nil, "updated_at": opTime}); err != nil {
+				return err
 			}
-			existing.Notes = appendNote(existing.Notes, note)
-			if err := ValidateGuestText(existing); err != nil {
-				return syncFailed(m, ruleError{err})
-			}
-		}
-		existing.UpdatedAt = opTime
-		if err := s.guestRepo.SyncUpdate(ctx, existing); err != nil {
-			return syncFailed(m, err)
-		}
-		s.publishEvent("checkin", existing, weddingID)
-		return SyncResult{GuestID: m.GuestID, Status: "applied", ServerRecord: existing}
+			return applied(existing, "checkout")
 
-	case SyncOpCheckOut:
-		if !found {
-			return SyncResult{GuestID: m.GuestID, Status: "skipped", Reason: "not found"}
+		default:
+			return skipped("unknown op", nil)
 		}
-		if opTime.Before(existing.UpdatedAt) {
-			return SyncResult{GuestID: m.GuestID, Status: "skipped", Reason: "older than server", ServerRecord: existing}
-		}
-		existing.CheckedInAt = nil
-		existing.UpdatedAt = opTime
-		if err := s.guestRepo.SyncUpdate(ctx, existing); err != nil {
-			return syncFailed(m, err)
-		}
-		s.publishEvent("checkout", existing, weddingID)
-		return SyncResult{GuestID: m.GuestID, Status: "applied", ServerRecord: existing}
-
-	default:
-		return SyncResult{GuestID: m.GuestID, Status: "skipped", Reason: "unknown op"}
+	})
+	if err != nil {
+		return syncFailed(m, err)
 	}
+	if eventKind != "" {
+		s.publishEvent(eventKind, eventGuest, weddingID)
+	}
+	return res
+}
+
+// syncLoadForUpdate loads a guest under a row lock so the LWW comparison and
+// the write that follows it see the same row. The lock is Postgres-only;
+// sqlite (tests) has one writer.
+func (s *GuestService) syncLoadForUpdate(ctx context.Context, tx *gorm.DB, gid, weddingID uuid.UUID) (*models.GuestRecord, bool, error) {
+	q := tx.WithContext(ctx)
+	if tx.Name() == "postgres" {
+		q = q.Clauses(clause.Locking{Strength: "UPDATE"})
+	}
+	var g models.GuestRecord
+	err := q.Where("id = ? AND wedding_id = ?", gid, weddingID).First(&g).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, false, nil
+	}
+	if err != nil {
+		return nil, false, err
+	}
+	return &g, true, nil
 }
 
 // validateSyncTableSeat mirrors the table/seat rules of AssignSeat for offline
