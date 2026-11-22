@@ -46,6 +46,7 @@ func TestTableDelete_PublishesUnassignedGuests(t *testing.T) {
 		is_vip INTEGER,
 		angbao_amt INTEGER,
 		gift_item TEXT,
+		field_times TEXT,
 		created_at DATETIME,
 		updated_at DATETIME
 	)`)

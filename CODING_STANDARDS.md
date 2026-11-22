@@ -140,9 +140,11 @@ input. Adding a cap or a form input means changing both.
 
 ## Offline sync
 
-Files: `backend/internal/services/guest_service.go` (`Sync*`, `syncCheckIn`),
-`backend/internal/repository/guest_repo.go` (`Sync*`), `frontend/src/lib/offline/**`,
-`frontend/src/lib/stores/guestEvents.ts`, `frontend/src/lib/api/guests.ts`.
+Files: `backend/internal/services/guest_service.go` (`Sync`, `mergeGuestUpdate`),
+`backend/internal/services/guest_lww.go`, `backend/internal/services/guest_patch.go`,
+`backend/internal/repository/guest_repo.go` (`FindByIDForUpdate`, `Update`),
+`frontend/src/lib/offline/**`, `frontend/src/lib/stores/guestEvents.ts`,
+`frontend/src/lib/api/guests.ts`.
 
 Design record: [ADR 001](docs/adr/001-offline-sync.md) and
 [ADR 003](docs/adr/003-per-column-lww.md).
@@ -168,13 +170,19 @@ device wrote last.
 
 - Each column group keeps its own write time in `guest_records.field_times`
   (JSON map, group name to RFC 3339 time). A column without an entry falls back
-  to `updated_at`.
-- A write changes only the columns it carries. It wins a group when its time is
-  not older than that group's stored time. Ties count as newer.
-- Column groups: `tableId` and `seatNum` share one time. Every other column has
-  its own time.
+  to `updated_at`; a legacy row seeds every group from `updated_at` on its first
+  merged write.
+- Presence rule: a write changes only the groups it carries. An absent field
+  keeps its stored value, an explicit `null` clears a nullable field, and a
+  sparse client write leaves every other group alone.
+- Column groups: `name`, `email`, `pax`, `tableId`+`seatNum`, `rsvp`,
+  `checkedInAt`, `notes`, `dietary`, `isVip`, `angbaoAmt`, `giftItem`.
+  `tableId` and `seatNum` share one time; every other column has its own.
 - Online writes stamp server time. Offline writes stamp `clientUpdatedAt`, clamped
-  to server time when it is in the future.
+  to server time when it is in the future, and a missing timestamp fails.
+- A create stamps every group with its operation time.
+- Online and offline writes call one merge function. Create-existing-id and the
+  online put both take the guest row lock and merge the carried groups.
 - Delete is row-level: it applies only when newer than every column write on the row.
 - Seat overlap and the guest cap are checked on the merged result, not on each
   mutation alone.
@@ -188,10 +196,10 @@ updates the rule here, its test, and ADR 003 in the same diff. A behaviour this
 list does not cover is a question for the owner, not a bug to fix.
 
 1. **Per-column last write wins.** Each group keeps the value of its newest write.
-   A write changes only the columns it carries. Target tests:
+   A write changes only the columns it carries. Tests:
    `TestSync_NewestWins`, `TestSync_PartialUpdatePreservesFields`.
 2. **Seat moves together.** `tableId` and `seatNum` win or lose as one group.
-   Target test: `TestSync_TableAndSeatWinTogether` (not written yet).
+   Target test: `TestSync_TableAndSeatWinTogether`.
 3. **Undo is neutral.** Check-in writes `checkedInAt`, `rsvp`, and the payload
    fields it carries. Check-out writes `checkedInAt = null`. Both follow the same
    time rule as any edit. Tests: `TestSync_ArrivalAndUndoFollowTime`,
@@ -203,8 +211,8 @@ list does not cover is a question for the owner, not a bug to fix.
    nothing, notes included. Tests: `TestSync_ReplayOfAppliedBatchIsApplied`,
    `TestSync_CheckInReplayDoesNotDuplicateNotes`, `TestSync_CheckOutReplayIsApplied`.
 6. **Clocks never run ahead.** A future `clientUpdatedAt` is clamped to server time.
-   A missing one fails. Test: `TestSync_FutureClockClamped`. Target test for the
-   missing-time case: `TestSync_ZeroClientTimeFails` (not written yet).
+   A missing one fails. Tests: `TestSync_FutureClockClamped`,
+   `TestSync_ZeroClientTimeFails`.
 7. **Offline validates like online.** A field the online API refuses fails the
    mutation without retry. Test: `TestSync_UpdateValidatesLikeOnline`.
 8. **One bad mutation fails alone.** A body item that cannot be decoded is

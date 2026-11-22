@@ -2,6 +2,7 @@ package services
 
 import (
 	"context"
+	"encoding/json"
 	"testing"
 	"time"
 
@@ -37,6 +38,7 @@ func newGuestSyncService(t *testing.T) (*GuestService, *gorm.DB, uuid.UUID) {
 		is_vip INTEGER,
 		angbao_amt INTEGER,
 		gift_item TEXT,
+		field_times TEXT,
 		created_at DATETIME,
 		updated_at DATETIME
 	)`)
@@ -183,77 +185,303 @@ func TestSync_CheckInLWW(t *testing.T) {
 	}
 }
 
-// TestSync_UnassignViaNullPointer covers fix 2: the app sends JSON null for
-// tableId/seatNum when unassigning, so nil pointer AND empty string must both
-// clear the assignment. SeatNum must never survive with a nil TableID.
+// TestSync_CheckInReplayDoesNotDuplicateNotes covers invariant 5: replaying a
+// check-in after a checkout must not append its note a second time.
+func TestSync_CheckInReplayDoesNotDuplicateNotes(t *testing.T) {
+	svc, db, wid := newGuestSyncService(t)
+	ctx := context.Background()
+	gid := uuid.New()
+	base := time.Now().Add(-10 * time.Minute)
+	db.Create(&models.GuestRecord{ID: gid, WeddingID: wid, Name: "Replay", Pax: 1, CreatedAt: base, UpdatedAt: base})
+
+	t1 := base.Add(time.Minute)
+	var note SyncPayload
+	testutil.NoErr(t, json.Unmarshal([]byte(`{"notes":"no gift"}`), &note))
+	res, err := svc.Sync(ctx, wid, []SyncMutation{{
+		Op: SyncOpCheckIn, GuestID: gid.String(), ClientUpdatedAt: t1, Payload: &note,
+	}})
+	testutil.NoErr(t, err)
+	if res[0].Status != "applied" {
+		t.Fatalf("first checkin should apply, got %v", res[0])
+	}
+
+	res, err = svc.Sync(ctx, wid, []SyncMutation{{
+		Op: SyncOpCheckOut, GuestID: gid.String(), ClientUpdatedAt: base.Add(2 * time.Minute),
+	}})
+	testutil.NoErr(t, err)
+	if res[0].Status != "applied" {
+		t.Fatalf("checkout should apply, got %v", res[0])
+	}
+
+	res, err = svc.Sync(ctx, wid, []SyncMutation{{
+		Op: SyncOpCheckIn, GuestID: gid.String(), ClientUpdatedAt: t1, Payload: &note,
+	}})
+	testutil.NoErr(t, err)
+	if res[0].Status != "applied" {
+		t.Fatalf("replay should report applied, got %v", res[0])
+	}
+
+	g, err := svc.Get(ctx, gid, wid)
+	testutil.NoErr(t, err)
+	if g.CheckedInAt != nil {
+		t.Fatalf("replay must not re-check-in, got %v", g.CheckedInAt)
+	}
+	if g.Notes != "no gift" {
+		t.Fatalf("replay duplicated the note: %q", g.Notes)
+	}
+}
+
+// TestSync_UnassignViaNullPointer covers presence semantics: an absent tableId
+// keeps the stored seat, while an explicit JSON null clears table and seat as
+// one group. SeatNum must never survive with a nil TableID.
 func TestSync_UnassignViaNullPointer(t *testing.T) {
 	svc, db, wid := newGuestSyncService(t)
 	ctx := context.Background()
 	base := time.Now().Add(-10 * time.Minute)
 
-	seedUnassigned := func(name string) uuid.UUID {
+	seedSeated := func(name string) uuid.UUID {
 		gid := uuid.New()
 		tableID := uuid.New()
 		seat := 2
+		db.Create(&models.BanquetTable{ID: tableID, WeddingID: wid, Name: "Seat-" + name, Capacity: 8})
 		db.Create(&models.GuestRecord{ID: gid, WeddingID: wid, Name: name, Pax: 1, TableID: &tableID, SeatNum: &seat, CreatedAt: base, UpdatedAt: base})
 		return gid
 	}
 
-	// nil pointer clears both table and seat
-	gid := seedUnassigned("NullCase")
+	// Absent tableId preserves the seat assignment.
+	gid := seedSeated("AbsentTable")
+	var present SyncPayload
+	testutil.NoErr(t, json.Unmarshal([]byte(`{"name":"AbsentTable","pax":1}`), &present))
 	res, err := svc.Sync(ctx, wid, []SyncMutation{{
 		Op: SyncOpUpdate, GuestID: gid.String(),
 		ClientUpdatedAt: base.Add(time.Minute),
-		Payload:         &SyncPayload{Name: "NullCase", Pax: 1},
+		Payload:         &present,
 	}})
 	testutil.NoErr(t, err)
 	if res[0].Status != "applied" {
-		t.Fatalf("nil tableId update should apply, got %v", res[0])
+		t.Fatalf("sparse update should apply, got %v", res[0])
 	}
 	g, err := svc.Get(ctx, gid, wid)
 	testutil.NoErr(t, err)
-	if g.TableID != nil || g.SeatNum != nil {
-		t.Fatalf("nil tableId should clear table and seat, got table=%v seat=%v", g.TableID, g.SeatNum)
+	if g.TableID == nil || g.SeatNum == nil {
+		t.Fatalf("absent tableId must preserve the seat, got table=%v seat=%v", g.TableID, g.SeatNum)
 	}
 
-	// empty string clears both too
-	gid = seedUnassigned("EmptyCase")
-	empty := ""
+	// Explicit JSON null clears both.
+	var cleared SyncPayload
+	testutil.NoErr(t, json.Unmarshal([]byte(`{"tableId":null,"seatNum":null}`), &cleared))
 	res, err = svc.Sync(ctx, wid, []SyncMutation{{
 		Op: SyncOpUpdate, GuestID: gid.String(),
-		ClientUpdatedAt: base.Add(time.Minute),
-		Payload:         &SyncPayload{Name: "EmptyCase", Pax: 1, TableID: &empty},
+		ClientUpdatedAt: base.Add(2 * time.Minute),
+		Payload:         &cleared,
 	}})
 	testutil.NoErr(t, err)
 	if res[0].Status != "applied" {
-		t.Fatalf("empty tableId update should apply, got %v", res[0])
+		t.Fatalf("null tableId update should apply, got %v", res[0])
 	}
 	g, err = svc.Get(ctx, gid, wid)
 	testutil.NoErr(t, err)
 	if g.TableID != nil || g.SeatNum != nil {
-		t.Fatalf("empty tableId should clear table and seat, got table=%v seat=%v", g.TableID, g.SeatNum)
+		t.Fatalf("null tableId should clear table and seat, got table=%v seat=%v", g.TableID, g.SeatNum)
 	}
 
-	// a stray seatNum must not survive an unassign
-	gid = seedUnassigned("StraySeat")
-	seat := 3
+	// A stray seatNum without a tableId must not recreate a seat.
+	var stray SyncPayload
+	testutil.NoErr(t, json.Unmarshal([]byte(`{"seatNum":3}`), &stray))
 	res, err = svc.Sync(ctx, wid, []SyncMutation{{
 		Op: SyncOpUpdate, GuestID: gid.String(),
-		ClientUpdatedAt: base.Add(time.Minute),
-		Payload:         &SyncPayload{Name: "StraySeat", Pax: 1, SeatNum: &seat},
+		ClientUpdatedAt: base.Add(3 * time.Minute),
+		Payload:         &stray,
 	}})
 	testutil.NoErr(t, err)
-	if res[0].Status != "applied" {
-		t.Fatalf("unassign with stray seatNum should apply, got %v", res[0])
+	if res[0].Status != "skipped" {
+		t.Fatalf("seat-only patch must win no group, got %v", res[0])
 	}
 	g, err = svc.Get(ctx, gid, wid)
 	testutil.NoErr(t, err)
 	if g.TableID != nil || g.SeatNum != nil {
-		t.Fatalf("seat must not survive unassign, got table=%v seat=%v", g.TableID, g.SeatNum)
+		t.Fatalf("seat must not appear without a table, got table=%v seat=%v", g.TableID, g.SeatNum)
 	}
 }
 
-// TestSync_DeleteLosesLWW_Failed covers fix 6: a delete that loses LWW must
+// TestSync_PartialUpdatePreservesFields proves a newer edit to one column does
+// not discard an older edit to a different column.
+func TestSync_PartialUpdatePreservesFields(t *testing.T) {
+	svc, db, wid := newGuestSyncService(t)
+	ctx := context.Background()
+	gid := uuid.New()
+	base := time.Now().Add(-10 * time.Minute)
+	db.Create(&models.GuestRecord{ID: gid, WeddingID: wid, Name: "Partial", Pax: 1, CreatedAt: base, UpdatedAt: base})
+
+	var dietary, notes SyncPayload
+	testutil.NoErr(t, json.Unmarshal([]byte(`{"dietary":["vegan"]}`), &dietary))
+	res, err := svc.Sync(ctx, wid, []SyncMutation{{
+		Op: SyncOpUpdate, GuestID: gid.String(),
+		ClientUpdatedAt: base.Add(time.Minute),
+		Payload:         &dietary,
+	}})
+	testutil.NoErr(t, err)
+	if res[0].Status != "applied" {
+		t.Fatalf("dietary update should apply, got %v", res[0])
+	}
+
+	testutil.NoErr(t, json.Unmarshal([]byte(`{"notes":"late note"}`), &notes))
+	res, err = svc.Sync(ctx, wid, []SyncMutation{{
+		Op: SyncOpUpdate, GuestID: gid.String(),
+		ClientUpdatedAt: base.Add(2 * time.Minute),
+		Payload:         &notes,
+	}})
+	testutil.NoErr(t, err)
+	if res[0].Status != "applied" {
+		t.Fatalf("notes update should apply, got %v", res[0])
+	}
+
+	g, err := svc.Get(ctx, gid, wid)
+	testutil.NoErr(t, err)
+	if g.Notes != "late note" {
+		t.Fatalf("notes = %q, want late note", g.Notes)
+	}
+	if len(g.Dietary) != 1 || g.Dietary[0] != "vegan" {
+		t.Fatalf("older dietary edit must survive, got %v", g.Dietary)
+	}
+}
+
+// TestSync_TableAndSeatWinTogether proves an older table move cannot half-apply
+// its table or its seat.
+func TestSync_TableAndSeatWinTogether(t *testing.T) {
+	svc, db, wid := newGuestSyncService(t)
+	ctx := context.Background()
+	base := time.Now().Add(-10 * time.Minute)
+	newTable := &models.BanquetTable{ID: uuid.New(), WeddingID: wid, Name: "T1", Capacity: 10}
+	db.Create(newTable)
+	gid := uuid.New()
+	db.Create(&models.GuestRecord{ID: gid, WeddingID: wid, Name: "SeatMove", Pax: 1, CreatedAt: base, UpdatedAt: base})
+
+	newer := newTable.ID.String()
+	var win SyncPayload
+	testutil.NoErr(t, json.Unmarshal([]byte(`{"tableId":"`+newer+`","seatNum":4}`), &win))
+	res, err := svc.Sync(ctx, wid, []SyncMutation{{
+		Op: SyncOpUpdate, GuestID: gid.String(),
+		ClientUpdatedAt: base.Add(2 * time.Minute),
+		Payload:         &win,
+	}})
+	testutil.NoErr(t, err)
+	if res[0].Status != "applied" {
+		t.Fatalf("newer table+seat should apply, got %v", res[0])
+	}
+
+	older := uuid.New().String()
+	var lose SyncPayload
+	testutil.NoErr(t, json.Unmarshal([]byte(`{"tableId":"`+older+`","seatNum":7}`), &lose))
+	res, err = svc.Sync(ctx, wid, []SyncMutation{{
+		Op: SyncOpUpdate, GuestID: gid.String(),
+		ClientUpdatedAt: base.Add(time.Minute),
+		Payload:         &lose,
+	}})
+	testutil.NoErr(t, err)
+	if res[0].Status != "skipped" {
+		t.Fatalf("older table+seat should be skipped, got %v", res[0])
+	}
+
+	g, err := svc.Get(ctx, gid, wid)
+	testutil.NoErr(t, err)
+	if g.TableID == nil || *g.TableID != newTable.ID || g.SeatNum == nil || *g.SeatNum != 4 {
+		t.Fatalf("stale group must not half-apply: table=%v seat=%v", g.TableID, g.SeatNum)
+	}
+}
+
+// TestSync_UndoBeatsUnrelatedNewerEdit proves checkout keeps the row checked
+// out even when a newer edit touches a different column.
+func TestSync_UndoBeatsUnrelatedNewerEdit(t *testing.T) {
+	svc, db, wid := newGuestSyncService(t)
+	ctx := context.Background()
+	gid := uuid.New()
+	base := time.Now().Add(-10 * time.Minute)
+	checkedIn := base
+	db.Create(&models.GuestRecord{
+		ID: gid, WeddingID: wid, Name: "Undo", Pax: 1,
+		CheckedInAt: &checkedIn, CreatedAt: base, UpdatedAt: base,
+	})
+
+	res, err := svc.Sync(ctx, wid, []SyncMutation{{
+		Op: SyncOpCheckOut, GuestID: gid.String(), ClientUpdatedAt: base.Add(time.Minute),
+	}})
+	testutil.NoErr(t, err)
+	if res[0].Status != "applied" {
+		t.Fatalf("checkout should apply, got %v", res[0])
+	}
+
+	var notes SyncPayload
+	testutil.NoErr(t, json.Unmarshal([]byte(`{"notes":"newer note"}`), &notes))
+	res, err = svc.Sync(ctx, wid, []SyncMutation{{
+		Op: SyncOpUpdate, GuestID: gid.String(),
+		ClientUpdatedAt: base.Add(2 * time.Minute),
+		Payload:         &notes,
+	}})
+	testutil.NoErr(t, err)
+	if res[0].Status != "applied" {
+		t.Fatalf("unrelated edit should apply, got %v", res[0])
+	}
+
+	g, err := svc.Get(ctx, gid, wid)
+	testutil.NoErr(t, err)
+	if g.CheckedInAt != nil {
+		t.Fatalf("unrelated newer edit reverted the checkout: %v", g.CheckedInAt)
+	}
+	if g.Notes != "newer note" {
+		t.Fatalf("notes = %q, want newer note", g.Notes)
+	}
+}
+
+// TestSync_ZeroClientTimeFails rejects a mutation that carries no timestamp.
+func TestSync_ZeroClientTimeFails(t *testing.T) {
+	svc, db, wid := newGuestSyncService(t)
+	ctx := context.Background()
+	gid := uuid.New()
+	db.Create(&models.GuestRecord{ID: gid, WeddingID: wid, Name: "NoClock", Pax: 1, CreatedAt: time.Now(), UpdatedAt: time.Now()})
+
+	res, err := svc.Sync(ctx, wid, []SyncMutation{{
+		Op: SyncOpUpdate, GuestID: gid.String(),
+		Payload: &SyncPayload{Name: "NoClock"},
+	}})
+	testutil.NoErr(t, err)
+	if res[0].Status != "failed" || res[0].Reason != "clientUpdatedAt required" {
+		t.Fatalf("zero client time should fail with the required reason, got %v", res[0])
+	}
+}
+
+// TestUpdatePatch_PreservesAbsentFields proves a sparse online PUT keeps every
+// field the client did not send.
+func TestUpdatePatch_PreservesAbsentFields(t *testing.T) {
+	svc, db, wid := newGuestSyncService(t)
+	ctx := context.Background()
+	table := &models.BanquetTable{ID: uuid.New(), WeddingID: wid, Name: "T1", Capacity: 10}
+	db.Create(table)
+	gid := uuid.New()
+	seat := 2
+	db.Create(&models.GuestRecord{
+		ID: gid, WeddingID: wid, Name: "Sparse", Email: "keep@example.com", Pax: 1,
+		TableID: &table.ID, SeatNum: &seat, Notes: "keep note", Dietary: []string{"fish"}, IsVip: true,
+	})
+
+	var patch GuestPatch
+	testutil.NoErr(t, json.Unmarshal([]byte(`{"pax":3}`), &patch))
+	merged, err := svc.UpdatePatch(ctx, gid, wid, &patch)
+	testutil.NoErr(t, err)
+	if merged.Pax != 3 {
+		t.Fatalf("pax = %d, want 3", merged.Pax)
+	}
+	if merged.Notes != "keep note" || merged.Email != "keep@example.com" || !merged.IsVip {
+		t.Fatalf("absent fields were not preserved: %+v", merged)
+	}
+	if merged.TableID == nil || *merged.TableID != table.ID || merged.SeatNum == nil || *merged.SeatNum != seat {
+		t.Fatalf("seat was not preserved: table=%v seat=%v", merged.TableID, merged.SeatNum)
+	}
+	if len(merged.Dietary) != 1 || merged.Dietary[0] != "fish" {
+		t.Fatalf("dietary = %v, want fish", merged.Dietary)
+	}
+}
+
 // report "failed" (not "skipped") so the client keeps the delete queued
 // instead of dequeuing it and losing the intent.
 func TestSync_DeleteLosesLWW_Failed(t *testing.T) {
@@ -310,6 +538,9 @@ func TestSync_FutureClockClamped(t *testing.T) {
 	testutil.NoErr(t, err)
 	if g.UpdatedAt.After(time.Now()) {
 		t.Fatalf("record UpdatedAt must be clamped to server time, got %v", g.UpdatedAt)
+	}
+	if g.FieldTimes[groupName].After(time.Now()) {
+		t.Fatalf("stored field time must be the clamped time, got %v", g.FieldTimes[groupName])
 	}
 }
 
