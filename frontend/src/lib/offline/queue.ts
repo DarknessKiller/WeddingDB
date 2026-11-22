@@ -1,4 +1,8 @@
 import { apiFetch } from '#lib/api/client.ts';
+import { addToast } from '#lib/stores/index.ts';
+import { get } from 'svelte/store';
+import { applyGuestResponse, guestMap } from '#lib/stores/guestEvents.ts';
+import type { GuestResponse } from '#lib/api/guests.ts';
 
 export type SyncOp = 'create' | 'update' | 'delete' | 'checkin' | 'checkout';
 
@@ -12,7 +16,8 @@ export interface QueuedMutation {
 }
 
 function qkey(wid: string) { return `offline_queue_${wid}`; }
-function ckey(wid: string) { return `offline_cache_${wid}`; }
+// Kiosk only: public rows must not overwrite the staff cache (offline_cache_{wid}).
+function ckey(wid: string) { return `kiosk_cache_${wid}`; }
 
 export function getQueue(wid: string): QueuedMutation[] {
 	if (typeof window === 'undefined' || !wid) return [];
@@ -23,26 +28,23 @@ function setQueue(wid: string, q: QueuedMutation[]) {
 }
 
 export function enqueue(wid: string, m: QueuedMutation) {
+	// The guest's updatedAt as this device last saw it, read before the optimistic patch. Null for a create.
+	m.baseUpdatedAt ??= get(guestMap).get(m.guestId)?.updatedAt?.toISOString() ?? null;
 	const q = getQueue(wid);
-	if (q.length >= 500) q.shift();
+	if (q.length >= 500) {
+		q.shift();
+		addToast('Offline queue full: the oldest edit was dropped', 'error');
+	}
 	q.push(m);
 	setQueue(wid, q);
 	notifyChanged();
+	addToast(`Queued offline (${q.length})`, 'info');
 }
 
 export function dequeueByIds(wid: string, ids: string[]) {
 	const s = new Set(ids);
 	setQueue(wid, getQueue(wid).filter(x => !s.has(x.mutationId)));
 	notifyChanged();
-}
-
-export function clearQueue(wid: string) {
-	localStorage.removeItem(qkey(wid));
-	notifyChanged();
-}
-
-export function queuedCount(wid: string): number {
-	return getQueue(wid).length;
 }
 
 export function cacheGuests(wid: string, guests: unknown[]) {
@@ -55,31 +57,85 @@ export function loadCachedGuests<T>(wid: string): T[] | null {
 	} catch { return null; }
 }
 
-export async function syncQueue(wid: string): Promise<{ applied: number; skipped: number; results: unknown[] }> {
+// The backend caps request bodies at 1 MiB, so the queue goes up in chunks.
+const SYNC_CHUNK = 100;
+
+export async function syncQueue(wid: string): Promise<{ applied: number; skipped: number }> {
 	const q = getQueue(wid);
-	if (!q.length) return { applied: 0, skipped: 0, results: [] };
-	const res = await apiFetch(`/api/weddings/${wid}/guests/sync`, {
-		method: 'POST',
-		body: JSON.stringify({ mutations: q })
-	});
-	if (!res.ok) {
-		const t = await res.text().catch(() => '');
-		throw new Error(`sync failed ${res.status} ${t}`);
-	}
-	const data = await res.json() as { results: { guestId: string; status: string; serverRecord?: unknown; reason?: string }[] };
-	const appliedIds: string[] = [];
 	let applied = 0, skipped = 0;
-	for (let i = 0; i < q.length && i < data.results.length; i++) {
-		const r = data.results[i];
-		if (r.status === 'applied') { applied++; appliedIds.push(q[i].mutationId); }
-		else if (r.status === 'skipped') { skipped++; appliedIds.push(q[i].mutationId); }
+	for (let start = 0; start < q.length; start += SYNC_CHUNK) {
+		const chunk = q.slice(start, start + SYNC_CHUNK);
+		const res = await apiFetch(`/api/weddings/${wid}/guests/sync`, {
+			method: 'POST',
+			body: JSON.stringify({ mutations: chunk })
+		});
+		if (!res.ok) {
+			const t = await res.text().catch(() => '');
+			throw new Error(`sync failed ${res.status} ${t}`);
+		}
+		const data = await res.json() as { results: { guestId: string; status: string; serverRecord?: GuestResponse; reason?: string }[] };
+		const doneIds: string[] = [];
+		for (let i = 0; i < chunk.length && i < data.results.length; i++) {
+			const r = data.results[i];
+			if (r.status === 'applied') { applied++; doneIds.push(chunk[i].mutationId); }
+			else if (r.status === 'skipped') {
+				// No column won: show the server's row instead of the optimistic one.
+				skipped++; doneIds.push(chunk[i].mutationId);
+				if (r.serverRecord) applyGuestResponse(r.serverRecord);
+			}
+		}
+		dequeueByIds(wid, doneIds);
 	}
-	// drop processed (both applied and skipped) - skipped already reverted by caller via serverRecord
-	dequeueByIds(wid, appliedIds);
-	// ponytail: expose for support
-	if (typeof window !== 'undefined') (window as unknown as Record<string, unknown>).__syncLastResults = data.results;
-	console.log(`offline sync: ${applied} applied, ${skipped} skipped`);
-	return { applied, skipped, results: data.results };
+	if (skipped) addToast(`${skipped} offline edit${skipped === 1 ? '' : 's'} reverted: newer changes won`, 'info');
+	return { applied, skipped };
+}
+
+// Owner is the user id (JWT `sub`), never the email: localStorage on a shared
+// device must not hold another user's address. The label is the masked email.
+const OWNER_KEY = 'offline_owner';
+const OWNER_LABEL_KEY = 'offline_owner_label';
+
+/** `jane@x.io` → `j***@x.io`. Shown when asking to discard another user's edits. */
+export function maskEmail(email: string): string {
+	const at = email.lastIndexOf('@');
+	return at > 0 ? `${email[0]}***${email.slice(at)}` : '***';
+}
+
+/**
+ * Queued edits follow their owner (Offline sync invariant 9). When a different
+ * account logs in, replay every queue with the new session first, then ask
+ * before discarding what is left. Call after login, once a token is set.
+ */
+export async function claimQueues(
+	ownerId: string,
+	email: string,
+	confirmDiscard: (left: number, prevOwner: string) => boolean
+): Promise<void> {
+	if (typeof window === 'undefined' || !ownerId) return;
+	const prev = localStorage.getItem(OWNER_KEY);
+	if (prev && prev !== ownerId) {
+		for (const wid of queuedWeddings()) {
+			try { await syncQueue(wid); } catch {}
+		}
+		const left = queuedWeddings();
+		const count = left.reduce((n, wid) => n + getQueue(wid).length, 0);
+		const prevLabel = localStorage.getItem(OWNER_LABEL_KEY) || 'the previous account';
+		// Declined: keep the edits and the old owner, so the next login asks again.
+		if (count && !confirmDiscard(count, prevLabel)) return;
+		for (const wid of left) localStorage.removeItem(qkey(wid));
+		notifyChanged();
+	}
+	localStorage.setItem(OWNER_KEY, ownerId);
+	localStorage.setItem(OWNER_LABEL_KEY, maskEmail(email));
+}
+
+function queuedWeddings(): string[] {
+	const wids: string[] = [];
+	for (let i = 0; i < localStorage.length; i++) {
+		const k = localStorage.key(i);
+		if (k?.startsWith('offline_queue_')) wids.push(k.slice('offline_queue_'.length));
+	}
+	return wids.filter((wid) => getQueue(wid).length);
 }
 
 // Same-tab notification that the queue changed (storage events only fire in
@@ -87,8 +143,4 @@ export async function syncQueue(wid: string): Promise<{ applied: number; skipped
 function notifyChanged() {
 	if (typeof window === 'undefined') return;
 	window.dispatchEvent(new Event('offline-queue-changed'));
-}
-
-if (typeof window !== 'undefined') {
-	(window as unknown as Record<string, unknown>).__offlineQueue = { getQueue, enqueue, syncQueue, queuedCount, clearQueue, cacheGuests, loadCachedGuests };
 }
