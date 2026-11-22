@@ -44,25 +44,25 @@
 
   .badge-confirmed {
     background: #ECFDF5;
-    color: #059669;
+    color: var(--color-status-confirmed);
     border: 1px solid #A7F3D0;
   }
 
   .badge-pending {
     background: #FFFBEB;
-    color: #D97706;
+    color: var(--color-status-pending);
     border: 1px solid #FDE68A;
   }
 
   .badge-declined {
     background: #FEF2F2;
-    color: #DC2626;
+    color: var(--color-status-declined);
     border: 1px solid #FECACA;
   }
 
   .badge-none {
     background: #F9FAFB;
-    color: #6B7280;
+    color: var(--color-status-none);
     border: 1px solid #E5E7EB;
   }
 </style>

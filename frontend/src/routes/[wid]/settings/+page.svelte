@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onMount } from 'svelte';
+  import { beforeNavigate } from '$app/navigation';
   import { weddingTitle } from '#lib/stores/weddingTitle.ts';
   import { addToast, showSeatNumbers, setShowSeatNumbers } from '#lib/stores/index.ts';
   import { weddingId } from '#lib/stores/weddingId.ts';
@@ -38,6 +39,17 @@ import MapPin from 'lucide-svelte/icons/map-pin';
   let weddingNameEdit = $state('');
   let venueName = $state('');
   let venueAddress = $state('');
+  // Last saved form state, for the unsaved-changes guard. showSeatNumbers is
+  // saved by its own toggle, so it must not count as dirty.
+  let baseline = $state('');
+  const settingsSnapshot = () => JSON.stringify({ ...kioskPayload(), showSeatNumbers: undefined, name: weddingNameEdit });
+  let dirty = $derived(settingsSnapshot() !== baseline);
+
+  beforeNavigate((nav) => {
+    if (nav.shallow && nav.type === 'goto') return;
+    if (loading || !dirty) return;
+    if (!confirm('You have unsaved kiosk settings. Leave without saving?')) nav.cancel();
+  });
 
   onMount(async () => {
     try {
@@ -59,6 +71,7 @@ import MapPin from 'lucide-svelte/icons/map-pin';
         if (wedding.kioskLogoPosY) kioskLogoPosY = wedding.kioskLogoPosY;
         setShowSeatNumbers(wedding.id, wedding.showSeatNumbers ?? false);
         kioskIdleResetSeconds = wedding.kioskIdleResetSeconds ?? 0;
+        baseline = settingsSnapshot();
       }
     } catch {
       addToast('Failed to load settings', 'error');
@@ -106,6 +119,7 @@ import MapPin from 'lucide-svelte/icons/map-pin';
       wedding = updated;
       setShowSeatNumbers(updated.id, updated.showSeatNumbers ?? false);
       weddingNameEdit = updated.name;
+      baseline = settingsSnapshot();
       addToast('Kiosk settings saved', 'success');
     } catch (e: any) {
       addToast(e.message ?? 'Failed to save', 'error');

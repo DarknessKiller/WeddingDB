@@ -6,6 +6,7 @@
   import { rankGuests } from '#lib/utils/guestSearch.ts';
   import { cn, getInitials } from '#lib/utils/index.ts';
   import { formatSeatRange, formatPartySize } from '#lib/utils/seat.ts';
+  import { cssImageUrl } from '#lib/utils/css.ts';
   import Maximize from 'lucide-svelte/icons/maximize';
 import Minimize from 'lucide-svelte/icons/minimize';
 import Monitor from 'lucide-svelte/icons/monitor';
@@ -567,7 +568,7 @@ import X from 'lucide-svelte/icons/x';
     <!-- Search View -->
     <div class="search-view" in:fade={{ duration: 250 }}>
       {#if kioskBackgroundUrl}
-        <div class="search-bg" style={`background-image: url(${kioskBackgroundUrl}); background-size: ${kioskBackgroundSize}; background-position: ${kioskBackgroundPosX} ${kioskBackgroundPosY}; filter: blur(${kioskBackgroundBlur}px); transform: scale(${kioskBackgroundBlur > 0 ? 1.1 : 1.05});`}></div>
+        <div class="search-bg" style={`background-image: ${cssImageUrl(kioskBackgroundUrl)}; background-size: ${kioskBackgroundSize}; background-position: ${kioskBackgroundPosX} ${kioskBackgroundPosY}; filter: blur(${kioskBackgroundBlur}px); transform: scale(${kioskBackgroundBlur > 0 ? 1.1 : 1.05});`}></div>
         <div class="search-bg-overlay"></div>
       {/if}
 

@@ -78,13 +78,13 @@ import Users from 'lucide-svelte/icons/users';
             {name || 'T'}
           </div>
           <div class="min-w-0">
-            <h3 class="table-name-lg">{#if isVip}<span class="text-gold">★</span>{/if} {name || 'Table'}</h3>
+            <h3 class="table-name-lg">{#if isVip}<span class="text-gold-ink">★</span>{/if} {name || 'Table'}</h3>
             <div class="flex items-center gap-2 mt-0.5">
               <span class="inline-flex items-center gap-1 px-2 py-0.5 bg-emerald-50 text-emerald-700 rounded-full text-xs font-semibold border border-emerald-200">
                 <Users class="w-3 h-3" /> {occupied}/{capacity}
               </span>
               {#if isVip}
-                <span class="inline-flex items-center gap-1 px-2 py-0.5 bg-gold-50 text-gold border border-gold-200 rounded-full text-[11px] font-bold">
+                <span class="inline-flex items-center gap-1 px-2 py-0.5 bg-gold-50 text-gold-ink border border-gold-200 rounded-full text-[11px] font-bold">
                   <Star class="w-3 h-3 fill-gold" /> VIP
                 </span>
               {/if}

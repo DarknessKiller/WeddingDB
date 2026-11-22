@@ -36,6 +36,15 @@ export function parseCSVRows(text: string): string[][] {
 	return rows;
 }
 
+// Quote a field: double quotes around the value, internal quotes escaped as "".
+// A leading formula character gets a single-quote prefix so a spreadsheet
+// treats the cell as text (CSV injection).
+export function csvField(v: unknown): string {
+	const raw = v === null || v === undefined ? '' : String(v);
+	const s = /^[=+\-@\t\r]/.test(raw) ? `'${raw}` : raw;
+	return `"${s.replace(/"/g, '""')}"`;
+}
+
 export interface ImportProblem {
 	row: number; // 1-based CSV record, header included
 	name: string;

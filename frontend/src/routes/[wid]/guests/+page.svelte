@@ -15,7 +15,7 @@
   import MoveGuestDrawer from '#lib/components/ui/MoveGuestDrawer.svelte';
   import { getInitials } from '#lib/utils/index.ts';
   import { trapFocus } from '#lib/utils/focus.ts';
-  import { parseGuestCSV, type ImportProblem } from '#lib/utils/csv.ts';
+  import { parseGuestCSV, csvField, type ImportProblem } from '#lib/utils/csv.ts';
   import Search from 'lucide-svelte/icons/search';
 import Download from 'lucide-svelte/icons/download';
 import Upload from 'lucide-svelte/icons/upload';
@@ -227,12 +227,6 @@ import Users from 'lucide-svelte/icons/users';
   let columns = $derived(
     $showSeatNumbers ? allColumns : allColumns.filter(c => c.key !== 'seatNum')
   );
-
-  // Quote every field: double quotes around the value, internal quotes escaped as "".
-  function csvField(v: unknown): string {
-    const s = v === null || v === undefined ? '' : String(v);
-    return `"${s.replace(/"/g, '""')}"`;
-  }
 
   function exportCSV() {
     const headers = ['Name', 'Email', 'Table', 'Seat', 'Pax', 'RSVP', 'VIP', 'Checked In', 'Angbao', 'Gift', 'Notes'];

@@ -6,6 +6,7 @@ import Maximize2 from 'lucide-svelte/icons/maximize-2';
   import { uploadFile } from '#lib/api/client.ts';
   import { addToast } from '#lib/stores/index.ts';
   import { LIMITS } from '#lib/utils/limits.ts';
+  import { cssImageUrl, isSafeImageUrl } from '#lib/utils/css.ts';
 
   let {
     value = $bindable(''),
@@ -32,6 +33,16 @@ import Maximize2 from 'lucide-svelte/icons/maximize-2';
   // Settings renders several editors; fixed ids would collide.
   const uid = $props.id();
   let uploading = $state(false);
+  let urlError = $state('');
+
+  function updateUrl(v: string) {
+    if (isSafeImageUrl(v)) {
+      value = v;
+      urlError = '';
+    } else {
+      urlError = 'Enter an http(s) URL or an uploaded /uploads path';
+    }
+  }
 
   async function handleFile(e: Event) {
     const input = e.target as HTMLInputElement;
@@ -52,6 +63,7 @@ import Maximize2 from 'lucide-svelte/icons/maximize-2';
 
   function clear() {
     value = '';
+    urlError = '';
     size = 'cover';
     posX = '50%';
     posY = '50%';
@@ -70,7 +82,7 @@ import Maximize2 from 'lucide-svelte/icons/maximize-2';
         {:else}
           <div
             class="absolute inset-0 bg-cover bg-no-repeat transition-all duration-300"
-            style={`background-image: url(${value}); background-size: ${size}; background-position: ${posX} ${posY}; filter: blur(${blur}px); transform: scale(${blur > 0 ? 1.1 : 1});`}
+            style={`background-image: ${cssImageUrl(value)}; background-size: ${size}; background-position: ${posX} ${posY}; filter: blur(${blur}px); transform: scale(${blur > 0 ? 1.1 : 1});`}
           ></div>
         {/if}
         <!-- Remove button -->
@@ -155,10 +167,15 @@ import Maximize2 from 'lucide-svelte/icons/maximize-2';
         aria-label="{label} URL"
         maxlength={LIMITS.url}
         {value}
-        oninput={(e) => value = (e.target as HTMLInputElement).value}
+        oninput={(e) => updateUrl((e.target as HTMLInputElement).value)}
         placeholder="Or paste image URL..."
         class="w-full px-3 py-2 border border-gray-200 rounded-lg text-xs bg-white focus:border-red focus:ring-1 focus:ring-red/15 outline-none transition-all"
       />
+      {#if urlError}<p class="url-error" role="alert">{urlError}</p>{/if}
     </div>
   {/if}
 </div>
+
+<style>
+  .url-error { margin-top: 0.25rem; font-size: 0.75rem; color: var(--color-status-declined); }
+</style>

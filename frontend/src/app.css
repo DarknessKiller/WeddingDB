@@ -31,6 +31,12 @@
   --color-gold-dark: #B8941F;
   --color-gold-50: #FDF8E8;
 
+  /* Status text stays >= 4.5:1 on its badge background. */
+  --color-status-confirmed: #047857;
+  --color-status-pending: #B45309;
+  --color-status-declined: #B91C1C;
+  --color-status-none: #4B5563;
+
   --color-warm-50: #FAF7F2;
   --color-warm-100: #F5F0E8;
 
