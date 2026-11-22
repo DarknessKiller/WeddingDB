@@ -60,7 +60,22 @@ export function loadCachedGuests<T>(wid: string): T[] | null {
 // The backend caps request bodies at 1 MiB, so the queue goes up in chunks.
 const SYNC_CHUNK = 100;
 
-export async function syncQueue(wid: string): Promise<{ applied: number; skipped: number; dropped: number }> {
+export type SyncSummary = { applied: number; skipped: number; dropped: number };
+
+// One drain per wedding at a time. The mount, the SSE reconnect, `online` and a
+// manual retry can all fire together, and two overlapping drains replay the same
+// mutations twice.
+const inFlight = new Map<string, Promise<SyncSummary>>();
+
+export function syncQueue(wid: string): Promise<SyncSummary> {
+	const running = inFlight.get(wid);
+	if (running) return running;
+	const run = drainQueue(wid).finally(() => { inFlight.delete(wid); });
+	inFlight.set(wid, run);
+	return run;
+}
+
+async function drainQueue(wid: string): Promise<SyncSummary> {
 	const q = getQueue(wid);
 	let applied = 0, skipped = 0, dropped = 0;
 	for (let start = 0; start < q.length; start += SYNC_CHUNK) {

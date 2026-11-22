@@ -84,4 +84,44 @@ describe('offline queue storage', () => {
 		expect(getQueue('w1')).toHaveLength(1);
 		expect(localStorage.getItem('offline_owner')).toBe('id-a');
 	});
+
+	it('a second drain joins the one in flight instead of replaying the queue', async () => {
+		const { enqueue, getQueue, syncQueue } = await import('./queue');
+		enqueue('w1', mutation(1));
+		let release!: (r: Response) => void;
+		apiFetch.mockImplementation(() => new Promise<Response>((r) => { release = r; }));
+
+		const first = syncQueue('w1');
+		const second = syncQueue('w1');
+
+		expect(second).toBe(first);
+		expect(apiFetch).toHaveBeenCalledOnce();
+
+		release(ok([{ status: 'applied' }]));
+		expect(await first).toEqual({ applied: 1, skipped: 0, dropped: 0 });
+		expect(await second).toEqual({ applied: 1, skipped: 0, dropped: 0 });
+		expect(getQueue('w1')).toEqual([]);
+	});
+
+	it('drops a failed mutation only when the server marks it not retryable', async () => {
+		const { enqueue, getQueue, syncQueue } = await import('./queue');
+		enqueue('w1', mutation(1));
+		enqueue('w1', mutation(2));
+		apiFetch.mockResolvedValue(ok([
+			{ status: 'failed', reason: 'angbao must not be negative', retryable: false },
+			{ status: 'failed', reason: 'database is down' }
+		]));
+
+		expect(await syncQueue('w1')).toEqual({ applied: 0, skipped: 0, dropped: 1 });
+		expect(getQueue('w1').map((m) => m.mutationId)).toEqual(['m2']);
+	});
+
+	it('drops a chunk the server rejects outright instead of blocking the queue', async () => {
+		const { enqueue, getQueue, syncQueue } = await import('./queue');
+		enqueue('w1', mutation(1));
+		apiFetch.mockResolvedValue({ ok: false, status: 400, text: async () => 'malformed' } as Response);
+
+		expect(await syncQueue('w1')).toEqual({ applied: 0, skipped: 0, dropped: 0 });
+		expect(getQueue('w1')).toEqual([]);
+	});
 });
