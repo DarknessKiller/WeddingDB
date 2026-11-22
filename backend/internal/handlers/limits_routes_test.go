@@ -43,7 +43,7 @@ func TestTableCreate_NameBounds(t *testing.T) {
 		testutil.NoErr(t, db.Exec(stmt).Error)
 	}
 
-	svc := services.NewTableService(repository.NewTableRepo(db), repository.NewGuestRepo(db), nil)
+	svc := services.NewTableService(repository.NewTableRepo(db), nil, db)
 	s := fuego.NewServer(fuego.WithoutStartupMessages())
 	fuego.Post(s, "/api/weddings/{wid}/tables", NewTableHandler(svc).Create)
 

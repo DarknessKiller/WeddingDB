@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"errors"
 	"strings"
 	"weddingdb/internal/models"
 	"weddingdb/internal/services"
@@ -121,6 +122,9 @@ func (h *TableHandler) Delete(c fuego.ContextWithBody[any]) (any, error) {
 		return nil, fuego.BadRequestError{Title: "Invalid ID"}
 	}
 	if err := h.tableService.Delete(ctx, id, wid); err != nil {
+		if errors.Is(err, services.ErrTableNotFound) {
+			return nil, fuego.NotFoundError{Title: "Table not found"}
+		}
 		return nil, err
 	}
 	c.SetStatus(204)
