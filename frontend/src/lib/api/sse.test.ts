@@ -4,6 +4,9 @@ vi.mock('#lib/stores/index.ts', () => ({
 	getAuth: () => ({ accessToken: 'test-token-123' })
 }));
 
+const refreshIfNeeded = vi.fn(async () => true);
+vi.mock('#lib/api/client.ts', () => ({ refreshIfNeeded: () => refreshIfNeeded() }));
+
 const fetchMock = vi.fn();
 
 beforeEach(() => {
@@ -48,6 +51,15 @@ describe('SSEClient', () => {
 		client.connect('wedding-123');
 
 		await vi.waitFor(() => expect(handler).toHaveBeenCalledWith(event));
+		client.disconnect();
+	});
+
+	it('refreshes the token on 401 before reconnecting', async () => {
+		fetchMock.mockResolvedValueOnce({ ok: false, status: 401, body: null });
+		const { getSSIClient } = await import('./sse');
+		const client = getSSIClient();
+		client.connect('wedding-123');
+		await vi.waitFor(() => expect(refreshIfNeeded).toHaveBeenCalledOnce());
 		client.disconnect();
 	});
 });

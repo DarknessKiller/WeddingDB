@@ -1,3 +1,4 @@
+import { goto } from '$app/navigation';
 import { getAuth, setAuth, clearAuth } from '#lib/stores/index.ts';
 import { setWeddingId } from '#lib/stores/weddingId.ts';
 
@@ -27,23 +28,24 @@ async function doRefresh(): Promise<boolean> {
 	}
 	if (refreshRes.ok) {
 		const data = await refreshRes.json();
+		setAuth(data.accessToken, data.refreshToken, data.role ?? getAuth().role ?? '', data.name ?? getAuth().name ?? '');
 		if (data.forcePasswordChange) {
-			setAuth(data.accessToken, data.refreshToken, data.role ?? getAuth().role ?? '', data.name ?? getAuth().name ?? '');
-			if (typeof window !== 'undefined') window.location.href = '/change-password?forced=1';
+			// goto, not location.href: a reload would wipe the in-memory tokens.
+			void goto('/change-password?forced=1');
 			return false;
 		}
-		setAuth(data.accessToken, data.refreshToken, data.role ?? getAuth().role ?? '', data.name ?? getAuth().name ?? '');
 		return true;
 	}
-	// Only a definite rejection means the refresh token is dead. Keep the session on 5xx.
-	if (refreshRes.status !== 400 && refreshRes.status !== 401) return false;
+	// Only 401 means the refresh token is dead. 503 and other errors keep the session for a retry.
+	if (refreshRes.status !== 401) return false;
 	clearAuth();
 	setWeddingId('');
 	if (typeof window !== 'undefined') window.location.href = '/login';
 	return false;
 }
 
-async function refreshIfNeeded(): Promise<boolean> {
+/** The one refresh path. True when a new access token is in place. */
+export async function refreshIfNeeded(): Promise<boolean> {
 	if (!refreshPromise) {
 		refreshPromise = doRefresh().finally(() => { refreshPromise = null; });
 	}
