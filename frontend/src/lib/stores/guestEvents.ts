@@ -2,7 +2,8 @@ import { writable, get } from 'svelte/store';
 import { selectedGuest } from '#lib/stores/index.ts';
 import { connectSSE, disconnectSSE, type GuestEvent } from '#lib/api/sse.ts';
 import { weddingId } from '#lib/stores/weddingId.ts';
-import type { Guest, RSVPStatus } from '#lib/types/index.ts';
+import type { Guest } from '#lib/types/index.ts';
+import { toGuest } from '#lib/utils/guestTransform.ts';
 import type { GuestResponse } from '#lib/api/guests.ts';
 
 // All guests for the current wedding, kept in sync via SSE.
@@ -113,47 +114,9 @@ export function seedGuests(guests: Guest[]) {
 function handleGuestEvent(event: GuestEvent) {
 	const { type, guest: guestData } = event;
 	if (!guestData) return;
-
-	const guest = eventGuestToGuest(guestData, event.timestamp);
-
-	guestList.update((list) => {
-		const idx = list.findIndex((g) => g.id === guest.id);
-
-		if (type === 'delete') {
-			return list.filter((g) => g.id !== guest.id);
-		}
-
-		if (idx >= 0) {
-			const newList = [...list];
-			guest.createdAt = list[idx].createdAt;
-			newList[idx] = guest;
-			return newList;
-		}
-		return [...list, guest];
-	});
-
-	guestMap.update((map) => {
-		const newMap = new Map(map);
-		if (type === 'delete') {
-			newMap.delete(guest.id);
-		} else {
-			newMap.set(guest.id, guest);
-		}
-		return newMap;
-	});
-
-	// 'create'/'update' events also carry table/seat/pax changes, so occupancy
-	// must be recalculated for them too — otherwise $tableOccupancy goes stale
-	// after REST updates or unassigns (the server publishes those as 'update').
-	if (type === 'create' || type === 'update' || type === 'seat_assign' || type === 'checkin' || type === 'checkout' || type === 'delete') {
-		recalculateOccupancy();
-	}
-
-	// If the drawer is showing this guest, update it live.
-	const current = get(selectedGuest);
-	if (current?.id === guest.id) {
-		selectedGuest.set(guest);
-	}
+	if (type === 'delete') return removeGuest(guestData.id);
+	const updatedAt = event.timestamp > 0 ? new Date(event.timestamp).toISOString() : undefined;
+	upsertGuest(toGuest({ ...guestData, updatedAt }));
 }
 
 function recalculateOccupancy() {
@@ -174,59 +137,34 @@ function recalculateOccupancy() {
  * (SSE hiccup, reconnect race) instead of waiting for a manual refresh.
  */
 export function applyGuestResponse(resp: GuestResponse) {
-	const guest: Guest = {
-		id: resp.id,
-		name: resp.name,
-		pinyin: resp.pinyin,
-		email: resp.email,
-		rsvp: resp.rsvp as RSVPStatus,
-		pax: resp.pax,
-		tableId: resp.tableId,
-		seatNumber: resp.seatNum,
-		checkedIn: !!resp.checkedInAt,
-		checkedInAt: resp.checkedInAt ? new Date(resp.checkedInAt) : undefined,
-		notes: resp.notes,
-		dietaryRequirements: resp.dietary,
-		isVip: resp.isVip,
-		angbaoAmount: resp.angbaoAmt ?? undefined,
-		giftItem: resp.giftItem ?? undefined,
-		createdAt: new Date(resp.createdAt),
-		updatedAt: new Date(resp.updatedAt)
-	};
+	upsertGuest(toGuest(resp));
+}
 
+/** Inserts or replaces a guest in every store. Keeps createdAt, and pinyin when the new row lacks it. */
+export function upsertGuest(guest: Guest) {
 	guestList.update((list) => {
 		const idx = list.findIndex((g) => g.id === guest.id);
 		if (idx < 0) return [...list, guest];
 		const newList = [...list];
 		guest.createdAt = list[idx].createdAt;
+		guest.pinyin ??= list[idx].pinyin;
 		newList[idx] = guest;
 		return newList;
 	});
 	guestMap.update((map) => new Map(map).set(guest.id, guest));
 	recalculateOccupancy();
 
+	// If the drawer is showing this guest, update it live.
 	const current = get(selectedGuest);
 	if (current?.id === guest.id) selectedGuest.set(guest);
 }
 
-function eventGuestToGuest(d: NonNullable<GuestEvent['guest']>, eventTimestamp: number): Guest {
-	const updatedAt = eventTimestamp > 0 ? new Date(eventTimestamp) : new Date();
-	return {
-		id: d.id,
-		name: d.name,
-		email: d.email,
-		rsvp: d.rsvp as RSVPStatus,
-		pax: d.pax,
-		tableId: d.tableId,
-		seatNumber: d.seatNum,
-		checkedIn: !!d.checkedInAt,
-		checkedInAt: d.checkedInAt ? new Date(d.checkedInAt) : undefined,
-		notes: d.notes,
-		dietaryRequirements: d.dietary,
-		isVip: d.isVip,
-		angbaoAmount: d.angbaoAmt ?? undefined,
-		giftItem: d.giftItem ?? undefined,
-		createdAt: updatedAt,
-		updatedAt
-	};
+export function removeGuest(id: string) {
+	guestList.update((list) => list.filter((g) => g.id !== id));
+	guestMap.update((map) => {
+		const newMap = new Map(map);
+		newMap.delete(id);
+		return newMap;
+	});
+	recalculateOccupancy();
 }
