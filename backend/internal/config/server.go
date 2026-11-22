@@ -38,10 +38,11 @@ func NewFuegoServer(env Env, version string, middlewares ...func(http.Handler) h
 		),
 	)
 
-	// SSE streams must stay open indefinitely; WriteTimeout is a whole-response
-	// deadline and fuego's 30s default would kill every stream at 30s, forcing
-	// a reconnect/resync loop. Keepalive pings cannot extend it.
-	s.WriteTimeout = 0
+	// Bounded so a stalled unauthenticated client cannot hold a connection
+	// forever. The SSE handler clears the deadline for its own response with
+	// http.ResponseController before streaming, because WriteTimeout is a
+	// whole-response deadline that keepalive pings cannot extend.
+	s.WriteTimeout = 60 * time.Second
 	// Large/slow uploads must not be reset mid-transfer, so ReadTimeout stays
 	// far above any real transfer but still bounds a trickling client.
 	s.ReadTimeout = 5 * time.Minute

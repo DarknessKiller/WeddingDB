@@ -122,15 +122,15 @@ func TestOpenAPI_SpecJSON(t *testing.T) {
 }
 
 func TestNewFuegoServer_TimeoutsForLongTransfers(t *testing.T) {
-	// fuego defaults Read/WriteTimeout to 30s; the write deadline would cut
-	// SSE streams mid-transfer, so WriteTimeout stays 0 while ReadTimeout is
-	// bounded far above any real upload to stop trickling clients.
+	// fuego defaults Read/WriteTimeout to 30s. WriteTimeout is bounded so a
+	// stalled client cannot hold a connection forever; the SSE handler clears
+	// its own deadline. ReadTimeout is bounded far above any real upload.
 	s := NewFuegoServer(Env{Port: "0"}, "test")
 	if s.ReadTimeout != 5*time.Minute {
 		t.Errorf("ReadTimeout = %v, want 5m (bounded, not unlimited)", s.ReadTimeout)
 	}
-	if s.WriteTimeout != 0 {
-		t.Errorf("WriteTimeout = %v, want 0 (SSE must not be cut)", s.WriteTimeout)
+	if s.WriteTimeout != 60*time.Second {
+		t.Errorf("WriteTimeout = %v, want 60s (bounded; SSE clears its own)", s.WriteTimeout)
 	}
 	if s.ReadHeaderTimeout == 0 {
 		t.Error("ReadHeaderTimeout = 0, want non-zero (slowloris guard)")

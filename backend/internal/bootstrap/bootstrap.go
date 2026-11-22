@@ -2,6 +2,7 @@ package bootstrap
 
 import (
 	"context"
+	"fmt"
 	"log"
 	"net/http"
 	"net/url"
@@ -37,18 +38,9 @@ type App struct {
 func Init(env config.Env, version string) *App {
 	traceShutdown, tracingEnabled := tracing.Setup(version)
 
-	dbURL := env.DatabaseURL
-	if dbURL == "" {
-		dbURL = os.Getenv("DATABASE_URL")
-	}
-	if dbURL == "" {
-		host := getEnv("DB_HOST", "localhost")
-		port := getEnv("DB_PORT", "5432")
-		user := getEnv("DB_USER", "postgres")
-		pass := getEnv("DB_PASSWORD", "")
-		name := getEnv("DB_NAME", "weddingdb")
-		sslmode := getEnv("DB_SSLMODE", "disable")
-		dbURL = "postgresql://" + user + ":" + url.QueryEscape(pass) + "@" + host + ":" + port + "/" + name + "?sslmode=" + sslmode
+	dbURL, err := resolveDatabaseURL(env)
+	if err != nil {
+		log.Fatal(err)
 	}
 
 	db, err := gorm.Open(postgres.Open(dbURL), &gorm.Config{})
@@ -228,11 +220,8 @@ func Init(env config.Env, version string) *App {
 	db.Model(&models.AdminUser{}).Count(&count)
 	if count == 0 {
 		password := os.Getenv("ADMIN_BOOTSTRAP_PASSWORD")
-		if password == "" {
-			log.Fatal("ADMIN_BOOTSTRAP_PASSWORD is required when creating the first admin")
-		}
-		if password == "replace-with-a-strong-one-time-password" {
-			log.Fatal("ADMIN_BOOTSTRAP_PASSWORD must not be the value shipped in .env.example; generate one with: openssl rand -hex 32")
+		if err := checkBootstrapPassword(password); err != nil {
+			log.Fatal(err)
 		}
 		hash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
 		if err != nil {
@@ -261,6 +250,46 @@ func Init(env config.Env, version string) *App {
 		SSEHub:          sseHub,
 		ShutdownTracing: traceShutdown,
 	}
+}
+
+// resolveDatabaseURL prefers DATABASE_URL and otherwise builds one from explicit
+// DB_* variables. Outside Compose (which injects DATABASE_URL) nothing is
+// defaulted: an unset credential or sslmode must fail instead of silently
+// connecting to localhost over plaintext.
+func resolveDatabaseURL(env config.Env) (string, error) {
+	if env.DatabaseURL != "" {
+		return env.DatabaseURL, nil
+	}
+	if dbURL := os.Getenv("DATABASE_URL"); dbURL != "" {
+		return dbURL, nil
+	}
+	required := []string{"DB_HOST", "DB_PORT", "DB_USER", "DB_PASSWORD", "DB_NAME", "DB_SSLMODE"}
+	values := make(map[string]string, len(required))
+	var missing []string
+	for _, key := range required {
+		values[key] = os.Getenv(key)
+		if values[key] == "" {
+			missing = append(missing, key)
+		}
+	}
+	if len(missing) > 0 {
+		return "", fmt.Errorf("DATABASE_URL is not set and %s must be set", strings.Join(missing, ", "))
+	}
+	return "postgresql://" + values["DB_USER"] + ":" + url.QueryEscape(values["DB_PASSWORD"]) + "@" +
+		values["DB_HOST"] + ":" + values["DB_PORT"] + "/" + values["DB_NAME"] + "?sslmode=" + values["DB_SSLMODE"], nil
+}
+
+// checkBootstrapPassword applies the same policy as account creation, so a
+// weak bootstrap value (the .env.example placeholder included) cannot seed the
+// first admin.
+func checkBootstrapPassword(password string) error {
+	if password == "" {
+		return fmt.Errorf("ADMIN_BOOTSTRAP_PASSWORD is required when creating the first admin")
+	}
+	if err := services.ValidatePassword(password); err != nil {
+		return fmt.Errorf("ADMIN_BOOTSTRAP_PASSWORD %w; generate one with: openssl rand -hex 32", err)
+	}
+	return nil
 }
 
 // warnBoot logs a failed best-effort boot step (index, backfill, cleanup):
