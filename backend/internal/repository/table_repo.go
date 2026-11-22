@@ -36,16 +36,28 @@ func (r *TableRepo) Create(ctx context.Context, t *models.BanquetTable) error {
 	return r.db.WithContext(ctx).Create(t).Error
 }
 
+// Update writes only the metadata a table edit owns. Position and rotation
+// belong to the layout save; writing them here would revert a drag another
+// device committed after this form loaded its snapshot.
+//
+// The layout version is bumped in the same transaction so a layout save that
+// loaded its snapshot before this edit conflicts instead of writing back a
+// stale capacity.
 func (r *TableRepo) Update(ctx context.Context, t *models.BanquetTable) error {
 	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		if err := tx.Model(t).Where("id = ? AND wedding_id = ?", t.ID, t.WeddingID).Updates(map[string]interface{}{
+		res := tx.Model(t).Where("id = ? AND wedding_id = ?", t.ID, t.WeddingID).Updates(map[string]interface{}{
 			"name":     t.Name,
 			"capacity": t.Capacity,
-			"x":        t.X,
-			"y":        t.Y,
-			"degree":   t.Degree,
 			"is_vip":   t.IsVip,
-		}).Error; err != nil {
+		})
+		if res.Error != nil {
+			return res.Error
+		}
+		if res.RowsAffected == 0 {
+			return gorm.ErrRecordNotFound
+		}
+		if err := tx.Model(&models.WeddingEvent{}).Where("id = ?", t.WeddingID).
+			UpdateColumn("layout_version", gorm.Expr("layout_version + 1")).Error; err != nil {
 			return err
 		}
 		return checkCapacityCoversSeats(tx, t.WeddingID, t.ID, t.Capacity)

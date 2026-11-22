@@ -15,9 +15,14 @@ import (
 	"weddingdb/internal/utils"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgconn"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
+
+// validRSVP is the set of values the guest column accepts. Offline sync
+// validates against it like the online handlers do.
+var validRSVP = map[string]bool{"confirmed": true, "pending": true, "declined": true, "no_response": true}
 
 type GuestService struct {
 	guestRepo *repository.GuestRepo
@@ -605,9 +610,21 @@ func IsRuleError(err error) bool {
 // syncFailed answers a mutation that did not apply. Only errors a later attempt
 // can clear (database, network) are retryable.
 func syncFailed(m SyncMutation, err error) SyncResult {
-	_, rule := errors.AsType[ruleError](err)
-	retryable := !rule && !errors.Is(err, gorm.ErrRecordNotFound)
-	return SyncResult{GuestID: m.GuestID, Status: "failed", Reason: err.Error(), Retryable: retryable}
+	return SyncResult{GuestID: m.GuestID, Status: "failed", Reason: err.Error(), Retryable: syncRetryable(err)}
+}
+
+// syncRetryable reports whether a failed mutation can succeed on a later
+// attempt. Rule violations, missing rows and a create whose ID already belongs
+// to another wedding cannot, so those must leave the client's queue.
+func syncRetryable(err error) bool {
+	if _, rule := errors.AsType[ruleError](err); rule {
+		return false
+	}
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return false
+	}
+	pgErr, ok := errors.AsType[*pgconn.PgError](err)
+	return !ok || pgErr.Code != "23505"
 }
 
 // maxMutationIDLen bounds the client-sent mutationId (a UUID in practice).
@@ -846,6 +863,9 @@ func applySyncFields(g *models.GuestRecord, p *SyncPayload, opTime time.Time, fi
 		fields["pax"] = p.Pax
 	}
 	if p.has("rsvp") && p.RSVP != "" && newer("rsvp") {
+		if !validRSVP[p.RSVP] {
+			return ruleError{fmt.Errorf("invalid RSVP status %q", p.RSVP)}
+		}
 		g.RSVP = p.RSVP
 		fields["rsvp"] = p.RSVP
 	}
@@ -959,6 +979,9 @@ func (s *GuestService) syncCreate(ctx context.Context, tx *gorm.DB, weddingID, g
 	}
 	if m.Payload.Pax < 1 {
 		m.Payload.Pax = 1
+	}
+	if m.Payload.RSVP != "" && !validRSVP[m.Payload.RSVP] {
+		return ruleError{fmt.Errorf("invalid RSVP status %q", m.Payload.RSVP)}
 	}
 	if err := s.validateSyncTableSeat(ctx, weddingID, m.Payload); err != nil {
 		return err

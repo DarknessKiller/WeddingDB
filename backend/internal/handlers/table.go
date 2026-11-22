@@ -110,7 +110,7 @@ func (h *TableHandler) Update(c fuego.ContextWithBody[TableRequest]) (any, error
 		if errors.Is(err, repository.ErrCapacityBelowSeated) {
 			return nil, fuego.BadRequestError{Title: err.Error()}
 		}
-		return nil, err
+		return nil, notFoundIfMissing(err, "Table not found")
 	}
 	return table, nil
 }

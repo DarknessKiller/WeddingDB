@@ -547,6 +547,28 @@ func TestSync_RejectsOverlongGuestText(t *testing.T) {
 	}
 }
 
+// An invalid RSVP must fail permanently: it can never fit the column, so a
+// retryable answer would keep the mutation queued forever.
+func TestSync_RejectsInvalidRSVP(t *testing.T) {
+	svc, db, wid := newGuestSyncService(t)
+	ctx := t.Context()
+	gid := uuid.New()
+	base := time.Now().Add(-time.Minute)
+	testutil.NoErr(t, db.Create(&models.GuestRecord{ID: gid, WeddingID: wid, Name: "A", Pax: 1, CreatedAt: base, UpdatedAt: base}).Error)
+
+	results, err := svc.Sync(ctx, wid, []SyncMutation{{
+		MutationID:      uuid.NewString(),
+		Op:              SyncOpUpdate,
+		GuestID:         gid.String(),
+		ClientUpdatedAt: base.Add(time.Second),
+		Payload:         &SyncPayload{RSVP: strings.Repeat("x", 21)},
+	}})
+	testutil.NoErr(t, err)
+	if results[0].Status != "failed" || results[0].Retryable {
+		t.Fatalf("invalid rsvp: got %+v, want failed and not retryable", results[0])
+	}
+}
+
 func TestSync_CheckInReplayDoesNotDuplicateNotes(t *testing.T) {
 	svc, db, wid := newGuestSyncService(t)
 	ctx := t.Context()

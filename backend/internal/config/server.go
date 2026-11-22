@@ -11,8 +11,12 @@ import (
 	"github.com/go-fuego/fuego"
 )
 
-func NewFuegoServer(env Env, version string) *fuego.Server {
+// NewFuegoServer builds the API server. middlewares wrap the whole mux, in
+// registration order from innermost to outermost, so they also see requests no
+// route matches — an OPTIONS preflight must be answered by CORS, not 405.
+func NewFuegoServer(env Env, version string, middlewares ...func(http.Handler) http.Handler) *fuego.Server {
 	s := fuego.NewServer(
+		fuego.WithGlobalMiddlewares(middlewares...),
 		fuego.WithAddr(":"+env.Port),
 		// fuego only caps JSON request bodies when this option is set; without
 		// it an unauthenticated client can stream an unbounded body into memory.

@@ -219,12 +219,12 @@ func (h *GuestHandler) Update(c fuego.ContextWithBody[GuestCreateRequest]) (any,
 			}
 		}
 	}
-	if body.UpdatedAt != nil {
-		guest.UpdatedAt = *body.UpdatedAt
-	} else {
-		// Older clients send no version: keep the previous unguarded behavior.
-		guest.UpdatedAt = time.Time{}
+	// Without the row version loaded by the edit form there is no way to detect
+	// a concurrent write, and this endpoint would silently revert it.
+	if body.UpdatedAt == nil {
+		return nil, fuego.BadRequestError{Title: "updatedAt is required"}
 	}
+	guest.UpdatedAt = *body.UpdatedAt
 	if err := h.guestService.UpdateWithSeat(ctx, guest, tid, seatNum); err != nil {
 		switch {
 		case errors.Is(err, services.ErrGuestCapExceeded):

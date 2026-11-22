@@ -162,3 +162,38 @@ func TestCapacityCannotDropBelowSeatedGuests(t *testing.T) {
 		t.Fatalf("capacity = %d, want 4 (rejected writes rolled back)", got.Capacity)
 	}
 }
+
+// A table edit must not write the layout-owned position, and must bump the
+// layout version so an in-flight layout save conflicts instead of writing a
+// stale capacity back.
+func TestTableUpdate_KeepsLayoutColumnsAndBumpsVersion(t *testing.T) {
+	_, db, wid := newGuestSyncService(t)
+	ctx := t.Context()
+	tid := uuid.New()
+	testutil.NoErr(t, db.Create(&models.BanquetTable{
+		ID: tid, WeddingID: wid, Name: "T1", Capacity: 10, X: 10, Y: 10, Degree: 5,
+	}).Error)
+	testutil.NoErr(t, db.Exec(`CREATE TABLE wedding_events (id TEXT PRIMARY KEY, name TEXT,
+		hall_width INTEGER, hall_height INTEGER, layout_version INTEGER NOT NULL DEFAULT 0,
+		created_at DATETIME, updated_at DATETIME, field_updated_at TEXT)`).Error)
+	testutil.NoErr(t, db.Exec(`INSERT INTO wedding_events (id, name) VALUES (?, 'W')`, wid).Error)
+
+	tables := NewTableService(repository.NewTableRepo(db), repository.NewGuestRepo(db), nil, db)
+	testutil.NoErr(t, tables.Update(ctx, &models.BanquetTable{
+		ID: tid, WeddingID: wid, Name: "T2", Capacity: 12, X: 99, Y: 99, Degree: 99,
+	}))
+
+	var got models.BanquetTable
+	testutil.NoErr(t, db.First(&got, "id = ?", tid).Error)
+	if got.X != 10 || got.Y != 10 || got.Degree != 5 {
+		t.Fatalf("layout columns changed: x=%v y=%v degree=%v", got.X, got.Y, got.Degree)
+	}
+	if got.Name != "T2" || got.Capacity != 12 {
+		t.Fatalf("metadata not written: name=%q capacity=%d", got.Name, got.Capacity)
+	}
+	var version int
+	testutil.NoErr(t, db.Raw(`SELECT layout_version FROM wedding_events WHERE id = ?`, wid).Scan(&version).Error)
+	if version != 1 {
+		t.Fatalf("layout_version = %d, want 1", version)
+	}
+}

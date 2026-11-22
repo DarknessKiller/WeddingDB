@@ -154,17 +154,19 @@ func Init(env config.Env, version string) *App {
 	layoutService := services.NewLayoutService(layoutRepo)
 	reportService := services.NewReportService(guestRepo, tableRepo, weddingRepo)
 
-	server := config.NewFuegoServer(env, version)
-
+	// Global middlewares wrap the whole mux, so CORS also answers OPTIONS
+	// requests no route matches. They are listed innermost first:
 	// ProxyAware must run outside tracing: it rewrites RemoteAddr in place, and
 	// both fuego's logger and the tracing span read RemoteAddr afterwards.
-	// Fuego executes middlewares outer-first, so proxy is registered first.
-	fuego.Use(server, middleware.ProxyAwareMiddleware)
-	fuego.Use(server, tracing.ServerTimingMiddleware)
-	if tracingEnabled {
-		fuego.Use(server, tracing.Middleware)
+	globalMiddlewares := []func(http.Handler) http.Handler{
+		middleware.CORSMiddleware,
+		tracing.ServerTimingMiddleware,
 	}
-	fuego.Use(server, middleware.CORSMiddleware)
+	if tracingEnabled {
+		globalMiddlewares = append(globalMiddlewares, tracing.Middleware)
+	}
+	globalMiddlewares = append(globalMiddlewares, middleware.ProxyAwareMiddleware)
+	server := config.NewFuegoServer(env, version, globalMiddlewares...)
 
 	// Serve uploaded files (block directory listing)
 	server.Mux.HandleFunc("GET /uploads/{file}", func(w http.ResponseWriter, r *http.Request) {

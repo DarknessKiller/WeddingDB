@@ -66,10 +66,19 @@ func TestGuestUpdate_PreservesCheckIn(t *testing.T) {
 	db := newGuestTestDB(t)
 	wid, gid := uuid.New(), uuid.New()
 	checkedIn := time.Now().Add(-time.Minute).UTC().Truncate(time.Second)
-	testutil.NoErr(t, db.Create(&models.GuestRecord{ID: gid, WeddingID: wid, Name: "Alice", Pax: 1, CheckedInAt: &checkedIn}).Error)
+	loaded := time.Now().Add(-time.Hour).UTC().Truncate(time.Second)
+	testutil.NoErr(t, db.Create(&models.GuestRecord{ID: gid, WeddingID: wid, Name: "Alice", Pax: 1, CheckedInAt: &checkedIn, UpdatedAt: loaded}).Error)
+	s := newGuestTestServer(db)
+
+	// Without the row version the endpoint cannot detect a lost update.
+	rec := serveJSON(s, http.MethodPut, "/api/weddings/"+wid.String()+"/guests/"+gid.String(), `{"name":"Alicia","pax":2}`)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("missing updatedAt status = %d, want 400", rec.Code)
+	}
 
 	// A stale edit form knows nothing about the check-in.
-	rec := serveJSON(newGuestTestServer(db), http.MethodPut, "/api/weddings/"+wid.String()+"/guests/"+gid.String(), `{"name":"Alicia","pax":2}`)
+	rec = serveJSON(s, http.MethodPut, "/api/weddings/"+wid.String()+"/guests/"+gid.String(),
+		`{"name":"Alicia","pax":2,"updatedAt":"`+loaded.Format(time.RFC3339Nano)+`"}`)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, body %s", rec.Code, rec.Body)
 	}

@@ -144,15 +144,16 @@ func (h *UploadHandler) Upload(c fuego.ContextWithBody[any]) (any, error) {
 	}()
 
 	var used int64
+	var dedupName string
+	var scopeHasHash bool
 	if idx, err := os.ReadFile(indexPath); err == nil {
 		for line := range strings.SplitSeq(string(idx), "\n") {
 			parts := strings.Fields(line)
 			if len(parts) >= 2 && parts[0] == hash {
-				return map[string]any{
-					"url":      "/uploads/" + parts[1],
-					"filename": parts[1],
-					"hash":     hash,
-				}, nil
+				dedupName = parts[1]
+				if len(parts) == 4 && parts[3] == scope.String() {
+					scopeHasHash = true
+				}
 			}
 			if len(parts) == 4 && parts[3] == scope.String() {
 				if size, err := strconv.ParseInt(parts[2], 10, 64); err == nil {
@@ -160,6 +161,21 @@ func (h *UploadHandler) Upload(c fuego.ContextWithBody[any]) (any, error) {
 				}
 			}
 		}
+	}
+	if dedupName != "" {
+		// Reused file costs no quota, but the scope still needs its own index
+		// line: deleting one scope's uploads must not remove a file another
+		// scope still references.
+		if !scopeHasHash {
+			if err := appendIndexLine(indexPath, hash, dedupName, 0, scope); err != nil {
+				slog.Warn("record reused upload failed", "file", dedupName, "err", err)
+			}
+		}
+		return map[string]any{
+			"url":      "/uploads/" + dedupName,
+			"filename": dedupName,
+			"hash":     hash,
+		}, nil
 	}
 	if used+header.Size > maxWeddingUploadBytes {
 		return nil, fuego.HTTPError{Status: http.StatusRequestEntityTooLarge, Title: "Upload storage for this wedding is full (max 100 MiB)"}
@@ -249,6 +265,14 @@ func removeWeddingUploads(weddingID uuid.UUID) {
 			kept = append(kept, line)
 		}
 	}
+	// A file may be referenced by another scope's line; only delete the ones
+	// no kept line still names.
+	stillReferenced := make(map[string]bool, len(kept))
+	for _, line := range kept {
+		if parts := strings.Fields(line); len(parts) >= 2 {
+			stillReferenced[parts[1]] = true
+		}
+	}
 	tmp := indexPath + ".tmp"
 	if err := os.WriteFile(tmp, []byte(strings.Join(kept, "\n")+"\n"), 0644); err != nil {
 		slog.Warn("write upload index failed", "err", err)
@@ -259,8 +283,24 @@ func removeWeddingUploads(weddingID uuid.UUID) {
 		return
 	}
 	for _, name := range removed {
+		if stillReferenced[name] {
+			continue
+		}
 		if err := os.Remove(filepath.Join(uploadDir, name)); err != nil {
 			slog.Warn("remove wedding upload failed", "file", name, "err", err)
 		}
 	}
+}
+
+// appendIndexLine records one scope's use of an already-stored file.
+func appendIndexLine(indexPath, hash, filename string, size int64, scope uuid.UUID) error {
+	f, err := os.OpenFile(indexPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	if err != nil {
+		return err
+	}
+	_, writeErr := fmt.Fprintf(f, "%s %s %d %s\n", hash, filename, size, scope)
+	if closeErr := f.Close(); writeErr == nil {
+		writeErr = closeErr
+	}
+	return writeErr
 }
