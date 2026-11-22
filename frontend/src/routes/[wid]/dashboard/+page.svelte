@@ -29,6 +29,7 @@ import ExternalLink from 'lucide-svelte/icons/external-link';
   let occupancy: TableOccupancy[] = $state([]);
   let loading = $state(true);
   let loaded = $state(false);
+  let loadFailed = $state(false);
 
   // Derive stats from the SSE-backed guestList store — updates in real time.
   let stats = $derived.by(() => {
@@ -76,17 +77,22 @@ import ExternalLink from 'lucide-svelte/icons/external-link';
   const DONUT_R = 40;
   const DONUT_CIRCUM = 2 * Math.PI * DONUT_R;
 
-  onMount(async () => {
+  async function loadDashboard() {
+    loading = true;
+    loadFailed = false;
     try {
       const wid = get(weddingId);
       occupancy = await getOccupancy(wid);
       loaded = true;
     } catch (e) {
+      loadFailed = true;
       addToast('Failed to load dashboard data', 'error');
     } finally {
       loading = false;
     }
-  });
+  }
+
+  onMount(loadDashboard);
 
   const activityIcons: Record<string, typeof CheckCircle> = {
     'check-circle': CheckCircle,
@@ -250,6 +256,11 @@ import ExternalLink from 'lucide-svelte/icons/external-link';
           {/each}
         </div>
       </div>
+    </div>
+  {:else if loadFailed}
+    <div class="text-center py-16">
+      <p class="text-sm text-gray-600 mb-3">Could not load dashboard data.</p>
+      <button onclick={loadDashboard} class="px-4 py-2.5 bg-red text-white rounded-xl text-sm font-semibold hover:bg-red-light transition-colors">Retry</button>
     </div>
   {:else}
     <div class="text-center text-gray-500 py-16 text-sm">No data available</div>

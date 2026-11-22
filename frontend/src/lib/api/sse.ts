@@ -41,8 +41,16 @@ class SSEClient {
 				headers: { Authorization: `Bearer ${accessToken}` },
 				signal: controller.signal
 			});
-			// An expired token would fail every retry: refresh it before reconnecting.
-			if (response.status === 401) await refreshIfNeeded();
+			// An expired token would fail every retry: refresh it and reconnect
+			// now, not after the backoff the 401 left behind.
+			if (response.status === 401) {
+				const refreshed = await refreshIfNeeded();
+				if (refreshed) {
+					this.reconnectDelay = 1000;
+					this.connect(this.wid);
+					return;
+				}
+			}
 			if (!response.ok || !response.body) throw new Error(`SSE request failed: ${response.status}`);
 
 			const reconnect = this.reconnectDelay > 1000;

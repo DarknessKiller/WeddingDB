@@ -149,6 +149,29 @@ describe('guestEvents store', () => {
 		expect(get(tableOccupancy).has('t1')).toBe(false);
 	});
 
+	it('patchGuest keeps guestList and guestMap on one object so a later remove works', async () => {
+		const { seedGuests, patchGuest, removeGuest, guestList, guestMap } = await freshModule();
+		seedGuests([makeGuest({ id: 'g1' })]);
+
+		patchGuest('g1', { checkedIn: true });
+
+		expect(get(guestMap).get('g1')).toBe(get(guestList)[0]);
+		removeGuest('g1');
+		expect(get(guestList)).toHaveLength(0);
+	});
+
+	it('accepts a server event even after a fast local clock stamped a newer optimistic row', async () => {
+		const { initializeSSE, seedGuests, upsertGuest, guestList } = await freshModule();
+		initializeSSE(() => Promise.resolve([]));
+		seedGuests([makeGuest({ id: 'g1', name: 'Server', updatedAt: new Date('2026-01-01T10:00:00Z') })]);
+		// Device clock runs years ahead; the optimistic patch is not server time.
+		upsertGuest({ ...get(guestList)[0], name: 'Local', updatedAt: new Date('2030-01-01T00:00:00Z') });
+
+		sseState.eventHandler!(makeEvent({ guest: { id: 'g1', name: 'Server newer', email: '', pax: 2, rsvp: 'confirmed', isVip: false, notes: '', dietary: [], tableId: 't1', seatNum: 1, checkedInAt: null, angbaoAmt: null, giftItem: null, updatedAt: '2026-01-01T10:00:05Z' } }));
+
+		expect(get(guestList)[0].name).toBe('Server newer');
+	});
+
 	it('create events recalculate occupancy', async () => {
 		const { initializeSSE, seedGuests, tableOccupancy } = await freshModule();
 		initializeSSE(() => Promise.resolve([]));

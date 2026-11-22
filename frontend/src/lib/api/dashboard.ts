@@ -1,10 +1,6 @@
 import { apiFetch } from './client';
+import { getOccupancy as getRawOccupancy } from './tables';
 import type { TableOccupancy } from '#lib/types/index.ts';
-
-interface RawOccupancy {
-  TableID: string;
-  Pax: number;
-}
 
 async function fetchJSON<T>(path: string): Promise<T> {
   const res = await apiFetch(path);
@@ -14,7 +10,7 @@ async function fetchJSON<T>(path: string): Promise<T> {
 
 export async function getOccupancy(weddingId: string): Promise<TableOccupancy[]> {
   const [occData, tableData] = await Promise.all([
-    fetchJSON<RawOccupancy[]>(`/api/weddings/${weddingId}/occupancy`),
+    getRawOccupancy(weddingId),
     fetchJSON<{ id: string; name: string; capacity: number; isVip?: boolean }[]>(`/api/weddings/${weddingId}/tables`)
   ]);
 

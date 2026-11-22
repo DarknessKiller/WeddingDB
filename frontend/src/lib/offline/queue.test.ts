@@ -1,11 +1,12 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 const apiFetch = vi.fn();
+const clearGuestCaches = vi.hoisted(() => vi.fn());
 vi.mock('#lib/api/client.ts', () => ({ apiFetch: (...a: unknown[]) => apiFetch(...a) }));
 vi.mock('#lib/stores/index.ts', () => ({ addToast: vi.fn() }));
 vi.mock('#lib/stores/guestEvents.ts', async () => {
 	const { writable } = await import('svelte/store');
-	return { applyGuestResponse: vi.fn(), guestMap: writable(new Map([['g1', { updatedAt: new Date('2025-12-31T00:00:00Z') }]])) };
+	return { applyGuestResponse: vi.fn(), clearGuestCaches, guestMap: writable(new Map([['g1', { updatedAt: new Date('2025-12-31T00:00:00Z') }]])) };
 });
 
 function memoryStorage() {
@@ -30,6 +31,7 @@ function ok(results: unknown[]) {
 beforeEach(() => {
 	vi.resetModules();
 	apiFetch.mockReset();
+	clearGuestCaches.mockReset();
 	vi.stubGlobal('localStorage', memoryStorage());
 	vi.stubGlobal('window', { dispatchEvent: () => true });
 });
@@ -73,6 +75,19 @@ describe('offline queue storage', () => {
 		for (let i = 0; i < localStorage.length; i++) expect(localStorage.getItem(localStorage.key(i)!)).not.toContain('bob@x.io');
 	});
 
+	it('clears the previous account cached guest lists when the owner changes', async () => {
+		const { claimQueues } = await import('./queue');
+		await claimQueues('id-a', 'alice@x.io', () => true);
+		localStorage.setItem('offline_cache_w1', '[{"email":"a@b.c"}]');
+
+		await claimQueues('id-b', 'bob@x.io', () => true);
+		expect(clearGuestCaches).toHaveBeenCalledOnce();
+
+		clearGuestCaches.mockClear();
+		await claimQueues('id-b', 'bob@x.io', () => true);
+		expect(clearGuestCaches).not.toHaveBeenCalled();
+	});
+
 	it('keeps the edits when the new user declines the discard', async () => {
 		const { enqueue, getQueue, claimQueues } = await import('./queue');
 		await claimQueues('id-a', 'alice@x.io', () => true);
@@ -113,6 +128,65 @@ describe('offline queue storage', () => {
 		]));
 
 		expect(await syncQueue('w1')).toEqual({ applied: 0, skipped: 0, dropped: 1 });
+		expect(getQueue('w1').map((m) => m.mutationId)).toEqual(['m2']);
+	});
+
+	it('403 keeps the queue for the owner-change prompt instead of discarding it', async () => {
+		const { enqueue, getQueue, syncQueue } = await import('./queue');
+		enqueue('w1', mutation(1));
+		apiFetch.mockResolvedValue({ ok: false, status: 403, text: async () => 'forbidden' } as Response);
+
+		await expect(syncQueue('w1')).rejects.toThrow(/403/);
+		expect(getQueue('w1').map((m) => m.mutationId)).toEqual(['m1']);
+	});
+
+	it('merges a mutation another tab writes while enqueue is saving', async () => {
+		const map = new Map<string, string>();
+		let injected = false;
+		vi.stubGlobal('localStorage', {
+			get length() { return map.size; },
+			key: (i: number) => [...map.keys()][i] ?? null,
+			getItem: (k: string) => map.get(k) ?? null,
+			removeItem: (k: string) => void map.delete(k),
+			setItem: (k: string, v: string) => {
+				map.set(k, String(v));
+				if (k === 'offline_queue_w1' && !injected) {
+					injected = true;
+					// Another tab's write lands between our read and our next read.
+					map.set(k, JSON.stringify([mutation(99)]));
+				}
+			}
+		});
+		const { enqueue, getQueue } = await import('./queue');
+
+		enqueue('w1', mutation(1));
+
+		expect(getQueue('w1').map((m) => m.mutationId)).toEqual(['m99', 'm1']);
+	});
+
+	it('re-drops mutations another tab writes back while dequeuing', async () => {
+		const map = new Map<string, string>();
+		let armed = false;
+		let injected = false;
+		vi.stubGlobal('localStorage', {
+			get length() { return map.size; },
+			key: (i: number) => [...map.keys()][i] ?? null,
+			getItem: (k: string) => map.get(k) ?? null,
+			removeItem: (k: string) => void map.delete(k),
+			setItem: (k: string, v: string) => {
+				map.set(k, String(v));
+				if (armed && !injected && k === 'offline_queue_w1') {
+					injected = true;
+					map.set(k, JSON.stringify([mutation(1), mutation(2)]));
+				}
+			}
+		});
+		const { dequeueByIds, getQueue } = await import('./queue');
+		localStorage.setItem('offline_queue_w1', JSON.stringify([mutation(1)]));
+		armed = true;
+
+		dequeueByIds('w1', ['m1']);
+
 		expect(getQueue('w1').map((m) => m.mutationId)).toEqual(['m2']);
 	});
 

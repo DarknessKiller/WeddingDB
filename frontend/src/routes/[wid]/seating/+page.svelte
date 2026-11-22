@@ -9,7 +9,7 @@
   import { listTables } from '#lib/api/tables.ts';
   import { getLayout, saveLayout } from '#lib/api/layout.ts';
   import Badge from '#lib/components/ui/Badge.svelte';
-  import { cn } from '#lib/utils/index.ts';
+  import { cn, getInitials } from '#lib/utils/index.ts';
   import { page } from '$app/state';
   import { onMount } from 'svelte';
   import Users from 'lucide-svelte/icons/users';
@@ -165,10 +165,6 @@ import Pencil from 'lucide-svelte/icons/pencil';
     showMobilePanel = false;
     assigningSeat = null;
     guestSearch = '';
-  }
-
-  function getInitials(name: string): string {
-    return name.split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase();
   }
 
   async function assignGuestToSeat(guest: Guest, seatNum: number) {

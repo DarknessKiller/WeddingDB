@@ -102,6 +102,7 @@ import MapPin from 'lucide-svelte/icons/map-pin';
         ...kioskPayload(),
       });
       wedding = updated;
+      weddingTitle.set(updated.name ?? '');
       setShowSeatNumbers(updated.id, updated.showSeatNumbers ?? false);
       weddingNameEdit = updated.name;
       addToast('Kiosk settings saved', 'success');

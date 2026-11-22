@@ -45,6 +45,7 @@ import Users from 'lucide-svelte/icons/users';
   let showUnassignConfirm = $state(false);
   let unassignTarget = $state<Guest | null>(null);
   let showDeleteConfirm = $state(false);
+  let showBulkDeleteConfirm = $state(false);
   let deleteTarget = $state<Guest | null>(null);
 
   // Derive guest list from SSE store — updates in real time.
@@ -397,6 +398,16 @@ import Users from 'lucide-svelte/icons/users';
   let bulkMoveSeatStart = $state(1);
   let bulkMoveSaving = $state(false);
 
+  function requestBulkDelete() {
+    if (selectedIds.size === 0) return;
+    showBulkDeleteConfirm = true;
+  }
+
+  async function confirmBulkDelete() {
+    showBulkDeleteConfirm = false;
+    await bulkDelete();
+  }
+
   async function bulkDelete() {
     if (selectedIds.size === 0) return;
     const ids = [...selectedIds];
@@ -503,8 +514,7 @@ import Users from 'lucide-svelte/icons/users';
       />
     </div>
     <div class="flex items-center gap-1 sm:gap-2 flex-wrap">
-      <select bind:value={rsvpFilter} class="px-2 sm:px-3 py-2 border border-gray-200 rounded-xl text-sm bg-white focus:border-gold outline-none">
-        aria-label="Filter by RSVP status"
+      <select bind:value={rsvpFilter} aria-label="Filter by RSVP status" class="px-2 sm:px-3 py-2 border border-gray-200 rounded-xl text-sm bg-white focus:border-gold outline-none">
         <option value="all">All Status</option>
         <option value="confirmed">Confirmed</option>
         <option value="pending">Pending</option>
@@ -528,7 +538,7 @@ import Users from 'lucide-svelte/icons/users';
     <div class="mb-4 px-4 py-3 bg-red-50 border border-red-100 rounded-xl flex items-center gap-3 text-sm">
       <span class="font-semibold text-red">{selectedIds.size} selected</span>
       <button onclick={openBulkMove} class="px-3 py-1.5 bg-white/90 border border-black/[0.06] rounded-lg text-xs font-medium hover:bg-gray-50">Move Table</button>
-      <button onclick={bulkDelete} class="px-3 py-1.5 bg-white border border-red-200 rounded-lg text-xs font-medium text-red hover:bg-red-50">Delete</button>
+      <button onclick={requestBulkDelete} class="px-3 py-1.5 bg-white border border-red-200 rounded-lg text-xs font-medium text-red hover:bg-red-50">Delete</button>
     </div>
   {/if}
 
@@ -565,11 +575,14 @@ import Users from 'lucide-svelte/icons/users';
                 <input type="checkbox" aria-label="Select all guests" checked={selectedIds.size === filtered.length && filtered.length > 0} onchange={toggleSelectAll} class="rounded w-6 h-6" />
               </th>
               {#each columns as col}
-                <th
-                  class="px-4 py-3 text-left text-[12px] font-semibold uppercase tracking-wider text-gray-500 cursor-pointer select-none hover:text-gray-700"
-                  onclick={() => toggleSort(col.key)}
-                >
-                  <span class="inline-flex items-center gap-1">{col.label} <ArrowUpDown class="w-3 h-3" /></span>
+                <th class="px-4 py-3 text-left">
+                  <button
+                    type="button"
+                    class="inline-flex items-center gap-1 text-[12px] font-semibold uppercase tracking-wider text-gray-500 cursor-pointer select-none hover:text-gray-700"
+                    onclick={() => toggleSort(col.key)}
+                  >
+                    {col.label} <ArrowUpDown class="w-3 h-3" />
+                  </button>
                 </th>
               {/each}
               <th class="px-4 py-3 text-left text-[12px] font-semibold uppercase tracking-wider text-gray-500">Notes</th>
@@ -820,4 +833,15 @@ import Users from 'lucide-svelte/icons/users';
   variant="danger"
   onConfirm={confirmDelete}
   onCancel={() => { showDeleteConfirm = false; deleteTarget = null; }}
+/>
+
+<ConfirmDialog
+  open={showBulkDeleteConfirm}
+  title="Delete Guests"
+  message={`Delete ${selectedIds.size} selected guest${selectedIds.size === 1 ? '' : 's'}? This cannot be undone.`}
+  confirmLabel="Delete"
+  cancelLabel="Cancel"
+  variant="danger"
+  onConfirm={confirmBulkDelete}
+  onCancel={() => { showBulkDeleteConfirm = false; }}
 />

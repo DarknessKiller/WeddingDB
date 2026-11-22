@@ -78,7 +78,7 @@ import Map from 'lucide-svelte/icons/map';
   $effect(() => {
     const isOpen = $isDrawerOpen;
     if (prevDrawerOpen && !isOpen) {
-      loadData();
+      loadData().catch((e: any) => addToast(e.message ?? 'Failed to reload tables', 'error'));
     }
     prevDrawerOpen = isOpen;
   });

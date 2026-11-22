@@ -58,6 +58,13 @@ describe('guestPatch', () => {
 		});
 	});
 
+	it('accepts numeric angbao values that a number input binds', () => {
+		// `type="number"` makes Svelte bind a number, not a string.
+		expect(guestPatch(guest({ angbaoAmount: 50 }), form({ angbaoAmt: 200 as unknown as string }))).toEqual({ angbaoAmt: 200 });
+		expect(guestPatch(guest({ angbaoAmount: 50 }), form({ angbaoAmt: 0 as unknown as string }))).toEqual({ angbaoAmt: 0 });
+		expect(guestPatch(guest({ angbaoAmount: 50 }), form({ angbaoAmt: null as unknown as string }))).toEqual({ angbaoAmt: null });
+	});
+
 	it('includes changed fields', () => {
 		expect(
 			guestPatch(

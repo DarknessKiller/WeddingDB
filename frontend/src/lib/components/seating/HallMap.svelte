@@ -718,7 +718,9 @@ import RotateCcw from 'lucide-svelte/icons/rotate-ccw';
   }
 
   function handleKeydown(e: KeyboardEvent) {
-    if (mode !== 'edit' || isTypingTarget(e.target)) return;
+    // A dialog or drawer owns the keyboard while open: deleting elements behind
+    // it would hit something the user cannot see.
+    if (mode !== 'edit' || isTypingTarget(e.target) || document.querySelector('[role="dialog"]')) return;
     const mod = e.metaKey || e.ctrlKey;
     if (mod && e.key.toLowerCase() === 'z') {
       e.preventDefault();

@@ -1,11 +1,11 @@
 <script lang="ts">
-  import { onMount, onDestroy } from 'svelte';
   import { page } from '$app/state';
+  import { isNetworkError } from '#lib/api/client.ts';
   import Sidebar from '#lib/components/layout/Sidebar.svelte';
   import Header from '#lib/components/layout/Header.svelte';
   import Drawer from '#lib/components/ui/Drawer.svelte';
   import { selectedGuest, isDrawerOpen, drawerStartEditing, drawerCreateMode, sidebarCollapsed, showSeatNumbers, setShowSeatNumbers } from '#lib/stores/index.ts';
-  import { weddingId, setWeddingId } from '#lib/stores/weddingId.ts';
+  import { setWeddingId } from '#lib/stores/weddingId.ts';
   import { weddingTitle } from '#lib/stores/weddingTitle.ts';
   import { validateToken } from '#lib/utils/auth.ts';
   import { fetchAllGuests } from '#lib/api/guests.ts';
@@ -23,55 +23,72 @@
   let authChecked = $state(false);
   let guestCount = $state(0);
   let tables = $state<BanquetTable[]>([]);
-  let cleanupSSE: (() => void) | undefined;
   let offline = $state(typeof navigator !== 'undefined' ? !navigator.onLine : false);
   let queued = $state(0);
+  let loadError = $state(false);
 
   function refreshQueued() {
     if (typeof window === 'undefined' || !wid) return;
     try { queued = JSON.parse(localStorage.getItem(`offline_queue_${wid}`) || '[]').length; } catch { queued = 0; }
   }
 
-  let destroyed = false;
-  let cleanupListeners: (() => void) | undefined;
-  onMount(async () => {
-    if (!await validateToken() || destroyed) return;
-    if (wid) {
-      setWeddingId(wid);
+  // Bound to the wedding the layout opened: a slow response for wedding A
+  // must not land under wedding B, and its cache key must match A.
+  const loadGuests = async (forWid: string) => {
+    try {
+      return (await fetchAllGuests(forWid)).map(toGuest);
+    } catch (e) {
+      // Only a network failure may fall back to cache. A 403 or other 4xx is
+      // not offline, and showing another session's cached guests would leak them.
+      if (!isNetworkError(e)) throw e;
+      const cached = readCachedGuests(forWid);
+      if (cached) return cached;
+      throw e;
     }
-    authChecked = true;
+  };
 
-    // Bound to the wedding the layout opened: a slow response for wedding A
-    // must not land under wedding B, and its cache key must match A.
-    const loadGuests = async (forWid: string) => {
-      try {
-        return (await fetchAllGuests(forWid)).map(toGuest);
-      } catch {
-        const cached = readCachedGuests(forWid);
-        if (cached) return cached;
-        throw new Error('offline');
-      }
-    };
+  async function retryGuests() {
+    loadError = false;
+    try {
+      const guests = await refreshGuests(() => loadGuests(wid), wid);
+      guestCount = guests.length;
+    } catch {
+      loadError = true;
+    }
+  }
+
+  // One setup per wedding id: changing wedding tears down SSE and reloads.
+  $effect(() => {
+    const forWid = wid;
+    if (!forWid) return;
+    let cancelled = false;
+    let localCleanupSSE: (() => void) | undefined;
+    let localCleanupListeners: (() => void) | undefined;
+
     // Queue drains before reseed, on SSE reconnect too.
     const syncThenLoad = async () => {
-      try { await syncQueue(wid); } catch {}
-      return loadGuests(wid);
+      try { await syncQueue(forWid); } catch {}
+      return loadGuests(forWid);
     };
 
     let syncing = false;
     async function doSync() {
       // One drain at a time: online+visible can fire together, and two drains
       // would replay the same mutations twice.
-      if (syncing || !wid || typeof window === 'undefined' || !navigator.onLine) return;
+      if (syncing || cancelled || typeof window === 'undefined' || !navigator.onLine) return;
       syncing = true;
       try {
-        await syncQueue(wid);
+        await syncQueue(forWid);
         // Refresh inside the syncing window so SSE events arriving mid-fetch
         // are queued and replayed after the seed instead of being clobbered.
-        const guests = await refreshGuests(() => loadGuests(wid), wid);
+        const guests = await refreshGuests(() => loadGuests(forWid), forWid);
+        if (cancelled) return;
         guestCount = guests.length;
+        loadError = false;
         refreshQueued();
-      } catch {} finally {
+      } catch {
+        if (!cancelled) loadError = true;
+      } finally {
         syncing = false;
       }
     }
@@ -79,47 +96,59 @@
     const onOnline = () => { offline = false; refreshQueued(); doSync(); };
     const onOffline = () => { offline = true; };
     const onVis = () => { if (document.visibilityState === 'visible' && navigator.onLine) doSync(); };
-    window.addEventListener('online', onOnline);
-    window.addEventListener('offline', onOffline);
-    document.addEventListener('visibilitychange', onVis);
-    window.addEventListener('storage', refreshQueued);
-    // same-tab queue updates: storage events only fire in other tabs
-    window.addEventListener('offline-queue-changed', refreshQueued);
-    cleanupListeners = () => {
-      window.removeEventListener('online', onOnline);
-      window.removeEventListener('offline', onOffline);
-      document.removeEventListener('visibilitychange', onVis);
-      window.removeEventListener('storage', refreshQueued);
-      window.removeEventListener('offline-queue-changed', refreshQueued);
+
+    void (async () => {
+      if (!await validateToken() || cancelled) return;
+      setWeddingId(forWid);
+      authChecked = true;
+
+      window.addEventListener('online', onOnline);
+      window.addEventListener('offline', onOffline);
+      document.addEventListener('visibilitychange', onVis);
+      window.addEventListener('storage', refreshQueued);
+      // same-tab queue updates: storage events only fire in other tabs
+      window.addEventListener('offline-queue-changed', refreshQueued);
+      localCleanupListeners = () => {
+        window.removeEventListener('online', onOnline);
+        window.removeEventListener('offline', onOffline);
+        document.removeEventListener('visibilitychange', onVis);
+        window.removeEventListener('storage', refreshQueued);
+        window.removeEventListener('offline-queue-changed', refreshQueued);
+      };
+      refreshQueued();
+
+      // initial sync before seed
+      if (navigator.onLine) { try { await syncQueue(forWid); } catch {} }
+
+      if (cancelled) return;
+      // Subscribe before the snapshot; guestEvents queues mutations until seeding completes.
+      localCleanupSSE = initializeSSE(syncThenLoad);
+      try {
+        // refreshGuests keeps the syncing window open across fetch+seed even if
+        // initializeSSE early-returned, so mid-fetch SSE events can't be clobbered.
+        const guests = await refreshGuests(() => loadGuests(forWid), forWid);
+        if (cancelled) return;
+        guestCount = guests.length;
+        loadError = false;
+      } catch {
+        if (!cancelled) loadError = true;
+      }
+
+      listTables(forWid).then((t) => {
+        if (!cancelled) tables = t;
+      }).catch(() => {});
+      getWedding(forWid).then((w) => {
+        if (cancelled) return;
+        weddingTitle.set(w.name || '');
+        setShowSeatNumbers(forWid, w.showSeatNumbers ?? false);
+      }).catch(() => {});
+    })();
+
+    return () => {
+      cancelled = true;
+      localCleanupListeners?.();
+      localCleanupSSE?.();
     };
-    refreshQueued();
-
-    // initial sync before seed
-    if (navigator.onLine) { try { await syncQueue(wid); } catch {} }
-
-    if (destroyed) return;
-    // Subscribe before the snapshot; guestEvents queues mutations until seeding completes.
-    cleanupSSE = initializeSSE(syncThenLoad);
-    try {
-      // refreshGuests keeps the syncing window open across fetch+seed even if
-      // initializeSSE early-returned, so mid-fetch SSE events can't be clobbered.
-      const guests = await refreshGuests(() => loadGuests(wid), wid);
-      guestCount = guests.length;
-    } catch {}
-
-    listTables($weddingId).then((t) => {
-      tables = t;
-    }).catch(() => {});
-    getWedding(wid).then((w) => {
-      weddingTitle.set(w.name || '');
-      setShowSeatNumbers(wid, w.showSeatNumbers ?? false);
-    }).catch(() => {});
-  });
-
-  onDestroy(() => {
-    destroyed = true;
-    cleanupListeners?.();
-    cleanupSSE?.();
   });
 
   $effect(() => {
@@ -155,6 +184,9 @@
         <div class="offline-banner">Offline — changes queued{queued ? ` (${queued})` : ''}</div>
       {:else if queued}
         <div class="offline-banner queued">{queued} queued — syncing on reconnect <button onclick={async () => { await syncQueue(wid); refreshQueued(); }}>Sync now</button></div>
+      {/if}
+      {#if loadError}
+        <div class="offline-banner">Could not load guests <button onclick={retryGuests}>Retry</button></div>
       {/if}
       <Header />
       <main class="main-content">

@@ -79,6 +79,14 @@ describe('apiFetch refresh recovery', () => {
 		expect(getAuth()).toMatchObject({ accessToken: 'old-access', refreshToken: 'refresh-1' });
 	});
 
+	it('classifies fetch failures as network errors and 4xx as real errors', async () => {
+		const { isNetworkError } = await import('./client');
+		expect(isNetworkError(new TypeError('Failed to fetch'))).toBe(true);
+		expect(isNetworkError(new TypeError('Load failed'))).toBe(true);
+		expect(isNetworkError(new Error('Failed to list guests: 403'))).toBe(false);
+		expect(isNetworkError(new Error('Failed to list guests: 500'))).toBe(false);
+	});
+
 	it('clears the session when the server rejects the refresh token', async () => {
 		fetchMock
 			.mockResolvedValueOnce(res({}, 401))

@@ -62,4 +62,16 @@ describe('SSEClient', () => {
 		await vi.waitFor(() => expect(refreshIfNeeded).toHaveBeenCalledOnce());
 		client.disconnect();
 	});
+
+	it('reconnects right after a successful refresh instead of waiting out the backoff', async () => {
+		fetchMock
+			.mockResolvedValueOnce({ ok: false, status: 401, body: null })
+			.mockResolvedValue({ ok: true, status: 200, body: new ReadableStream({ start() {} }) });
+		const { getSSIClient } = await import('./sse');
+		const client = getSSIClient();
+		client.connect('wedding-123');
+
+		await vi.waitFor(() => expect(fetchMock.mock.calls.length).toBeGreaterThanOrEqual(2), { timeout: 500 });
+		client.disconnect();
+	});
 });

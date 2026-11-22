@@ -7,9 +7,11 @@ const BASE = '';
 // Serialize concurrent refresh attempts — only one refresh in flight at a time.
 let refreshPromise: Promise<boolean> | null = null;
 
-export function getAccessToken(): string {
-	const { accessToken } = getAuth();
-	return accessToken ?? '';
+// Chrome/Firefox say "Failed to fetch"/"NetworkError"; Safari says "Load failed".
+// A failed request is a fallback-to-cache case; a 4xx is not.
+export function isNetworkError(e: unknown): boolean {
+	if (typeof navigator !== 'undefined' && navigator.onLine === false) return true;
+	return e instanceof TypeError && /failed to fetch|networkerror|load failed/i.test((e as Error).message || '');
 }
 
 async function doRefresh(): Promise<boolean> {

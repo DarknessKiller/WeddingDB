@@ -1,7 +1,7 @@
 import { apiFetch } from '#lib/api/client.ts';
 import { addToast } from '#lib/stores/index.ts';
 import { get } from 'svelte/store';
-import { applyGuestResponse, guestMap } from '#lib/stores/guestEvents.ts';
+import { applyGuestResponse, clearGuestCaches, guestMap } from '#lib/stores/guestEvents.ts';
 import type { GuestResponse } from '#lib/api/guests.ts';
 
 export type SyncOp = 'create' | 'update' | 'delete' | 'checkin' | 'checkout';
@@ -37,13 +37,24 @@ export function enqueue(wid: string, m: QueuedMutation) {
 	}
 	q.push(m);
 	setQueue(wid, q);
+	// Another tab can write between the read above and this write. Re-read and
+	// merge by mutationId so its edit survives ours.
+	const persisted = getQueue(wid);
+	if (!persisted.some((x) => x.mutationId === m.mutationId)) {
+		persisted.push(m);
+		setQueue(wid, persisted);
+	}
 	notifyChanged();
-	addToast(`Queued offline (${q.length})`, 'info');
+	addToast(`Queued offline (${Math.max(q.length, persisted.length)})`, 'info');
 }
 
 export function dequeueByIds(wid: string, ids: string[]) {
 	const s = new Set(ids);
 	setQueue(wid, getQueue(wid).filter(x => !s.has(x.mutationId)));
+	// A concurrent tab may have written the removed mutations back; drop them again.
+	const after = getQueue(wid);
+	const left = after.filter((x) => !s.has(x.mutationId));
+	if (left.length !== after.length) setQueue(wid, left);
 	notifyChanged();
 }
 
@@ -88,7 +99,9 @@ async function drainQueue(wid: string): Promise<SyncSummary> {
 			const t = await res.text().catch(() => '');
 			// A rejected body is rejected every time: keeping it would block the
 			// queue for good. Drop the chunk and say so.
-			if (res.status >= 400 && res.status < 500 && res.status !== 401 && res.status !== 429) {
+			// 403 means the queue belongs to another account (or lacks rights):
+			// never drop it silently; it must reach the owner-change prompt.
+			if (res.status >= 400 && res.status < 500 && res.status !== 401 && res.status !== 403 && res.status !== 429) {
 				dequeueByIds(wid, chunk.map((m) => m.mutationId));
 				addToast(`${chunk.length} offline edit${chunk.length === 1 ? '' : 's'} discarded: rejected by the server`, 'error');
 				continue;
@@ -154,6 +167,8 @@ export async function claimQueues(
 		// Declined: keep the edits and the old owner, so the next login asks again.
 		if (count && !confirmDiscard(count, prevLabel)) return;
 		for (const wid of left) localStorage.removeItem(qkey(wid));
+		// The previous account's cached guest lists hold emails and angbao amounts.
+		clearGuestCaches();
 		notifyChanged();
 	}
 	localStorage.setItem(OWNER_KEY, ownerId);

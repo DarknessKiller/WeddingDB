@@ -1,4 +1,4 @@
-import type { Guest, BanquetTable } from '#lib/types/index.ts';
+import type { Guest } from '#lib/types/index.ts';
 import { weddingId } from '#lib/stores/weddingId.ts';
 import { get } from 'svelte/store';
 
@@ -29,14 +29,6 @@ export function mapGuest(raw: PublicGuest): Guest {
 	};
 }
 
-export async function publicSearchGuests(query: string): Promise<Guest[]> {
-	const wid = get(weddingId);
-	const res = await fetch(`/api/public/weddings/${wid}/guests/search?q=${encodeURIComponent(query)}`);
-	if (!res.ok) throw new Error('Search failed');
-	const data: PublicGuest[] = await res.json();
-	return data.map(mapGuest);
-}
-
 export async function publicListGuests(opts: { signal?: AbortSignal } = {}): Promise<Guest[]> {
 	const wid = get(weddingId);
 	const all: Guest[] = [];
@@ -49,11 +41,4 @@ export async function publicListGuests(opts: { signal?: AbortSignal } = {}): Pro
 		cursor = data.nextCursor ?? undefined;
 	} while (cursor);
 	return all;
-}
-
-export async function publicListTables(): Promise<BanquetTable[]> {
-	const wid = get(weddingId);
-	const res = await fetch(`/api/public/weddings/${wid}/tables`);
-	if (!res.ok) throw new Error('Failed to list tables');
-	return res.json();
 }

@@ -65,7 +65,10 @@ import Users from 'lucide-svelte/icons/users';
           </div>
           <div class="form-field">
             <label for="table-capacity" class="form-label">Capacity</label>
-            <input id="table-capacity" type="number" min="1" bind:value={capacity} class="form-input" />
+            <input id="table-capacity" type="number" min={Math.max(1, occupied)} bind:value={capacity} class="form-input" />
+            {#if capacity < Math.max(1, occupied)}
+              <p class="text-xs text-red-600 mt-1">Capacity cannot be below the {occupied} guests already seated.</p>
+            {/if}
           </div>
           <label class="form-check-label">
             <input type="checkbox" bind:checked={isVip} class="rounded" /> VIP Table

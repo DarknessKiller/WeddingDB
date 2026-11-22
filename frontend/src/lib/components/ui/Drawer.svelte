@@ -21,7 +21,7 @@ import ArrowUpDown from 'lucide-svelte/icons/arrow-up-down';
   import { guestPatch } from '#lib/utils/guestPatch.ts';
   import { addToast } from '#lib/stores/index.ts';
   import { weddingId } from '#lib/stores/weddingId.ts';
-  import { guestList } from '#lib/stores/guestEvents.ts';
+  import { patchGuest } from '#lib/stores/guestEvents.ts';
   import { updateGuest, createGuest, checkInGuest, checkOutGuest, unassignSeat, getGuest, ConflictError } from '#lib/api/guests.ts';
   import { toGuest } from '#lib/utils/guestTransform.ts';
   import { get } from 'svelte/store';
@@ -177,8 +177,13 @@ import ArrowUpDown from 'lucide-svelte/icons/arrow-up-down';
     giftItem: '',
   });
 
+  // Reset the form when the drawer switches guest or enters edit mode. An SSE
+  // upsert replaces the guest object mid-edit, and that must not wipe typed fields.
+  let formKey: { id: string | undefined; editing: boolean } | undefined;
   $effect(() => {
     if (!guest) return;
+    if (formKey?.id === guest.id && formKey.editing === editing) return;
+    formKey = { id: guest.id, editing };
     form.name = guest.name;
     form.email = guest.email ?? '';
     form.pax = guest.pax;
@@ -225,12 +230,6 @@ import ArrowUpDown from 'lucide-svelte/icons/arrow-up-down';
 
   function cancel() { editing = false; onClose(); }
 
-  // Heal the guest list through the store when the SSE echo is lost —
-  // same update path the guests page uses.
-  function pushGuestPatch(id: string, patch: Partial<Guest>) {
-    guestList.update(list => list.map(g => g.id === id ? { ...g, ...patch } : g));
-  }
-
   async function handleCheckIn(notes: string) {
     if (!guest) return;
     const wid = get(weddingId);
@@ -241,7 +240,7 @@ import ArrowUpDown from 'lucide-svelte/icons/arrow-up-down';
       guest.checkedIn = true;
       guest.checkedInAt = new Date();
       guest.rsvp = 'confirmed';
-      pushGuestPatch(guest.id, { checkedIn: true, checkedInAt: guest.checkedInAt, rsvp: 'confirmed' });
+      patchGuest(guest.id, { checkedIn: true, checkedInAt: guest.checkedInAt, rsvp: 'confirmed' });
       localGuest = { ...guest };
       showCheckInModal = false;
       addToast(`${guest.name} checked in`, 'success');
@@ -262,7 +261,7 @@ import ArrowUpDown from 'lucide-svelte/icons/arrow-up-down';
       await checkOutGuest(wid, guest.id);
       guest.checkedIn = false;
       guest.checkedInAt = undefined;
-      pushGuestPatch(guest.id, { checkedIn: false, checkedInAt: undefined });
+      patchGuest(guest.id, { checkedIn: false, checkedInAt: undefined });
       localGuest = { ...guest };
       addToast(`${guest.name} checked out`, 'success');
       await refreshGuest();
@@ -284,7 +283,7 @@ import ArrowUpDown from 'lucide-svelte/icons/arrow-up-down';
       await unassignSeat(wid, guest.id);
       guest.tableId = null;
       guest.seatNumber = null;
-      pushGuestPatch(guest.id, { tableId: null, seatNumber: null });
+      patchGuest(guest.id, { tableId: null, seatNumber: null });
       localGuest = { ...guest };
       addToast(`${guest.name} unassigned from table`, 'success');
     } catch (e: any) {

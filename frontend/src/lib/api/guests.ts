@@ -1,4 +1,4 @@
-import { apiFetch } from './client';
+import { apiFetch, isNetworkError } from './client';
 import { get } from 'svelte/store';
 import { weddingId } from '#lib/stores/weddingId.ts';
 import { applyGuestResponse, guestMap, removeGuest, upsertGuest } from '#lib/stores/guestEvents.ts';
@@ -7,11 +7,6 @@ import { applyGuestPatch, type GuestFields } from '#lib/utils/guestTransform.ts'
 
 function isOffline() {
 	return typeof navigator !== 'undefined' && !navigator.onLine;
-}
-function isNetworkError(e: unknown) {
-	if (isOffline()) return true;
-	// Chrome/Firefox say "Failed to fetch"/"NetworkError"; Safari says "Load failed".
-	return e instanceof TypeError && /failed to fetch|networkerror|load failed/i.test((e as Error).message || '');
 }
 function genId(): string {
 	try { return crypto.randomUUID(); } catch { return `${Date.now()}-${Math.random().toString(36).slice(2)}`; }
