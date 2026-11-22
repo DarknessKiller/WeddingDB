@@ -63,7 +63,7 @@ func ValidateGuestText(g *models.GuestRecord) error {
 		}
 	}
 	if len(g.Dietary) > MaxDietaryItems {
-		return fmt.Errorf("%s can list at most %d items", "Dietary", MaxDietaryItems)
+		return fmt.Errorf("%w: dietary can list at most %d items", ErrGuestPatchInvalid, MaxDietaryItems)
 	}
 	for _, item := range g.Dietary {
 		if err := checkLen("Dietary item", item, MaxDietaryItemLen); err != nil {

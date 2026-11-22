@@ -65,7 +65,7 @@ func (s *GuestService) createGuestTx(ctx context.Context, tx *gorm.DB, g *models
 		g.Pax = 1
 	}
 	if g.Pax > MaxGuestPartySize {
-		return fmt.Errorf("party size must be at most %d", MaxGuestPartySize)
+		return fmt.Errorf("%w: party size must be at most %d", ErrGuestPatchInvalid, MaxGuestPartySize)
 	}
 	if err := ValidateGuestText(g); err != nil {
 		return err
@@ -448,7 +448,7 @@ func (s *GuestService) BulkCreate(ctx context.Context, guests []models.GuestReco
 			guests[i].Pax = 1
 		}
 		if guests[i].Pax > MaxGuestPartySize {
-			return 0, fmt.Errorf("party size must be at most %d", MaxGuestPartySize)
+			return 0, fmt.Errorf("%w: party size must be at most %d", ErrGuestPatchInvalid, MaxGuestPartySize)
 		}
 		if err := ValidateGuestText(&guests[i]); err != nil {
 			return 0, err

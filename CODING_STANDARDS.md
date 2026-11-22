@@ -160,9 +160,9 @@ cd frontend && npm run check && npx vitest run
 
 ## Frontend input limits
 
-Files: `frontend/src/lib/utils/limits.ts`, every `<input>` and `<textarea>` whose
-value the API validates, `backend/internal/services/guest_service.go` (`Max*`
-constants), `backend/internal/handlers/*.go` (`maxLen`).
+Files: `frontend/src/lib/utils/limits.ts` (`LIMITS`),
+`backend/internal/services/limits.go` (`Max*Len`, `Validate*Text`,
+`MaxGuestPartySize`), every `<input>` and `<textarea>` whose value the API validates.
 
 - Every backend character cap has a matching `maxlength` on the input. Both read
   the number from `frontend/src/lib/utils/limits.ts`. Never type the number into
@@ -178,9 +178,10 @@ constants), `backend/internal/handlers/*.go` (`maxLen`).
 
 ### Verify
 
-Find every cap with CodeGraph (`codegraph explore "maxLen Max Len"`), then find each
-matching input with CodeGraph (`codegraph explore "maxlength"`). Every cap has an
-input. Adding a cap or a form input means changing both.
+Find every cap in `backend/internal/services/limits.go` and its mirror in
+`frontend/src/lib/utils/limits.ts`, then find each matching input with CodeGraph
+(`codegraph explore "maxlength"`). Every cap has an input. Adding a cap or a form
+input means changing both files and the field that feeds it.
 
 ## Offline sync
 
@@ -337,6 +338,14 @@ Files: `backend/internal/services/auth_service.go`, `backend/internal/middleware
 - Revoke returns 500 on a Redis error. The admin retries.
 - Self-revoke is rejected with a bad request.
 - Blacklisting an expired token is a no-op.
+- Deleting a user removes their `user_weddings` grants in the same transaction as
+  the account row, then revokes their sessions. The revoke is best-effort and runs
+  after the row is gone.
+- An admin password reset sets `ForcePasswordChange`. The next change-password call
+  skips the current-password proof once, clears the flag, and revokes sessions.
+- Revocation deletes refresh tokens before the token-version bump and again after
+  it. A refresh token carries the version it was minted at. A token, or successor,
+  older than the current version is deleted and rejected.
 
 ### Verify
 
