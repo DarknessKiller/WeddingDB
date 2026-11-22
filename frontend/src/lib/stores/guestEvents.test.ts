@@ -40,7 +40,23 @@ function makeGuest(overrides: Partial<Guest> = {}): Guest {
 		isVip: overrides.isVip ?? false,
 		angbaoAmount: overrides.angbaoAmount,
 		giftItem: overrides.giftItem,
-		createdAt: overrides.createdAt ?? new Date()
+		createdAt: overrides.createdAt ?? new Date(),
+		updatedAt: overrides.updatedAt
+	};
+}
+
+function makeEvent(overrides: Record<string, unknown> = {}) {
+	return {
+		type: 'update',
+		guestId: 'g1',
+		weddingId: 'w1',
+		timestamp: Date.now(),
+		guest: {
+			id: 'g1', name: 'Alice', email: '', pax: 2, rsvp: 'confirmed',
+			isVip: false, notes: '', dietary: [], tableId: 't1', seatNum: 1,
+			checkedInAt: null, angbaoAmt: null, giftItem: null,
+		},
+		...overrides,
 	};
 }
 
@@ -121,23 +137,6 @@ describe('guestEvents store', () => {
 		expect(list[0].name).toBe('Second');
 	});
 
-	// Server publishes REST updates/unassigns as 'update' events — occupancy
-	// must be recalculated for them too.
-	function makeEvent(overrides: Record<string, unknown> = {}) {
-		return {
-			type: 'update',
-			guestId: 'g1',
-			weddingId: 'w1',
-			timestamp: Date.now(),
-			guest: {
-				id: 'g1', name: 'Alice', email: '', pax: 2, rsvp: 'confirmed',
-				isVip: false, notes: '', dietary: [], tableId: 't1', seatNum: 1,
-				checkedInAt: null, angbaoAmt: null, giftItem: null,
-			},
-			...overrides,
-		};
-	}
-
 	it('update events recalculate occupancy (unassign clears table)', async () => {
 		const { initializeSSE, seedGuests, tableOccupancy, guestList } = await freshModule();
 		initializeSSE(() => Promise.resolve([]));
@@ -158,6 +157,71 @@ describe('guestEvents store', () => {
 		sseState.eventHandler!(makeEvent({ type: 'create', guest: { id: 'g9', name: 'Zoe', email: '', pax: 4, rsvp: 'confirmed', isVip: false, notes: '', dietary: [], tableId: 't2', seatNum: 1, checkedInAt: null, angbaoAmt: null, giftItem: null } }));
 
 		expect(get(tableOccupancy).get('t2')).toBe(4);
+	});
+});
+
+describe('stale wedding data', () => {
+	function stubStorage() {
+		const store = new Map<string, string>();
+		const ls = {
+			get length() { return store.size; },
+			key: (i: number) => [...store.keys()][i] ?? null,
+			getItem: (k: string) => store.get(k) ?? null,
+			setItem: (k: string, v: string) => void store.set(k, v),
+			removeItem: (k: string) => void store.delete(k)
+		};
+		vi.stubGlobal('localStorage', ls);
+		return store;
+	}
+
+	it('drops a list fetched for a previous wedding', async () => {
+		const store = stubStorage();
+		try {
+			const { seedGuests, guestList } = await freshModule();
+			// Current wedding is 'w1'; these rows belong to the one opened before.
+			seedGuests([makeGuest({ id: 'old' })], 'w0');
+
+			expect(get(guestList)).toHaveLength(0);
+			expect(store.has('offline_cache_w0')).toBe(false);
+		} finally { vi.unstubAllGlobals(); }
+	});
+
+	it('clearGuestStores empties the stores and the selected guest', async () => {
+		const { seedGuests, clearGuestStores, guestList, guestMap, tableOccupancy } = await freshModule();
+		seedGuests([makeGuest({ id: 'g1', tableId: 't1', pax: 2 })]);
+
+		clearGuestStores();
+
+		expect(get(guestList)).toHaveLength(0);
+		expect(get(guestMap).size).toBe(0);
+		expect(get(tableOccupancy).size).toBe(0);
+	});
+
+	it('clearGuestCaches drops cached guest lists but keeps queued offline edits', async () => {
+		const store = stubStorage();
+		try {
+			const { seedGuests, clearGuestCaches } = await freshModule();
+			seedGuests([makeGuest({ email: 'a@b.c' })], 'w1');
+			store.set('offline_queue_w1', '[{"mutationId":"m1"}]');
+
+			clearGuestCaches();
+
+			expect(store.has('offline_cache_w1')).toBe(false);
+			expect(store.has('offline_queue_w1')).toBe(true);
+		} finally { vi.unstubAllGlobals(); }
+	});
+
+	it('ignores an event older than the row on screen', async () => {
+		const { initializeSSE, seedGuests, guestList } = await freshModule();
+		initializeSSE(() => Promise.resolve([]));
+		seedGuests([makeGuest({ id: 'g1', name: 'Newer', updatedAt: new Date('2026-01-01T10:00:00Z') })]);
+
+		// A late/replayed event from before the write that is already shown.
+		sseState.eventHandler!(makeEvent({ guest: { id: 'g1', name: 'Older', email: '', pax: 2, rsvp: 'confirmed', isVip: false, notes: '', dietary: [], tableId: 't1', seatNum: 1, checkedInAt: null, angbaoAmt: null, giftItem: null, updatedAt: '2026-01-01T09:00:00Z' } }));
+		expect(get(guestList)[0].name).toBe('Newer');
+
+		sseState.eventHandler!(makeEvent({ guest: { id: 'g1', name: 'Newest', email: '', pax: 2, rsvp: 'confirmed', isVip: false, notes: '', dietary: [], tableId: 't1', seatNum: 1, checkedInAt: null, angbaoAmt: null, giftItem: null, updatedAt: '2026-01-01T11:00:00Z' } }));
+		expect(get(guestList)[0].name).toBe('Newest');
 	});
 });
 

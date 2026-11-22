@@ -41,11 +41,13 @@
     }
     authChecked = true;
 
-    const loadGuests = async () => {
+    // Bound to the wedding the layout opened: a slow response for wedding A
+    // must not land under wedding B, and its cache key must match A.
+    const loadGuests = async (forWid: string) => {
       try {
-        return (await fetchAllGuests($weddingId)).map(toGuest);
+        return (await fetchAllGuests(forWid)).map(toGuest);
       } catch {
-        const cached = readCachedGuests($weddingId);
+        const cached = readCachedGuests(forWid);
         if (cached) return cached;
         throw new Error('offline');
       }
@@ -53,19 +55,25 @@
     // Queue drains before reseed, on SSE reconnect too.
     const syncThenLoad = async () => {
       try { await syncQueue(wid); } catch {}
-      return loadGuests();
+      return loadGuests(wid);
     };
 
+    let syncing = false;
     async function doSync() {
-      if (!wid || typeof window === 'undefined' || !navigator.onLine) return;
+      // One drain at a time: online+visible can fire together, and two drains
+      // would replay the same mutations twice.
+      if (syncing || !wid || typeof window === 'undefined' || !navigator.onLine) return;
+      syncing = true;
       try {
         await syncQueue(wid);
         // Refresh inside the syncing window so SSE events arriving mid-fetch
         // are queued and replayed after the seed instead of being clobbered.
-        const guests = await refreshGuests(loadGuests);
+        const guests = await refreshGuests(() => loadGuests(wid), wid);
         guestCount = guests.length;
         refreshQueued();
-      } catch {}
+      } catch {} finally {
+        syncing = false;
+      }
     }
 
     const onOnline = () => { offline = false; refreshQueued(); doSync(); };
@@ -95,7 +103,7 @@
     try {
       // refreshGuests keeps the syncing window open across fetch+seed even if
       // initializeSSE early-returned, so mid-fetch SSE events can't be clobbered.
-      const guests = await refreshGuests(loadGuests);
+      const guests = await refreshGuests(() => loadGuests(wid), wid);
       guestCount = guests.length;
     } catch {}
 

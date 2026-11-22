@@ -18,6 +18,8 @@ export const tableOccupancy = writable<Map<string, number>>(new Map());
 // Whether the SSE connection is active.
 export const sseConnected = writable(false);
 
+const CACHE_PREFIX = 'offline_cache_';
+
 let initialized = false;
 let syncing = false;
 let queuedEvents: GuestEvent[] = [];
@@ -45,7 +47,7 @@ export function initializeSSE(onResync?: () => Promise<Guest[]>): (() => void) |
 		sseConnected.set(status === 'connected');
 		if (status === 'connected' && reconnect && resync) {
 			syncing = true;
-			resync().then(seedGuests).catch(() => { syncing = false; });
+			resync().then((list) => seedGuests(list, wid)).catch(() => { syncing = false; });
 		}
 	});
 	const unsubscribe = client.onEvent((event: GuestEvent) => {
@@ -59,8 +61,8 @@ export function initializeSSE(onResync?: () => Promise<Guest[]>): (() => void) |
 		disconnectSSE();
 		sseConnected.set(false);
 		initialized = false;
-		syncing = false;
-		queuedEvents = [];
+		// Leaving a wedding must not leave its guests on screen for the next one.
+		clearGuestStores();
 		resync = undefined;
 	};
 }
@@ -71,11 +73,11 @@ export function initializeSSE(onResync?: () => Promise<Guest[]>): (() => void) |
  * clobbered by it. Use for manual refreshes outside of initializeSSE
  * (e.g. the wedding layout's online/visibility sync).
  */
-export async function refreshGuests(fetchFn: () => Promise<Guest[]>): Promise<Guest[]> {
+export async function refreshGuests(fetchFn: () => Promise<Guest[]>, wid = get(weddingId)): Promise<Guest[]> {
 	syncing = true;
 	try {
 		const guests = await fetchFn();
-		seedGuests(guests);
+		seedGuests(guests, wid);
 		return guests;
 	} catch (e) {
 		// Abandon the window; replay anything that queued up meanwhile.
@@ -89,8 +91,31 @@ export async function refreshGuests(fetchFn: () => Promise<Guest[]>): Promise<Gu
 
 /**
  * Seed the stores with the initial guest list (called after first fetch).
+ * Rows fetched for another wedding are dropped, and the cache is written under
+ * the wedding the fetch was for, not the one selected when it finished.
  */
-function cacheKey(wid: string) { return `offline_cache_${wid}`; }
+export function seedGuests(guests: Guest[], wid = get(weddingId)) {
+	if (wid !== get(weddingId)) return;
+	guestList.set(guests);
+	const map = new Map<string, Guest>();
+	for (const g of guests) {
+		map.set(g.id, g);
+	}
+	guestMap.set(map);
+	recalculateOccupancy();
+	// cache for offline reads
+	try {
+		if (wid) localStorage.setItem(CACHE_PREFIX + wid, JSON.stringify(guests));
+	} catch {}
+	if (syncing) {
+		syncing = false;
+		const pending = queuedEvents;
+		queuedEvents = [];
+		pending.forEach(handleGuestEvent);
+	}
+}
+
+function cacheKey(wid: string) { return CACHE_PREFIX + wid; }
 
 /** The last seeded guest list for `wid`, or null. Rows are app-shaped `Guest`s: only dates need reviving. */
 export function readCachedGuests(wid: string): Guest[] | null {
@@ -102,44 +127,64 @@ export function readCachedGuests(wid: string): Guest[] | null {
 	}
 }
 
-export function seedGuests(guests: Guest[]) {
-	guestList.set(guests);
-	const map = new Map<string, Guest>();
-	for (const g of guests) {
-		map.set(g.id, g);
-	}
-	guestMap.set(map);
-	recalculateOccupancy();
-	// cache for offline reads
+/** Empty the guest stores without touching the offline cache. Used when leaving a wedding. */
+export function clearGuestStores() {
+	syncing = false;
+	queuedEvents = [];
+	guestList.set([]);
+	guestMap.set(new Map());
+	tableOccupancy.set(new Map());
+	selectedGuest.set(null);
+}
+
+/**
+ * Drop every cached guest list (they hold emails, notes and angbao amounts).
+ * Queued edits are kept: they belong to the offline queue, not the cache.
+ */
+export function clearGuestCaches() {
 	try {
-		const wid = get(weddingId);
-		if (wid) localStorage.setItem(cacheKey(wid), JSON.stringify(guests));
+		// Collect first: removing while walking the keys would skip entries.
+		const keys: string[] = [];
+		for (let i = 0; i < localStorage.length; i++) {
+			const k = localStorage.key(i);
+			if (k?.startsWith(CACHE_PREFIX)) keys.push(k);
+		}
+		keys.forEach((k) => localStorage.removeItem(k));
 	} catch {}
-	if (syncing) {
-		syncing = false;
-		const pending = queuedEvents;
-		queuedEvents = [];
-		pending.forEach(handleGuestEvent);
-	}
 }
 
 function handleGuestEvent(event: GuestEvent) {
 	const { type, guest: guestData } = event;
 	if (!guestData) return;
-	if (type === 'delete') return removeGuest(guestData.id);
-	const updatedAt = event.timestamp > 0 ? new Date(event.timestamp).toISOString() : undefined;
-	upsertGuest(toGuest({ ...guestData, updatedAt }));
+	const incoming = toGuest(guestData);
+	// The server's per-column rule already picked the winner; an event older
+	// than what this device shows is a late or replayed one and must not undo it.
+	const current = get(guestMap).get(incoming.id);
+	if (current?.updatedAt && incoming.updatedAt && incoming.updatedAt < current.updatedAt) return;
+	if (type === 'delete') return removeGuest(incoming.id);
+	upsertGuest(incoming);
 }
 
 function recalculateOccupancy() {
-	const guests = get(guestList);
 	const occ = new Map<string, number>();
-	for (const g of guests) {
-		if (g.tableId) {
-			occ.set(g.tableId, (occ.get(g.tableId) || 0) + g.pax);
-		}
+	for (const g of get(guestList)) {
+		if (g.tableId) occ.set(g.tableId, (occ.get(g.tableId) || 0) + g.pax);
 	}
 	tableOccupancy.set(occ);
+}
+
+/** Move one guest's pax between tables in place, so a live update costs O(1). */
+function adjustOccupancy(previous: Guest | undefined, next: Guest | undefined) {
+	if (previous?.tableId === next?.tableId && previous?.pax === next?.pax) return;
+	tableOccupancy.update((occ) => {
+		if (previous?.tableId) {
+			const left = (occ.get(previous.tableId) ?? 0) - previous.pax;
+			if (left > 0) occ.set(previous.tableId, left);
+			else occ.delete(previous.tableId);
+		}
+		if (next?.tableId) occ.set(next.tableId, (occ.get(next.tableId) ?? 0) + next.pax);
+		return occ;
+	});
 }
 
 /**
@@ -154,17 +199,24 @@ export function applyGuestResponse(resp: GuestResponse) {
 
 /** Inserts or replaces a guest in every store. Keeps createdAt, and pinyin when the new row lacks it. */
 export function upsertGuest(guest: Guest) {
+	const previous = get(guestMap).get(guest.id);
+	if (previous) {
+		guest.createdAt = previous.createdAt;
+		guest.pinyin ??= previous.pinyin;
+	}
+	// Mutate the arrays and maps in place: a bulk import delivers one event per
+	// guest, and a copy per event makes the whole import quadratic.
 	guestList.update((list) => {
-		const idx = list.findIndex((g) => g.id === guest.id);
-		if (idx < 0) return [...list, guest];
-		const newList = [...list];
-		guest.createdAt = list[idx].createdAt;
-		guest.pinyin ??= list[idx].pinyin;
-		newList[idx] = guest;
-		return newList;
+		const idx = previous ? list.indexOf(previous) : -1;
+		if (idx < 0) list.push(guest);
+		else list[idx] = guest;
+		return list;
 	});
-	guestMap.update((map) => new Map(map).set(guest.id, guest));
-	recalculateOccupancy();
+	guestMap.update((map) => {
+		map.set(guest.id, guest);
+		return map;
+	});
+	adjustOccupancy(previous, guest);
 
 	// If the drawer is showing this guest, update it live.
 	const current = get(selectedGuest);
@@ -172,11 +224,16 @@ export function upsertGuest(guest: Guest) {
 }
 
 export function removeGuest(id: string) {
-	guestList.update((list) => list.filter((g) => g.id !== id));
-	guestMap.update((map) => {
-		const newMap = new Map(map);
-		newMap.delete(id);
-		return newMap;
+	const previous = get(guestMap).get(id);
+	if (!previous) return;
+	guestList.update((list) => {
+		const idx = list.indexOf(previous);
+		if (idx >= 0) list.splice(idx, 1);
+		return list;
 	});
-	recalculateOccupancy();
+	guestMap.update((map) => {
+		map.delete(id);
+		return map;
+	});
+	adjustOccupancy(previous, undefined);
 }
