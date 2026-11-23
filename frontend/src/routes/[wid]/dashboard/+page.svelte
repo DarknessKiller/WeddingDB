@@ -2,8 +2,7 @@
   import { getOccupancy } from '#lib/api/dashboard.ts';
   import { weddingTitle } from '#lib/stores/weddingTitle.ts';
   import { addToast } from '#lib/stores/index.ts';
-  import { get } from 'svelte/store';
-  import { weddingId } from '#lib/stores/weddingId.ts';
+  import { page } from '$app/state';
   import { guestList } from '#lib/stores/guestEvents.ts';
   import Users from 'lucide-svelte/icons/users';
 import UserCheck from 'lucide-svelte/icons/user-check';
@@ -19,13 +18,13 @@ import Copy from 'lucide-svelte/icons/copy';
 import ExternalLink from 'lucide-svelte/icons/external-link';
   import dayjs from 'dayjs';
   import relativeTime from 'dayjs/plugin/relativeTime';
-  import { onMount } from 'svelte';
   import type { TableOccupancy, ActivityItem, Guest } from '#lib/types/index.ts';
   import { getActivityTimestamp } from '#lib/utils/activity.ts';
   import NumberTicker from '#lib/components/ui/NumberTicker.svelte';
 
   dayjs.extend(relativeTime);
 
+  let wid = $derived(page.params.wid ?? '');
   let occupancy: TableOccupancy[] = $state([]);
   let loading = $state(true);
   let loaded = $state(false);
@@ -80,9 +79,11 @@ import ExternalLink from 'lucide-svelte/icons/external-link';
   async function loadDashboard() {
     loading = true;
     loadFailed = false;
+    const forWid = wid;
     try {
-      const wid = get(weddingId);
-      occupancy = await getOccupancy(wid);
+      const rows = await getOccupancy(forWid);
+      if (forWid !== wid) return;
+      occupancy = rows;
       loaded = true;
     } catch (e) {
       loadFailed = true;
@@ -92,7 +93,9 @@ import ExternalLink from 'lucide-svelte/icons/external-link';
     }
   }
 
-  onMount(loadDashboard);
+  $effect(() => {
+    if (wid) void loadDashboard();
+  });
 
   const activityIcons: Record<string, typeof CheckCircle> = {
     'check-circle': CheckCircle,
@@ -125,7 +128,7 @@ import ExternalLink from 'lucide-svelte/icons/external-link';
       <div class="flex items-center gap-2">
         <button
           onclick={() => {
-            const url = `${window.location.origin}/kiosk/${get(weddingId)}`;
+            const url = `${window.location.origin}/kiosk/${wid}`;
             const ta = document.createElement('textarea');
             ta.value = url;
             ta.style.position = 'fixed';
@@ -141,7 +144,7 @@ import ExternalLink from 'lucide-svelte/icons/external-link';
           <Copy class="w-3.5 h-3.5" /> Copy Link
         </button>
         <a
-          href="/kiosk/{get(weddingId)}"
+          href="/kiosk/{wid}"
           target="_blank"
           class="px-3 py-2 sm:px-4 sm:py-2.5 bg-red hover:bg-red-light text-white rounded-xl text-xs sm:text-sm font-semibold transition-colors flex items-center gap-1.5 min-h-[44px]"
         >
@@ -228,7 +231,7 @@ import ExternalLink from 'lucide-svelte/icons/external-link';
               <span class="w-10 text-xs font-semibold text-gray-600">{t.percentage}%</span>
             </div>
           {:else}
-            <p class="text-sm text-gray-500">No tables yet. <a href="/{get(weddingId)}/seating" class="text-red font-medium hover:underline">Set up seating</a>.</p>
+            <p class="text-sm text-gray-500">No tables yet. <a href="/{wid}/seating" class="text-red font-medium hover:underline">Set up seating</a>.</p>
           {/each}
         </div>
       </div>

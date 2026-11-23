@@ -43,6 +43,9 @@ import AlertCircle from 'lucide-svelte/icons/alert-circle';
   $effect(() => {
     if (!wid) return;
     dataLoaded = false;
+    apiTables = [];
+    apiGuests = [];
+    elements = [];
     form.tableId = null;
     form.seatNumbers = [];
     void loadData();

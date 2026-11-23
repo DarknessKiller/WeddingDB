@@ -126,6 +126,8 @@ import Pencil from 'lucide-svelte/icons/pencil';
     editMode = false;
     allTables = [];
     elements = [];
+    showCheckinModal = false;
+    checkinGuest = null;
     void retry();
   });
 

@@ -1,9 +1,7 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
   import { weddingTitle } from '#lib/stores/weddingTitle.ts';
   import { addToast, showSeatNumbers, setShowSeatNumbers } from '#lib/stores/index.ts';
-  import { weddingId } from '#lib/stores/weddingId.ts';
-  import { get } from 'svelte/store';
+  import { page } from '$app/state';
   import { getWedding, updateKioskSettings, type Wedding, type KioskSettings } from '#lib/api/weddings.ts';
   import Monitor from 'lucide-svelte/icons/monitor';
 import Save from 'lucide-svelte/icons/save';
@@ -19,6 +17,7 @@ import MapPin from 'lucide-svelte/icons/map-pin';
   import { uploadFile } from '#lib/api/client.ts';
   import { LIMITS } from '#lib/utils/limits.ts';
 
+  let wid = $derived(page.params.wid ?? '');
   let wedding = $state<Wedding | null>(null);
   let loading = $state(true);
   let saving = $state(false);
@@ -39,10 +38,12 @@ import MapPin from 'lucide-svelte/icons/map-pin';
   let venueName = $state('');
   let venueAddress = $state('');
 
-  onMount(async () => {
+  async function loadSettings() {
+    const forWid = wid;
     try {
-      const wid = get(weddingId);
-      wedding = await getWedding(wid);
+      const loaded = await getWedding(forWid);
+      if (forWid !== wid) return;
+      wedding = loaded;
       if (wedding) {
         weddingNameEdit = wedding?.name ?? '';
         venueName = wedding.venueName ?? '';
@@ -61,10 +62,16 @@ import MapPin from 'lucide-svelte/icons/map-pin';
         kioskIdleResetSeconds = wedding.kioskIdleResetSeconds ?? 0;
       }
     } catch {
-      addToast('Failed to load settings', 'error');
+      if (forWid === wid) addToast('Failed to load settings', 'error');
     } finally {
-      loading = false;
+      if (forWid === wid) loading = false;
     }
+  }
+
+  $effect(() => {
+    if (!wid) return;
+    loading = true;
+    void loadSettings();
   });
 
   function kioskPayload() {
