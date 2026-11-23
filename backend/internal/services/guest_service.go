@@ -48,6 +48,15 @@ func lockWedding(tx *gorm.DB, weddingID uuid.UUID) error {
 		Select("id").Where("id = ?", weddingID).First(&models.WeddingEvent{}).Error
 }
 
+// weddingLockError names a deleted wedding instead of reporting the guest that
+// could not exist under it.
+func weddingLockError(err error) error {
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return ErrWeddingNotFound
+	}
+	return err
+}
+
 // lockTable takes the table row lock that seat writes serialize on.
 // The row lock is Postgres-only; sqlite (tests) has one writer.
 func lockTable(tx *gorm.DB, weddingID, tableID uuid.UUID) error {
@@ -66,7 +75,7 @@ func lockTable(tx *gorm.DB, weddingID, tableID uuid.UUID) error {
 // current count.
 func (s *GuestService) guestCountLocked(tx *gorm.DB, weddingID uuid.UUID) (int, error) {
 	if err := lockWedding(tx, weddingID); err != nil {
-		return 0, err
+		return 0, weddingLockError(err)
 	}
 	var total int
 	if err := tx.Model(&models.GuestRecord{}).
@@ -108,9 +117,6 @@ func (s *GuestService) createGuestTx(ctx context.Context, tx *gorm.DB, g *models
 func (s *GuestService) mergeGuestUpdate(ctx context.Context, tx *gorm.DB, weddingID, id uuid.UUID, patch *GuestPatch, at time.Time) (*models.GuestRecord, bool, error) {
 	total, err := s.guestCountLocked(tx, weddingID)
 	if err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, false, ErrGuestNotFound
-		}
 		return nil, false, err
 	}
 	repo := repository.NewGuestRepo(tx)
@@ -179,9 +185,6 @@ func (s *GuestService) Create(ctx context.Context, g *models.GuestRecord) error 
 		return s.createGuestTx(ctx, tx, g)
 	})
 	if err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return ErrGuestNotFound
-		}
 		return err
 	}
 	s.sseHub.publishGuest("create", g, g.WeddingID)
@@ -214,7 +217,7 @@ func (s *GuestService) Delete(ctx context.Context, id, weddingID uuid.UUID) erro
 	var guest *models.GuestRecord
 	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if err := lockWedding(tx, weddingID); err != nil {
-			return err
+			return weddingLockError(err)
 		}
 		repo := repository.NewGuestRepo(tx)
 		locked, err := repo.FindByIDForUpdate(ctx, id, weddingID)
@@ -339,7 +342,7 @@ func (s *GuestService) CheckIn(ctx context.Context, id, weddingID uuid.UUID, not
 	applied := false
 	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if err := lockWedding(tx, weddingID); err != nil {
-			return err
+			return weddingLockError(err)
 		}
 		repo := repository.NewGuestRepo(tx)
 		locked, err := repo.FindByIDForUpdate(ctx, id, weddingID)
@@ -388,7 +391,7 @@ func (s *GuestService) CheckOut(ctx context.Context, id, weddingID uuid.UUID) er
 	applied := false
 	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if err := lockWedding(tx, weddingID); err != nil {
-			return err
+			return weddingLockError(err)
 		}
 		repo := repository.NewGuestRepo(tx)
 		locked, err := repo.FindByIDForUpdate(ctx, id, weddingID)
@@ -509,9 +512,6 @@ func (s *GuestService) BulkCreate(ctx context.Context, guests []models.GuestReco
 	})
 	if err != nil {
 		// Transaction rolled back: nothing committed, nothing to broadcast.
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return 0, ErrGuestNotFound
-		}
 		return 0, err
 	}
 	for _, e := range events {
@@ -730,7 +730,7 @@ func (s *GuestService) applySyncMutation(ctx context.Context, weddingID uuid.UUI
 		}); err != nil {
 			// A deleted wedding can never make this create succeed: drop it
 			// instead of blocking the offline queue forever.
-			if errors.Is(err, gorm.ErrRecordNotFound) {
+			if errors.Is(err, ErrWeddingNotFound) {
 				return SyncResult{GuestID: m.GuestID, Status: "failed", Reason: "wedding not found", Retryable: new(false)}
 			}
 			return failedSync(ctx, m.GuestID, err)
@@ -740,7 +740,7 @@ func (s *GuestService) applySyncMutation(ctx context.Context, weddingID uuid.UUI
 
 	case SyncOpUpdate:
 		merged, applied, err := s.syncMerge(ctx, weddingID, gid, m.Payload, opTime)
-		if errors.Is(err, gorm.ErrRecordNotFound) || errors.Is(err, ErrGuestNotFound) {
+		if errors.Is(err, gorm.ErrRecordNotFound) || errors.Is(err, ErrGuestNotFound) || errors.Is(err, ErrWeddingNotFound) {
 			return SyncResult{GuestID: m.GuestID, Status: "skipped", Reason: "not found"}
 		}
 		if err != nil {
@@ -841,7 +841,7 @@ func (s *GuestService) applySyncMutation(ctx context.Context, weddingID uuid.UUI
 			applied = true
 			return repo.Update(ctx, locked)
 		})
-		if errors.Is(err, gorm.ErrRecordNotFound) {
+		if errors.Is(err, gorm.ErrRecordNotFound) || errors.Is(err, ErrWeddingNotFound) {
 			return SyncResult{GuestID: m.GuestID, Status: "skipped", Reason: "not found"}
 		}
 		if err != nil {
@@ -874,7 +874,7 @@ func (s *GuestService) applySyncMutation(ctx context.Context, weddingID uuid.UUI
 			applied = true
 			return repo.Update(ctx, locked)
 		})
-		if errors.Is(err, gorm.ErrRecordNotFound) {
+		if errors.Is(err, gorm.ErrRecordNotFound) || errors.Is(err, ErrWeddingNotFound) {
 			return SyncResult{GuestID: m.GuestID, Status: "skipped", Reason: "not found"}
 		}
 		if err != nil {

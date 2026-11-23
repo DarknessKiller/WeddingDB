@@ -53,23 +53,23 @@ func TestGuestWrite_MissingWeddingIsNotFoundOrApplied(t *testing.T) {
 	goneWedding := uuid.New()
 	guestID := uuid.New()
 
-	if err := svc.Delete(ctx, guestID, goneWedding); !errors.Is(err, ErrGuestNotFound) {
-		t.Fatalf("delete in a missing wedding err = %v, want ErrGuestNotFound", err)
+	if err := svc.Delete(ctx, guestID, goneWedding); !errors.Is(err, ErrWeddingNotFound) {
+		t.Fatalf("delete in a missing wedding err = %v, want ErrWeddingNotFound", err)
 	}
-	if _, err := svc.CheckIn(ctx, guestID, goneWedding, ""); !errors.Is(err, ErrGuestNotFound) {
-		t.Fatalf("check-in in a missing wedding err = %v, want ErrGuestNotFound", err)
+	if _, err := svc.CheckIn(ctx, guestID, goneWedding, ""); !errors.Is(err, ErrWeddingNotFound) {
+		t.Fatalf("check-in in a missing wedding err = %v, want ErrWeddingNotFound", err)
 	}
-	if err := svc.CheckOut(ctx, guestID, goneWedding); !errors.Is(err, ErrGuestNotFound) {
-		t.Fatalf("check-out in a missing wedding err = %v, want ErrGuestNotFound", err)
+	if err := svc.CheckOut(ctx, guestID, goneWedding); !errors.Is(err, ErrWeddingNotFound) {
+		t.Fatalf("check-out in a missing wedding err = %v, want ErrWeddingNotFound", err)
 	}
-	if err := svc.Create(ctx, &models.GuestRecord{ID: guestID, WeddingID: goneWedding, Name: "A", Pax: 1}); !errors.Is(err, ErrGuestNotFound) {
-		t.Fatalf("create in a missing wedding err = %v, want ErrGuestNotFound", err)
+	if err := svc.Create(ctx, &models.GuestRecord{ID: guestID, WeddingID: goneWedding, Name: "A", Pax: 1}); !errors.Is(err, ErrWeddingNotFound) {
+		t.Fatalf("create in a missing wedding err = %v, want ErrWeddingNotFound", err)
 	}
-	if err := svc.AssignSeat(ctx, guestID, goneWedding, uuid.New(), 1); !errors.Is(err, ErrGuestNotFound) {
-		t.Fatalf("assign seat in a missing wedding err = %v, want ErrGuestNotFound", err)
+	if err := svc.AssignSeat(ctx, guestID, goneWedding, uuid.New(), 1); !errors.Is(err, ErrWeddingNotFound) {
+		t.Fatalf("assign seat in a missing wedding err = %v, want ErrWeddingNotFound", err)
 	}
-	if _, err := svc.BulkCreate(ctx, []models.GuestRecord{{ID: uuid.New(), WeddingID: goneWedding, Name: "B", Pax: 1}}); !errors.Is(err, ErrGuestNotFound) {
-		t.Fatalf("bulk create in a missing wedding err = %v, want ErrGuestNotFound", err)
+	if _, err := svc.BulkCreate(ctx, []models.GuestRecord{{ID: uuid.New(), WeddingID: goneWedding, Name: "B", Pax: 1}}); !errors.Is(err, ErrWeddingNotFound) {
+		t.Fatalf("bulk create in a missing wedding err = %v, want ErrWeddingNotFound", err)
 	}
 
 	res, err := svc.Sync(ctx, goneWedding, []SyncMutation{{

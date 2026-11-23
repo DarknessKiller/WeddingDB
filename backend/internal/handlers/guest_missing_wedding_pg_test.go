@@ -54,7 +54,7 @@ func TestGuestCreate_MissingWeddingIs404(t *testing.T) {
 	rec := httptest.NewRecorder()
 	s.Mux.ServeHTTP(rec, req)
 
-	if rec.Code != http.StatusNotFound {
-		t.Fatalf("status = %d, want 404 for a missing wedding, body %s", rec.Code, rec.Body.String())
+	if rec.Code != http.StatusNotFound || !strings.Contains(rec.Body.String(), "Wedding not found") {
+		t.Fatalf("response = %d %s, want 404 Wedding not found", rec.Code, rec.Body.String())
 	}
 }

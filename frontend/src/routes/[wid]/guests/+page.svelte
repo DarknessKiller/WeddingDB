@@ -10,6 +10,7 @@
   import { deleteGuest as apiDeleteGuest, assignSeat, unassignSeat, bulkImportGuests } from '#lib/api/guests.ts';
   import type { GuestImportData } from '#lib/api/guests.ts';
   import { rankGuests } from '#lib/utils/guestSearch.ts';
+  import { parseCsv, unquoteField } from '#lib/utils/csv.ts';
   import { trapFocus, registerEscape } from '#lib/utils/focus.ts';
   import { listTables } from '#lib/api/tables.ts';
   import type { BanquetTable } from '#lib/types/index.ts';
@@ -334,9 +335,9 @@ import Users from 'lucide-svelte/icons/users';
   }
 
   function parseCSV(text: string): GuestImportData[] {
-    const lines = text.trim().split('\n');
-    if (lines.length < 2) return [];
-    const headers = lines[0].split(',').map(h => h.trim().toLowerCase());
+    const rows = parseCsv(text);
+    if (rows.length < 2) return [];
+    const headers = rows[0].map(h => h.trim().toLowerCase());
     const nameIdx = headers.findIndex(h => h === 'name');
     if (nameIdx === -1) return [];
     const emailIdx = headers.findIndex(h => h === 'email');
@@ -348,8 +349,8 @@ import Users from 'lucide-svelte/icons/users';
     const tableIdx = headers.findIndex(h => h === 'table' || h === 'tablename');
     const seatIdx = headers.findIndex(h => h === 'seat' || h === 'seatnum' || h === 'seat_number');
 
-    return lines.slice(1).filter(l => l.trim()).map(line => {
-      const cols = line.split(',').map(c => c.trim().replace(/^"|"$/g, ''));
+    return rows.slice(1).map(cells => {
+      const cols = cells.map(c => unquoteField(c.trim()));
       return {
         name: cols[nameIdx] || '',
         email: emailIdx >= 0 ? cols[emailIdx] : undefined,

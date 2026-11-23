@@ -76,7 +76,7 @@ func (h *GuestHandler) Get(c fuego.ContextNoBody) (any, error) {
 	}
 	guest, err := h.guestService.Get(ctx, id, wid)
 	if errors.Is(err, gorm.ErrRecordNotFound) {
-		return nil, fuego.NotFoundError{Title: "Guest not found"}
+		return nil, guestMissingError(err)
 	}
 	if err != nil {
 		slog.ErrorContext(ctx, "load guest failed", "guest", id, "wedding", wid, "err", err)
@@ -142,8 +142,8 @@ func (h *GuestHandler) Create(c fuego.ContextWithBody[GuestCreateRequest]) (any,
 		if errors.Is(err, services.ErrGuestCapExceeded) {
 			return nil, fuego.BadRequestError{Title: err.Error()}
 		}
-		if errors.Is(err, services.ErrGuestNotFound) {
-			return nil, fuego.NotFoundError{Title: "Guest not found"}
+		if isGuestMissing(err) {
+			return nil, guestMissingError(err)
 		}
 		if errors.Is(err, services.ErrSeatOverlap) || errors.Is(err, services.ErrTableNotFound) ||
 			errors.Is(err, services.ErrInvalidGuestPax) || errors.Is(err, services.ErrSeatRange) ||
@@ -174,8 +174,8 @@ func (h *GuestHandler) Update(c fuego.ContextWithBody[*services.GuestPatch]) (an
 	}
 	guest, err := h.guestService.UpdatePatch(ctx, id, wid, body)
 	if err != nil {
-		if errors.Is(err, services.ErrGuestNotFound) {
-			return nil, fuego.NotFoundError{Title: "Guest not found"}
+		if isGuestMissing(err) {
+			return nil, guestMissingError(err)
 		}
 		if errors.Is(err, services.ErrGuestPatchInvalid) ||
 			errors.Is(err, services.ErrGuestCapExceeded) ||
@@ -205,8 +205,8 @@ func (h *GuestHandler) Delete(c fuego.ContextWithBody[any]) (any, error) {
 		return nil, fuego.BadRequestError{Title: "Invalid ID"}
 	}
 	if err := h.guestService.Delete(ctx, id, wid); err != nil {
-		if errors.Is(err, services.ErrGuestNotFound) {
-			return nil, fuego.NotFoundError{Title: "Guest not found"}
+		if isGuestMissing(err) {
+			return nil, guestMissingError(err)
 		}
 		return nil, err
 	}
@@ -246,8 +246,8 @@ func (h *GuestHandler) CheckIn(c fuego.ContextWithBody[CheckInRequest]) (any, er
 		if errors.Is(err, services.ErrAlreadyCheckedIn) {
 			return nil, fuego.ConflictError{Title: "Guest already checked in by another receptionist"}
 		}
-		if errors.Is(err, services.ErrGuestNotFound) {
-			return nil, fuego.NotFoundError{Title: "Guest not found"}
+		if isGuestMissing(err) {
+			return nil, guestMissingError(err)
 		}
 		var lenErr services.FieldLenError
 		if errors.As(err, &lenErr) {
@@ -269,8 +269,8 @@ func (h *GuestHandler) CheckOut(c fuego.ContextWithBody[any]) (any, error) {
 		return nil, fuego.BadRequestError{Title: "Invalid ID"}
 	}
 	if err := h.guestService.CheckOut(ctx, id, wid); err != nil {
-		if errors.Is(err, services.ErrGuestNotFound) {
-			return nil, fuego.NotFoundError{Title: "Guest not found"}
+		if isGuestMissing(err) {
+			return nil, guestMissingError(err)
 		}
 		return nil, err
 	}
@@ -373,7 +373,7 @@ func (h *GuestHandler) BulkImport(c fuego.ContextWithBody[BulkImportRequest]) (a
 		}
 		if errors.Is(err, services.ErrSeatOverlap) || errors.Is(err, services.ErrSeatRange) ||
 			errors.Is(err, services.ErrTableNotFound) || errors.Is(err, services.ErrGuestPatchInvalid) ||
-			errors.Is(err, services.ErrInvalidGuestPax) || errors.Is(err, services.ErrGuestNotFound) {
+			errors.Is(err, services.ErrInvalidGuestPax) || isGuestMissing(err) {
 			return nil, seatAssignmentError(err)
 		}
 		slog.ErrorContext(ctx, "bulk import failed", "err", err)
@@ -412,9 +412,22 @@ func (h *GuestHandler) AssignSeat(c fuego.ContextWithBody[AssignSeatRequest]) (a
 	return nil, nil
 }
 
+// isGuestMissing covers a deleted wedding as well: a guest write under it can
+// never succeed.
+func isGuestMissing(err error) bool {
+	return errors.Is(err, services.ErrGuestNotFound) || errors.Is(err, services.ErrWeddingNotFound)
+}
+
+func guestMissingError(err error) error {
+	if errors.Is(err, services.ErrWeddingNotFound) {
+		return fuego.NotFoundError{Title: "Wedding not found"}
+	}
+	return fuego.NotFoundError{Title: "Guest not found"}
+}
+
 func seatAssignmentError(err error) error {
-	if errors.Is(err, services.ErrGuestNotFound) {
-		return fuego.NotFoundError{Title: "Guest not found"}
+	if isGuestMissing(err) {
+		return guestMissingError(err)
 	}
 	if errors.Is(err, services.ErrSeatOverlap) || errors.Is(err, services.ErrTableNotFound) || errors.Is(err, services.ErrInvalidGuestPax) || errors.Is(err, services.ErrSeatRange) || errors.Is(err, services.ErrGuestCapExceeded) || errors.Is(err, services.ErrGuestPatchInvalid) {
 		return fuego.BadRequestError{Title: err.Error()}
@@ -433,8 +446,8 @@ func (h *GuestHandler) UnassignSeat(c fuego.ContextNoBody) (any, error) {
 		return nil, fuego.BadRequestError{Title: "Invalid ID"}
 	}
 	if err := h.guestService.UnassignSeat(ctx, guestID, wid); err != nil {
-		if errors.Is(err, services.ErrGuestNotFound) {
-			return nil, fuego.NotFoundError{Title: "Guest not found"}
+		if isGuestMissing(err) {
+			return nil, guestMissingError(err)
 		}
 		return nil, err
 	}

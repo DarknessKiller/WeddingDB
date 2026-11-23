@@ -6,7 +6,7 @@
   import EditToolbar from './EditToolbar.svelte';
   import ConfirmDialog from '#lib/components/ui/ConfirmDialog.svelte';
   import type { BanquetTable as BanquetTableType, HallElement, Guest } from '#lib/types/index.ts';
-  import { reorderElements } from '#lib/utils/layout.ts';
+  import { reorderElements, clampElementSize } from '#lib/utils/layout.ts';
   import { highestOccupiedSeat } from '#lib/utils/seat.ts';
   import { LIMITS } from '#lib/utils/limits.ts';
   import { addToast } from '#lib/stores/index.ts';
@@ -646,7 +646,7 @@ import RotateCcw from 'lucide-svelte/icons/rotate-ccw';
       const newH = node.scaleY() * baseH / displayHallHeight * 100;
       node.scaleX(1);
       node.scaleY(1);
-      editElements[eidx] = { ...el, degree: rotation, width: newW, height: newH };
+      editElements[eidx] = { ...el, degree: rotation, width: clampElementSize(newW), height: clampElementSize(newH) };
       commit();
       void refreshTransformerAfterUpdate();
     }
@@ -954,6 +954,7 @@ import RotateCcw from 'lucide-svelte/icons/rotate-ccw';
             <KTransformer
               bind:this={transformerEl}
               rotateEnabled={true}
+              flipEnabled={false}
               enabledAnchors={isTableSelected ? [] : undefined}
               anchorSize={coarsePointer ? 18 : 8}
               rotateAnchorOffset={coarsePointer ? 48 : 30}
