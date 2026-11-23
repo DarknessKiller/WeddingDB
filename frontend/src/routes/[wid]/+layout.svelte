@@ -64,8 +64,11 @@
     // this wedding's fetches land (or fail).
     weddingTables.set({ wid: '', tables: [] });
     showSeatNumbers.set(false);
+    weddingTitle.set('');
     $isDrawerOpen = false;
     $selectedGuest = null;
+    $drawerStartEditing = false;
+    $drawerCreateMode = false;
     let cancelled = false;
     let localCleanupSSE: (() => void) | undefined;
     let localCleanupListeners: (() => void) | undefined;
