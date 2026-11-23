@@ -525,6 +525,10 @@ func (h *SSEHub) publishGuest(eventType string, guest *models.GuestRecord, weddi
 // broadcastResync asks every replica, through Redis, to close its clients for
 // the wedding so they reconnect and fetch a fresh snapshot.
 func (h *SSEHub) broadcastResync(ctx context.Context, weddingID uuid.UUID) {
+	if _, loaded := h.resyncInFlight.LoadOrStore(weddingID, struct{}{}); loaded {
+		return
+	}
+	defer h.resyncInFlight.Delete(weddingID)
 	ctx, cancel := context.WithTimeout(ctx, 2*time.Second)
 	defer cancel()
 	err := h.Publish(ctx, weddingID, GuestEvent{

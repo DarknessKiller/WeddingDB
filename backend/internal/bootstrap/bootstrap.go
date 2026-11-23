@@ -237,6 +237,11 @@ func Migrate(ctx context.Context, db *gorm.DB) error {
 		for {
 			var acquired bool
 			if err := conn.QueryRowContext(ctx, "SELECT pg_try_advisory_lock($1)", migrateAdvisoryLockID).Scan(&acquired); err != nil {
+				// The server may have granted the lock before the response was
+				// lost; release it best-effort so a pooled session cannot hold it.
+				if _, uerr := conn.ExecContext(context.Background(), "SELECT pg_advisory_unlock($1)", migrateAdvisoryLockID); uerr != nil {
+					log.Printf("warning: release migrate advisory lock after acquire error: %v", uerr)
+				}
 				return fmt.Errorf("migrate: acquire advisory lock: %w", err)
 			}
 			if acquired {

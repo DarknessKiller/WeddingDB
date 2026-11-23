@@ -117,6 +117,10 @@ type SSEHub struct {
 	// ponytail: closed after PSubscribe ACKs so the first Publish is not lost during Redis warm-up.
 	// Race B (client joins SSE mid-publish) is not addressed here — fix needs a per-wedding replay buffer.
 	ready chan struct{}
+	// resyncInFlight collapses resync broadcasts during a Redis outage: one
+	// marker per wedding at a time, so a broken Redis cannot turn every failed
+	// event into another blocking publish.
+	resyncInFlight sync.Map
 }
 
 // ssePublishQueue bounds the ordered publish queue. A full queue drops the

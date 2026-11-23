@@ -6,6 +6,7 @@ import (
 	"errors"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -512,5 +513,47 @@ func TestSSEHub_PublishKeepsOrder(t *testing.T) {
 		case <-time.After(2 * time.Second):
 			t.Fatalf("timed out waiting for event %d", i)
 		}
+	}
+}
+
+// countPublishHook counts PUBLISH commands so resync de-duplication is observable.
+type countPublishHook struct{ n int32 }
+
+func (h *countPublishHook) DialHook(next redis.DialHook) redis.DialHook { return next }
+
+func (h *countPublishHook) ProcessHook(next redis.ProcessHook) redis.ProcessHook {
+	return func(ctx context.Context, cmd redis.Cmder) error {
+		if strings.EqualFold(cmd.Name(), "publish") {
+			atomic.AddInt32(&h.n, 1)
+		}
+		return next(ctx, cmd)
+	}
+}
+
+func (h *countPublishHook) ProcessPipelineHook(next redis.ProcessPipelineHook) redis.ProcessPipelineHook {
+	return next
+}
+
+// A Redis outage must not turn every failed event into another blocking resync
+// publish: one marker per wedding at a time is enough to force clients to refetch.
+func TestSSEHub_BroadcastResyncSingleFlight(t *testing.T) {
+	mr := miniredis.RunT(t)
+	rdb := redis.NewClient(&redis.Options{Addr: mr.Addr()})
+	t.Cleanup(func() { testutil.NoErr(t, rdb.Close()) })
+	hook := &countPublishHook{}
+	rdb.AddHook(hook)
+	hub := &SSEHub{redis: rdb, ready: make(chan struct{})}
+	close(hub.ready)
+	wid := uuid.New()
+
+	hub.resyncInFlight.Store(wid, struct{}{})
+	hub.broadcastResync(context.Background(), wid)
+	if got := atomic.LoadInt32(&hook.n); got != 0 {
+		t.Fatalf("published %d resync markers while one was in flight, want 0", got)
+	}
+	hub.resyncInFlight.Delete(wid)
+	hub.broadcastResync(context.Background(), wid)
+	if got := atomic.LoadInt32(&hook.n); got != 1 {
+		t.Fatalf("published %d resync markers after the in-flight one finished, want 1", got)
 	}
 }

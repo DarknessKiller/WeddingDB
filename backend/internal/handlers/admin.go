@@ -155,12 +155,18 @@ func (h *AdminHandler) AssignWeddings(c fuego.ContextWithBody[AssignWeddingsRequ
 		slog.ErrorContext(ctx, "load user failed", "user", id, "err", err)
 		return nil, fuego.InternalServerError{Title: "Failed to load user"}
 	}
+	kept := make(map[uuid.UUID]bool, len(body.Weddings))
 	var ids []uuid.UUID
 	for _, ws := range body.Weddings {
 		wid, err := DecodeID(ws)
 		if err != nil {
 			return nil, fuego.BadRequestError{Title: "Invalid weddings: invalid wedding ID"}
 		}
+		// A repeated id would violate idx_user_wedding; grant it once.
+		if kept[wid] {
+			continue
+		}
+		kept[wid] = true
 		ids = append(ids, wid)
 	}
 	// Fetch the old grants so removing access can revoke live sessions. Without
@@ -172,10 +178,6 @@ func (h *AdminHandler) AssignWeddings(c fuego.ContextWithBody[AssignWeddingsRequ
 	}
 	if err := h.adminRepo.SetUserWeddings(ctx, admin.ID, ids); err != nil {
 		return nil, fuego.InternalServerError{Title: "Failed to assign weddings"}
-	}
-	kept := make(map[uuid.UUID]bool, len(ids))
-	for _, wid := range ids {
-		kept[wid] = true
 	}
 	for _, w := range oldWeddings {
 		if !kept[w.ID] {
