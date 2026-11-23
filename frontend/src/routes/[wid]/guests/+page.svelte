@@ -225,7 +225,29 @@ import Users from 'lucide-svelte/icons/users';
   function handleCtx(e: MouseEvent, guest: Guest) {
     e.preventDefault();
     menuReturnFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
-    contextMenu = { x: e.clientX, y: e.clientY, guest };
+    let { clientX: x, clientY: y } = e;
+    // Keyboard activation (Enter/Space on the trigger) reports (0,0): anchor
+    // the menu to the trigger instead of the top-left corner.
+    if (x === 0 && y === 0 && e.currentTarget instanceof Element) {
+      const r = e.currentTarget.getBoundingClientRect();
+      x = r.left;
+      y = r.bottom;
+    }
+    contextMenu = { x, y, guest };
+  }
+
+  function menuKeydown(e: KeyboardEvent) {
+    if (e.key === 'Escape') { e.stopPropagation(); contextMenu = null; }
+    // Tab leaves the menu entirely instead of walking behind the overlay.
+    else if (e.key === 'Tab') contextMenu = null;
+    else if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+      e.preventDefault();
+      const items = [...(contextMenuEl?.querySelectorAll<HTMLElement>('[role="menuitem"]') ?? [])];
+      if (!items.length) return;
+      const i = items.indexOf(document.activeElement as HTMLElement);
+      const next = e.key === 'ArrowDown' ? (i + 1) % items.length : (i - 1 + items.length) % items.length;
+      items[next]?.focus();
+    }
   }
 
   // Keyboard path: focus the first item on open, restore the trigger on close
@@ -712,7 +734,7 @@ import Users from 'lucide-svelte/icons/users';
   <div bind:this={contextMenuEl} role="menu" aria-label="Guest actions" tabindex="-1"
     class="fixed z-[600] bg-white/95 backdrop-blur-xl border border-black/[0.06] rounded-xl shadow-xl py-1.5 min-w-[180px]"
     style={getMenuStyle(contextMenu.x, contextMenu.y)} onclick={(e) => e.stopPropagation()}
-    onkeydown={(e) => { if (e.key === 'Escape') { e.stopPropagation(); contextMenu = null; } }}>
+    onkeydown={menuKeydown}>
     <button type="button" role="menuitem" class="w-full flex items-center gap-2.5 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50" onclick={() => { $drawerStartEditing = true; openGuest(contextMenu!.guest); contextMenu = null; }}>
       <Pencil class="w-4 h-4" /> Edit
     </button>

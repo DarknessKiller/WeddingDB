@@ -3,7 +3,7 @@ import { get } from 'svelte/store';
 import { weddingId } from '#lib/stores/weddingId.ts';
 import { applyGuestResponse, guestMap, removeGuest, upsertGuest } from '#lib/stores/guestEvents.ts';
 import { enqueue, type SyncOp } from '#lib/offline/queue.ts';
-import { applyGuestPatch, type GuestFields } from '#lib/utils/guestTransform.ts';
+import { applyGuestPatch, toGuest, type GuestFields } from '#lib/utils/guestTransform.ts';
 
 function isOffline() {
 	return typeof navigator !== 'undefined' && !navigator.onLine;
@@ -125,7 +125,9 @@ export async function createGuest(weddingId: string, data: GuestCreateData): Pro
 			doQueue(id);
 			const now = nowIso();
 			const resp: GuestResponse = { id, weddingId, name: data.name, email: data.email || '', pax: data.pax, rsvp: data.rsvp, isVip: data.isVip, notes: data.notes, dietary: data.dietary, tableId: data.tableId ?? null, seatNum: data.seatNum ?? null, checkedInAt: null, angbaoAmt: data.angbaoAmt ?? null, giftItem: data.giftItem ?? null, createdAt: now, updatedAt: now };
-			applyGuestResponse(resp);
+			// Local clock, not a server timestamp: insert without seeding the
+			// staleness watermark, or a fast clock would discard real server rows.
+			upsertGuest(toGuest(resp));
 			return resp;
 		}
 		throw e;

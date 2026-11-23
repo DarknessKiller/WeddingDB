@@ -27,7 +27,7 @@ function setQueue(wid: string, q: QueuedMutation[]) {
 	localStorage.setItem(qkey(wid), JSON.stringify(q.slice(0, 500)));
 }
 
-export function enqueue(wid: string, m: QueuedMutation) {
+export function enqueue(wid: string, m: QueuedMutation): Promise<void> {
 	// The guest's updatedAt as this device last saw it, read before the optimistic patch. Null for a create.
 	m.baseUpdatedAt ??= get(guestMap).get(m.guestId)?.updatedAt?.toISOString() ?? null;
 	const write = () => {
@@ -48,23 +48,39 @@ export function enqueue(wid: string, m: QueuedMutation) {
 		notifyChanged();
 		addToast(`Queued offline (${Math.max(q.length, persisted.length)})`, 'info');
 	};
-	// Serialize the read-modify-write across tabs; the fallback merge above only
-	// rescues writes that land after ours.
+	// Persist synchronously first: a reload right after the edit must keep it.
+	write();
+	// Then merge again under the lock, serialized across tabs; the fallback merge
+	// above only rescues writes that land after ours.
 	if (typeof navigator !== 'undefined' && navigator.locks) {
-		void navigator.locks.request(qkey(wid), write);
-	} else {
-		write();
+		return navigator.locks.request(qkey(wid), () => {
+			const q = getQueue(wid);
+			if (q.some((x) => x.mutationId === m.mutationId)) return;
+			if (q.length >= 500) q.shift();
+			q.push(m);
+			setQueue(wid, q);
+			notifyChanged();
+		}).catch(() => {});
 	}
+	return Promise.resolve();
 }
 
-export function dequeueByIds(wid: string, ids: string[]) {
+export function dequeueByIds(wid: string, ids: string[]): void | Promise<void> {
 	const s = new Set(ids);
-	setQueue(wid, getQueue(wid).filter(x => !s.has(x.mutationId)));
-	// A concurrent tab may have written the removed mutations back; drop them again.
-	const after = getQueue(wid);
-	const left = after.filter((x) => !s.has(x.mutationId));
-	if (left.length !== after.length) setQueue(wid, left);
-	notifyChanged();
+	const write = () => {
+		setQueue(wid, getQueue(wid).filter(x => !s.has(x.mutationId)));
+		// A concurrent tab may have written the removed mutations back; drop them again.
+		const after = getQueue(wid);
+		const left = after.filter((x) => !s.has(x.mutationId));
+		if (left.length !== after.length) setQueue(wid, left);
+		notifyChanged();
+	};
+	// Same lock as enqueue: an unlocked read-modify-write could land after
+	// another tab's locked enqueue and delete its fresh mutation.
+	if (typeof navigator !== 'undefined' && navigator.locks) {
+		return navigator.locks.request(qkey(wid), write);
+	}
+	write();
 }
 
 export function cacheGuests(wid: string, guests: unknown[]) {
@@ -134,7 +150,7 @@ async function drainQueue(wid: string): Promise<SyncSummary> {
 				if (r.reason) droppedReasons.push(r.reason);
 			}
 		}
-		dequeueByIds(wid, doneIds);
+		await dequeueByIds(wid, doneIds);
 		if (droppedReasons.length) {
 			addToast(`${droppedReasons.length} offline edit${droppedReasons.length === 1 ? '' : 's'} discarded: ${droppedReasons[0]}`, 'error');
 		}

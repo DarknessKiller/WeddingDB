@@ -6,7 +6,7 @@ vi.mock('#lib/stores/index.ts', () => ({
 	addToast: vi.fn()
 }));
 vi.mock('#lib/api/sse.ts', () => ({ connectSSE: vi.fn(), disconnectSSE: vi.fn() }));
-vi.mock('#lib/api/client.ts', () => ({ apiFetch: vi.fn() }));
+vi.mock('#lib/api/client.ts', () => ({ apiFetch: vi.fn(), isNetworkError: (e: unknown) => e instanceof TypeError }));
 
 const store = new Map<string, string>();
 
@@ -16,7 +16,10 @@ beforeEach(() => {
 	vi.stubGlobal('window', { dispatchEvent: () => true });
 	vi.stubGlobal('navigator', { onLine: false });
 });
-afterEach(() => vi.unstubAllGlobals());
+afterEach(() => {
+	vi.useRealTimers();
+	vi.unstubAllGlobals();
+});
 
 describe('offline optimistic patch', () => {
 	it('updates guestMap and occupancy, not only guestList', async () => {
@@ -31,5 +34,19 @@ describe('offline optimistic patch', () => {
 		expect(get(guestMap).get('g1')).toMatchObject({ tableId: 't1', seatNumber: 4, checkedIn: true, notes: 'late' });
 		expect(get(tableOccupancy).get('t1')).toBe(2);
 		expect(JSON.parse(store.get('offline_queue_w1')!)).toHaveLength(2);
+	});
+
+	it('does not seed the staleness watermark from an offline-create local clock', async () => {
+		const { createGuest } = await import('./guests');
+		const { applyGuestResponse, guestMap } = await import('#lib/stores/guestEvents.ts');
+		const { apiFetch } = await import('#lib/api/client.ts');
+		vi.mocked(apiFetch).mockRejectedValue(new TypeError('Failed to fetch'));
+		vi.useFakeTimers({ now: new Date('2030-01-01T00:00:00Z') });
+
+		const created = await createGuest('w1', { name: 'A', pax: 2, rsvp: 'pending', isVip: false, notes: '', dietary: [] });
+		// A server row stamped with real time must still apply after that fast clock.
+		applyGuestResponse({ ...created, name: 'Server', updatedAt: '2026-01-01T00:00:00Z' });
+
+		expect(get(guestMap).get(created.id)?.name).toBe('Server');
 	});
 });

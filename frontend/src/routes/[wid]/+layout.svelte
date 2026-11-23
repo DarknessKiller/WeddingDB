@@ -67,7 +67,7 @@
     // this wedding's fetches land (or fail).
     tables = [];
     guestCount = 0;
-    setShowSeatNumbers(forWid, false);
+    showSeatNumbers.set(false);
     let cancelled = false;
     let localCleanupSSE: (() => void) | undefined;
     let localCleanupListeners: (() => void) | undefined;
@@ -85,18 +85,24 @@
       if (syncing || cancelled || typeof window === 'undefined' || !navigator.onLine) return;
       syncing = true;
       try {
-        await syncQueue(forWid);
-        // Refresh inside the syncing window so SSE events arriving mid-fetch
-        // are queued and replayed after the seed instead of being clobbered.
-        const guests = await refreshGuests(() => loadGuests(forWid), forWid);
-        if (cancelled) return;
-        guestCount = guests.length;
-        loadError = false;
-        syncError = false;
-        refreshQueued();
-      } catch {
-        // Guest loading has its own state; only the queue failed here.
-        if (!cancelled) syncError = true;
+        // Queue and guest loading fail independently; one banner each.
+        try {
+          await syncQueue(forWid);
+          if (!cancelled) syncError = false;
+        } catch {
+          if (!cancelled) syncError = true;
+        }
+        try {
+          // Refresh inside the syncing window so SSE events arriving mid-fetch
+          // are queued and replayed after the seed instead of being clobbered.
+          const guests = await refreshGuests(() => loadGuests(forWid), forWid);
+          if (cancelled) return;
+          guestCount = guests.length;
+          loadError = false;
+          refreshQueued();
+        } catch {
+          if (!cancelled) loadError = true;
+        }
       } finally {
         syncing = false;
       }
