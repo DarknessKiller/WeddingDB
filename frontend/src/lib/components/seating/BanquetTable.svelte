@@ -2,6 +2,7 @@
   import { onMount } from 'svelte';
   import type { BanquetTable, Guest } from '#lib/types/index.ts';
   import { getInitials } from '#lib/utils/index.ts';
+  import { seatOccupant } from '#lib/utils/reservation.ts';
 
   let {
     table,
@@ -212,7 +213,7 @@
     <!-- Seats -->
     {#each Array(table.capacity) as _, i}
       {@const pos = seatPos(i)}
-      {@const guest = guests.find(g => g.seatNumber !== null && (i + 1) >= g.seatNumber && (i + 1) < g.seatNumber + g.pax) ?? null}
+      {@const guest = seatOccupant(guests, String(table.id), i + 1) ?? null}
       {@const sc = seatColor(guest)}
       <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
       <Group

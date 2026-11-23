@@ -2,10 +2,14 @@ import { goto } from '$app/navigation';
 import { getAuth, clearAuth } from '#lib/stores/index.ts';
 import { refreshIfNeeded } from '#lib/api/client.ts';
 import { setWeddingId } from '#lib/stores/weddingId.ts';
+import { clearGuestStores, clearGuestCaches } from '#lib/stores/guestEvents.ts';
 
 function toLogin() {
   clearAuth();
   setWeddingId('');
+  // A dead session must not leave guest rows (emails, notes, angbao) cached.
+  clearGuestStores();
+  clearGuestCaches();
   goto('/login', { replaceState: true });
 }
 

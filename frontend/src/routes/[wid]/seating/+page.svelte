@@ -9,6 +9,7 @@
   import { getLayout, saveLayout } from '#lib/api/layout.ts';
   import Badge from '#lib/components/ui/Badge.svelte';
   import { cn, getInitials } from '#lib/utils/index.ts';
+  import { seatOccupant } from '#lib/utils/reservation.ts';
   import { page } from '$app/state';
   import Users from 'lucide-svelte/icons/users';
 import Star from 'lucide-svelte/icons/star';
@@ -363,7 +364,7 @@ import Pencil from 'lucide-svelte/icons/pencil';
         <div class="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">Seat Assignments</div>
         {#each Array(selectedTable.capacity) as _, seatIdx}
           {@const seatNum = seatIdx + 1}
-          {@const guest = selectedTableGuests.find(g => g.seatNumber !== null && seatNum >= g.seatNumber && seatNum < g.seatNumber + g.pax)}
+          {@const guest = seatOccupant(selectedTableGuests, String(selectedTable.id), seatNum)}
           <button
             class="w-full flex items-center gap-3 p-2.5 rounded-xl transition-all duration-150 text-left {guest ? 'hover:bg-gray-50' : 'hover:bg-gray-50/50'}"
             onclick={() => {
@@ -510,7 +511,7 @@ import Pencil from 'lucide-svelte/icons/pencil';
         <div class="grid grid-cols-2 gap-2">
           {#each Array(selectedTable.capacity) as _, seatIdx}
             {@const seatNum = seatIdx + 1}
-            {@const guest = selectedTableGuests.find(g => g.seatNumber !== null && seatNum >= g.seatNumber && seatNum < g.seatNumber + g.pax)}
+            {@const guest = seatOccupant(selectedTableGuests, String(selectedTable.id), seatNum)}
             <button
               class="flex items-center gap-2 p-2 rounded-lg text-left {guest ? 'bg-gray-50' : 'bg-white border border-gray-100'}"
               onclick={() => { if (guest) { $selectedGuest = guest; $isDrawerOpen = true; } }}
