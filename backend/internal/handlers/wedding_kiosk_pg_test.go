@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
-	"os"
 	"strings"
 	"testing"
 
@@ -13,6 +12,7 @@ import (
 	"weddingdb/internal/models"
 	"weddingdb/internal/repository"
 	"weddingdb/internal/services"
+	"weddingdb/internal/testutil"
 	"weddingdb/internal/utils"
 
 	"github.com/go-fuego/fuego"
@@ -28,10 +28,7 @@ import (
 //	TEST_DATABASE_URL=postgresql://weddingdb@127.0.0.1:25432/weddingdb_test?sslmode=disable \
 //	  go test ./internal/handlers -run TestUpdateKioskSettings_PostgresRoundTrip -v
 func TestUpdateKioskSettings_PostgresRoundTrip(t *testing.T) {
-	dsn := os.Getenv("TEST_DATABASE_URL")
-	if dsn == "" {
-		t.Skip("set TEST_DATABASE_URL to run against Postgres")
-	}
+	dsn := testutil.PgDSN(t)
 	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{})
 	if err != nil {
 		t.Fatalf("postgres open: %v", err)

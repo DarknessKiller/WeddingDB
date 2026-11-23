@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { csvToGuests, parseCsv, unquoteField } from './csv';
+import { csvToGuests, parseCsv, resolveImportTables, unquoteField } from './csv';
 
 describe('parseCsv', () => {
 	it('keeps commas and quotes inside quoted fields', () => {
@@ -43,5 +43,26 @@ describe('csvToGuests', () => {
 		const { guests, dropped } = csvToGuests(parseCsv(header + '\n' + long + ',,,,,,'));
 		expect(guests).toHaveLength(0);
 		expect(dropped).toBe(1);
+	});
+});
+
+describe('csvToGuests dietary and table resolution', () => {
+	it('drops a row with a dietary item over the limit', () => {
+		const { guests, dropped } = csvToGuests(parseCsv('name,dietary\nAlice,' + 'x'.repeat(101)));
+		expect(guests).toHaveLength(0);
+		expect(dropped).toBe(1);
+	});
+
+	it('drops the seat when the table name does not resolve', () => {
+		const { rows, unresolved } = resolveImportTables(
+			[
+				{ table: 'Table 1', seat: 3 },
+				{ table: 'Gone', seat: 4 }
+			],
+			[{ id: 't1', name: 'table 1' }]
+		);
+		expect(rows[0]).toMatchObject({ tableId: 't1', seat: 3 });
+		expect(rows[1]).toMatchObject({ tableId: undefined, seat: undefined });
+		expect(unresolved).toBe(1);
 	});
 });

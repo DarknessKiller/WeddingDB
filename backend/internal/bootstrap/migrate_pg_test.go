@@ -2,7 +2,6 @@ package bootstrap
 
 import (
 	"context"
-	"os"
 	"strings"
 	"sync"
 	"testing"
@@ -18,10 +17,7 @@ import (
 // tables dropped. It refuses anything whose name does not end in _test.
 func openMigrateTestDB(t *testing.T) *gorm.DB {
 	t.Helper()
-	dsn := os.Getenv("TEST_DATABASE_URL")
-	if dsn == "" {
-		t.Skip("set TEST_DATABASE_URL to run against Postgres")
-	}
+	dsn := testutil.PgDSN(t)
 	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{})
 	testutil.NoErr(t, err)
 	var dbName string

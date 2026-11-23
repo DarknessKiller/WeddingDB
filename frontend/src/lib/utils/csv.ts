@@ -76,6 +76,22 @@ export interface CsvGuestRow {
 	seat?: number;
 }
 
+// resolveImportTables matches a CSV table name to a known table and drops the
+// seat when the table did not resolve: the API rejects a seat without a table.
+export function resolveImportTables<T extends { table?: string; seat?: number }>(
+	rows: T[],
+	tables: { id: string; name: string }[]
+): { rows: (T & { tableId?: string; seat?: number })[]; unresolved: number } {
+	let unresolved = 0;
+	const resolved = rows.map((g) => {
+		if (!g.table) return g;
+		const match = tables.find((t) => t.name.toLowerCase() === g.table!.toLowerCase());
+		if (!match) unresolved++;
+		return { ...g, tableId: match?.id, seat: match ? g.seat : undefined };
+	});
+	return { rows: resolved, unresolved };
+}
+
 // csvToGuests maps parsed rows to the import shape, dropping rows the API would
 // reject (length caps) and clamping pax to the server's party limit.
 export function csvToGuests(rows: string[][]): { guests: CsvGuestRow[]; dropped: number } {
@@ -101,11 +117,17 @@ export function csvToGuests(rows: string[][]): { guests: CsvGuestRow[]; dropped:
 		const name = pick(nameIdx);
 		const email = pick(emailIdx);
 		const notes = pick(notesIdx);
+		const dietary = pick(dietaryIdx)
+			.split(';')
+			.map((d) => d.trim())
+			.filter(Boolean);
 		if (
 			!name ||
 			name.length > LIMITS.name ||
 			email.length > LIMITS.email ||
-			notes.length > LIMITS.guestNotes
+			notes.length > LIMITS.guestNotes ||
+			dietary.length > LIMITS.dietaryItems ||
+			dietary.some((d) => d.length > LIMITS.dietaryItem)
 		) {
 			dropped++;
 			continue;
@@ -119,10 +141,7 @@ export function csvToGuests(rows: string[][]): { guests: CsvGuestRow[]; dropped:
 			rsvp: normalizeRsvp(pick(rsvpIdx)),
 			isVip: vip === 'yes' || vip === '1' || vip === 'true',
 			notes: notes || undefined,
-			dietary: pick(dietaryIdx)
-				.split(';')
-				.map((d) => d.trim())
-				.filter(Boolean),
+			dietary,
 			table: pick(tableIdx) || undefined,
 			seat: parseInt(pick(seatIdx)) || undefined
 		});

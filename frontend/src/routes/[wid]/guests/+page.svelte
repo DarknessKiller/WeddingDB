@@ -10,7 +10,7 @@
   import { deleteGuest as apiDeleteGuest, assignSeat, unassignSeat, bulkImportGuests } from '#lib/api/guests.ts';
   import type { GuestImportData } from '#lib/api/guests.ts';
   import { rankGuests } from '#lib/utils/guestSearch.ts';
-  import { parseCsv, csvToGuests, type CsvGuestRow } from '#lib/utils/csv.ts';
+  import { parseCsv, csvToGuests, resolveImportTables, type CsvGuestRow } from '#lib/utils/csv.ts';
   import { trapFocus, registerEscape } from '#lib/utils/focus.ts';
   import { listTables } from '#lib/api/tables.ts';
   import type { BanquetTable } from '#lib/types/index.ts';
@@ -352,7 +352,7 @@ import Users from 'lucide-svelte/icons/users';
           importError = 'No valid guests found. Make sure CSV has a "name" column and values within the field limits.';
           return;
         }
-        importError = dropped > 0 ? `${dropped} row(s) skipped: name, email, or notes is too long.` : '';
+        importError = dropped > 0 ? `${dropped} row(s) skipped: missing name or a value over the field limit.` : '';
         importPreview = guests;
       } catch {
         importError = 'Failed to parse CSV file.';
@@ -366,11 +366,10 @@ import Users from 'lucide-svelte/icons/users';
     importing = true;
     try {
       // Resolve table names to IDs
-      const resolved = importPreview.map(g => {
-        if (!g.table) return g;
-        const match = tables.find(t => t.name.toLowerCase() === g.table!.toLowerCase());
-        return { ...g, tableId: match?.id };
-      });
+      const { rows: resolved, unresolved } = resolveImportTables(importPreview, tables);
+      if (unresolved > 0) {
+        addToast(`${unresolved} row(s) kept unseated: table name not found`, 'error');
+      }
       const result = await bulkImportGuests(resolved.map(g => ({
         name: g.name,
         email: g.email,
