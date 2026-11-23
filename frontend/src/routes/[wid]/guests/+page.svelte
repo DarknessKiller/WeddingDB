@@ -344,6 +344,8 @@ import Users from 'lucide-svelte/icons/users';
     if (!file) return;
     importFile = file;
     importError = '';
+    // A failed read must not leave the previous file's rows importable.
+    importPreview = [];
     const reader = new FileReader();
     reader.onload = () => {
       try {
@@ -358,6 +360,9 @@ import Users from 'lucide-svelte/icons/users';
       } catch {
         importError = 'Failed to parse CSV file.';
       }
+    };
+    reader.onerror = () => {
+      importError = 'Failed to read CSV file.';
     };
     // Reset so choosing the same file again fires change after a failed parse.
     input.value = '';

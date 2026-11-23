@@ -84,3 +84,27 @@ func TestGuestCreate_KeepsAngbaoAndGift(t *testing.T) {
 		t.Fatalf("negative angbao status = %d, want 400, body %s", rec.Code, rec.Body.String())
 	}
 }
+
+// TestGuestImport_KeepsAngbaoAndGift covers the bulk create payload fields the
+// optimistic client echoes.
+func TestGuestImport_KeepsAngbaoAndGift(t *testing.T) {
+	db := newSQLite(t, guestRecordsDDL, banquetTablesDDL)
+	svc := services.NewGuestService(repository.NewGuestRepo(db), nil, db)
+	s := fuego.NewServer(fuego.WithoutStartupMessages())
+	fuego.Post(s, "/api/weddings/{wid}/guests/import", NewGuestHandler(svc).BulkImport)
+
+	wid := uuid.New()
+	body := `{"guests":[{"name":"Alice","pax":1,"angbaoAmt":200,"giftItem":"vase"}]}`
+	req := httptest.NewRequest(http.MethodPost, "/api/weddings/"+utils.EncodeUUID(wid)+"/guests/import", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	s.Mux.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200, body %s", rec.Code, rec.Body.String())
+	}
+	var got models.GuestRecord
+	testutil.NoErr(t, db.Where("wedding_id = ?", wid).First(&got).Error)
+	if got.AngbaoAmt == nil || *got.AngbaoAmt != 200 || got.GiftItem == nil || *got.GiftItem != "vase" {
+		t.Fatalf("stored angbao/gift = %v/%v, want 200/vase", got.AngbaoAmt, got.GiftItem)
+	}
+}

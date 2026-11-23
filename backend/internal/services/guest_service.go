@@ -86,6 +86,20 @@ func (s *GuestService) guestCountLocked(tx *gorm.DB, weddingID uuid.UUID) (int, 
 	return total, nil
 }
 
+// stampCreateFieldTimes gives a new row its own time for every LWW group, so a
+// later partial edit cannot make untouched columns look newer than a write that
+// predates it. A caller that already stamped (sync create) keeps its times.
+func stampCreateFieldTimes(g *models.GuestRecord) {
+	if len(g.FieldTimes) != 0 {
+		return
+	}
+	now := time.Now()
+	g.FieldTimes = make(models.FieldTimes, len(guestGroups()))
+	for _, key := range guestGroups() {
+		g.FieldTimes[key] = now
+	}
+}
+
 func (s *GuestService) createGuestTx(ctx context.Context, tx *gorm.DB, g *models.GuestRecord) error {
 	if g.Pax < 1 {
 		g.Pax = 1
@@ -108,15 +122,7 @@ func (s *GuestService) createGuestTx(ctx context.Context, tx *gorm.DB, g *models
 	if total+g.Pax > MaxGuestsPerWedding {
 		return guestCapError(total, g.Pax)
 	}
-	// A create stamps every group, so a later partial edit cannot make the
-	// untouched columns look newer than an offline write that predates it.
-	if len(g.FieldTimes) == 0 {
-		now := time.Now()
-		g.FieldTimes = make(models.FieldTimes, len(guestGroups()))
-		for _, key := range guestGroups() {
-			g.FieldTimes[key] = now
-		}
-	}
+	stampCreateFieldTimes(g)
 	return repository.NewGuestRepo(tx).Create(ctx, g)
 }
 
@@ -449,6 +455,7 @@ func (s *GuestService) BulkCreate(ctx context.Context, guests []models.GuestReco
 		if err := ValidateGuestText(&guests[i]); err != nil {
 			return 0, err
 		}
+		stampCreateFieldTimes(&guests[i])
 		incoming += guests[i].Pax
 	}
 	// Buffer SSE events and publish them only after the transaction commits,

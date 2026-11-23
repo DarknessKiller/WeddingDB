@@ -978,3 +978,18 @@ func TestCreate_StampsEveryFieldGroup(t *testing.T) {
 		}
 	}
 }
+
+// TestBulkCreate_StampsEveryFieldGroup covers the import path of the create
+// rule: every bulk-created row carries its own time per group.
+func TestBulkCreate_StampsEveryFieldGroup(t *testing.T) {
+	svc, _, wid := newGuestSyncService(t)
+	ctx := context.Background()
+	g := models.GuestRecord{ID: uuid.New(), WeddingID: wid, Name: "Bulk", Pax: 1}
+	_, err := svc.BulkCreate(ctx, []models.GuestRecord{g})
+	testutil.NoErr(t, err)
+	stored, err := svc.Get(ctx, g.ID, wid)
+	testutil.NoErr(t, err)
+	if len(stored.FieldTimes) != len(guestGroups()) {
+		t.Fatalf("field_times = %v, want %d groups", stored.FieldTimes, len(guestGroups()))
+	}
+}
