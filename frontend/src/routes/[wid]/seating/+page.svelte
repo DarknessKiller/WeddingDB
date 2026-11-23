@@ -2,7 +2,6 @@
   import HallMap from '#lib/components/seating/HallMap.svelte';
   import { weddingTitle } from '#lib/stores/weddingTitle.ts';
   import { selectedGuest, isDrawerOpen, addToast } from '#lib/stores/index.ts';
-  import { weddingId } from '#lib/stores/weddingId.ts';
   import { guestList, tableOccupancy } from '#lib/stores/guestEvents.ts';
   import { goto } from '$app/navigation';
   import { assignSeat, checkInGuest, checkOutGuest, ConflictError } from '#lib/api/guests.ts';
@@ -12,6 +11,7 @@
   import { cn, getInitials } from '#lib/utils/index.ts';
   import { page } from '$app/state';
   import { onMount } from 'svelte';
+  import { weddingId } from '#lib/stores/weddingId.ts';
   import Users from 'lucide-svelte/icons/users';
 import Star from 'lucide-svelte/icons/star';
 import X from 'lucide-svelte/icons/x';
@@ -24,7 +24,6 @@ import Banknote from 'lucide-svelte/icons/banknote';
 import Gift from 'lucide-svelte/icons/gift';
 import Pencil from 'lucide-svelte/icons/pencil';
   import CheckInModal from '#lib/components/ui/CheckInModal.svelte';
-  import { get } from 'svelte/store';
   import type { BanquetTable, Guest, RSVPStatus, TableOccupancy, HallElement } from '#lib/types/index.ts';
 
   let allTables = $state<BanquetTable[]>([]);
@@ -72,8 +71,9 @@ import Pencil from 'lucide-svelte/icons/pencil';
   let allGuests = $derived($guestList);
   let unassignedGuests = $derived(allGuests.filter(g => g.tableId === null));
 
+  let wid = $derived(page.params.wid ?? '');
+
   async function loadData() {
-    const wid = get(weddingId);
     const layout = await getLayout(wid);
     if (layout) {
       allTables = layout.tables ?? [];
@@ -169,7 +169,6 @@ import Pencil from 'lucide-svelte/icons/pencil';
 
   async function assignGuestToSeat(guest: Guest, seatNum: number) {
     if (!selectedTable) return;
-    const wid = get(weddingId);
     try {
       await assignSeat(wid, guest.id, String(selectedTable.id), seatNum);
       assigningSeat = null;
@@ -191,7 +190,6 @@ import Pencil from 'lucide-svelte/icons/pencil';
 
   async function confirmCheckIn(notes: string) {
     if (!checkinGuest) return;
-    const wid = get(weddingId);
     try {
       await checkInGuest(wid, checkinGuest.id, notes);
       // Notes and the check-in flags come back through the store.
@@ -209,7 +207,6 @@ import Pencil from 'lucide-svelte/icons/pencil';
   }
 
   async function handleCheckOut(guest: Guest) {
-    const wid = get(weddingId);
     try {
       await checkOutGuest(wid, guest.id);
       addToast(`${guest.name} checked out`, 'success');
@@ -219,7 +216,6 @@ import Pencil from 'lucide-svelte/icons/pencil';
   }
 
   async function handleSaveLayout(editTables: BanquetTable[], editElements: HallElement[], hw: number, hh: number) {
-    const wid = get(weddingId);
     try {
       await saveLayout(wid, {
         hallWidth: hw,

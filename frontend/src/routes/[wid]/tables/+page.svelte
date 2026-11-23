@@ -1,5 +1,4 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
   import { weddingTitle } from '#lib/stores/weddingTitle.ts';
   import { goto } from '$app/navigation';
   import { cn } from '#lib/utils/index.ts';
@@ -20,8 +19,8 @@ import Map from 'lucide-svelte/icons/map';
   import { weddingTables } from '#lib/stores/index.ts';
   import { getLayout, saveLayout } from '#lib/api/layout.ts';
   import { defaultSlot } from '#lib/utils/layout.ts';
+  import { page } from '$app/state';
   import { weddingId } from '#lib/stores/weddingId.ts';
-  import { get } from 'svelte/store';
   import type { BanquetTable, TableOccupancy, HallElement, HallLayoutData } from '#lib/types/index.ts';
 
   type TableCreateData = Omit<BanquetTable, 'id'>;
@@ -125,7 +124,7 @@ import Map from 'lucide-svelte/icons/map';
 
   // ponytail: previously the modal's live preview; no longer rendered
 
-  const wid = get(weddingId);
+  let wid = $derived(page.params.wid ?? '');
 
   function getOcc(tableId: string): { occupied: number; percentage: number; highestSeat: number } {
     const occ = occupancy[tableId];
@@ -259,7 +258,9 @@ import Map from 'lucide-svelte/icons/map';
     }
   }
 
-  onMount(() => retry());
+  $effect(() => {
+    if (wid) retry();
+  });
 </script>
 
 <svelte:head> <title>{$weddingTitle ? `${$weddingTitle} – Tables` : 'Tables – WeddingDB'}</title></svelte:head>

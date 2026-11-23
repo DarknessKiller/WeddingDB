@@ -42,6 +42,9 @@ func TestSearchByWeddingMatchesNamesOnly(t *testing.T) {
 			if !strings.Contains(capture.sql, "name ILIKE") || !strings.Contains(capture.sql, "name_pinyin ILIKE") {
 				t.Errorf("SQL must match name and pinyin: %q", capture.sql)
 			}
+			if n := strings.Count(capture.sql, `ESCAPE '\'`); n != 2 {
+				t.Errorf("both ILIKE clauses must pin the escape, got %d: %q", n, capture.sql)
+			}
 			lowerSQL := strings.ToLower(capture.sql)
 			if strings.Contains(lowerSQL, "phone") || strings.Contains(lowerSQL, "email") {
 				t.Errorf("SQL must not match contact fields: %q", capture.sql)
