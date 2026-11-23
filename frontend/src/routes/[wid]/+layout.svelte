@@ -74,7 +74,15 @@
 
     // Queue drains before reseed, on SSE reconnect too.
     const syncThenLoad = async () => {
-      try { await syncQueue(forWid); } catch {}
+      try {
+        await syncQueue(forWid);
+        syncError = false;
+      } catch (e) {
+        // Reseeding after a failed drain would clobber optimistic queued edits;
+        // let the caller end the sync window and replay queued SSE events.
+        syncError = true;
+        throw e;
+      }
       return loadGuests(forWid);
     };
 
@@ -204,7 +212,7 @@
       {#if offline}
         <div class="offline-banner">Offline — changes queued{queued ? ` (${queued})` : ''}</div>
       {:else if queued}
-        <div class="offline-banner queued">{queued} queued — syncing on reconnect <button onclick={async () => { try { await syncQueue(wid); } catch { addToast('Could not sync queued edits', 'error'); } refreshQueued(); }}>Sync now</button></div>
+        <div class="offline-banner queued">{queued} queued — syncing on reconnect <button onclick={async () => { try { await syncQueue(wid); syncError = false; } catch { addToast('Could not sync queued edits', 'error'); } refreshQueued(); }}>Sync now</button></div>
       {/if}
       {#if loadError}
         <div class="offline-banner">Could not load guests <button onclick={retryGuests}>Retry</button></div>
