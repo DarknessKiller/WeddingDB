@@ -7,8 +7,8 @@
   import { cn } from '#lib/utils/index.ts';
   import CheckCircle2 from 'lucide-svelte/icons/check-circle-2';
 import AlertCircle from 'lucide-svelte/icons/alert-circle';
-  import { fetchAllGuests, createGuest } from '#lib/api/guests.ts';
-  import { toGuest } from '#lib/utils/guestTransform.ts';
+  import { createGuest } from '#lib/api/guests.ts';
+  import { guestList } from '#lib/stores/guestEvents.ts';
   import { listTables } from '#lib/api/tables.ts';
   import { getLayout } from '#lib/api/layout.ts';
   import { LIMITS } from '#lib/utils/limits.ts';
@@ -17,7 +17,8 @@ import AlertCircle from 'lucide-svelte/icons/alert-circle';
   import HallMap from '#lib/components/seating/HallMap.svelte';
 
   let apiTables = $state<BanquetTable[]>([]);
-  let apiGuests = $state<Guest[]>([]);
+  // Seeded by the [wid] layout over SSE, so a seat taken elsewhere shows here.
+  let apiGuests = $derived($guestList);
   let elements = $state<HallElement[]>([]);
   let hallWidth = $state(860);
   let hallHeight = $state(1000);
@@ -26,11 +27,10 @@ import AlertCircle from 'lucide-svelte/icons/alert-circle';
   async function loadData() {
     const forWid = wid;
     try {
-      const [tablesRes, guestRows, layout] = await Promise.all([listTables(forWid), fetchAllGuests(forWid), getLayout(forWid)]);
+      const [tablesRes, layout] = await Promise.all([listTables(forWid), getLayout(forWid)]);
       // A newer route already reloaded: keep the old wedding off this form.
       if (forWid !== wid) return;
       apiTables = tablesRes;
-      apiGuests = guestRows.map(toGuest);
       elements = layout.elements;
       hallWidth = layout.hallWidth;
       hallHeight = layout.hallHeight;
@@ -45,7 +45,6 @@ import AlertCircle from 'lucide-svelte/icons/alert-circle';
     if (!wid) return;
     errored = false;
     apiTables = [];
-    apiGuests = [];
     elements = [];
     form.tableId = null;
     form.seatNumbers = [];

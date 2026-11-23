@@ -103,6 +103,13 @@ export async function fetchAllGuests(weddingId: string): Promise<GuestResponse[]
 	return all;
 }
 
+// errorMessage keeps the server's title (seat overlap, cap) so a rejected save
+// says why, not just the status.
+async function errorMessage(res: Response, fallback: string): Promise<string> {
+	const err = await res.json().catch(() => null);
+	return err?.title || `${fallback}: ${res.status}`;
+}
+
 export async function getGuest(weddingId: string, guestId: string): Promise<GuestResponse> {
 	const res = await apiFetch(`/api/weddings/${weddingId}/guests/${guestId}`);
 	if (!res.ok) throw new Error(`Failed to get guest: ${res.status}`);
@@ -115,7 +122,7 @@ export async function createGuest(weddingId: string, data: GuestCreateData): Pro
 	};
 	try {
 		const res = await apiFetch(`/api/weddings/${weddingId}/guests`, { method: 'POST', body: JSON.stringify(data) });
-		if (!res.ok) throw new Error(`Failed to create guest: ${res.status}`);
+		if (!res.ok) throw new Error(await errorMessage(res, 'Failed to create guest'));
 		const resp: GuestResponse = await res.json();
 		applyGuestResponse(resp);
 		return resp;
@@ -154,7 +161,7 @@ export async function updateGuest(weddingId: string, guestId: string, data: Part
 	if (isOffline()) { doQueue(); return offlineGuestResponse(weddingId, guestId); }
 	try {
 		const res = await apiFetch(`/api/weddings/${weddingId}/guests/${guestId}`, { method: 'PUT', body: JSON.stringify(data) });
-		if (!res.ok) throw new Error(`Failed to update guest: ${res.status}`);
+		if (!res.ok) throw new Error(await errorMessage(res, 'Failed to update guest'));
 		const resp: GuestResponse = await res.json();
 		applyGuestResponse(resp);
 		return resp;
@@ -216,7 +223,7 @@ export async function assignSeat(weddingId: string, guestId: string, tableId: st
 	if (isOffline()) { doQueue(); return; }
 	try {
 		const res = await apiFetch(`/api/weddings/${weddingId}/guests/${guestId}/seat`, { method: 'POST', body: JSON.stringify(payload) });
-		if (!res.ok) throw new Error(`Failed to assign seat: ${res.status}`);
+		if (!res.ok) throw new Error(await errorMessage(res, 'Failed to assign seat'));
 		// Seating maps read the shared guest store; patch it instead of relying on
 		// the SSE echo, so a save shows its new occupancy immediately.
 		optimisticPatch('update', guestId, payload);
@@ -231,7 +238,7 @@ export async function unassignSeat(weddingId: string, guestId: string): Promise<
 	if (isOffline()) { doQueue(); return; }
 	try {
 		const res = await apiFetch(`/api/weddings/${weddingId}/guests/${guestId}/seat`, { method: 'DELETE' });
-		if (!res.ok) throw new Error(`Failed to unassign seat: ${res.status}`);
+		if (!res.ok) throw new Error(await errorMessage(res, 'Failed to unassign seat'));
 		optimisticPatch('update', guestId, { tableId: null, seatNum: null });
 	} catch (e) {
 		if (isNetworkError(e)) { doQueue(); return; }

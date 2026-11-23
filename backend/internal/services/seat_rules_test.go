@@ -159,3 +159,45 @@ func TestUpdatePatch_AppliesNameAndSeat(t *testing.T) {
 		t.Fatalf("stored = %+v", stored)
 	}
 }
+
+// A multi-seat run occupies every seat up to seatNum+pax-1; a newcomer that
+// overlaps only the tail of that run must still be refused.
+func TestAssignSeat_RejectsMultiSeatRunOverlap(t *testing.T) {
+	svc, _, wid := newGuestSyncService(t)
+	tid := seedTable(t, svc, wid, "T1", 10)
+	host := &models.GuestRecord{ID: uuid.New(), WeddingID: wid, Name: "Host", Pax: 3, TableID: &tid, SeatNum: intPtr(2)}
+	if err := svc.db.Create(host).Error; err != nil {
+		t.Fatalf("seed host: %v", err)
+	}
+	newcomer := seedGuest(t, svc, wid, "Newcomer")
+
+	// Seats 2-4 are taken; seat 4 is the tail.
+	if err := svc.AssignSeat(context.Background(), newcomer.ID, wid, tid, 4); !errors.Is(err, ErrSeatOverlap) {
+		t.Fatalf("seat 4 err = %v, want ErrSeatOverlap", err)
+	}
+	if err := svc.AssignSeat(context.Background(), newcomer.ID, wid, tid, 5); err != nil {
+		t.Fatalf("seat 5 after the run = %v, want nil", err)
+	}
+}
+
+// The incoming guest can itself be a run: a party at seat 3 with pax 3 overlaps
+// a single guest on seat 4.
+func TestAssignSeat_RejectsIncomingRunOverlap(t *testing.T) {
+	svc, _, wid := newGuestSyncService(t)
+	tid := seedTable(t, svc, wid, "T1", 10)
+	opponent := &models.GuestRecord{ID: uuid.New(), WeddingID: wid, Name: "Opponent", Pax: 1, TableID: &tid, SeatNum: intPtr(4)}
+	if err := svc.db.Create(opponent).Error; err != nil {
+		t.Fatalf("seed opponent: %v", err)
+	}
+	party := &models.GuestRecord{ID: uuid.New(), WeddingID: wid, Name: "Party", Pax: 3}
+	if err := svc.db.Create(party).Error; err != nil {
+		t.Fatalf("seed party: %v", err)
+	}
+
+	if _, err := svc.UpdatePatch(context.Background(), party.ID, wid, &GuestPatch{
+		TableID: tableIDPtr(tid), SeatNum: intPtr(3),
+		set: map[string]bool{"tableId": true, "seatNum": true},
+	}); !errors.Is(err, ErrSeatOverlap) {
+		t.Fatalf("party at 3-5 err = %v, want ErrSeatOverlap", err)
+	}
+}

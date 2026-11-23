@@ -50,3 +50,18 @@ describe('offline optimistic patch', () => {
 		expect(get(guestMap).get(created.id)?.name).toBe('Server');
 	});
 });
+
+describe('server rejection reason', () => {
+	it('keeps the API title on a create failure', async () => {
+		vi.stubGlobal('navigator', { onLine: true });
+		const { createGuest } = await import('./guests');
+		const { apiFetch } = await import('#lib/api/client.ts');
+		vi.mocked(apiFetch).mockResolvedValue({
+			ok: false, status: 400,
+			json: async () => ({ title: 'seat overlaps with another guest: "Bob" (seats 3-4)' })
+		} as Response);
+
+		await expect(createGuest('w1', { name: 'A', pax: 1, rsvp: 'pending', isVip: false, notes: '', dietary: [] }))
+			.rejects.toThrow('seat overlaps with another guest');
+	});
+});
