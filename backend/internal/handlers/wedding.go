@@ -286,6 +286,7 @@ func (h *WeddingHandler) UpdateKioskSettings(c fuego.ContextWithBody[KioskSettin
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, fuego.NotFoundError{Title: "Wedding not found"}
 		}
+		slog.ErrorContext(ctx, "update kiosk settings failed", "wedding", id, "err", err)
 		return nil, fuego.InternalServerError{Title: "Failed to update kiosk settings"}
 	}
 	return h.reloadAfterUpdate(ctx, id, w), nil
