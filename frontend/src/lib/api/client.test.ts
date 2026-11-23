@@ -6,7 +6,9 @@ function memoryStorage() {
 		getItem: (k: string) => map.get(k) ?? null,
 		setItem: (k: string, v: string) => void map.set(k, String(v)),
 		removeItem: (k: string) => void map.delete(k),
-		clear: () => map.clear()
+		clear: () => map.clear(),
+		get length() { return map.size; },
+		key: (i: number) => [...map.keys()][i] ?? null,
 	};
 }
 
@@ -92,12 +94,15 @@ describe('apiFetch refresh recovery', () => {
 			.mockResolvedValueOnce(res({}, 401))
 			.mockResolvedValueOnce(res({ title: 'invalid refresh token' }, 401));
 
+		localStorage.setItem('offline_cache_w1', '[{"email":"a@b.c","angbaoAmount":88}]');
+
 		const { apiFetch } = await import('./client');
 		const { getAuth } = await import('#lib/stores/index.ts');
 		const result = await apiFetch('/api/guests');
 
 		expect(result.status).toBe(401);
 		expect(location.href).toBe('/login');
+		expect(localStorage.getItem('offline_cache_w1')).toBeNull();
 		expect(getAuth().accessToken).toBeNull();
 		expect(localStorage.getItem('weddingdb_refresh_token')).toBeNull();
 	});

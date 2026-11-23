@@ -21,7 +21,7 @@ import AlertCircle from 'lucide-svelte/icons/alert-circle';
   let elements = $state<HallElement[]>([]);
   let hallWidth = $state(860);
   let hallHeight = $state(1000);
-  let dataLoaded = $state(false);
+  let errored = $state(false);
 
   async function loadData() {
     const forWid = wid;
@@ -34,15 +34,16 @@ import AlertCircle from 'lucide-svelte/icons/alert-circle';
       elements = layout.elements;
       hallWidth = layout.hallWidth;
       hallHeight = layout.hallHeight;
-      dataLoaded = true;
     } catch {
-      if (forWid === wid) addToast('Failed to load data', 'error');
+      if (forWid !== wid) return;
+      errored = true;
+      addToast('Failed to load data', 'error');
     }
   }
 
   $effect(() => {
     if (!wid) return;
-    dataLoaded = false;
+    errored = false;
     apiTables = [];
     apiGuests = [];
     elements = [];
@@ -226,7 +227,17 @@ import AlertCircle from 'lucide-svelte/icons/alert-circle';
 <div class="flex flex-col sm:flex-row h-full">
   <!-- Left: Hall Map (hidden on mobile, shown on desktop) -->
   <div class="hidden sm:flex flex-1 flex-col relative">
-    {#if apiTables.length > 0}
+    {#if errored}
+      <div class="flex items-center justify-center h-full">
+        <div class="text-center px-6">
+          <p class="text-sm text-gray-600 mb-3">Could not load the hall map.</p>
+          <button
+            class="px-4 py-2.5 bg-red text-white rounded-xl text-sm font-semibold hover:bg-red-light transition-colors"
+            onclick={() => { errored = false; void loadData(); }}
+          >Retry</button>
+        </div>
+      </div>
+    {:else if apiTables.length > 0}
       <HallMap
         tables={apiTables}
         {elements}

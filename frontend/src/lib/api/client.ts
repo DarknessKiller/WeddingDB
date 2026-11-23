@@ -1,6 +1,7 @@
 import { goto } from '$app/navigation';
 import { getAuth, setAuth, clearAuth } from '#lib/stores/index.ts';
 import { setWeddingId } from '#lib/stores/weddingId.ts';
+import { clearGuestStores, clearGuestCaches } from '#lib/stores/guestEvents.ts';
 
 const BASE = '';
 
@@ -42,6 +43,10 @@ async function doRefresh(): Promise<boolean> {
 	if (refreshRes.status !== 401) return false;
 	clearAuth();
 	setWeddingId('');
+	// A revoked session must not leave the guest cache (emails, notes, angbao)
+	// on the device for the next account.
+	clearGuestStores();
+	clearGuestCaches();
 	if (typeof window !== 'undefined') window.location.href = '/login';
 	return false;
 }
