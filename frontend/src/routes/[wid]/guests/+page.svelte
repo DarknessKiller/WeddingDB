@@ -31,7 +31,6 @@ import FileText from 'lucide-svelte/icons/file-text';
 import AlertCircle from 'lucide-svelte/icons/alert-circle';
 import X from 'lucide-svelte/icons/x';
 import Users from 'lucide-svelte/icons/users';
-  import { onMount } from 'svelte';
 
   let searchQuery = $state('');
   let rsvpFilter = $state<RSVPStatus | 'all'>('all');
@@ -102,8 +101,8 @@ import Users from 'lucide-svelte/icons/users';
 
   let tables = $state<BanquetTable[]>([]);
 
-  onMount(() => {
-    loadTables();
+  $effect(() => {
+    if (wid) loadTables();
   });
 
   async function loadTables() {
@@ -343,6 +342,10 @@ import Users from 'lucide-svelte/icons/users';
 
   let importReadId = 0;
 
+  function hasQueuedEdits(w: string): boolean {
+    try { return JSON.parse(localStorage.getItem(`offline_queue_${w}`) || '[]').length > 0; } catch { return false; }
+  }
+
   function handleImportFile(e: Event) {
     const input = e.target as HTMLInputElement;
     const file = input.files?.[0];
@@ -402,8 +405,14 @@ import Users from 'lucide-svelte/icons/users';
       importPreview = [];
       importFile = null;
       // Do not wait for the SSE echo: reseed so tables and seating update even
-      // when the stream is down.
-      await refreshGuests(async () => (await fetchAllGuests(wid)).map(toGuest), wid);
+      // when the stream is down. Queued edits must survive, as in the layout.
+      try {
+        if (!hasQueuedEdits(wid)) {
+          await refreshGuests(async () => (await fetchAllGuests(wid)).map(toGuest), wid);
+        }
+      } catch {
+        addToast('Imported guests, but the list reload failed', 'error');
+      }
     } catch (e: any) {
       addToast(e.message || 'Import failed', 'error');
     } finally {
@@ -554,7 +563,7 @@ import Users from 'lucide-svelte/icons/users';
         <option value="declined">Declined</option>
         <option value="no_response">No Response</option>
       </select>
-      <button onclick={() => { showImportModal = true; importPreview = []; importFile = null; importError = ''; }}
+      <button onclick={() => { importReadId++; showImportModal = true; importPreview = []; importFile = null; importError = ''; }}
         class="px-2 sm:px-3 py-1.5 sm:py-2.5 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-xl text-xs sm:text-sm font-semibold transition-colors flex items-center gap-1 sm:gap-1.5">
         <Upload class="w-3.5 h-3.5 sm:w-4 sm:h-4" /> <span class="hidden sm:inline">Import CSV</span><span class="sm:hidden">Import</span>
       </button>

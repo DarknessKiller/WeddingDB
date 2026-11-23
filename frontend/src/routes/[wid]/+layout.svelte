@@ -161,7 +161,9 @@
 
       listTables(forWid).then((t) => {
         if (!cancelled) tables = t;
-      }).catch(() => {});
+      }).catch((e: any) => {
+        if (!cancelled) addToast(e?.message ?? 'Failed to load tables', 'error');
+      });
       getWedding(forWid).then((w) => {
         if (cancelled) return;
         weddingTitle.set(w.name || '');
