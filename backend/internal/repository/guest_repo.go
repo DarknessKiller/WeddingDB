@@ -78,6 +78,20 @@ func (r *GuestRepo) FindByTable(ctx context.Context, weddingID, tableID uuid.UUI
 	return guests, err
 }
 
+// FindByTableForUpdate reads the guests seated at a table and locks the rows
+// for the current transaction, ordered by id so concurrent deletes lock them in
+// the same order. The row locks are Postgres-only; sqlite (tests) has one
+// writer.
+func (r *GuestRepo) FindByTableForUpdate(ctx context.Context, weddingID, tableID uuid.UUID) ([]models.GuestRecord, error) {
+	guests := make([]models.GuestRecord, 0)
+	q := r.db.WithContext(ctx)
+	if r.db.Name() == "postgres" {
+		q = q.Clauses(clause.Locking{Strength: "UPDATE"})
+	}
+	err := q.Where("wedding_id = ? AND table_id = ?", weddingID, tableID).Order("id ASC").Find(&guests).Error
+	return guests, err
+}
+
 func (r *GuestRepo) SearchByWedding(ctx context.Context, weddingID uuid.UUID, query string) ([]models.GuestRecord, error) {
 	guests := make([]models.GuestRecord, 0)
 	escaped := strings.ReplaceAll(query, "%", "\\%")
@@ -142,12 +156,15 @@ func (r *GuestRepo) ListAllByWedding(ctx context.Context, weddingID uuid.UUID) (
 
 func (r *GuestRepo) TableOccupancy(ctx context.Context, weddingID uuid.UUID) ([]TableOccupancy, error) {
 	type row struct {
-		TableID uuid.UUID
-		Pax     int
+		TableID     uuid.UUID
+		Pax         int
+		HighestSeat int
 	}
 	rows := make([]row, 0)
 	err := r.db.WithContext(ctx).Model(&models.BanquetTable{}).
-		Select("banquet_tables.id as table_id, COALESCE(SUM(guest_records.pax), 0) as pax").
+		Select(`banquet_tables.id as table_id, COALESCE(SUM(guest_records.pax), 0) as pax,
+			COALESCE(MAX(CASE WHEN guest_records.seat_num IS NOT NULL
+				THEN guest_records.seat_num + guest_records.pax - 1 END), 0) as highest_seat`).
 		Joins("LEFT JOIN guest_records ON guest_records.table_id = banquet_tables.id AND guest_records.wedding_id = ?", weddingID).
 		Where("banquet_tables.wedding_id = ?", weddingID).
 		Group("banquet_tables.id").Find(&rows).Error
@@ -162,8 +179,9 @@ func (r *GuestRepo) TableOccupancy(ctx context.Context, weddingID uuid.UUID) ([]
 }
 
 type TableOccupancy struct {
-	TableID uuid.UUID `json:"TableID"`
-	Pax     int       `json:"Pax"`
+	TableID     uuid.UUID `json:"TableID"`
+	Pax         int       `json:"Pax"`
+	HighestSeat int       `json:"HighestSeat"`
 }
 
 func (t TableOccupancy) MarshalJSON() ([]byte, error) {

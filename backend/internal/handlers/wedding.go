@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"context"
 	"errors"
 	"log/slog"
 	"strconv"
@@ -11,6 +12,7 @@ import (
 	"weddingdb/internal/services"
 
 	"github.com/go-fuego/fuego"
+	"github.com/google/uuid"
 	"gorm.io/gorm"
 )
 
@@ -139,7 +141,19 @@ func (h *WeddingHandler) Update(c fuego.ContextWithBody[WeddingRequest]) (any, e
 	if err := h.weddingService.Update(ctx, id, fields); err != nil {
 		return nil, weddingUpdateError(err)
 	}
-	return w, nil
+	return h.reloadAfterUpdate(ctx, id, w), nil
+}
+
+// reloadAfterUpdate returns the stored row so the response carries the
+// updatedAt the server wrote, not the value read before the write. A failed
+// re-read keeps the committed write a 200 with the value already in hand.
+func (h *WeddingHandler) reloadAfterUpdate(ctx context.Context, id uuid.UUID, w *models.WeddingEvent) *models.WeddingEvent {
+	stored, err := h.weddingService.Get(ctx, id)
+	if err != nil {
+		slog.ErrorContext(ctx, "reload wedding after update failed", "wedding", id, "err", err)
+		return w
+	}
+	return stored
 }
 
 // KioskSettingsRequest uses pointers so an omitted field stays unchanged.
@@ -274,7 +288,7 @@ func (h *WeddingHandler) UpdateKioskSettings(c fuego.ContextWithBody[KioskSettin
 		}
 		return nil, fuego.InternalServerError{Title: "Failed to update kiosk settings"}
 	}
-	return w, nil
+	return h.reloadAfterUpdate(ctx, id, w), nil
 }
 
 // weddingUpdateError maps a save that matched no row to 404, so a wedding

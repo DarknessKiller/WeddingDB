@@ -73,7 +73,10 @@ func (s *TableService) Delete(ctx context.Context, id, weddingID uuid.UUID) erro
 		}
 		guests := repository.NewGuestRepo(tx)
 		var err error
-		if affected, err = guests.FindByTable(ctx, weddingID, id); err != nil {
+		// Lock the affected rows before snapshotting them: a check-in that
+		// commits while this runs must either land before the read or wait for
+		// it, never be reverted by the per-row write below.
+		if affected, err = guests.FindByTableForUpdate(ctx, weddingID, id); err != nil {
 			return err
 		}
 		// Unseating carries the tableId group, so it goes through the shared

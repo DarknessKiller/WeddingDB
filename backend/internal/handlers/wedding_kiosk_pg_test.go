@@ -102,6 +102,7 @@ func TestUpdateKioskSettings_PostgresRoundTrip(t *testing.T) {
 		if got["kioskBackgroundPosX"] != "37%" {
 			t.Errorf("update returned kioskBackgroundPosX = %v, want 37%%", got["kioskBackgroundPosX"])
 		}
+		putUpdatedAt := got["updatedAt"]
 		if got["venueName"] != "Old Hall" || got["venueAddress"] != "Old Address" {
 			t.Errorf("partial payload cleared omitted fields: %v", got)
 		}
@@ -119,6 +120,10 @@ func TestUpdateKioskSettings_PostgresRoundTrip(t *testing.T) {
 		}
 		if got["venueName"] != "Old Hall" {
 			t.Errorf("persisted venueName = %v, want Old Hall", got["venueName"])
+		}
+		// The PUT response must carry the stored updatedAt, not the pre-write one.
+		if got["updatedAt"] == nil || got["updatedAt"] != putUpdatedAt {
+			t.Errorf("PUT updatedAt = %v, follow-up GET = %v; response must carry the stored value", putUpdatedAt, got["updatedAt"])
 		}
 	})
 
