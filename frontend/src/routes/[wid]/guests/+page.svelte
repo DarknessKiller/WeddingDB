@@ -5,9 +5,9 @@
   import { weddingTitle } from '#lib/stores/weddingTitle.ts';
   import { selectedGuest, isDrawerOpen, drawerStartEditing, drawerCreateMode, addToast, showSeatNumbers } from '#lib/stores/index.ts';
   import { weddingId } from '#lib/stores/weddingId.ts';
-  import { guestList, guestMap } from '#lib/stores/guestEvents.ts';
+  import { guestList, guestMap, refreshGuests } from '#lib/stores/guestEvents.ts';
   import { goto } from '$app/navigation';
-  import { deleteGuest as apiDeleteGuest, assignSeat, unassignSeat, bulkImportGuests } from '#lib/api/guests.ts';
+  import { deleteGuest as apiDeleteGuest, assignSeat, unassignSeat, bulkImportGuests, fetchAllGuests } from '#lib/api/guests.ts';
   import type { GuestImportData } from '#lib/api/guests.ts';
   import { rankGuests } from '#lib/utils/guestSearch.ts';
   import { parseCsv, csvToGuests, resolveImportTables, type CsvGuestRow } from '#lib/utils/csv.ts';
@@ -18,6 +18,7 @@
   import ConfirmDialog from '#lib/components/ui/ConfirmDialog.svelte';
   import MoveGuestDrawer from '#lib/components/ui/MoveGuestDrawer.svelte';
   import { getInitials } from '#lib/utils/index.ts';
+  import { toGuest } from '#lib/utils/guestTransform.ts';
   import Search from 'lucide-svelte/icons/search';
 import Download from 'lucide-svelte/icons/download';
 import Upload from 'lucide-svelte/icons/upload';
@@ -108,7 +109,9 @@ import Users from 'lucide-svelte/icons/users';
   async function loadTables() {
     try {
       tables = await listTables(wid);
-    } catch {}
+    } catch (e: any) {
+      addToast(e.message ?? 'Failed to load tables', 'error');
+    }
   }
 
   // Local search (no request while typing), then the status filter.
@@ -338,6 +341,8 @@ import Users from 'lucide-svelte/icons/users';
     return csvToGuests(parseCsv(text));
   }
 
+  let importReadId = 0;
+
   function handleImportFile(e: Event) {
     const input = e.target as HTMLInputElement;
     const file = input.files?.[0];
@@ -346,8 +351,10 @@ import Users from 'lucide-svelte/icons/users';
     importError = '';
     // A failed read must not leave the previous file's rows importable.
     importPreview = [];
+    const readId = ++importReadId;
     const reader = new FileReader();
     reader.onload = () => {
+      if (readId !== importReadId) return;
       try {
         const { guests, dropped } = parseCSV(reader.result as string);
         if (guests.length === 0) {
@@ -362,6 +369,7 @@ import Users from 'lucide-svelte/icons/users';
       }
     };
     reader.onerror = () => {
+      if (readId !== importReadId) return;
       importError = 'Failed to read CSV file.';
     };
     // Reset so choosing the same file again fires change after a failed parse.
@@ -393,7 +401,9 @@ import Users from 'lucide-svelte/icons/users';
       showImportModal = false;
       importPreview = [];
       importFile = null;
-      // SSE will update the store with new guests automatically.
+      // Do not wait for the SSE echo: reseed so tables and seating update even
+      // when the stream is down.
+      await refreshGuests(async () => (await fetchAllGuests(wid)).map(toGuest), wid);
     } catch (e: any) {
       addToast(e.message || 'Import failed', 'error');
     } finally {

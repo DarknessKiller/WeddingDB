@@ -815,7 +815,7 @@ func (s *GuestService) applySyncMutation(ctx context.Context, weddingID uuid.UUI
 		applied := false
 		err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 			if err := lockWedding(tx, weddingID); err != nil {
-				return err
+				return weddingLockError(err)
 			}
 			repo := repository.NewGuestRepo(tx)
 			locked, err := repo.FindByIDForUpdate(ctx, gid, weddingID)

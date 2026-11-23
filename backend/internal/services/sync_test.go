@@ -992,4 +992,9 @@ func TestBulkCreate_StampsEveryFieldGroup(t *testing.T) {
 	if len(stored.FieldTimes) != len(guestGroups()) {
 		t.Fatalf("field_times = %v, want %d groups", stored.FieldTimes, len(guestGroups()))
 	}
+	for _, key := range guestGroups() {
+		if stored.FieldTimes[key].IsZero() {
+			t.Fatalf("field_times[%s] is zero, want the create time", key)
+		}
+	}
 }
