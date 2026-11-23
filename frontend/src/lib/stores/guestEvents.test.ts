@@ -13,12 +13,15 @@ vi.mock('#lib/stores/weddingId.ts', () => ({
 }));
 
 // Captures the SSE event handler so tests can drive handleGuestEvent.
-const sseState = vi.hoisted(() => ({ eventHandler: undefined as ((e: unknown) => void) | undefined }));
+const sseState = vi.hoisted(() => ({
+	eventHandler: undefined as ((e: unknown) => void) | undefined,
+	statusHandler: undefined as ((s: string, reconnect: boolean) => void) | undefined
+}));
 
 vi.mock('#lib/api/sse.ts', () => ({
 	connectSSE: vi.fn(() => ({
 		onEvent: vi.fn((cb: (e: unknown) => void) => { sseState.eventHandler = cb; return () => {}; }),
-		onStatus: vi.fn(() => () => {}),
+		onStatus: vi.fn((cb: (s: string, reconnect: boolean) => void) => { sseState.statusHandler = cb; return () => {}; }),
 		disconnect: vi.fn()
 	})),
 	disconnectSSE: vi.fn()
@@ -209,16 +212,40 @@ describe('stale wedding data', () => {
 		} finally { vi.unstubAllGlobals(); }
 	});
 
-	it('a dropped result closes the syncing window so live events still apply', async () => {
+	it('a stale fetch for another wedding does not close the current seed window', async () => {
 		const { initializeSSE, seedGuests, guestList } = await freshModule();
 		initializeSSE(() => Promise.resolve([]));
-		// Late rows for the wedding we already left.
+		// Late rows for the wedding we already left: only w0's window may close.
 		seedGuests([makeGuest({ id: 'late' })], 'w0');
 
-		// A queued-and-never-replayed sync window would swallow this event.
+		// The event for the current wedding stays queued until its own seed.
+		sseState.eventHandler!(makeEvent({ type: 'create', guest: { id: 'g9', name: 'Zoe', email: '', pax: 1, rsvp: 'confirmed', isVip: false, notes: '', dietary: [], tableId: null, seatNum: null, checkedInAt: null, angbaoAmt: null, giftItem: null } }));
+		expect(get(guestList)).toHaveLength(0);
+
+		seedGuests([], 'w1');
+		expect(get(guestList).map(g => g.id)).toEqual(['g9']);
+	});
+
+	it('replays events queued during a reconnect when the resync fails', async () => {
+		const { initializeSSE, seedGuests, guestList } = await freshModule();
+		initializeSSE(() => Promise.reject(new Error('offline')));
+		seedGuests([]);
+
+		sseState.statusHandler!('connected', true);
 		sseState.eventHandler!(makeEvent({ type: 'create', guest: { id: 'g9', name: 'Zoe', email: '', pax: 1, rsvp: 'confirmed', isVip: false, notes: '', dietary: [], tableId: null, seatNum: null, checkedInAt: null, angbaoAmt: null, giftItem: null } }));
 
-		expect(get(guestList).map(g => g.id)).toEqual(['g9']);
+		await vi.waitFor(() => expect(get(guestList).map(g => g.id)).toEqual(['g9']));
+	});
+
+	it('a delete event wins even when its row predates the newest update seen', async () => {
+		const { initializeSSE, seedGuests, guestList } = await freshModule();
+		initializeSSE(() => Promise.resolve([]));
+		seedGuests([makeGuest({ id: 'g1', updatedAt: new Date('2026-01-01T10:00:00Z') })]);
+
+		// Backend publishes the row fetched before the delete, so its timestamp trails.
+		sseState.eventHandler!(makeEvent({ type: 'delete', guest: { id: 'g1', name: 'Alice', email: '', pax: 2, rsvp: 'confirmed', isVip: false, notes: '', dietary: [], tableId: 't1', seatNum: 1, checkedInAt: null, angbaoAmt: null, giftItem: null, updatedAt: '2026-01-01T09:00:00Z' } }));
+
+		expect(get(guestList)).toHaveLength(0);
 	});
 
 	it('clearGuestStores empties the stores and the selected guest', async () => {

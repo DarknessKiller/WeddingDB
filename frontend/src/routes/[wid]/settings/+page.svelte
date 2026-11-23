@@ -42,7 +42,7 @@ import MapPin from 'lucide-svelte/icons/map-pin';
   onMount(async () => {
     try {
       const wid = get(weddingId);
-      wedding = await getWedding(wid).catch(() => null);
+      wedding = await getWedding(wid);
       if (wedding) {
         weddingNameEdit = wedding?.name ?? '';
         venueName = wedding.venueName ?? '';

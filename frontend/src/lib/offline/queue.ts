@@ -30,22 +30,31 @@ function setQueue(wid: string, q: QueuedMutation[]) {
 export function enqueue(wid: string, m: QueuedMutation) {
 	// The guest's updatedAt as this device last saw it, read before the optimistic patch. Null for a create.
 	m.baseUpdatedAt ??= get(guestMap).get(m.guestId)?.updatedAt?.toISOString() ?? null;
-	const q = getQueue(wid);
-	if (q.length >= 500) {
-		q.shift();
-		addToast('Offline queue full: the oldest edit was dropped', 'error');
+	const write = () => {
+		const q = getQueue(wid);
+		if (q.length >= 500) {
+			q.shift();
+			addToast('Offline queue full: the oldest edit was dropped', 'error');
+		}
+		q.push(m);
+		setQueue(wid, q);
+		// Without Web Locks another tab can write between the read above and this
+		// write. Re-read and merge by mutationId so its edit survives ours.
+		const persisted = getQueue(wid);
+		if (!persisted.some((x) => x.mutationId === m.mutationId)) {
+			persisted.push(m);
+			setQueue(wid, persisted);
+		}
+		notifyChanged();
+		addToast(`Queued offline (${Math.max(q.length, persisted.length)})`, 'info');
+	};
+	// Serialize the read-modify-write across tabs; the fallback merge above only
+	// rescues writes that land after ours.
+	if (typeof navigator !== 'undefined' && navigator.locks) {
+		void navigator.locks.request(qkey(wid), write);
+	} else {
+		write();
 	}
-	q.push(m);
-	setQueue(wid, q);
-	// Another tab can write between the read above and this write. Re-read and
-	// merge by mutationId so its edit survives ours.
-	const persisted = getQueue(wid);
-	if (!persisted.some((x) => x.mutationId === m.mutationId)) {
-		persisted.push(m);
-		setQueue(wid, persisted);
-	}
-	notifyChanged();
-	addToast(`Queued offline (${Math.max(q.length, persisted.length)})`, 'info');
 }
 
 export function dequeueByIds(wid: string, ids: string[]) {

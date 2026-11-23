@@ -78,7 +78,7 @@ import X from 'lucide-svelte/icons/x';
     const req = ++guestsRequest;
     const wid = page.params.wid ?? '';
     try {
-      allGuests = await publicListGuests({ signal });
+      allGuests = await publicListGuests({ signal, wid });
       if (req !== guestsRequest) return;
       cacheGuests(wid, allGuests);
       showingCachedGuests = false;

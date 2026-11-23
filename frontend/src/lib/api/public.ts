@@ -29,8 +29,10 @@ export function mapGuest(raw: PublicGuest): Guest {
 	};
 }
 
-export async function publicListGuests(opts: { signal?: AbortSignal } = {}): Promise<Guest[]> {
-	const wid = get(weddingId);
+export async function publicListGuests(opts: { signal?: AbortSignal; wid?: string } = {}): Promise<Guest[]> {
+	// Callers on a reused component pass the route param: the store can still
+	// hold the previous wedding when the page loads.
+	const wid = opts.wid || get(weddingId);
 	const all: Guest[] = [];
 	let cursor: string | undefined;
 	do {

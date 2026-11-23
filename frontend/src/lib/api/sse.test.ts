@@ -63,6 +63,20 @@ describe('SSEClient', () => {
 		client.disconnect();
 	});
 
+	it('flags the post-refresh connect as a reconnect so the caller resyncs', async () => {
+		fetchMock
+			.mockResolvedValueOnce({ ok: false, status: 401, body: null })
+			.mockResolvedValue({ ok: true, status: 200, body: new ReadableStream({ start() {} }) });
+		const { getSSIClient } = await import('./sse');
+		const client = getSSIClient();
+		const status = vi.fn();
+		client.onStatus(status);
+		client.connect('wedding-123');
+
+		await vi.waitFor(() => expect(status).toHaveBeenCalledWith('connected', true));
+		client.disconnect();
+	});
+
 	it('reconnects right after a successful refresh instead of waiting out the backoff', async () => {
 		fetchMock
 			.mockResolvedValueOnce({ ok: false, status: 401, body: null })

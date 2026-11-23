@@ -40,6 +40,8 @@ import Users from 'lucide-svelte/icons/users';
   let sortDir = $state<'asc' | 'desc'>('asc');
   let selectedIds = $state<Set<string>>(new Set());
   let contextMenu = $state<{ x: number; y: number; guest: Guest } | null>(null);
+  let contextMenuEl = $state<HTMLElement>();
+  let menuReturnFocus: HTMLElement | null = null;
   let menuWidth = 180;
   let menuHeight = 200;
   let showUnassignConfirm = $state(false);
@@ -222,8 +224,20 @@ import Users from 'lucide-svelte/icons/users';
 
   function handleCtx(e: MouseEvent, guest: Guest) {
     e.preventDefault();
+    menuReturnFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     contextMenu = { x: e.clientX, y: e.clientY, guest };
   }
+
+  // Keyboard path: focus the first item on open, restore the trigger on close
+  // unless a dialog (drawer/confirm) took over focus.
+  $effect(() => {
+    if (contextMenu) {
+      contextMenuEl?.querySelector<HTMLElement>('[role="menuitem"]')?.focus();
+    } else if (menuReturnFocus) {
+      if (!document.querySelector('[role="dialog"]')) menuReturnFocus.focus();
+      menuReturnFocus = null;
+    }
+  });
 
   async function deleteGuest(guest: Guest) {
     try {
@@ -411,13 +425,16 @@ import Users from 'lucide-svelte/icons/users';
   async function bulkDelete() {
     if (selectedIds.size === 0) return;
     const ids = [...selectedIds];
-    try {
-      await Promise.all(ids.map(id => apiDeleteGuest(wid, id)));
-      addToast(`Deleted ${ids.length} guests`, 'info');
-      selectedIds = new Set();
-    } catch (e: any) {
-      addToast(e.message ?? 'Bulk delete failed', 'error');
+    // allSettled: one refused guest must not hide the ones that did delete.
+    const results = await Promise.allSettled(ids.map(id => apiDeleteGuest(wid, id)));
+    const failedIds = ids.filter((_, i) => results[i].status === 'rejected');
+    const deleted = ids.length - failedIds.length;
+    if (deleted) addToast(`Deleted ${deleted} guest${deleted === 1 ? '' : 's'}`, 'info');
+    if (failedIds.length) {
+      const reason = (results.find(r => r.status === 'rejected') as PromiseRejectedResult).reason;
+      addToast(`${failedIds.length} of ${ids.length} guests could not be deleted${reason?.message ? `: ${reason.message}` : ''}`, 'error');
     }
+    selectedIds = new Set(failedIds);
   }
 
   function openBulkMove() {
@@ -692,21 +709,23 @@ import Users from 'lucide-svelte/icons/users';
   <div class="fixed inset-0 z-[599]" onclick={() => contextMenu = null} role="presentation"></div>
   <!-- svelte-ignore a11y_no_static_element_interactions -->
   <!-- svelte-ignore a11y_click_events_have_key_events -->
-  <div class="fixed z-[600] bg-white/95 backdrop-blur-xl border border-black/[0.06] rounded-xl shadow-xl py-1.5 min-w-[180px]"
-    style={getMenuStyle(contextMenu.x, contextMenu.y)} onclick={(e) => e.stopPropagation()}>
-    <button class="w-full flex items-center gap-2.5 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50" onclick={() => { $drawerStartEditing = true; openGuest(contextMenu!.guest); contextMenu = null; }}>
+  <div bind:this={contextMenuEl} role="menu" aria-label="Guest actions" tabindex="-1"
+    class="fixed z-[600] bg-white/95 backdrop-blur-xl border border-black/[0.06] rounded-xl shadow-xl py-1.5 min-w-[180px]"
+    style={getMenuStyle(contextMenu.x, contextMenu.y)} onclick={(e) => e.stopPropagation()}
+    onkeydown={(e) => { if (e.key === 'Escape') { e.stopPropagation(); contextMenu = null; } }}>
+    <button type="button" role="menuitem" class="w-full flex items-center gap-2.5 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50" onclick={() => { $drawerStartEditing = true; openGuest(contextMenu!.guest); contextMenu = null; }}>
       <Pencil class="w-4 h-4" /> Edit
     </button>
-    <button class="w-full flex items-center gap-2.5 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50" onclick={() => openMoveTable(contextMenu!.guest)}>
+    <button type="button" role="menuitem" class="w-full flex items-center gap-2.5 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50" onclick={() => openMoveTable(contextMenu!.guest)}>
       <ArrowUpDown class="w-4 h-4" /> Move Table
     </button>
     {#if contextMenu!.guest.tableId}
-      <button class="w-full flex items-center gap-2.5 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50" onclick={() => unassignGuest(contextMenu!.guest)}>
+      <button type="button" role="menuitem" class="w-full flex items-center gap-2.5 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50" onclick={() => unassignGuest(contextMenu!.guest)}>
         <ArrowUpDown class="w-4 h-4" /> Unassign Table
       </button>
     {/if}
     <hr class="my-1 border-gray-100" />
-    <button class="w-full flex items-center gap-2.5 px-4 py-2 text-sm text-red hover:bg-red-50" onclick={() => requestDelete(contextMenu!.guest)}>
+    <button type="button" role="menuitem" class="w-full flex items-center gap-2.5 px-4 py-2 text-sm text-red hover:bg-red-50" onclick={() => requestDelete(contextMenu!.guest)}>
       <Trash2 class="w-4 h-4" /> Delete
     </button>
   </div>

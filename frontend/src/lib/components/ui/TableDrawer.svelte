@@ -116,7 +116,7 @@ import Users from 'lucide-svelte/icons/users';
 
     {#if editing}
       <div class="drawer-footer flex">
-        <button onclick={onSave} disabled={saving}
+        <button onclick={onSave} disabled={saving || capacity < Math.max(1, occupied)}
           class="w-full py-3 bg-red text-white rounded-xl text-sm font-semibold hover:bg-red-light transition-colors flex items-center justify-center gap-2">
           <Check class="w-4 h-4" /> {saving ? 'Saving...' : 'Save'}
         </button>

@@ -4,7 +4,7 @@
   import Sidebar from '#lib/components/layout/Sidebar.svelte';
   import Header from '#lib/components/layout/Header.svelte';
   import Drawer from '#lib/components/ui/Drawer.svelte';
-  import { selectedGuest, isDrawerOpen, drawerStartEditing, drawerCreateMode, sidebarCollapsed, showSeatNumbers, setShowSeatNumbers } from '#lib/stores/index.ts';
+  import { selectedGuest, isDrawerOpen, drawerStartEditing, drawerCreateMode, sidebarCollapsed, showSeatNumbers, setShowSeatNumbers, addToast } from '#lib/stores/index.ts';
   import { setWeddingId } from '#lib/stores/weddingId.ts';
   import { weddingTitle } from '#lib/stores/weddingTitle.ts';
   import { validateToken } from '#lib/utils/auth.ts';
@@ -26,6 +26,8 @@
   let offline = $state(typeof navigator !== 'undefined' ? !navigator.onLine : false);
   let queued = $state(0);
   let loadError = $state(false);
+  // Queue sync and guest loading fail independently; one banner each.
+  let syncError = $state(false);
 
   function refreshQueued() {
     if (typeof window === 'undefined' || !wid) return;
@@ -61,6 +63,11 @@
   $effect(() => {
     const forWid = wid;
     if (!forWid) return;
+    // Do not show the previous wedding's tables, count or seat setting until
+    // this wedding's fetches land (or fail).
+    tables = [];
+    guestCount = 0;
+    setShowSeatNumbers(forWid, false);
     let cancelled = false;
     let localCleanupSSE: (() => void) | undefined;
     let localCleanupListeners: (() => void) | undefined;
@@ -85,9 +92,11 @@
         if (cancelled) return;
         guestCount = guests.length;
         loadError = false;
+        syncError = false;
         refreshQueued();
       } catch {
-        if (!cancelled) loadError = true;
+        // Guest loading has its own state; only the queue failed here.
+        if (!cancelled) syncError = true;
       } finally {
         syncing = false;
       }
@@ -130,6 +139,7 @@
         if (cancelled) return;
         guestCount = guests.length;
         loadError = false;
+        syncError = false;
       } catch {
         if (!cancelled) loadError = true;
       }
@@ -183,10 +193,13 @@
       {#if offline}
         <div class="offline-banner">Offline — changes queued{queued ? ` (${queued})` : ''}</div>
       {:else if queued}
-        <div class="offline-banner queued">{queued} queued — syncing on reconnect <button onclick={async () => { await syncQueue(wid); refreshQueued(); }}>Sync now</button></div>
+        <div class="offline-banner queued">{queued} queued — syncing on reconnect <button onclick={async () => { try { await syncQueue(wid); } catch { addToast('Could not sync queued edits', 'error'); } refreshQueued(); }}>Sync now</button></div>
       {/if}
       {#if loadError}
         <div class="offline-banner">Could not load guests <button onclick={retryGuests}>Retry</button></div>
+      {/if}
+      {#if syncError}
+        <div class="offline-banner">Could not sync changes — edits stay queued</div>
       {/if}
       <Header />
       <main class="main-content">

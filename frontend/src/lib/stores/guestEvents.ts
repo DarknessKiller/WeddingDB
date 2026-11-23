@@ -23,9 +23,28 @@ const serverUpdatedAt = new Map<string, Date>();
 const CACHE_PREFIX = 'offline_cache_';
 
 let initialized = false;
-let syncing = false;
-let queuedEvents: GuestEvent[] = [];
+// Keyed by wedding: a slow fetch for wedding A must not open or close the
+// seeding window of the wedding the user switched to.
+const syncing = new Set<string>();
+const queuedEvents = new Map<string, GuestEvent[]>();
 let resync: (() => Promise<Guest[]>) | undefined;
+
+function beginSync(wid: string) {
+	syncing.add(wid);
+	queuedEvents.set(wid, queuedEvents.get(wid) ?? []);
+}
+
+function endSync(wid: string) {
+	syncing.delete(wid);
+	const pending = queuedEvents.get(wid) ?? [];
+	queuedEvents.delete(wid);
+	pending.forEach(handleGuestEvent);
+}
+
+function dropSync(wid: string) {
+	syncing.delete(wid);
+	queuedEvents.delete(wid);
+}
 
 /**
  * Initialize the SSE connection and start handling events.
@@ -34,8 +53,6 @@ let resync: (() => Promise<Guest[]>) | undefined;
 export function initializeSSE(onResync?: () => Promise<Guest[]>): (() => void) | undefined {
 	if (initialized) return undefined;
 	initialized = true;
-	syncing = true;
-	queuedEvents = [];
 	resync = onResync;
 
 	const wid = get(weddingId);
@@ -43,17 +60,21 @@ export function initializeSSE(onResync?: () => Promise<Guest[]>): (() => void) |
 		initialized = false;
 		return undefined;
 	}
+	beginSync(wid);
 
 	const client = connectSSE(wid);
 	const unsubscribeStatus = client.onStatus((status, reconnect) => {
 		if (status === 'connected' && reconnect && resync) {
-			syncing = true;
-			resync().then((list) => seedGuests(list, wid)).catch(() => { syncing = false; });
+			beginSync(wid);
+			resync().then((list) => seedGuests(list, wid)).catch(() => endSync(wid));
 		}
 	});
 	const unsubscribe = client.onEvent((event: GuestEvent) => {
-		if (syncing) queuedEvents.push(event);
-		else handleGuestEvent(event);
+		if (syncing.has(wid)) {
+			const queue = queuedEvents.get(wid) ?? [];
+			queue.push(event);
+			queuedEvents.set(wid, queue);
+		} else handleGuestEvent(event);
 	});
 
 	return () => {
@@ -74,17 +95,14 @@ export function initializeSSE(onResync?: () => Promise<Guest[]>): (() => void) |
  * (e.g. the wedding layout's online/visibility sync).
  */
 export async function refreshGuests(fetchFn: () => Promise<Guest[]>, wid = get(weddingId)): Promise<Guest[]> {
-	syncing = true;
+	beginSync(wid);
 	try {
 		const guests = await fetchFn();
 		seedGuests(guests, wid);
 		return guests;
 	} catch (e) {
 		// Abandon the window; replay anything that queued up meanwhile.
-		syncing = false;
-		const pending = queuedEvents;
-		queuedEvents = [];
-		pending.forEach(handleGuestEvent);
+		endSync(wid);
 		throw e;
 	}
 }
@@ -96,11 +114,10 @@ export async function refreshGuests(fetchFn: () => Promise<Guest[]>, wid = get(w
  */
 export function seedGuests(guests: Guest[], wid = get(weddingId)) {
 	if (wid !== get(weddingId)) {
-		// A load that started for another wedding: drop the rows, and close the
-		// syncing window now. Nothing will seed it, and leaving it open would queue
-		// every later event forever.
-		syncing = false;
-		queuedEvents = [];
+		// A load that started for another wedding: drop the rows and only close
+		// that wedding's window. Closing the current one would leave its later
+		// events queued forever.
+		dropSync(wid);
 		return;
 	}
 	guestList.set(guests);
@@ -116,12 +133,7 @@ export function seedGuests(guests: Guest[], wid = get(weddingId)) {
 	try {
 		if (wid) localStorage.setItem(CACHE_PREFIX + wid, JSON.stringify(guests));
 	} catch {}
-	if (syncing) {
-		syncing = false;
-		const pending = queuedEvents;
-		queuedEvents = [];
-		pending.forEach(handleGuestEvent);
-	}
+	if (syncing.has(wid)) endSync(wid);
 }
 
 function cacheKey(wid: string) { return CACHE_PREFIX + wid; }
@@ -138,8 +150,8 @@ export function readCachedGuests(wid: string): Guest[] | null {
 
 /** Empty the guest stores without touching the offline cache. Used when leaving a wedding. */
 export function clearGuestStores() {
-	syncing = false;
-	queuedEvents = [];
+	syncing.clear();
+	queuedEvents.clear();
 	serverUpdatedAt.clear();
 	guestList.set([]);
 	guestMap.set(new Map());
@@ -167,13 +179,16 @@ function handleGuestEvent(event: GuestEvent) {
 	const { type, guest: guestData } = event;
 	if (!guestData) return;
 	const incoming = toGuest(guestData);
+	// A delete is published with the row fetched before deletion, so its
+	// timestamp can trail an update already applied here. Deletes win anyway:
+	// comparing first would drop the delete and leave a ghost row.
+	if (type === 'delete') return removeGuest(incoming.id);
 	// The server's per-column rule already picked the winner; an event older
 	// than the newest server row this device has seen is a late or replayed one
 	// and must not undo it. Compare server time, never the local optimistic stamp.
 	const seen = serverUpdatedAt.get(incoming.id);
 	if (seen && incoming.updatedAt && incoming.updatedAt < seen) return;
 	if (incoming.updatedAt) serverUpdatedAt.set(incoming.id, incoming.updatedAt);
-	if (type === 'delete') return removeGuest(incoming.id);
 	upsertGuest(incoming);
 }
 
@@ -207,6 +222,10 @@ function adjustOccupancy(previous: Guest | undefined, next: Guest | undefined) {
  */
 export function applyGuestResponse(resp: GuestResponse) {
 	const guest = toGuest(resp);
+	// A slow PUT response can land after a newer SSE event or response. Skip it
+	// so it cannot regress the row or the watermark.
+	const seen = serverUpdatedAt.get(guest.id);
+	if (seen && guest.updatedAt && guest.updatedAt < seen) return;
 	if (guest.updatedAt) serverUpdatedAt.set(guest.id, guest.updatedAt);
 	upsertGuest(guest);
 }

@@ -52,6 +52,21 @@ describe('offline queue storage', () => {
 		expect(getQueue('w1')).toEqual([]);
 	});
 
+	it('serializes the read-modify-write through the Web Lock so concurrent writes do not lose a mutation', async () => {
+		let chain = Promise.resolve();
+		const request = vi.fn((_name: string, cb: () => void) => (chain = chain.then(() => cb())));
+		vi.stubGlobal('navigator', { locks: { request } });
+		const { enqueue, getQueue } = await import('./queue');
+
+		enqueue('w1', mutation(1));
+		enqueue('w1', mutation(2));
+		await chain;
+
+		expect(request).toHaveBeenCalledTimes(2);
+		expect(request.mock.calls[0][0]).toBe('offline_queue_w1');
+		expect(getQueue('w1').map((m) => m.mutationId)).toEqual(['m1', 'm2']);
+	});
+
 	it('stamps baseUpdatedAt from the guest this device last saw', async () => {
 		const { enqueue, getQueue } = await import('./queue');
 		enqueue('w1', mutation(1));
