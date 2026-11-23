@@ -214,7 +214,7 @@ import AlertCircle from 'lucide-svelte/icons/alert-circle';
       addToast(`Reservation for ${form.name} saved successfully`, 'success');
       goto(`/${wid}/guests`);
     } catch (e) {
-      addToast('Failed to save reservation', 'error');
+      addToast(e instanceof Error ? e.message : 'Failed to save reservation', 'error');
     } finally {
       isSubmitting = false;
     }
@@ -225,19 +225,18 @@ import AlertCircle from 'lucide-svelte/icons/alert-circle';
 
 
 <div class="flex flex-col sm:flex-row h-full">
+  {#if errored}
+    <div class="p-4 border-b border-black/[0.06]">
+      <p class="text-sm text-gray-600 mb-2">Could not load the hall map.</p>
+      <button
+        class="px-4 py-2 bg-red text-white rounded-xl text-sm font-semibold hover:bg-red-light transition-colors"
+        onclick={() => { errored = false; void loadData(); }}
+      >Retry</button>
+    </div>
+  {/if}
   <!-- Left: Hall Map (hidden on mobile, shown on desktop) -->
   <div class="hidden sm:flex flex-1 flex-col relative">
-    {#if errored}
-      <div class="flex items-center justify-center h-full">
-        <div class="text-center px-6">
-          <p class="text-sm text-gray-600 mb-3">Could not load the hall map.</p>
-          <button
-            class="px-4 py-2.5 bg-red text-white rounded-xl text-sm font-semibold hover:bg-red-light transition-colors"
-            onclick={() => { errored = false; void loadData(); }}
-          >Retry</button>
-        </div>
-      </div>
-    {:else if apiTables.length > 0}
+    {#if apiTables.length > 0}
       <HallMap
         tables={apiTables}
         {elements}
