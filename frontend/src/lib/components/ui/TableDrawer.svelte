@@ -82,6 +82,8 @@ import Users from 'lucide-svelte/icons/users';
               class="form-input" />
             {#if capacity < floor}
               <p class="text-xs text-red-600 mt-1">Capacity cannot be below the {seatedFloor} guests already seated.</p>
+            {:else if capacity > LIMITS.tableCapacity}
+              <p class="text-xs text-red-600 mt-1">Capacity cannot exceed {LIMITS.tableCapacity}.</p>
             {/if}
           </div>
           <label class="form-check-label">

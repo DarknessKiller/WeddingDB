@@ -11,6 +11,7 @@ import ChevronsDown from 'lucide-svelte/icons/chevrons-down';
 import Undo2 from 'lucide-svelte/icons/undo-2';
 import Redo2 from 'lucide-svelte/icons/redo-2';
   import { LIMITS } from '#lib/utils/limits.ts';
+  import { clampHallSize, HALL_MAX, HALL_MIN } from '#lib/utils/layout.ts';
 import AlignStartVertical from 'lucide-svelte/icons/align-start-vertical';
 import AlignCenterVertical from 'lucide-svelte/icons/align-center-vertical';
 import AlignEndVertical from 'lucide-svelte/icons/align-end-vertical';
@@ -220,20 +221,28 @@ import AlignVerticalDistributeCenter from 'lucide-svelte/icons/align-vertical-di
       id="hall-w"
       type="number"
       value={hallWidth}
-      onchange={(e) => onWidthChange(Number(e.currentTarget.value))}
+      onchange={(e) => {
+        const v = clampHallSize(Number(e.currentTarget.value));
+        e.currentTarget.value = String(v);
+        onWidthChange(v);
+      }}
       class="w-16 px-1.5 py-1 border border-gray-200 rounded-lg text-center"
-      min="200"
-      max="3000"
+      min={HALL_MIN}
+      max={HALL_MAX}
     />
     <label for="hall-h" class="text-gray-500 ml-1">H</label>
     <input
       id="hall-h"
       type="number"
       value={hallHeight}
-      onchange={(e) => onHeightChange(Number(e.currentTarget.value))}
+      onchange={(e) => {
+        const v = clampHallSize(Number(e.currentTarget.value));
+        e.currentTarget.value = String(v);
+        onHeightChange(v);
+      }}
       class="w-16 px-1.5 py-1 border border-gray-200 rounded-lg text-center"
-      min="200"
-      max="3000"
+      min={HALL_MIN}
+      max={HALL_MAX}
     />
   </div>
 

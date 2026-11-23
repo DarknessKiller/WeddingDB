@@ -173,6 +173,9 @@ func (s *GuestService) Create(ctx context.Context, g *models.GuestRecord) error 
 		return s.createGuestTx(ctx, tx, g)
 	})
 	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return ErrGuestNotFound
+		}
 		return err
 	}
 	s.sseHub.publishGuest("create", g, g.WeddingID)
@@ -222,6 +225,9 @@ func (s *GuestService) Delete(ctx context.Context, id, weddingID uuid.UUID) erro
 		return nil
 	})
 	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return ErrGuestNotFound
+		}
 		return err
 	}
 	s.sseHub.publishGuest("delete", guest, weddingID)
@@ -360,6 +366,9 @@ func (s *GuestService) CheckIn(ctx context.Context, id, weddingID uuid.UUID, not
 		return repo.Update(ctx, locked)
 	})
 	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, ErrGuestNotFound
+		}
 		return nil, err
 	}
 	if applied {
@@ -394,6 +403,9 @@ func (s *GuestService) CheckOut(ctx context.Context, id, weddingID uuid.UUID) er
 		return repo.Update(ctx, locked)
 	})
 	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return ErrGuestNotFound
+		}
 		return err
 	}
 	if applied {
@@ -753,6 +765,11 @@ func (s *GuestService) applySyncMutation(ctx context.Context, weddingID uuid.UUI
 			return nil
 		})
 		if err != nil {
+			// A deleted wedding means the delete intent is already satisfied;
+			// retrying it forever would only re-queue the mutation.
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return SyncResult{GuestID: m.GuestID, Status: "applied"}
+			}
 			return failedSync(ctx, m.GuestID, err)
 		}
 		if losing != nil {

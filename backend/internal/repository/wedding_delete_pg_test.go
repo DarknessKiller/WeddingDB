@@ -58,6 +58,9 @@ func TestWeddingDelete_NoOrphanGuestAfterConcurrentCreate(t *testing.T) {
 	ctx := t.Context()
 	wid := uuid.New()
 	testutil.NoErr(t, db.Create(&models.WeddingEvent{ID: wid, Name: "Delete Race"}).Error)
+	testutil.NoErr(t, db.Create(&models.BanquetTable{ID: uuid.New(), WeddingID: wid, Name: "T1", Capacity: 4}).Error)
+	testutil.NoErr(t, db.Create(&models.HallElement{ID: uuid.New(), WeddingID: wid, Name: "Bar", Type: "bar"}).Error)
+	testutil.NoErr(t, db.Create(&models.UserWedding{ID: uuid.New(), UserID: uuid.New(), WeddingID: wid}).Error)
 
 	// Hold the wedding row lock, so the cascade cannot start.
 	lockTx := db.Begin()
@@ -95,6 +98,17 @@ func TestWeddingDelete_NoOrphanGuestAfterConcurrentCreate(t *testing.T) {
 	testutil.NoErr(t, db.Model(&models.GuestRecord{}).Where("wedding_id = ?", wid).Count(&guests).Error)
 	if guests != 0 {
 		t.Fatalf("guest rows = %d, want 0: the cascade left an orphan", guests)
+	}
+	for name, model := range map[string]any{
+		"tables":        &models.BanquetTable{},
+		"hall elements": &models.HallElement{},
+		"user grants":   &models.UserWedding{},
+	} {
+		var count int64
+		testutil.NoErr(t, db.Model(model).Where("wedding_id = ?", wid).Count(&count).Error)
+		if count != 0 {
+			t.Fatalf("%s rows = %d, want 0: the cascade missed them", name, count)
+		}
 	}
 	var weddings int64
 	testutil.NoErr(t, db.Model(&models.WeddingEvent{}).Where("id = ?", wid).Count(&weddings).Error)

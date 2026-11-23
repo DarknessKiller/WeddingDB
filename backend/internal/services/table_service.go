@@ -2,6 +2,7 @@ package services
 
 import (
 	"context"
+	"errors"
 	"time"
 
 	"weddingdb/internal/models"
@@ -98,6 +99,9 @@ func (s *TableService) Delete(ctx context.Context, id, weddingID uuid.UUID) erro
 		return repository.NewTableRepo(tx).Delete(ctx, id, weddingID)
 	})
 	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return ErrTableNotFound
+		}
 		return err
 	}
 	for i := range affected {

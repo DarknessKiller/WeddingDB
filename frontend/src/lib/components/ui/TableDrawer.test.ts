@@ -24,6 +24,7 @@ describe('TableDrawer capacity', () => {
 			props: { title: 'Edit Table', name: 'Table 1', capacity: 999, seatedFloor: 8, startEditing: true, onSave: () => {}, onClose: () => {} }
 		});
 		expect(body).toContain('max="200"');
+		expect(body).toContain('Capacity cannot exceed 200.');
 		expect(body).toMatch(/<button[^>]*disabled[^>]*>[^<]*<svg[\s\S]*?Save/);
 		expect(clampTableCapacity(999, 8)).toBe(200);
 		expect(clampTableCapacity(2, 8)).toBe(8);

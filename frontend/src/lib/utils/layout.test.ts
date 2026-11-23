@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { defaultSlot, reorderElements } from './layout';
+import { defaultSlot, reorderElements, clampHallSize, HALL_MIN, HALL_MAX } from './layout';
 import type { BanquetTable, HallElement } from '#lib/types/index.ts';
 
 const t = (x: number, y: number): BanquetTable => ({
@@ -35,11 +35,19 @@ describe('defaultSlot', () => {
 
 describe('reorderElements', () => {
 	const elements = [el('a', 0), el('b', 10), el('c', 20)];
-
 	it('moves the selected element to either edge and renumbers z-indexes', () => {
 		expect(reorderElements(elements, 'b', 'front').map(({ id, zIndex }) => ({ id, zIndex })))
 			.toEqual([{ id: 'a', zIndex: 0 }, { id: 'c', zIndex: 10 }, { id: 'b', zIndex: 20 }]);
 		expect(reorderElements(elements, 'b', 'back').map(({ id, zIndex }) => ({ id, zIndex })))
 			.toEqual([{ id: 'b', zIndex: 0 }, { id: 'a', zIndex: 10 }, { id: 'c', zIndex: 20 }]);
+	});
+});
+
+describe('clampHallSize', () => {
+	it('keeps a hall size inside the editor bounds', () => {
+		expect(clampHallSize(30)).toBe(HALL_MIN);
+		expect(clampHallSize(9999)).toBe(HALL_MAX);
+		expect(clampHallSize(Number.NaN)).toBe(HALL_MIN);
+		expect(clampHallSize(860.7)).toBe(860);
 	});
 });

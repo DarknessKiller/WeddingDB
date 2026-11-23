@@ -25,6 +25,8 @@ import ArrowUpDown from 'lucide-svelte/icons/arrow-up-down';
   onMount(() => registerEscape(onClose));
   let tableId = $state(untrack(() => guest.tableId != null ? String(guest.tableId) : (tables.length ? String(tables[0].id) : '')));
   let seatNum = $state(untrack(() => guest.seatNumber ?? 1));
+  // Stops the auto-pick from overwriting a seat the user (or a resync) chose.
+  let pickedTable = $state('');
 
   const capacity = $derived(tables.find(t => String(t.id) === tableId)?.capacity ?? 10);
 
@@ -47,9 +49,10 @@ import ArrowUpDown from 'lucide-svelte/icons/arrow-up-down';
   });
   const freeCount = $derived(available.length);
 
-  // Auto-select the lowest empty seat that fits the party size
+  // Auto-select the lowest empty seat that fits, until the user picks one.
+  // A guest resync replaces the guests array and must not move the seat.
   $effect(() => {
-    if (!tableId) return;
+    if (!tableId || pickedTable === tableId) return;
     let best: number | null = null;
     for (const s of available) {
       let ok = true;
@@ -127,7 +130,9 @@ import ArrowUpDown from 'lucide-svelte/icons/arrow-up-down';
         </div>
         <div class="form-field">
           <label for="move-seat" class="form-label">Starting Seat (1–{capacity})</label>
-          <input id="move-seat" type="number" min="1" max={capacity} bind:value={seatNum} class="form-input {!rangeOk ? 'input-error' : ''}" />
+          <input id="move-seat" type="number" min="1" max={capacity} bind:value={seatNum}
+            oninput={() => { pickedTable = tableId; }}
+            class="form-input {!rangeOk ? 'input-error' : ''}" />
           {#if !rangeOk}
             <p class="text-xs text-red mt-1">No room for {guest.pax} pax starting at seat {seatNum}. Free seats: {freeCount}</p>
           {:else}
