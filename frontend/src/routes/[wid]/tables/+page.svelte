@@ -4,6 +4,8 @@
   import { goto } from '$app/navigation';
   import { cn } from '#lib/utils/index.ts';
   import { addToast, isDrawerOpen } from '#lib/stores/index.ts';
+  import { guestList } from '#lib/stores/guestEvents.ts';
+  import { groupGuestsByTable } from '#lib/utils/seat.ts';
   import TableDrawer from '#lib/components/ui/TableDrawer.svelte';
   import ConfirmDialog from '#lib/components/ui/ConfirmDialog.svelte';
   import Star from 'lucide-svelte/icons/star';
@@ -76,13 +78,19 @@ import Map from 'lucide-svelte/icons/map';
   // Seats already taken: the API floor is the highest occupied seat, not summed pax.
   const drawerSeatedFloor = $derived(editingTable ? getOcc(editingTable.id).highestSeat : 0);
 
-  let prevDrawerOpen = $state(false);
+  // Grouped guests for the layout editor: its capacity floor needs the seated guests.
+  let tableGuests = $derived(groupGuestsByTable($guestList));
+
+  let prevGuestDrawerOpen = $state(false);
+  let prevTableDrawerOpen = $state(false);
   $effect(() => {
-    const isOpen = $isDrawerOpen;
-    if (prevDrawerOpen && !isOpen) {
+    const guestOpen = $isDrawerOpen;
+    const tableOpen = showDrawer;
+    if ((prevGuestDrawerOpen && !guestOpen) || (prevTableDrawerOpen && !tableOpen)) {
       loadData().catch((e: any) => addToast(e.message ?? 'Failed to reload tables', 'error'));
     }
-    prevDrawerOpen = isOpen;
+    prevGuestDrawerOpen = guestOpen;
+    prevTableDrawerOpen = tableOpen;
   });
 
   async function loadData() {
@@ -133,6 +141,8 @@ import Map from 'lucide-svelte/icons/map';
     formVip = table.isVip;
     showDrawer = true;
     contextMenu = null;
+    // Occupancy may have changed from another tab/device: refresh the floor.
+    loadData().catch((e: any) => addToast(e.message ?? 'Failed to refresh occupancy', 'error'));
   }
 
   function closeDrawer() {
@@ -273,7 +283,7 @@ import Map from 'lucide-svelte/icons/map';
         {elements}
         {hallWidth}
         {hallHeight}
-        tableGuests={{}}
+        {tableGuests}
         onSaveLayout={handleSaveLayout}
         onCancelEdit={handleCancelEdit}
       />

@@ -7,6 +7,7 @@
   import ConfirmDialog from '#lib/components/ui/ConfirmDialog.svelte';
   import type { BanquetTable as BanquetTableType, HallElement, Guest } from '#lib/types/index.ts';
   import { reorderElements } from '#lib/utils/layout.ts';
+  import { highestOccupiedSeat } from '#lib/utils/seat.ts';
   import { LIMITS } from '#lib/utils/limits.ts';
   import { addToast } from '#lib/stores/index.ts';
   import ZoomIn from 'lucide-svelte/icons/zoom-in';
@@ -247,12 +248,7 @@ import RotateCcw from 'lucide-svelte/icons/rotate-ccw';
   // Capacity floor mirrors the server rule: the highest occupied seat end
   // (MAX(seat_num + pax - 1)), not the summed pax. Guests without a seat are ignored.
   const selectedSeatedPax = $derived(
-    selectedId && isTableSelected
-      ? (tableGuestsRaw[String(selectedId)] ?? []).reduce(
-          (hi, g) => (g.seatNumber == null ? hi : Math.max(hi, g.seatNumber + (g.pax ?? 1) - 1)),
-          0
-        )
-      : 0
+    selectedId && isTableSelected ? highestOccupiedSeat(tableGuestsRaw[String(selectedId)] ?? []) : 0
   );
 
   // Reload/close: beforeNavigate only sees in-app navigation.
