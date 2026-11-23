@@ -3,7 +3,8 @@ import { render } from 'svelte/server';
 import EditToolbar from './EditToolbar.svelte';
 
 describe('EditToolbar table capacity', () => {
-	it('cannot go below the guests already seated', () => {
+	it('cannot go below the highest occupied seat', () => {
+		// Guests at seats 1 and 8: the server floor is 8, the summed pax is 2.
 		const { body } = render(EditToolbar, {
 			props: {
 				hallWidth: 860,
@@ -11,7 +12,7 @@ describe('EditToolbar table capacity', () => {
 				selectedId: 't1',
 				isTableSelected: true,
 				selectedItem: { kind: 'table', id: 't1', capacity: 10 },
-				seatedPax: 7,
+				seatedPax: 8,
 				onSave: () => {},
 				onCancel: () => {},
 				onDelete: () => {},
@@ -22,6 +23,7 @@ describe('EditToolbar table capacity', () => {
 			}
 		});
 
-		expect(body).toContain('min="7"');
+		expect(body).toContain('min="8"');
+		expect(body).toContain('max="200"');
 	});
 });

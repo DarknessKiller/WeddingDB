@@ -244,10 +244,14 @@ import RotateCcw from 'lucide-svelte/icons/rotate-ccw';
     return null;
   });
 
-  // Guests already seated in the selected table: capacity may not drop below them.
+  // Capacity floor mirrors the server rule: the highest occupied seat end
+  // (MAX(seat_num + pax - 1)), not the summed pax. Guests without a seat are ignored.
   const selectedSeatedPax = $derived(
     selectedId && isTableSelected
-      ? (tableGuestsRaw[String(selectedId)] ?? []).reduce((sum, g) => sum + (g.pax ?? 1), 0)
+      ? (tableGuestsRaw[String(selectedId)] ?? []).reduce(
+          (hi, g) => (g.seatNumber == null ? hi : Math.max(hi, g.seatNumber + (g.pax ?? 1) - 1)),
+          0
+        )
       : 0
   );
 

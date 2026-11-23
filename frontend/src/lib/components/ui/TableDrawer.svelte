@@ -15,6 +15,7 @@ import Users from 'lucide-svelte/icons/users';
     capacity = $bindable(10),
     isVip = $bindable(false),
     occupied = 0,
+    seatedFloor = 0,
     saving = false,
     startEditing = false,
     onSave,
@@ -25,6 +26,8 @@ import Users from 'lucide-svelte/icons/users';
     capacity?: number;
     isVip?: boolean;
     occupied?: number;
+    // Capacity floor: the highest occupied seat end the API enforces.
+    seatedFloor?: number;
     saving?: boolean;
     startEditing?: boolean;
     onSave: () => void;
@@ -35,6 +38,7 @@ import Users from 'lucide-svelte/icons/users';
   onMount(() => registerEscape(onClose));
   const isEdit = $derived(title === 'Edit Table');
   const percentage = $derived(capacity > 0 ? Math.round((occupied / capacity) * 100) : 0);
+  const floor = $derived(Math.max(1, seatedFloor));
 </script>
 
 <!-- svelte-ignore a11y_no_static_element_interactions -->
@@ -65,9 +69,9 @@ import Users from 'lucide-svelte/icons/users';
           </div>
           <div class="form-field">
             <label for="table-capacity" class="form-label">Capacity</label>
-            <input id="table-capacity" type="number" min={Math.max(1, occupied)} bind:value={capacity} class="form-input" />
-            {#if capacity < Math.max(1, occupied)}
-              <p class="text-xs text-red-600 mt-1">Capacity cannot be below the {occupied} guests already seated.</p>
+            <input id="table-capacity" type="number" min={floor} max={LIMITS.tableCapacity} bind:value={capacity} class="form-input" />
+            {#if capacity < floor}
+              <p class="text-xs text-red-600 mt-1">Capacity cannot be below the {seatedFloor} guests already seated.</p>
             {/if}
           </div>
           <label class="form-check-label">
@@ -116,7 +120,7 @@ import Users from 'lucide-svelte/icons/users';
 
     {#if editing}
       <div class="drawer-footer flex">
-        <button onclick={onSave} disabled={saving || capacity < Math.max(1, occupied)}
+        <button onclick={onSave} disabled={saving || capacity < floor}
           class="w-full py-3 bg-red text-white rounded-xl text-sm font-semibold hover:bg-red-light transition-colors flex items-center justify-center gap-2">
           <Check class="w-4 h-4" /> {saving ? 'Saving...' : 'Save'}
         </button>

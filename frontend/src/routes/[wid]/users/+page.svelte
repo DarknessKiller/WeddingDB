@@ -185,9 +185,14 @@ import LogOut from 'lucide-svelte/icons/log-out';
     assignTarget = user;
     assignWeddingIds = [];
     assignGrants = grantsLoading();
-    assignGrants = await loadWeddingGrants(() => getUserWeddings(user.id));
-    assignWeddingIds = assignGrants.ids;
-    if (assignGrants.error) addToast(assignGrants.error, 'error');
+    const forId = user.id;
+    const grants = await loadWeddingGrants(() => getUserWeddings(forId));
+    // A stale response must not land on a different target: a save would replace
+    // that user's grants with these ids.
+    if (assignTarget?.id !== forId) return;
+    assignGrants = grants;
+    assignWeddingIds = grants.ids;
+    if (grants.error) addToast(grants.error, 'error');
   }
 
   async function handleAssign() {

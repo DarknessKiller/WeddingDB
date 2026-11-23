@@ -44,6 +44,8 @@ export interface TableOccupancy {
   occupied: number;
   capacity: number;
   percentage: number;
+  // Highest occupied seat end; the capacity floor the API enforces.
+  highestSeat?: number;
   isVip?: boolean;
 }
 

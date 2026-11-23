@@ -73,6 +73,8 @@ import Map from 'lucide-svelte/icons/map';
   let saving = $state(false);
 
   const drawerOccupied = $derived(editingTable ? getOcc(editingTable.id).occupied : 0);
+  // Seats already taken: the API floor is the highest occupied seat, not summed pax.
+  const drawerSeatedFloor = $derived(editingTable ? getOcc(editingTable.id).highestSeat : 0);
 
   let prevDrawerOpen = $state(false);
   $effect(() => {
@@ -99,6 +101,7 @@ import Map from 'lucide-svelte/icons/map';
         tableName: table?.name ?? '',
         occupied: o.Pax,
         capacity,
+        highestSeat: o.HighestSeat ?? 0,
         percentage: capacity > 0 ? Math.round((o.Pax / capacity) * 100) : 0
       };
     }
@@ -109,10 +112,10 @@ import Map from 'lucide-svelte/icons/map';
 
   const wid = get(weddingId);
 
-  function getOcc(tableId: string): { occupied: number; percentage: number } {
+  function getOcc(tableId: string): { occupied: number; percentage: number; highestSeat: number } {
     const occ = occupancy[tableId];
-    if (occ) return occ;
-    return { occupied: 0, percentage: 0 };
+    if (occ) return { ...occ, highestSeat: occ.highestSeat ?? 0 };
+    return { occupied: 0, percentage: 0, highestSeat: 0 };
   }
 
   function openCreate() {
@@ -413,6 +416,7 @@ import Map from 'lucide-svelte/icons/map';
     bind:capacity={formCapacity}
     bind:isVip={formVip}
     occupied={drawerOccupied}
+    seatedFloor={drawerSeatedFloor}
     {saving}
     startEditing={!editingTable}
     onSave={handleSave}

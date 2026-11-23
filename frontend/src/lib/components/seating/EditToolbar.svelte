@@ -376,10 +376,13 @@ import AlignVerticalDistributeCenter from 'lucide-svelte/icons/align-vertical-di
           id="sel-cap"
           type="number"
           value={selectedItem.capacity ?? 10}
-          onchange={(e) => onUpdateSelected({ capacity: Math.max(1, seatedPax, Number(e.currentTarget.value)) })}
+          onchange={(e) => {
+            const v = Math.floor(Number(e.currentTarget.value));
+            onUpdateSelected({ capacity: Math.min(LIMITS.tableCapacity, Math.max(1, seatedPax, Number.isFinite(v) ? v : 1)) });
+          }}
           class="w-14 px-1.5 py-1 border border-gray-200 rounded-lg text-center"
           min={Math.max(1, seatedPax)}
-          max="50"
+          max={LIMITS.tableCapacity}
         />
       </div>
       <div class="flex items-center gap-1">
