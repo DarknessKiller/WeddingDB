@@ -8,7 +8,7 @@ export const drawerStartEditing = writable(false);
 export const drawerCreateMode = writable(false);
 
 // Wedding table list, loaded once by the layout for the drawer and pages.
-export const weddingTables = writable<BanquetTable[]>([]);
+export const weddingTables = writable<{ wid: string; tables: BanquetTable[] }>({ wid: '', tables: [] });
 
 // Toast notifications
 export interface Toast {

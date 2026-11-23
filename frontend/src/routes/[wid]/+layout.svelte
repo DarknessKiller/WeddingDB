@@ -62,7 +62,7 @@
     if (!forWid) return;
     // Do not show the previous wedding's tables, count or seat setting until
     // this wedding's fetches land (or fail).
-    weddingTables.set([]);
+    weddingTables.set({ wid: '', tables: [] });
     showSeatNumbers.set(false);
     let cancelled = false;
     let localCleanupSSE: (() => void) | undefined;
@@ -158,7 +158,7 @@
       }
 
       listTables(forWid).then((t) => {
-        if (!cancelled) weddingTables.set(t);
+        if (!cancelled) weddingTables.set({ wid: forWid, tables: t });
       }).catch((e: any) => {
         if (!cancelled) addToast(e?.message ?? 'Failed to load tables', 'error');
       });
@@ -228,7 +228,7 @@
 
 {#if $isDrawerOpen && ($selectedGuest || $drawerCreateMode)}
   {#key `${$drawerStartEditing}-${$drawerCreateMode}`}
-    <Drawer guest={$selectedGuest ?? undefined} tables={$weddingTables} showSeatNumbers={$showSeatNumbers} startEditing={$drawerStartEditing} createMode={$drawerCreateMode} onClose={() => { $isDrawerOpen = false; $selectedGuest = null; $drawerStartEditing = false; $drawerCreateMode = false; }} />
+    <Drawer guest={$selectedGuest ?? undefined} tables={$weddingTables.tables} showSeatNumbers={$showSeatNumbers} startEditing={$drawerStartEditing} createMode={$drawerCreateMode} onClose={() => { $isDrawerOpen = false; $selectedGuest = null; $drawerStartEditing = false; $drawerCreateMode = false; }} />
   {/key}
 {/if}
 

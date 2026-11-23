@@ -49,3 +49,16 @@ func TestSearchByWeddingMatchesNamesOnly(t *testing.T) {
 		})
 	}
 }
+
+func TestLikePattern_EscapesMetacharacters(t *testing.T) {
+	for _, tc := range []struct{ in, want string }{
+		{"%", `%\%%`},
+		{"_", `%\_%`},
+		{`\`, `%\\%`},
+		{"Alice", "%Alice%"},
+	} {
+		if got := likePattern(tc.in); got != tc.want {
+			t.Fatalf("likePattern(%q) = %q, want %q", tc.in, got, tc.want)
+		}
+	}
+}

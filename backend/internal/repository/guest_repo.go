@@ -92,18 +92,22 @@ func (r *GuestRepo) FindByTableForUpdate(ctx context.Context, weddingID, tableID
 	return guests, err
 }
 
+// likePattern escapes LIKE metacharacters so a query matches literally.
+func likePattern(s string) string {
+	escaped := strings.NewReplacer(`\`, `\\`, "%", `\%`, "_", `\_`).Replace(s)
+	return "%" + escaped + "%"
+}
+
 func (r *GuestRepo) SearchByWedding(ctx context.Context, weddingID uuid.UUID, query string) ([]models.GuestRecord, error) {
 	guests := make([]models.GuestRecord, 0)
-	escaped := strings.ReplaceAll(query, "%", "\\%")
-	escaped = strings.ReplaceAll(escaped, "_", "\\_")
-	q := fmt.Sprintf("%%%s%%", escaped)
+	q := likePattern(query)
 	lowerPy := strings.ToLower(models.GenerateNamePinyin(query))
-	pinyinQ := fmt.Sprintf("%%%s%%", lowerPy)
+	pinyinQ := likePattern(lowerPy)
 	lowerQ := strings.ToLower(query)
 	// LEFT counts characters, so the prefix length is a rune count, not bytes.
 	err := r.db.WithContext(ctx).Raw(`
 		SELECT * FROM guest_records
-		WHERE wedding_id = ? AND (name ILIKE ? OR name_pinyin ILIKE ?)
+		WHERE wedding_id = ? AND (name ILIKE ? ESCAPE '\' OR name_pinyin ILIKE ? ESCAPE '\')
 		ORDER BY
 			CASE
 				WHEN LOWER(name) = ? THEN 0

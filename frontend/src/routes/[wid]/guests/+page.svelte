@@ -101,7 +101,7 @@ import Users from 'lucide-svelte/icons/users';
     prevDrawerOpen = isOpen;
   });
 
-  let tables = $derived($weddingTables);
+  let tables = $derived($weddingTables.wid === wid ? $weddingTables.tables : []);
 
   // Local search (no request while typing), then the status filter.
   // A query keeps its relevance order; without one the column sort applies.
@@ -397,9 +397,16 @@ import Users from 'lucide-svelte/icons/users';
       // Do not wait for the SSE echo: reseed so tables and seating update even
       // when the stream is down. Queued edits must survive, as in the layout.
       try {
-        // Mirror the layout: drain queued edits before reseeding, or leave the
-        // optimistic values alone and tell the user when the list will refresh.
-        if (hasQueuedEdits(wid)) await syncQueue(wid);
+        // Mirror the layout: drain queued edits before reseeding. A drain that
+        // leaves retryable mutations queued must not lose their optimistic
+        // values, so keep the current list and tell the user.
+        if (hasQueuedEdits(wid)) {
+          await syncQueue(wid);
+          if (hasQueuedEdits(wid)) {
+            addToast('Imported guests; the list refreshes after queued edits sync', 'error');
+            return;
+          }
+        }
         await refreshGuests(async () => (await fetchAllGuests(wid)).map(toGuest), wid);
       } catch {
         addToast('Imported guests; the list refreshes after queued edits sync', 'error');

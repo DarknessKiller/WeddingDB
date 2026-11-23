@@ -17,6 +17,7 @@ import Trash2 from 'lucide-svelte/icons/trash-2';
 import AlertCircle from 'lucide-svelte/icons/alert-circle';
 import Map from 'lucide-svelte/icons/map';
   import { listTables, createTable, updateTable, deleteTable, getOccupancy } from '#lib/api/tables.ts';
+  import { weddingTables } from '#lib/stores/index.ts';
   import { getLayout, saveLayout } from '#lib/api/layout.ts';
   import { defaultSlot } from '#lib/utils/layout.ts';
   import { weddingId } from '#lib/stores/weddingId.ts';
@@ -31,6 +32,10 @@ import Map from 'lucide-svelte/icons/map';
 
   // ponytail: computed unused; kept only as the delete-guard sentinel for the old modal
   let tables = $state<BanquetTable[]>([]);
+
+  function publishTables() {
+    weddingTables.set({ wid, tables });
+  }
   let elements = $state<HallElement[]>([]);
   let hallWidth = $state(860);
   let hallHeight = $state(1000);
@@ -97,6 +102,7 @@ import Map from 'lucide-svelte/icons/map';
   async function loadData() {
     const [layout, rawOcc] = await Promise.all([getLayout(wid), getOccupancy(wid)]);
     tables = layout.tables ?? [];
+    publishTables();
     elements = layout.elements ?? [];
     hallWidth = layout.hallWidth ?? 860;
     hallHeight = layout.hallHeight ?? 1000;
@@ -166,10 +172,12 @@ import Map from 'lucide-svelte/icons/map';
       if (editingTable) {
         const updated = await updateTable(wid, editingTable.id, data);
         tables = tables.map(t => t.id === editingTable!.id ? updated : t);
+        publishTables();
         addToast('Table updated', 'success');
       } else {
         const created = await createTable(wid, data);
         tables = [...tables, created];
+        publishTables();
         addToast('Table created', 'success');
       }
       closeDrawer();
@@ -197,6 +205,7 @@ import Map from 'lucide-svelte/icons/map';
     try {
       await deleteTable(wid, table.id);
       tables = tables.filter(t => t.id !== table.id);
+      publishTables();
       addToast(`Table ${table.name} deleted`, 'info');
     } catch (e: any) {
       addToast(e.message ?? 'Delete failed', 'error');
