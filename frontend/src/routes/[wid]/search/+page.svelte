@@ -3,7 +3,6 @@
   import { weddingTitle } from '#lib/stores/weddingTitle.ts';
   import { getLayout } from '#lib/api/layout.ts';
   import { addToast, selectedGuest, isDrawerOpen } from '#lib/stores/index.ts';
-  import { weddingId } from '#lib/stores/weddingId.ts';
   import { guestList } from '#lib/stores/guestEvents.ts';
   import { get } from 'svelte/store';
   import Badge from '#lib/components/ui/Badge.svelte';
@@ -11,11 +10,12 @@
   import { formatPartySize } from '#lib/utils/seat.ts';
   import Search from 'lucide-svelte/icons/search';
 import CheckCircle2 from 'lucide-svelte/icons/check-circle-2';
-  import { onMount } from 'svelte';
+  import { page } from '$app/state';
   import type { Guest, BanquetTable, HallElement } from '#lib/types/index.ts';
   import { rankGuests } from '#lib/utils/guestSearch.ts';
   import HallMap from '#lib/components/seating/HallMap.svelte';
 
+  let wid = $derived(page.params.wid ?? '');
   let query = $state('');
   let results = $state<Guest[]>([]);
 
@@ -94,22 +94,24 @@ import CheckCircle2 from 'lucide-svelte/icons/check-circle-2';
     }
   }
 
-  let initialized = $state(false);
-
-  onMount(() => {
-    init();
+  // The route can change without remounting this page; reload for the new wid.
+  $effect(() => {
+    if (!wid) return;
+    tables = [];
+    elements = [];
+    dataLoading = true;
+    void init(wid);
   });
 
-  async function init() {
-    if (initialized) return;
-    initialized = true;
+  async function init(forWid: string) {
     try {
       // Guest list is already seeded by the layout via SSE store.
       // Only fetch tables and layout here.
       const [t, layout] = await Promise.all([
-        listTables(get(weddingId)).catch(() => [] as BanquetTable[]),
-        getLayout(get(weddingId)).catch(() => null),
+        listTables(forWid).catch(() => [] as BanquetTable[]),
+        getLayout(forWid).catch(() => null),
       ]);
+      if (forWid !== wid) return;
       tables = t;
       if (layout) {
         elements = layout.elements;
@@ -117,9 +119,9 @@ import CheckCircle2 from 'lucide-svelte/icons/check-circle-2';
         hallHeight = layout.hallHeight;
       }
     } catch {
-      addToast('Failed to load data', 'error');
+      if (forWid === wid) addToast('Failed to load data', 'error');
     } finally {
-      dataLoading = false;
+      if (forWid === wid) dataLoading = false;
     }
   }
 

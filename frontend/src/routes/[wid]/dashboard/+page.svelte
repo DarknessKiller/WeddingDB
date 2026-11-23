@@ -77,19 +77,22 @@ import ExternalLink from 'lucide-svelte/icons/external-link';
   const DONUT_CIRCUM = 2 * Math.PI * DONUT_R;
 
   async function loadDashboard() {
+    const forWid = wid;
+    loaded = false;
+    occupancy = [];
     loading = true;
     loadFailed = false;
-    const forWid = wid;
     try {
       const rows = await getOccupancy(forWid);
       if (forWid !== wid) return;
       occupancy = rows;
       loaded = true;
     } catch (e) {
+      if (forWid !== wid) return;
       loadFailed = true;
       addToast('Failed to load dashboard data', 'error');
     } finally {
-      loading = false;
+      if (forWid === wid) loading = false;
     }
   }
 
