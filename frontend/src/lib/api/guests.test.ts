@@ -64,4 +64,16 @@ describe('server rejection reason', () => {
 		await expect(createGuest('w1', { name: 'A', pax: 1, rsvp: 'pending', isVip: false, notes: '', dietary: [] }))
 			.rejects.toThrow('seat overlaps with another guest');
 	});
+
+	it('keeps the API title on a delete failure', async () => {
+		vi.stubGlobal('navigator', { onLine: true });
+		const { deleteGuest } = await import('./guests');
+		const { apiFetch } = await import('#lib/api/client.ts');
+		vi.mocked(apiFetch).mockResolvedValue({
+			ok: false, status: 400,
+			json: async () => ({ title: 'guest has a queued edit' })
+		} as Response);
+
+		await expect(deleteGuest('w1', 'g1')).rejects.toThrow('guest has a queued edit');
+	});
 });

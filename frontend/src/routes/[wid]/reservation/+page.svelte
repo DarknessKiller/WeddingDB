@@ -175,6 +175,10 @@ import AlertCircle from 'lucide-svelte/icons/alert-circle';
     }
     const seatError = seatSelectionError(form);
     if (seatError) fieldErrors.seatNumbers = seatError;
+    // The store is live: someone may have taken a shown seat since it was picked.
+    else if (form.tableId && form.seatNumbers?.some(seat => getSeatGuestLocal(form.tableId!, seat))) {
+      fieldErrors.seatNumbers = 'Seat(s) now taken; pick again';
+    }
     errors = fieldErrors;
     return Object.keys(fieldErrors).length === 0;
   }

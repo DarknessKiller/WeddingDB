@@ -176,7 +176,7 @@ export async function deleteGuest(weddingId: string, guestId: string): Promise<v
 	if (isOffline()) { doQueue(); return; }
 	try {
 		const res = await apiFetch(`/api/weddings/${weddingId}/guests/${guestId}`, { method: 'DELETE' });
-		if (!res.ok) throw new Error(`Failed to delete guest: ${res.status}`);
+		if (!res.ok) throw new Error(await errorMessage(res, 'Failed to delete guest'));
 		// Don't wait for the SSE echo: the row is gone from every store now.
 		optimisticPatch('delete', guestId);
 	} catch (e) {
