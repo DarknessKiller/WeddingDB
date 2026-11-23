@@ -63,6 +63,7 @@ import Pencil from 'lucide-svelte/icons/pencil';
     panelDragY = 0;
   }
   let checkinGuest = $state<Guest | null>(null);
+  let checkingIn = $state(false);
 
   // Guest rows and occupancy live in the SSE-backed stores: a local mirror went
   // stale and needed a hand-written patch on every mutation.
@@ -202,6 +203,7 @@ import Pencil from 'lucide-svelte/icons/pencil';
     if (!checkinGuest) return;
     // Capture the guest: a route change clears checkinGuest while the request runs.
     const target = checkinGuest;
+    checkingIn = true;
     try {
       await checkInGuest(wid, target.id, notes);
       // Notes and the check-in flags come back through the store.
@@ -215,6 +217,8 @@ import Pencil from 'lucide-svelte/icons/pencil';
         return;
       }
       addToast(e.message ?? 'Check-in failed', 'error');
+    } finally {
+      checkingIn = false;
     }
   }
 

@@ -2,7 +2,6 @@ package repository
 
 import (
 	"context"
-	"errors"
 
 	"weddingdb/internal/models"
 
@@ -37,16 +36,14 @@ func (r *LayoutRepo) SaveLayout(
 	incoming []models.HallElement,
 ) error {
 	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		// Name the missing entity: lockWeddingRow is shared with the wedding
-		// delete, so the layout save does its own existence check.
+		// One locked read: the probe is the lock, so a concurrent delete cannot
+		// land between an existence check and the lock.
 		var exists models.WeddingEvent
-		if err := tx.Select("id").Where("id = ?", weddingID).First(&exists).Error; err != nil {
-			if errors.Is(err, gorm.ErrRecordNotFound) {
-				return ErrLayoutWeddingNotFound
-			}
-			return err
+		q := tx.Select("id").Where("id = ?", weddingID)
+		if tx.Name() == "postgres" {
+			q = q.Clauses(clause.Locking{Strength: "UPDATE"})
 		}
-		if err := lockWeddingRow(tx, weddingID); err != nil {
+		if err := q.First(&exists).Error; err != nil {
 			return err
 		}
 		existing, err := elementsByWedding(tx.WithContext(ctx), weddingID)

@@ -307,17 +307,19 @@ import Users from 'lucide-svelte/icons/users';
 
   async function confirmMoveTable(tableId: string, seatNum: number) {
     if (!moveGuest) return;
+    // Capture the guest: closing the drawer clears moveGuest while the request runs.
+    const guest = moveGuest;
     const target = moveTables.find(t => String(t.id) === tableId);
     const cap = target?.capacity ?? 10;
-    if (seatNum < 1 || seatNum + moveGuest.pax - 1 > cap) {
-      addToast(`No room for ${moveGuest.pax} pax starting at seat ${seatNum}`, 'error');
+    if (seatNum < 1 || seatNum + guest.pax - 1 > cap) {
+      addToast(`No room for ${guest.pax} pax starting at seat ${seatNum}`, 'error');
       return;
     }
     moveSaving = true;
     try {
-      await assignSeat(wid, moveGuest.id, tableId, seatNum);
+      await assignSeat(wid, guest.id, tableId, seatNum);
       // SSE will update the store automatically.
-      addToast(`${moveGuest.name} moved to table`, 'success');
+      addToast(`${guest.name} moved to table`, 'success');
       showMoveModal = false;
     } catch (e: any) {
       addToast(e.message ?? 'Move failed', 'error');

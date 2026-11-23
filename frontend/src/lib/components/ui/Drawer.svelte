@@ -43,6 +43,7 @@ import ArrowUpDown from 'lucide-svelte/icons/arrow-up-down';
   let editing = $state(false);
   $effect(() => { editing = startEditing || createMode; });
   let saving = $state(false);
+  let checkingIn = $state(false);
 
   let localGuest = $state<Guest>();
   $effect(() => { localGuest = guest; });
@@ -232,25 +233,30 @@ import ArrowUpDown from 'lucide-svelte/icons/arrow-up-down';
 
   async function handleCheckIn(notes: string) {
     if (!guest) return;
+    // The prop can clear while the request runs; keep this guest.
+    const target = guest;
+    checkingIn = true;
     const wid = get(weddingId);
     try {
-      await checkInGuest(wid, guest.id, notes);
+      await checkInGuest(wid, target.id, notes);
       // Notes are appended by the server and echoed back over SSE (or by the
       // offline optimisticPatch when queued) — appending here too duplicated them.
-      guest.checkedIn = true;
-      guest.checkedInAt = new Date();
-      guest.rsvp = 'confirmed';
-      patchGuest(guest.id, { checkedIn: true, checkedInAt: guest.checkedInAt, rsvp: 'confirmed' });
-      localGuest = { ...guest };
+      target.checkedIn = true;
+      target.checkedInAt = new Date();
+      target.rsvp = 'confirmed';
+      patchGuest(target.id, { checkedIn: true, checkedInAt: target.checkedInAt, rsvp: 'confirmed' });
+      localGuest = { ...target };
       showCheckInModal = false;
-      addToast(`${guest.name} checked in`, 'success');
+      addToast(`${target.name} checked in`, 'success');
     } catch (e: any) {
       if (e instanceof ConflictError) {
         showCheckInModal = false;
-        addToast(`${guest.name} was already checked in`, 'info');
+        addToast(`${target.name} was already checked in`, 'info');
       } else {
         addToast(e.message ?? 'Check-in failed', 'error');
       }
+    } finally {
+      checkingIn = false;
     }
   }
 
@@ -530,6 +536,7 @@ import ArrowUpDown from 'lucide-svelte/icons/arrow-up-down';
 {#if showCheckInModal && guest}
   <CheckInModal
     guestName={guest.name}
+    loading={checkingIn}
     onConfirm={handleCheckIn}
     onClose={() => showCheckInModal = false}
   />

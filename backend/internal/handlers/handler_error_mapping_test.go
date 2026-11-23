@@ -7,9 +7,11 @@ import (
 	"strings"
 	"testing"
 	"weddingdb/internal/middleware"
+	"weddingdb/internal/models"
 	"weddingdb/internal/repository"
 	"weddingdb/internal/services"
 	"weddingdb/internal/testutil"
+	"weddingdb/internal/utils"
 
 	"github.com/go-fuego/fuego"
 	"github.com/google/uuid"
@@ -158,14 +160,19 @@ func TestLayoutSave_MissingTableIs404(t *testing.T) {
 	s := fuego.NewServer(fuego.WithoutStartupMessages())
 	fuego.Post(s, "/api/weddings/{wid}/layout", h.Save)
 
+	wid := uuid.New()
+	testutil.NoErr(t, db.Create(&models.WeddingEvent{ID: wid, Name: "Wedding"}).Error)
 	body := `{"hallWidth":860,"hallHeight":1000,"tables":[{"id":"` + uuid.New().String() +
 		`","x":1,"y":1,"degree":0,"capacity":2,"isVip":false}],"elements":[]}`
-	req := httptest.NewRequest(http.MethodPost, "/api/weddings/"+uuid.New().String()+"/layout", strings.NewReader(body))
+	req := httptest.NewRequest(http.MethodPost, "/api/weddings/"+utils.EncodeUUID(wid)+"/layout", strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	rec := httptest.NewRecorder()
 	s.Mux.ServeHTTP(rec, req)
 	if rec.Code != http.StatusNotFound {
 		t.Fatalf("status = %d, want 404, body %s", rec.Code, rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), "Table not found") {
+		t.Fatalf("body %s does not name the table", rec.Body.String())
 	}
 }
 
