@@ -47,6 +47,10 @@ describe('csvToGuests', () => {
 });
 
 describe('csvToGuests dietary and table resolution', () => {
+	it('drops a non-positive seat', () => {
+		expect(csvToGuests(parseCsv('name,table,seat\nAlice,Table 1,-1')).guests[0].seat).toBeUndefined();
+	});
+
 	it('drops a row with a dietary item over the limit', () => {
 		const { guests, dropped } = csvToGuests(parseCsv('name,dietary\nAlice,' + 'x'.repeat(101)));
 		expect(guests).toHaveLength(0);
@@ -72,6 +76,6 @@ describe('csvToGuests dietary and table resolution', () => {
 		expect(rows[0]).toMatchObject({ tableId: 't1', seat: 3 });
 		expect(rows[1]).toMatchObject({ tableId: undefined, seat: undefined });
 		expect(rows[2].seat).toBeUndefined();
-		expect(unresolved).toBe(1);
+		expect(unresolved).toBe(2);
 	});
 });

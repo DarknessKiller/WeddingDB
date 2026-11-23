@@ -5,6 +5,7 @@ import (
 	"log/slog"
 	"strconv"
 	"weddingdb/internal/models"
+	"weddingdb/internal/repository"
 	"weddingdb/internal/services"
 	"weddingdb/internal/utils"
 
@@ -48,6 +49,10 @@ func (h *PublicGuestHandler) List(c fuego.ContextNoBody) (any, error) {
 	}
 	guests, _, err := h.guestService.List(ctx, wid, cursor, limit+1)
 	if err != nil {
+		if errors.Is(err, repository.ErrInvalidCursor) {
+			return nil, fuego.BadRequestError{Title: "Invalid cursor"}
+		}
+		slog.ErrorContext(ctx, "public guest list failed", "wedding", wid, "err", err)
 		return nil, err
 	}
 	var nextCursor string

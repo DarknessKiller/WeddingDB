@@ -368,7 +368,7 @@ import Users from 'lucide-svelte/icons/users';
       // Resolve table names to IDs
       const { rows: resolved, unresolved } = resolveImportTables(importPreview, tables);
       if (unresolved > 0) {
-        addToast(`${unresolved} row(s) kept unseated: table name not found`, 'error');
+        addToast(`${unresolved} row(s) kept unseated: table name missing or not found`, 'error');
       }
       const result = await bulkImportGuests(resolved.map(g => ({
         name: g.name,

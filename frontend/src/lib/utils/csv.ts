@@ -89,7 +89,10 @@ export function resolveImportTables<T extends { table?: string; seat?: number }>
 ): { rows: (T & { tableId?: string; seat?: number })[]; unresolved: number } {
 	let unresolved = 0;
 	const resolved = rows.map((g) => {
-		if (!g.table) return { ...g, seat: undefined };
+		if (!g.table) {
+			if (g.seat !== undefined) unresolved++;
+			return { ...g, seat: undefined };
+		}
 		const match = tables.find((t) => t.name.toLowerCase() === g.table!.toLowerCase());
 		if (!match) unresolved++;
 		return { ...g, tableId: match?.id, seat: match ? g.seat : undefined };
@@ -148,7 +151,7 @@ export function csvToGuests(rows: string[][]): { guests: CsvGuestRow[]; dropped:
 			notes: notes || undefined,
 			dietary,
 			table: pick(tableIdx) || undefined,
-			seat: parseInt(pick(seatIdx)) || undefined
+			seat: parseInt(pick(seatIdx)) > 0 ? parseInt(pick(seatIdx)) : undefined
 		});
 	}
 	return { guests, dropped };
