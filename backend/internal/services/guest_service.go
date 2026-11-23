@@ -108,6 +108,15 @@ func (s *GuestService) createGuestTx(ctx context.Context, tx *gorm.DB, g *models
 	if total+g.Pax > MaxGuestsPerWedding {
 		return guestCapError(total, g.Pax)
 	}
+	// A create stamps every group, so a later partial edit cannot make the
+	// untouched columns look newer than an offline write that predates it.
+	if len(g.FieldTimes) == 0 {
+		now := time.Now()
+		g.FieldTimes = make(models.FieldTimes, len(guestGroups()))
+		for _, key := range guestGroups() {
+			g.FieldTimes[key] = now
+		}
+	}
 	return repository.NewGuestRepo(tx).Create(ctx, g)
 }
 

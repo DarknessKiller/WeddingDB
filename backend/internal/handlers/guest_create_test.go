@@ -55,3 +55,32 @@ func TestGuestCreate_SeatFailureLeavesNoRow(t *testing.T) {
 		t.Fatalf("seat failure left %d guest rows, want 0", count)
 	}
 }
+
+// TestGuestCreate_KeepsAngbaoAndGift covers the create payload fields the
+// optimistic client already echoes.
+func TestGuestCreate_KeepsAngbaoAndGift(t *testing.T) {
+	db := newSQLite(t, guestRecordsDDL, banquetTablesDDL)
+	svc := services.NewGuestService(repository.NewGuestRepo(db), nil, db)
+	s := fuego.NewServer(fuego.WithoutStartupMessages())
+	fuego.Post(s, "/api/weddings/{wid}/guests", NewGuestHandler(svc).Create)
+
+	wid := uuid.New()
+	post := func(body string) *httptest.ResponseRecorder {
+		req := httptest.NewRequest(http.MethodPost, "/api/weddings/"+utils.EncodeUUID(wid)+"/guests", strings.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+		rec := httptest.NewRecorder()
+		s.Mux.ServeHTTP(rec, req)
+		return rec
+	}
+	if rec := post(`{"name":"Alice","pax":1,"angbaoAmt":200,"giftItem":"vase"}`); rec.Code != http.StatusCreated {
+		t.Fatalf("status = %d, want 201, body %s", rec.Code, rec.Body.String())
+	}
+	var got models.GuestRecord
+	testutil.NoErr(t, db.Where("wedding_id = ?", wid).First(&got).Error)
+	if got.AngbaoAmt == nil || *got.AngbaoAmt != 200 || got.GiftItem == nil || *got.GiftItem != "vase" {
+		t.Fatalf("stored angbao/gift = %v/%v, want 200/vase", got.AngbaoAmt, got.GiftItem)
+	}
+	if rec := post(`{"name":"Bob","pax":1,"angbaoAmt":-1}`); rec.Code != http.StatusBadRequest {
+		t.Fatalf("negative angbao status = %d, want 400, body %s", rec.Code, rec.Body.String())
+	}
+}

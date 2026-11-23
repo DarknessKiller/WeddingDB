@@ -359,6 +359,8 @@ import Users from 'lucide-svelte/icons/users';
         importError = 'Failed to parse CSV file.';
       }
     };
+    // Reset so choosing the same file again fires change after a failed parse.
+    input.value = '';
     reader.readAsText(file);
   }
 

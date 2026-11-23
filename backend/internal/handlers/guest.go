@@ -117,6 +117,8 @@ func (h *GuestHandler) Create(c fuego.ContextWithBody[GuestCreateRequest]) (any,
 		IsVip:     body.IsVip,
 		Notes:     body.Notes,
 		Dietary:   body.Dietary,
+		AngbaoAmt: body.AngbaoAmt,
+		GiftItem:  body.GiftItem,
 	}
 	if err := services.ValidateGuestText(guest); err != nil {
 		return nil, fuego.BadRequestError{Title: err.Error()}
@@ -346,6 +348,8 @@ func (h *GuestHandler) BulkImport(c fuego.ContextWithBody[BulkImportRequest]) (a
 			IsVip:     g.IsVip,
 			Notes:     g.Notes,
 			Dietary:   g.Dietary,
+			AngbaoAmt: g.AngbaoAmt,
+			GiftItem:  g.GiftItem,
 		}
 		if g.SeatNum != nil && g.TableID == nil {
 			return nil, fuego.BadRequestError{Title: "Invalid guests[" + strconv.Itoa(i) + "].seatNum: tableId is required"}

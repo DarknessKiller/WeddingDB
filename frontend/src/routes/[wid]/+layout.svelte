@@ -12,7 +12,7 @@
   import { syncQueue } from '#lib/offline/queue.ts';
   import { getWedding } from '#lib/api/weddings.ts';
   import { listTables } from '#lib/api/tables.ts';
-  import { initializeSSE, readCachedGuests, refreshGuests } from '#lib/stores/guestEvents.ts';
+  import { guestList, initializeSSE, readCachedGuests, refreshGuests } from '#lib/stores/guestEvents.ts';
   import { toGuest } from '#lib/utils/guestTransform.ts';
   import type { BanquetTable } from '#lib/types/index.ts';
 
@@ -21,7 +21,7 @@
   let currentPath = $derived(page.url.pathname);
   let wid = $derived(page.params.wid ?? '');
   let authChecked = $state(false);
-  let guestCount = $state(0);
+  let guestCount = $derived($guestList.length);
   let tables = $state<BanquetTable[]>([]);
   let offline = $state(typeof navigator !== 'undefined' ? !navigator.onLine : false);
   let queued = $state(0);
@@ -52,8 +52,7 @@
   async function retryGuests() {
     loadError = false;
     try {
-      const guests = await refreshGuests(() => loadGuests(wid), wid);
-      guestCount = guests.length;
+      await refreshGuests(() => loadGuests(wid), wid);
     } catch {
       loadError = true;
     }
@@ -66,7 +65,6 @@
     // Do not show the previous wedding's tables, count or seat setting until
     // this wedding's fetches land (or fail).
     tables = [];
-    guestCount = 0;
     showSeatNumbers.set(false);
     let cancelled = false;
     let localCleanupSSE: (() => void) | undefined;
@@ -108,9 +106,8 @@
         try {
           // Refresh inside the syncing window so SSE events arriving mid-fetch
           // are queued and replayed after the seed instead of being clobbered.
-          const guests = await refreshGuests(() => loadGuests(forWid), forWid);
+          await refreshGuests(() => loadGuests(forWid), forWid);
           if (cancelled) return;
-          guestCount = guests.length;
           loadError = false;
           refreshQueued();
         } catch {
@@ -154,9 +151,8 @@
       try {
         // refreshGuests keeps the syncing window open across fetch+seed even if
         // initializeSSE early-returned, so mid-fetch SSE events can't be clobbered.
-        const guests = await refreshGuests(() => loadGuests(forWid), forWid);
+        await refreshGuests(() => loadGuests(forWid), forWid);
         if (cancelled) return;
-        guestCount = guests.length;
         loadError = false;
         syncError = false;
       } catch {

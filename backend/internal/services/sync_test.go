@@ -959,3 +959,22 @@ func TestSync_TableUnassignLosesToTableDelete(t *testing.T) {
 		t.Fatalf("table delete left the tableId write time at %v, before the queued move %v", g.FieldTimes[groupTableID], queued)
 	}
 }
+
+// TestCreate_StampsEveryFieldGroup covers the create rule in the LWW standard:
+// a row created outside sync must carry its own time for every group.
+func TestCreate_StampsEveryFieldGroup(t *testing.T) {
+	svc, _, wid := newGuestSyncService(t)
+	ctx := context.Background()
+	g := &models.GuestRecord{ID: uuid.New(), WeddingID: wid, Name: "Alice", Pax: 1}
+	testutil.NoErr(t, svc.Create(ctx, g))
+	stored, err := svc.Get(ctx, g.ID, wid)
+	testutil.NoErr(t, err)
+	if len(stored.FieldTimes) != len(guestGroups()) {
+		t.Fatalf("field_times = %v, want %d groups", stored.FieldTimes, len(guestGroups()))
+	}
+	for _, key := range guestGroups() {
+		if stored.FieldTimes[key].IsZero() {
+			t.Fatalf("field_times[%s] is zero, want the create time", key)
+		}
+	}
+}
