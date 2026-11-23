@@ -7,7 +7,7 @@ import (
 	"weddingdb/internal/middleware"
 
 	"github.com/google/uuid"
-	"gorm.io/gorm"
+	"github.com/jackc/pgx/v5/pgconn"
 )
 
 // AdminIDFromContext extracts admin ID from the request context.
@@ -63,15 +63,15 @@ func requireWeddingAccess(ctx context.Context, weddingID uuid.UUID) error {
 	return nil
 }
 
-// isUniqueViolation reports whether err came from a unique index, so a
-// concurrent duplicate maps to 409 instead of 500.
-func isUniqueViolation(err error) bool {
-	if errors.Is(err, gorm.ErrDuplicatedKey) {
-		return true
+// isEmailUniqueViolation reports whether err came from the admin email unique
+// index, so a concurrent duplicate maps to 409 without blaming an unrelated
+// constraint (such as a duplicate wedding grant) on the email.
+func isEmailUniqueViolation(err error) bool {
+	if pgErr, ok := errors.AsType[*pgconn.PgError](err); ok {
+		return pgErr.Code == "23505" && pgErr.ConstraintName == "idx_admin_users_email"
 	}
-	msg := err.Error()
-	return strings.Contains(msg, "duplicate key value violates unique constraint") ||
-		strings.Contains(msg, "UNIQUE constraint failed")
+	// sqlite, used in tests, exposes the column but not a constraint name.
+	return strings.Contains(err.Error(), "UNIQUE constraint failed: admin_users.email")
 }
 
 type unauthorizedError struct{ msg string }

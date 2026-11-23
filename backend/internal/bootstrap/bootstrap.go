@@ -234,14 +234,28 @@ func Migrate(ctx context.Context, db *gorm.DB) error {
 				log.Printf("warning: close migrate lock connection: %v", err)
 			}
 		}()
-		if _, err := conn.ExecContext(ctx, "SELECT pg_advisory_lock($1)", migrateAdvisoryLockID); err != nil {
-			return fmt.Errorf("migrate: acquire advisory lock: %w", err)
-		}
-		defer func() {
-			if _, err := conn.ExecContext(context.Background(), "SELECT pg_advisory_unlock($1)", migrateAdvisoryLockID); err != nil {
-				log.Printf("warning: release migrate advisory lock: %v", err)
+		for {
+			var acquired bool
+			if err := conn.QueryRowContext(ctx, "SELECT pg_try_advisory_lock($1)", migrateAdvisoryLockID).Scan(&acquired); err != nil {
+				return fmt.Errorf("migrate: acquire advisory lock: %w", err)
 			}
-		}()
+			if acquired {
+				// Register the release before anything else can return, so a
+				// cancelled request cannot leave the lock on the pooled session.
+				defer func() {
+					if _, err := conn.ExecContext(context.Background(), "SELECT pg_advisory_unlock($1)", migrateAdvisoryLockID); err != nil {
+						log.Printf("warning: release migrate advisory lock: %v", err)
+					}
+				}()
+				break
+			}
+			log.Printf("migrate: waiting for another migrate job to release advisory lock %d", migrateAdvisoryLockID)
+			select {
+			case <-ctx.Done():
+				return fmt.Errorf("migrate: waiting for advisory lock: %w", ctx.Err())
+			case <-time.After(time.Second):
+			}
+		}
 	}
 	db = db.WithContext(ctx)
 	if err := db.AutoMigrate(

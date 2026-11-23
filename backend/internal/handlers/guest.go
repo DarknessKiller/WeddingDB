@@ -10,6 +10,7 @@ import (
 	"weddingdb/internal/services"
 
 	"github.com/go-fuego/fuego"
+	"gorm.io/gorm"
 )
 
 type GuestHandler struct{ guestService *services.GuestService }
@@ -74,8 +75,12 @@ func (h *GuestHandler) Get(c fuego.ContextNoBody) (any, error) {
 		return nil, fuego.BadRequestError{Title: "Invalid ID"}
 	}
 	guest, err := h.guestService.Get(ctx, id, wid)
-	if err != nil {
+	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return nil, fuego.NotFoundError{Title: "Guest not found"}
+	}
+	if err != nil {
+		slog.ErrorContext(ctx, "load guest failed", "guest", id, "wedding", wid, "err", err)
+		return nil, fuego.InternalServerError{Title: "Failed to load guest"}
 	}
 	return guest, nil
 }

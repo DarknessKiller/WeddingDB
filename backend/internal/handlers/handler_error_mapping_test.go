@@ -59,6 +59,47 @@ func TestAdminDelete_QueryFailureIs500(t *testing.T) {
 	}
 }
 
+func TestAdminResetPassword_QueryFailureIs500(t *testing.T) {
+	db := newSQLite(t, adminUsersDDL)
+	h := NewAdminHandler(repository.NewAdminRepo(db), nil)
+	s := fuego.NewServer(fuego.WithoutStartupMessages())
+	fuego.Post(s, "/admin/users/{id}/reset-password", h.ResetPassword)
+
+	sqlDB, err := db.DB()
+	testutil.NoErr(t, err)
+	testutil.NoErr(t, sqlDB.Close())
+
+	req := httptest.NewRequest(http.MethodPost, "/admin/users/"+uuid.New().String()+"/reset-password",
+		strings.NewReader(`{"password":"NewPassw0rd!"}`))
+	req.Header.Set("Content-Type", "application/json")
+	ctx := context.WithValue(req.Context(), middleware.RoleKey, "admin")
+	req = req.WithContext(ctx)
+	rec := httptest.NewRecorder()
+	s.Mux.ServeHTTP(rec, req)
+	if rec.Code != http.StatusInternalServerError {
+		t.Fatalf("status = %d, want 500, body %s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestGuestGet_QueryFailureIs500(t *testing.T) {
+	db := newSQLite(t, guestRecordsDDL)
+	h := NewGuestHandler(services.NewGuestService(repository.NewGuestRepo(db), nil, db))
+	s := fuego.NewServer(fuego.WithoutStartupMessages())
+	fuego.Get(s, "/api/weddings/{wid}/guests/{id}", h.Get)
+
+	sqlDB, err := db.DB()
+	testutil.NoErr(t, err)
+	testutil.NoErr(t, sqlDB.Close())
+
+	req := httptest.NewRequest(http.MethodGet,
+		"/api/weddings/"+uuid.New().String()+"/guests/"+uuid.New().String(), nil)
+	rec := httptest.NewRecorder()
+	s.Mux.ServeHTTP(rec, req)
+	if rec.Code != http.StatusInternalServerError {
+		t.Fatalf("status = %d, want 500, body %s", rec.Code, rec.Body.String())
+	}
+}
+
 func TestTableUpdate_QueryFailureIs500(t *testing.T) {
 	db := newSQLite(t, banquetTablesDDL)
 	h := NewTableHandler(services.NewTableService(repository.NewTableRepo(db), nil, db))

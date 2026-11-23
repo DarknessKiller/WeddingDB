@@ -81,6 +81,8 @@ func TestMigrate_PostgresConcurrentRuns(t *testing.T) {
 			t.Fatalf("concurrent migrate %d failed: %v", i, err)
 		}
 	}
+	// A leaked advisory lock would block this run forever.
+	testutil.NoErr(t, Migrate(ctx, db))
 
 	var count int64
 	testutil.NoErr(t, db.Model(&models.HallElement{}).Where("wedding_id = ?", wid).Count(&count).Error)

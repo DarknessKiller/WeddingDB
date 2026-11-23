@@ -1,12 +1,15 @@
 package handlers
 
 import (
+	"errors"
+	"log/slog"
 	"strconv"
 	"weddingdb/internal/models"
 	"weddingdb/internal/services"
 	"weddingdb/internal/utils"
 
 	"github.com/go-fuego/fuego"
+	"gorm.io/gorm"
 )
 
 type publicGuest struct {
@@ -92,8 +95,12 @@ func (h *PublicKioskHandler) GetKioskSettings(c fuego.ContextNoBody) (any, error
 		return nil, fuego.BadRequestError{Title: "Invalid wedding ID"}
 	}
 	w, err := h.weddingService.Get(ctx, wid)
-	if err != nil {
+	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return nil, fuego.NotFoundError{Title: "Wedding not found"}
+	}
+	if err != nil {
+		slog.ErrorContext(ctx, "load wedding failed", "wedding", wid, "err", err)
+		return nil, fuego.InternalServerError{Title: "Failed to load wedding"}
 	}
 	return map[string]any{
 		"venueName":             w.VenueName,

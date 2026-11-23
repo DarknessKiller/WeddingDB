@@ -223,8 +223,12 @@ func (h *AuthHandler) ChangePassword(c fuego.ContextWithBody[ChangePasswordReque
 	adminID := AdminIDFromContext(c.Context())
 	ctx := c.Context()
 	admin, err := h.adminRepo.FindByID(ctx, adminID)
-	if err != nil {
+	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return nil, fuego.NotFoundError{Title: "User not found"}
+	}
+	if err != nil {
+		slog.ErrorContext(ctx, "load user failed", "user", adminID, "err", err)
+		return nil, fuego.InternalServerError{Title: "Failed to load user"}
 	}
 	// A forced change follows an admin reset, so the old password is not known.
 	if !admin.ForcePasswordChange {
@@ -296,7 +300,7 @@ func (h *AuthHandler) Register(c fuego.ContextWithBody[RegisterRequest]) (any, e
 		Role:     "user",
 	}
 	if err := h.adminRepo.Create(ctx, admin); err != nil {
-		if isUniqueViolation(err) {
+		if isEmailUniqueViolation(err) {
 			return nil, fuego.ConflictError{Title: "Email already registered"}
 		}
 		return nil, fuego.InternalServerError{Title: "Failed to create account"}

@@ -58,6 +58,11 @@ type SSEClient struct {
 
 const sseLeaseDuration = 30 * time.Second
 
+// sseResyncType is a control event, not a guest mutation: every replica closes
+// its local streams for the wedding so clients reconnect and refetch a snapshot
+// that includes an event this deployment could not deliver.
+const sseResyncType = "resync"
+
 // KEYS[1] holds the wedding's leases (cap 100), KEYS[2] the user's (cap 5).
 // Returns 1 on success, 0 when the wedding is full, -1 when the user is.
 var sseAcquire = redis.NewScript(`
@@ -157,6 +162,10 @@ func (h *SSEHub) subscribeRedis() {
 			}
 			wid := extractWeddingID(msg.Channel)
 			if wid == uuid.Nil {
+				continue
+			}
+			if strings.HasPrefix(msg.Payload, `{"type":"`+sseResyncType+`"`) {
+				h.reconnectWedding(wid)
 				continue
 			}
 			h.mu.RLock()
@@ -265,6 +274,11 @@ func (h *SSEHub) publishLoop() {
 		case req := <-h.publish:
 			if err := h.Publish(context.Background(), req.weddingID, req.event); err != nil {
 				log.Printf("SSE: publish %s for guest %s in wedding %s: %v", req.event.Type, req.event.GuestID, req.weddingID, err)
+				// This replica could not publish, so no replica's clients can
+				// trust their snapshot. Reconnect local clients and ask every
+				// replica to do the same through Redis.
+				h.reconnectWedding(req.weddingID)
+				h.broadcastResync(context.Background(), req.weddingID)
 			}
 		}
 	}

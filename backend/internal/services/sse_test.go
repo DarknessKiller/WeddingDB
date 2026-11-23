@@ -181,6 +181,66 @@ func TestSSEHub_PublishQueueFullReconnectsClients(t *testing.T) {
 	}
 }
 
+// A dropped event must resync clients on every replica, not only the one that
+// dropped it: the Redis marker closes the other replica's streams.
+func TestSSEHub_PublishQueueFullResyncsOtherReplicas(t *testing.T) {
+	mr := miniredis.RunT(t)
+	rdb1 := redis.NewClient(&redis.Options{Addr: mr.Addr()})
+	rdb2 := redis.NewClient(&redis.Options{Addr: mr.Addr()})
+	t.Cleanup(func() {
+		testutil.NoErr(t, rdb1.Close())
+		testutil.NoErr(t, rdb2.Close())
+	})
+	other := NewSSEHub(rdb2)
+	t.Cleanup(other.Shutdown)
+
+	wid := uuid.New()
+	client := testSubscribe(t, other, wid)
+
+	hub := &SSEHub{
+		clients: make(map[uuid.UUID]map[string]*SSEClient),
+		ctx:     context.Background(),
+		redis:   rdb1,
+		publish: make(chan publishRequest, ssePublishQueue),
+		ready:   make(chan struct{}),
+	}
+	close(hub.ready)
+	for range ssePublishQueue {
+		hub.publish <- publishRequest{}
+	}
+	hub.publishGuest("create", &models.GuestRecord{ID: uuid.New()}, wid)
+
+	select {
+	case <-client.Done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("client on another replica was not asked to resync after a dropped event")
+	}
+}
+
+// A failed Publish must still reconnect local clients, so they refetch instead
+// of keeping a snapshot that missed the event.
+func TestSSEHub_PublishFailureReconnectsClients(t *testing.T) {
+	wid := uuid.New()
+	client := &SSEClient{ID: uuid.New().String(), WeddingID: wid, Done: make(chan struct{})}
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+	hub := &SSEHub{
+		clients: map[uuid.UUID]map[string]*SSEClient{wid: {client.ID: client}},
+		ctx:     ctx,
+		cancel:  cancel,
+		publish: make(chan publishRequest, 1),
+		ready:   make(chan struct{}), // never closed: Publish fails
+	}
+	go hub.publishLoop()
+	hub.publish <- publishRequest{weddingID: wid, event: GuestEvent{Type: "create"}}
+
+	select {
+	case <-client.Done:
+	case <-time.After(time.Second):
+		t.Fatal("client was not asked to reconnect after a failed Publish")
+	}
+}
+
 func TestSSEHub_PublishBeforeReady(t *testing.T) {
 	hub := &SSEHub{
 		clients: make(map[uuid.UUID]map[string]*SSEClient),

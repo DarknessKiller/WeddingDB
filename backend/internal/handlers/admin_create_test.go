@@ -49,6 +49,29 @@ func TestAdminCreate_GrantFailureLeavesNoUser(t *testing.T) {
 	}
 }
 
+// A duplicate wedding id in the payload is deduped before insert, so the grant
+// index never turns it into an "email already registered" conflict.
+func TestAdminCreate_DuplicateWeddingIDIsNotEmailConflict(t *testing.T) {
+	db := newSQLite(t, adminUsersDDL, userWeddingsDDL)
+	testutil.NoErr(t, db.Exec("CREATE UNIQUE INDEX idx_user_wedding ON user_weddings (user_id, wedding_id)").Error)
+	h := NewAdminHandler(repository.NewAdminRepo(db), nil)
+	s := fuego.NewServer(fuego.WithoutStartupMessages())
+	fuego.Post(s, "/admin/users", h.Create)
+
+	wid := uuid.New()
+	body := `{"email":"dup-wedding@example.com","password":"NewPassw0rd!","name":"Dup","weddings":["` +
+		wid.String() + `","` + wid.String() + `"]}`
+	rec := adminCreateRequest(t, s, body)
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("status = %d, want 201, body %s", rec.Code, rec.Body.String())
+	}
+	var count int64
+	testutil.NoErr(t, db.Model(&models.UserWedding{}).Where("wedding_id = ?", wid).Count(&count).Error)
+	if count != 1 {
+		t.Fatalf("grants = %d, want 1", count)
+	}
+}
+
 // A concurrent duplicate email hits the unique index after both lookups pass;
 // that must be 409, not 500.
 func TestAdminCreate_ConcurrentDuplicateEmailIs409(t *testing.T) {

@@ -28,10 +28,6 @@ func (r *WeddingRepo) List(ctx context.Context) ([]models.WeddingEvent, error) {
 	return weddings, err
 }
 
-func (r *WeddingRepo) Create(ctx context.Context, w *models.WeddingEvent) error {
-	return r.db.WithContext(ctx).Create(w).Error
-}
-
 // CreateWithOwner inserts the wedding and the creator's grant in one
 // transaction, so a grant failure leaves no ownerless wedding behind.
 func (r *WeddingRepo) CreateWithOwner(ctx context.Context, w *models.WeddingEvent, ownerID uuid.UUID) error {

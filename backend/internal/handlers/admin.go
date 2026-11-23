@@ -66,11 +66,16 @@ func (h *AdminHandler) Create(c fuego.ContextWithBody[AdminRequest]) (any, error
 		return nil, fuego.InternalServerError{Title: "Failed to hash password"}
 	}
 	var ids []uuid.UUID
+	seen := make(map[uuid.UUID]struct{}, len(body.Weddings))
 	for _, ws := range body.Weddings {
 		id, err := DecodeID(ws)
 		if err != nil {
 			return nil, fuego.BadRequestError{Title: "Invalid weddings: invalid wedding ID"}
 		}
+		if _, ok := seen[id]; ok {
+			continue
+		}
+		seen[id] = struct{}{}
 		ids = append(ids, id)
 	}
 	admin := &models.AdminUser{
@@ -80,7 +85,7 @@ func (h *AdminHandler) Create(c fuego.ContextWithBody[AdminRequest]) (any, error
 		Role:     body.Role,
 	}
 	if err := h.adminRepo.CreateWithWeddings(ctx, admin, ids); err != nil {
-		if isUniqueViolation(err) {
+		if isEmailUniqueViolation(err) {
 			return nil, fuego.ConflictError{Title: "Email already registered"}
 		}
 		return nil, err
@@ -143,8 +148,12 @@ func (h *AdminHandler) AssignWeddings(c fuego.ContextWithBody[AssignWeddingsRequ
 		return nil, fuego.BadRequestError{Title: "Invalid ID"}
 	}
 	admin, err := h.adminRepo.FindByID(ctx, id)
-	if err != nil {
+	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return nil, fuego.NotFoundError{Title: "Admin not found"}
+	}
+	if err != nil {
+		slog.ErrorContext(ctx, "load user failed", "user", id, "err", err)
+		return nil, fuego.InternalServerError{Title: "Failed to load user"}
 	}
 	var ids []uuid.UUID
 	for _, ws := range body.Weddings {
@@ -223,8 +232,12 @@ func (h *AdminHandler) ResetPassword(c fuego.ContextWithBody[ResetPasswordReques
 		return nil, fuego.BadRequestError{Title: "Use change-password to change your own password"}
 	}
 	admin, err := h.adminRepo.FindByID(ctx, id)
-	if err != nil {
+	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return nil, fuego.NotFoundError{Title: "User not found"}
+	}
+	if err != nil {
+		slog.ErrorContext(ctx, "load user failed", "user", id, "err", err)
+		return nil, fuego.InternalServerError{Title: "Failed to load user"}
 	}
 	hash, err := bcrypt.GenerateFromPassword([]byte(body.Password), bcrypt.DefaultCost)
 	if err != nil {
@@ -274,12 +287,19 @@ func (h *AdminHandler) UpdateRole(c fuego.ContextWithBody[UpdateRoleRequest]) (a
 	}
 	// Fetch user once for guard check and update
 	admin, err := h.adminRepo.FindByID(ctx, id)
-	if err != nil {
+	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return nil, fuego.NotFoundError{Title: "User not found"}
+	}
+	if err != nil {
+		slog.ErrorContext(ctx, "load user failed", "user", id, "err", err)
+		return nil, fuego.InternalServerError{Title: "Failed to load user"}
 	}
 	if err := h.adminRepo.UpdateRole(ctx, id, body.Role); err != nil {
 		if errors.Is(err, repository.ErrLastAdmin) {
 			return nil, fuego.BadRequestError{Title: "Cannot demote the last admin"}
+		}
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, fuego.NotFoundError{Title: "User not found"}
 		}
 		return nil, fuego.InternalServerError{Title: "Failed to update role"}
 	}
@@ -310,8 +330,11 @@ func (h *AdminHandler) RevokeUser(c fuego.ContextNoBody) (any, error) {
 	}
 
 	// Verify user exists
-	if _, err := h.adminRepo.FindByID(c.Context(), id); err != nil {
+	if _, err := h.adminRepo.FindByID(c.Context(), id); errors.Is(err, gorm.ErrRecordNotFound) {
 		return nil, fuego.NotFoundError{Title: "User not found"}
+	} else if err != nil {
+		slog.ErrorContext(c.Context(), "load user failed", "user", id, "err", err)
+		return nil, fuego.InternalServerError{Title: "Failed to load user"}
 	}
 
 	if err := h.authService.RevokeUserTokens(c.Context(), id); err != nil {

@@ -112,8 +112,12 @@ func (h *WeddingHandler) Update(c fuego.ContextWithBody[WeddingRequest]) (any, e
 		return nil, fuego.BadRequestError{Title: "Invalid request"}
 	}
 	w, err := h.weddingService.Get(ctx, id)
-	if err != nil {
+	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return nil, fuego.NotFoundError{Title: "Wedding not found"}
+	}
+	if err != nil {
+		slog.ErrorContext(ctx, "load wedding failed", "wedding", id, "err", err)
+		return nil, fuego.InternalServerError{Title: "Failed to load wedding"}
 	}
 	name := strings.TrimSpace(body.Name)
 	if name == "" {
@@ -169,8 +173,12 @@ func (h *WeddingHandler) UpdateKioskSettings(c fuego.ContextWithBody[KioskSettin
 		return nil, fuego.BadRequestError{Title: "Invalid request"}
 	}
 	w, err := h.weddingService.Get(ctx, id)
-	if err != nil {
+	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return nil, fuego.NotFoundError{Title: "Wedding not found"}
+	}
+	if err != nil {
+		slog.ErrorContext(ctx, "load wedding failed", "wedding", id, "err", err)
+		return nil, fuego.InternalServerError{Title: "Failed to load wedding"}
 	}
 	if body.Name != nil {
 		name := strings.TrimSpace(*body.Name)

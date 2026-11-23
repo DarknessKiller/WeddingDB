@@ -101,7 +101,14 @@ func (r *AdminRepo) UpdateRole(ctx context.Context, id uuid.UUID, role string) e
 				return err
 			}
 		}
-		return tx.Model(&models.AdminUser{}).Where("id = ?", id).Update("role", role).Error
+		res := tx.Model(&models.AdminUser{}).Where("id = ?", id).Update("role", role)
+		if res.Error != nil {
+			return res.Error
+		}
+		if res.RowsAffected == 0 {
+			return gorm.ErrRecordNotFound
+		}
+		return nil
 	})
 }
 
@@ -155,21 +162,4 @@ func (r *AdminRepo) HasWeddingAccess(ctx context.Context, userID, weddingID uuid
 		Where("user_id = ? AND wedding_id = ?", userID, weddingID).
 		Count(&count).Error
 	return count > 0, err
-}
-
-// AddUserWedding adds a wedding association if it doesn't already exist.
-func (r *AdminRepo) AddUserWedding(ctx context.Context, userID, weddingID uuid.UUID) error {
-	exists, err := r.HasWeddingAccess(ctx, userID, weddingID)
-	if err != nil {
-		return err
-	}
-	if exists {
-		return nil
-	}
-	uw := models.UserWedding{
-		ID:        uuid.New(),
-		UserID:    userID,
-		WeddingID: weddingID,
-	}
-	return r.db.WithContext(ctx).Create(&uw).Error
 }

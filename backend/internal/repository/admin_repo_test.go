@@ -38,6 +38,22 @@ func TestAdminRepo_LastAdminGuard(t *testing.T) {
 	testutil.NoErr(t, repo.Delete(ctx, a))
 }
 
+// A role write that matched no row is a deleted user, not a successful update.
+func TestAdminRepo_UpdateRoleDeletedIsNotFound(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	testutil.NoErr(t, err)
+	testutil.NoErr(t, db.Exec(`CREATE TABLE admin_users (id TEXT PRIMARY KEY, email TEXT, password TEXT,
+		name TEXT, role TEXT, force_password_change INTEGER, created_at DATETIME, updated_at DATETIME)`).Error)
+	other := uuid.New()
+	testutil.NoErr(t, db.Create(&models.AdminUser{ID: other, Email: other.String(), Role: "admin"}).Error)
+	repo := NewAdminRepo(db)
+
+	err = repo.UpdateRole(context.Background(), uuid.New(), "user")
+	if !errors.Is(err, gorm.ErrRecordNotFound) {
+		t.Fatalf("update deleted account err = %v, want gorm.ErrRecordNotFound", err)
+	}
+}
+
 // A password write must not carry the rest of a stale struct back to the row:
 // the demoted account stays demoted, and a deleted account stays deleted
 // instead of being re-inserted.

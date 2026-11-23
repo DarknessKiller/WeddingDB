@@ -512,8 +512,28 @@ func (h *SSEHub) publishGuest(eventType string, guest *models.GuestRecord, weddi
 	default:
 		// Queue is full: never block the guest write after the DB commit. Drop
 		// the event and make this wedding's clients reconnect so they resync
-		// instead of keeping a snapshot that missed it.
+		// instead of keeping a snapshot that missed it. The Redis marker reaches
+		// clients on other replicas too; it runs off the request path so a slow
+		// Redis cannot block the write.
+		slog.Error("SSE: publish queue full; dropping event and forcing client resync",
+			"type", eventType, "wedding", weddingID)
 		h.reconnectWedding(weddingID)
+		go h.broadcastResync(context.Background(), weddingID)
+	}
+}
+
+// broadcastResync asks every replica, through Redis, to close its clients for
+// the wedding so they reconnect and fetch a fresh snapshot.
+func (h *SSEHub) broadcastResync(ctx context.Context, weddingID uuid.UUID) {
+	ctx, cancel := context.WithTimeout(ctx, 2*time.Second)
+	defer cancel()
+	err := h.Publish(ctx, weddingID, GuestEvent{
+		Type:      sseResyncType,
+		WeddingID: weddingID.String(),
+		Timestamp: time.Now().UnixMilli(),
+	})
+	if err != nil {
+		slog.ErrorContext(ctx, "SSE: broadcast resync failed", "wedding", weddingID, "err", err)
 	}
 }
 
