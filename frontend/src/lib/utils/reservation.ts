@@ -15,3 +15,18 @@ export const reservationSchema = z.object({
 });
 
 export type ReservationForm = z.infer<typeof reservationSchema>;
+
+// seatSelectionError returns the seat rule violation for a table reservation,
+// or undefined when the selection covers the party or no table is chosen.
+export function seatSelectionError(form: {
+	tableId?: string | null;
+	seatNumbers?: number[];
+	pax: number;
+}): string | undefined {
+	if (!form.tableId) return undefined;
+	if (!form.seatNumbers || form.seatNumbers.length === 0) return 'Select at least one seat';
+	if (form.seatNumbers.length < form.pax) {
+		return `Select ${form.pax} seat(s) for ${form.pax} guest(s)`;
+	}
+	return undefined;
+}

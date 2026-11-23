@@ -13,7 +13,7 @@ import AlertCircle from 'lucide-svelte/icons/alert-circle';
   import { get } from 'svelte/store';
   import { onMount } from 'svelte';
   import { LIMITS } from '#lib/utils/limits.ts';
-  import { reservationSchema as schema, type ReservationForm as FormData } from '#lib/utils/reservation.ts';
+  import { reservationSchema as schema, seatSelectionError, type ReservationForm as FormData } from '#lib/utils/reservation.ts';
   import type { BanquetTable, Guest, HallElement } from '#lib/types/index.ts';
   import HallMap from '#lib/components/seating/HallMap.svelte';
 
@@ -157,25 +157,18 @@ import AlertCircle from 'lucide-svelte/icons/alert-circle';
   ];
 
   function validate() {
-    const result = schema.safeParse(form);
-    if (result.success) {
-      errors = {};
-      return true;
-    }
     const fieldErrors: Record<string, string> = {};
-    for (const issue of result.error.issues) {
-      const field = issue.path[0] as string;
-      if (!fieldErrors[field]) fieldErrors[field] = issue.message;
+    const result = schema.safeParse(form);
+    if (!result.success) {
+      for (const issue of result.error.issues) {
+        const field = issue.path[0] as string;
+        if (!fieldErrors[field]) fieldErrors[field] = issue.message;
+      }
     }
-    // Custom validation
-    if (form.tableId && (!form.seatNumbers || form.seatNumbers.length === 0)) {
-      fieldErrors.seatNumbers = 'Select at least one seat';
-    }
-    if (form.tableId && form.seatNumbers && form.seatNumbers.length < form.pax) {
-      fieldErrors.seatNumbers = `Select ${form.pax} seat(s) for ${form.pax} guest(s)`;
-    }
+    const seatError = seatSelectionError(form);
+    if (seatError) fieldErrors.seatNumbers = seatError;
     errors = fieldErrors;
-    return false;
+    return Object.keys(fieldErrors).length === 0;
   }
 
   function toggleDietary(id: string) {

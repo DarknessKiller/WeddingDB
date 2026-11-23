@@ -350,6 +350,7 @@ import Users from 'lucide-svelte/icons/users';
         const { guests, dropped } = parseCSV(reader.result as string);
         if (guests.length === 0) {
           importError = 'No valid guests found. Make sure CSV has a "name" column and values within the field limits.';
+          importPreview = [];
           return;
         }
         importError = dropped > 0 ? `${dropped} row(s) skipped: missing name or a value over the field limit.` : '';
