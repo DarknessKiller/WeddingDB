@@ -124,6 +124,9 @@ func (h *GuestHandler) Create(c fuego.ContextWithBody[GuestCreateRequest]) (any,
 		return nil, fuego.BadRequestError{Title: err.Error()}
 	}
 	// Decode the seat before creating so guest and seat land in one transaction.
+	if body.SeatNum != nil && (body.TableID == nil || *body.TableID == "") {
+		return nil, fuego.BadRequestError{Title: "seatNum: tableId is required"}
+	}
 	if body.TableID != nil && *body.TableID != "" {
 		tid, err := DecodeID(*body.TableID)
 		if err != nil {

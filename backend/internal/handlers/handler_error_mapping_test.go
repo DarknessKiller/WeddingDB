@@ -168,3 +168,44 @@ func TestLayoutSave_MissingTableIs404(t *testing.T) {
 		t.Fatalf("status = %d, want 404, body %s", rec.Code, rec.Body.String())
 	}
 }
+
+// A layout save for a deleted wedding must name the wedding, not a table.
+func TestLayoutSave_MissingWeddingNamesWedding(t *testing.T) {
+	db := newSQLite(t, weddingEventsDDL)
+	h := NewLayoutHandler(
+		services.NewLayoutService(repository.NewLayoutRepo(db)),
+		services.NewTableService(repository.NewTableRepo(db), nil, db),
+		services.NewWeddingService(repository.NewWeddingRepo(db)),
+	)
+	s := fuego.NewServer(fuego.WithoutStartupMessages())
+	fuego.Post(s, "/api/weddings/{wid}/layout", h.Save)
+
+	body := `{"hallWidth":860,"hallHeight":1000,"tables":[],"elements":[]}`
+	req := httptest.NewRequest(http.MethodPost, "/api/weddings/"+uuid.New().String()+"/layout", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	s.Mux.ServeHTTP(rec, req)
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("status = %d, want 404, body %s", rec.Code, rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), "Wedding not found") {
+		t.Fatalf("body %s does not name the wedding", rec.Body.String())
+	}
+}
+
+// GetUserWeddings for an unknown id is 404, not an empty 200 list.
+func TestAdminUserWeddings_UnknownUserIs404(t *testing.T) {
+	db := newSQLite(t, adminUsersDDL)
+	h := NewAdminHandler(repository.NewAdminRepo(db), nil)
+	s := fuego.NewServer(fuego.WithoutStartupMessages())
+	fuego.Get(s, "/api/users/{id}/weddings", h.GetUserWeddings)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/users/"+uuid.New().String()+"/weddings", nil)
+	ctx := context.WithValue(req.Context(), middleware.RoleKey, "admin")
+	req = req.WithContext(ctx)
+	rec := httptest.NewRecorder()
+	s.Mux.ServeHTTP(rec, req)
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("status = %d, want 404, body %s", rec.Code, rec.Body.String())
+	}
+}

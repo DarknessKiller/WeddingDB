@@ -108,3 +108,21 @@ func TestGuestImport_KeepsAngbaoAndGift(t *testing.T) {
 		t.Fatalf("stored angbao/gift = %v/%v, want 200/vase", got.AngbaoAmt, got.GiftItem)
 	}
 }
+
+// A seat number without a table is rejected at create, like bulk import does.
+func TestGuestCreate_SeatWithoutTableIs400(t *testing.T) {
+	db := newSQLite(t, guestRecordsDDL, banquetTablesDDL)
+	svc := services.NewGuestService(repository.NewGuestRepo(db), nil, db)
+	s := fuego.NewServer(fuego.WithoutStartupMessages())
+	fuego.Post(s, "/api/weddings/{wid}/guests", NewGuestHandler(svc).Create)
+
+	wid := uuid.New()
+	req := httptest.NewRequest(http.MethodPost, "/api/weddings/"+utils.EncodeUUID(wid)+"/guests",
+		strings.NewReader(`{"name":"Alice","pax":1,"seatNum":3}`))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	s.Mux.ServeHTTP(rec, req)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400, body %s", rec.Code, rec.Body.String())
+	}
+}

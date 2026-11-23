@@ -201,6 +201,11 @@ func (h *AdminHandler) GetUserWeddings(c fuego.ContextNoBody) (any, error) {
 	if err != nil {
 		return nil, fuego.BadRequestError{Title: "Invalid ID"}
 	}
+	if _, err := h.adminRepo.FindByID(ctx, id); errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, fuego.NotFoundError{Title: "User not found"}
+	} else if err != nil {
+		return nil, err
+	}
 	weddings, err := h.adminRepo.GetUserWeddings(ctx, id)
 	if err != nil {
 		return nil, err

@@ -200,16 +200,18 @@ import Pencil from 'lucide-svelte/icons/pencil';
 
   async function confirmCheckIn(notes: string) {
     if (!checkinGuest) return;
+    // Capture the guest: a route change clears checkinGuest while the request runs.
+    const target = checkinGuest;
     try {
-      await checkInGuest(wid, checkinGuest.id, notes);
+      await checkInGuest(wid, target.id, notes);
       // Notes and the check-in flags come back through the store.
       showCheckinModal = false;
-      addToast(`${checkinGuest.name} checked in`, 'success');
+      addToast(`${target.name} checked in`, 'success');
     } catch (e: any) {
       if (e instanceof ConflictError) {
         // Another receptionist checked the guest in first.
         showCheckinModal = false;
-        addToast(`${checkinGuest.name} was already checked in by another receptionist`, 'error');
+        addToast(`${target.name} was already checked in by another receptionist`, 'error');
         return;
       }
       addToast(e.message ?? 'Check-in failed', 'error');

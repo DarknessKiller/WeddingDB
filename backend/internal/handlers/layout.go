@@ -156,7 +156,13 @@ func (h *LayoutHandler) Save(c fuego.ContextWithBody[LayoutRequest]) (any, error
 		if errors.Is(err, repository.ErrCapacityBelowSeated) {
 			return nil, fuego.BadRequestError{Title: err.Error()}
 		}
-		if errors.Is(err, services.ErrTableNotFound) || errors.Is(err, gorm.ErrRecordNotFound) {
+		if errors.Is(err, repository.ErrLayoutWeddingNotFound) {
+			return nil, fuego.NotFoundError{Title: "Wedding not found"}
+		}
+		if errors.Is(err, repository.ErrLayoutElementNotFound) {
+			return nil, fuego.NotFoundError{Title: "Element not found"}
+		}
+		if errors.Is(err, services.ErrTableNotFound) || errors.Is(err, repository.ErrLayoutTableNotFound) || errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, fuego.NotFoundError{Title: "Table not found"}
 		}
 		log.Printf("layout save error: %v", err)

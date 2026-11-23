@@ -2,6 +2,7 @@ package repository
 
 import (
 	"context"
+	"errors"
 
 	"weddingdb/internal/models"
 
@@ -36,6 +37,15 @@ func (r *LayoutRepo) SaveLayout(
 	incoming []models.HallElement,
 ) error {
 	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		// Name the missing entity: lockWeddingRow is shared with the wedding
+		// delete, so the layout save does its own existence check.
+		var exists models.WeddingEvent
+		if err := tx.Select("id").Where("id = ?", weddingID).First(&exists).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return ErrLayoutWeddingNotFound
+			}
+			return err
+		}
 		if err := lockWeddingRow(tx, weddingID); err != nil {
 			return err
 		}
@@ -63,7 +73,7 @@ func (r *LayoutRepo) SaveLayout(
 				return res.Error
 			}
 			if res.RowsAffected == 0 {
-				return gorm.ErrRecordNotFound
+				return ErrLayoutTableNotFound
 			}
 		}
 		for i := range toCreate {
@@ -85,7 +95,7 @@ func (r *LayoutRepo) SaveLayout(
 				return res.Error
 			}
 			if res.RowsAffected == 0 {
-				return gorm.ErrRecordNotFound
+				return ErrLayoutElementNotFound
 			}
 		}
 		if len(toDelete) > 0 {
