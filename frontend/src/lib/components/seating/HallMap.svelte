@@ -299,7 +299,7 @@ import RotateCcw from 'lucide-svelte/icons/rotate-ccw';
           let pinchStartDist = 0;
           let pinchStartZoom = 1;
 
-          canvas.addEventListener('touchstart', (e: TouchEvent) => {
+          const onTouchStart = (e: TouchEvent) => {
               if (e.touches.length !== 2) return;
               // Second finger: a pinch, not a move of whatever the first one grabbed.
               cancelDrag();
@@ -310,9 +310,9 @@ import RotateCcw from 'lucide-svelte/icons/rotate-ccw';
               const dy = e.touches[0].clientY - e.touches[1].clientY;
               pinchStartDist = Math.hypot(dx, dy);
               pinchStartZoom = zoom;
-          }, { passive: true });
+          };
 
-          canvas.addEventListener('touchmove', (e: TouchEvent) => {
+          const onTouchMove = (e: TouchEvent) => {
               if (e.touches.length !== 2 || pinchStartDist === 0) return;
               e.preventDefault();
               const [a, b] = [e.touches[0], e.touches[1]];
@@ -320,13 +320,20 @@ import RotateCcw from 'lucide-svelte/icons/rotate-ccw';
               const dist = Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY);
 
               zoomAt(pinchStartZoom * (dist / pinchStartDist), (a.clientX + b.clientX) / 2 - rect.left, (a.clientY + b.clientY) / 2 - rect.top);
-            },
-            { passive: false }
-          );
-
-          canvas.addEventListener('touchend', (e: TouchEvent) => {
+          };
+          const onTouchEnd = (e: TouchEvent) => {
               if (e.touches.length < 2) pinchStartDist = 0;
-          }, { passive: true });
+          };
+          canvas.addEventListener('touchstart', onTouchStart, { passive: true });
+          canvas.addEventListener('touchmove', onTouchMove, { passive: false });
+          canvas.addEventListener('touchend', onTouchEnd, { passive: true });
+          canvas.addEventListener('touchcancel', onTouchEnd, { passive: true });
+          canvasListeners.push(
+            ['touchstart', onTouchStart as EventListener, { passive: true }],
+            ['touchmove', onTouchMove as EventListener, { passive: false }],
+            ['touchend', onTouchEnd as EventListener, { passive: true }],
+            ['touchcancel', onTouchEnd as EventListener, { passive: true }]
+          );
         }
       };
       requestAnimationFrame(attachHandlers);
