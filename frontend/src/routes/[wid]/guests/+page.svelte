@@ -3,11 +3,12 @@
   import { get } from 'svelte/store';
   import type { Guest, RSVPStatus } from '#lib/types/index.ts';
   import { weddingTitle } from '#lib/stores/weddingTitle.ts';
-  import { selectedGuest, isDrawerOpen, drawerStartEditing, drawerCreateMode, addToast, showSeatNumbers } from '#lib/stores/index.ts';
+  import { selectedGuest, isDrawerOpen, drawerStartEditing, drawerCreateMode, addToast, showSeatNumbers, weddingTables } from '#lib/stores/index.ts';
   import { weddingId } from '#lib/stores/weddingId.ts';
   import { guestList, guestMap, refreshGuests } from '#lib/stores/guestEvents.ts';
   import { goto } from '$app/navigation';
   import { deleteGuest as apiDeleteGuest, assignSeat, unassignSeat, bulkImportGuests, fetchAllGuests } from '#lib/api/guests.ts';
+  import { syncQueue } from '#lib/offline/queue.ts';
   import type { GuestImportData } from '#lib/api/guests.ts';
   import { rankGuests } from '#lib/utils/guestSearch.ts';
   import { parseCsv, csvToGuests, resolveImportTables, type CsvGuestRow } from '#lib/utils/csv.ts';
@@ -19,6 +20,7 @@
   import MoveGuestDrawer from '#lib/components/ui/MoveGuestDrawer.svelte';
   import { getInitials } from '#lib/utils/index.ts';
   import { toGuest } from '#lib/utils/guestTransform.ts';
+  import { getQueue } from '#lib/offline/queue.ts';
   import Search from 'lucide-svelte/icons/search';
 import Download from 'lucide-svelte/icons/download';
 import Upload from 'lucide-svelte/icons/upload';
@@ -99,19 +101,7 @@ import Users from 'lucide-svelte/icons/users';
     prevDrawerOpen = isOpen;
   });
 
-  let tables = $state<BanquetTable[]>([]);
-
-  $effect(() => {
-    if (wid) loadTables();
-  });
-
-  async function loadTables() {
-    try {
-      tables = await listTables(wid);
-    } catch (e: any) {
-      addToast(e.message ?? 'Failed to load tables', 'error');
-    }
-  }
+  let tables = $derived($weddingTables);
 
   // Local search (no request while typing), then the status filter.
   // A query keeps its relevance order; without one the column sort applies.
@@ -343,7 +333,7 @@ import Users from 'lucide-svelte/icons/users';
   let importReadId = 0;
 
   function hasQueuedEdits(w: string): boolean {
-    try { return JSON.parse(localStorage.getItem(`offline_queue_${w}`) || '[]').length > 0; } catch { return false; }
+    return getQueue(w).length > 0;
   }
 
   function handleImportFile(e: Event) {
@@ -407,11 +397,12 @@ import Users from 'lucide-svelte/icons/users';
       // Do not wait for the SSE echo: reseed so tables and seating update even
       // when the stream is down. Queued edits must survive, as in the layout.
       try {
-        if (!hasQueuedEdits(wid)) {
-          await refreshGuests(async () => (await fetchAllGuests(wid)).map(toGuest), wid);
-        }
+        // Mirror the layout: drain queued edits before reseeding, or leave the
+        // optimistic values alone and tell the user when the list will refresh.
+        if (hasQueuedEdits(wid)) await syncQueue(wid);
+        await refreshGuests(async () => (await fetchAllGuests(wid)).map(toGuest), wid);
       } catch {
-        addToast('Imported guests, but the list reload failed', 'error');
+        addToast('Imported guests; the list refreshes after queued edits sync', 'error');
       }
     } catch (e: any) {
       addToast(e.message || 'Import failed', 'error');

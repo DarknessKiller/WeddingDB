@@ -1,11 +1,14 @@
 import { writable } from 'svelte/store';
-import type { Guest } from '#lib/types/index.ts';
+import type { BanquetTable, Guest } from '#lib/types/index.ts';
 
 // Selected guest for drawer
 export const selectedGuest = writable<Guest | null>(null);
 export const isDrawerOpen = writable(false);
 export const drawerStartEditing = writable(false);
 export const drawerCreateMode = writable(false);
+
+// Wedding table list, loaded once by the layout for the drawer and pages.
+export const weddingTables = writable<BanquetTable[]>([]);
 
 // Toast notifications
 export interface Toast {

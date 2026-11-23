@@ -4,7 +4,7 @@
   import Sidebar from '#lib/components/layout/Sidebar.svelte';
   import Header from '#lib/components/layout/Header.svelte';
   import Drawer from '#lib/components/ui/Drawer.svelte';
-  import { selectedGuest, isDrawerOpen, drawerStartEditing, drawerCreateMode, sidebarCollapsed, showSeatNumbers, setShowSeatNumbers, addToast } from '#lib/stores/index.ts';
+  import { selectedGuest, isDrawerOpen, drawerStartEditing, drawerCreateMode, sidebarCollapsed, showSeatNumbers, setShowSeatNumbers, addToast, weddingTables } from '#lib/stores/index.ts';
   import { setWeddingId } from '#lib/stores/weddingId.ts';
   import { weddingTitle } from '#lib/stores/weddingTitle.ts';
   import { validateToken } from '#lib/utils/auth.ts';
@@ -14,7 +14,6 @@
   import { listTables } from '#lib/api/tables.ts';
   import { guestList, initializeSSE, readCachedGuests, refreshGuests } from '#lib/stores/guestEvents.ts';
   import { toGuest } from '#lib/utils/guestTransform.ts';
-  import type { BanquetTable } from '#lib/types/index.ts';
 
   let { children } = $props();
 
@@ -22,7 +21,6 @@
   let wid = $derived(page.params.wid ?? '');
   let authChecked = $state(false);
   let guestCount = $derived($guestList.length);
-  let tables = $state<BanquetTable[]>([]);
   let offline = $state(typeof navigator !== 'undefined' ? !navigator.onLine : false);
   let queued = $state(0);
   let loadError = $state(false);
@@ -64,7 +62,7 @@
     if (!forWid) return;
     // Do not show the previous wedding's tables, count or seat setting until
     // this wedding's fetches land (or fail).
-    tables = [];
+    weddingTables.set([]);
     showSeatNumbers.set(false);
     let cancelled = false;
     let localCleanupSSE: (() => void) | undefined;
@@ -160,7 +158,7 @@
       }
 
       listTables(forWid).then((t) => {
-        if (!cancelled) tables = t;
+        if (!cancelled) weddingTables.set(t);
       }).catch((e: any) => {
         if (!cancelled) addToast(e?.message ?? 'Failed to load tables', 'error');
       });
@@ -168,7 +166,9 @@
         if (cancelled) return;
         weddingTitle.set(w.name || '');
         setShowSeatNumbers(forWid, w.showSeatNumbers ?? false);
-      }).catch(() => {});
+      }).catch((e: any) => {
+        if (!cancelled) addToast(e?.message ?? 'Failed to load wedding settings', 'error');
+      });
     })();
 
     return () => {
@@ -228,7 +228,7 @@
 
 {#if $isDrawerOpen && ($selectedGuest || $drawerCreateMode)}
   {#key `${$drawerStartEditing}-${$drawerCreateMode}`}
-    <Drawer guest={$selectedGuest ?? undefined} tables={tables} showSeatNumbers={$showSeatNumbers} startEditing={$drawerStartEditing} createMode={$drawerCreateMode} onClose={() => { $isDrawerOpen = false; $selectedGuest = null; $drawerStartEditing = false; $drawerCreateMode = false; }} />
+    <Drawer guest={$selectedGuest ?? undefined} tables={$weddingTables} showSeatNumbers={$showSeatNumbers} startEditing={$drawerStartEditing} createMode={$drawerCreateMode} onClose={() => { $isDrawerOpen = false; $selectedGuest = null; $drawerStartEditing = false; $drawerCreateMode = false; }} />
   {/key}
 {/if}
 
