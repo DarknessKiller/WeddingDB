@@ -12,7 +12,7 @@ import AlertCircle from 'lucide-svelte/icons/alert-circle';
   import { listTables } from '#lib/api/tables.ts';
   import { getLayout } from '#lib/api/layout.ts';
   import { LIMITS } from '#lib/utils/limits.ts';
-  import { reservationSchema as schema, seatSelectionError, type ReservationForm as FormData } from '#lib/utils/reservation.ts';
+  import { reservationSchema as schema, seatSelectionError, closestEmptySeats, type ReservationForm as FormData } from '#lib/utils/reservation.ts';
   import type { BanquetTable, Guest, HallElement } from '#lib/types/index.ts';
   import HallMap from '#lib/components/seating/HallMap.svelte';
 
@@ -71,11 +71,7 @@ import AlertCircle from 'lucide-svelte/icons/alert-circle';
         .filter(g => g.tableId === tableId && g.seatNumber !== null)
         .flatMap(g => Array.from({ length: g.pax }, (_, i) => g.seatNumber! + i))
     );
-    const seats: number[] = [];
-    for (let i = 1; i <= table.capacity && seats.length < count; i++) {
-      if (!occupied.has(i)) seats.push(i);
-    }
-    return seats;
+    return closestEmptySeats(table.capacity, occupied, count);
   }
 
   function handleSeatClick(tableId: string, seatNum: number, guest: Guest | null) {

@@ -30,3 +30,17 @@ export function seatSelectionError(form: {
 	}
 	return undefined;
 }
+
+// closestEmptySeats returns the first contiguous run of `count` free seats, so
+// the server's seatNum..seatNum+pax-1 assignment matches the seats shown.
+export function closestEmptySeats(capacity: number, occupied: Set<number>, count: number): number[] {
+	if (count < 1) return [];
+	for (let start = 1; start + count - 1 <= capacity; start++) {
+		let free = true;
+		for (let seat = start; seat < start + count; seat++) {
+			if (occupied.has(seat)) { free = false; break; }
+		}
+		if (free) return Array.from({ length: count }, (_, i) => start + i);
+	}
+	return [];
+}

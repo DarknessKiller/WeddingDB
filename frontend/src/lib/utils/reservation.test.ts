@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { reservationSchema } from './reservation';
 import { LIMITS } from './limits';
-import { seatSelectionError } from './reservation.ts';
+import { seatSelectionError, closestEmptySeats } from './reservation.ts';
 
 const base = { name: 'Alice', pax: 1, rsvp: 'pending' as const };
 
@@ -29,5 +29,19 @@ describe('seatSelectionError', () => {
 	it('allows an unseated reservation or a full selection', () => {
 		expect(seatSelectionError({ pax: 2 })).toBeUndefined();
 		expect(seatSelectionError({ tableId: 't1', seatNumbers: [3, 4], pax: 2 })).toBeUndefined();
+	});
+});
+
+describe('closestEmptySeats', () => {
+	it('returns a contiguous run so the server assignment matches the shown seats', () => {
+		expect(closestEmptySeats(10, new Set([2]), 2)).toEqual([3, 4]);
+	});
+
+	it('uses the first free seat for one guest', () => {
+		expect(closestEmptySeats(10, new Set([1]), 1)).toEqual([2]);
+	});
+
+	it('returns nothing when the party does not fit', () => {
+		expect(closestEmptySeats(3, new Set([1, 3]), 2)).toEqual([]);
 	});
 });
