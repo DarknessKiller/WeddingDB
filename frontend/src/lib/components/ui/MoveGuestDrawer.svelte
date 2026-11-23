@@ -122,7 +122,7 @@ import ArrowUpDown from 'lucide-svelte/icons/arrow-up-down';
       <div class="form-grid">
         <div class="form-field">
           <label for="move-table" class="form-label">New Table</label>
-          <select id="move-table" bind:value={tableId} class="form-input">
+          <select id="move-table" bind:value={tableId} onchange={() => { pickedTable = ''; }} class="form-input">
             {#each tables as t}
               <option value={String(t.id)}>{t.name}</option>
             {/each}

@@ -1,6 +1,7 @@
 package services
 
 import (
+	"encoding/json"
 	"errors"
 	"strings"
 	"testing"
@@ -61,6 +62,15 @@ func TestGuestWrite_MissingWeddingIsNotFoundOrApplied(t *testing.T) {
 	if err := svc.CheckOut(ctx, guestID, goneWedding); !errors.Is(err, ErrGuestNotFound) {
 		t.Fatalf("check-out in a missing wedding err = %v, want ErrGuestNotFound", err)
 	}
+	if err := svc.Create(ctx, &models.GuestRecord{ID: guestID, WeddingID: goneWedding, Name: "A", Pax: 1}); !errors.Is(err, ErrGuestNotFound) {
+		t.Fatalf("create in a missing wedding err = %v, want ErrGuestNotFound", err)
+	}
+	if err := svc.AssignSeat(ctx, guestID, goneWedding, uuid.New(), 1); !errors.Is(err, ErrGuestNotFound) {
+		t.Fatalf("assign seat in a missing wedding err = %v, want ErrGuestNotFound", err)
+	}
+	if _, err := svc.BulkCreate(ctx, []models.GuestRecord{{ID: uuid.New(), WeddingID: goneWedding, Name: "B", Pax: 1}}); !errors.Is(err, ErrGuestNotFound) {
+		t.Fatalf("bulk create in a missing wedding err = %v, want ErrGuestNotFound", err)
+	}
 
 	res, err := svc.Sync(ctx, goneWedding, []SyncMutation{{
 		Op: SyncOpDelete, GuestID: guestID.String(), ClientUpdatedAt: time.Now(),
@@ -68,5 +78,15 @@ func TestGuestWrite_MissingWeddingIsNotFoundOrApplied(t *testing.T) {
 	testutil.NoErr(t, err)
 	if res[0].Status != "applied" {
 		t.Fatalf("offline delete for a missing wedding = %+v, want applied", res[0])
+	}
+
+	var payload SyncPayload
+	testutil.NoErr(t, json.Unmarshal([]byte(`{"name":"X"}`), &payload))
+	res, err = svc.Sync(ctx, goneWedding, []SyncMutation{{
+		Op: SyncOpCreate, GuestID: uuid.New().String(), ClientUpdatedAt: time.Now(), Payload: &payload,
+	}})
+	testutil.NoErr(t, err)
+	if res[0].Status != "failed" || res[0].Retryable == nil || *res[0].Retryable {
+		t.Fatalf("offline create for a missing wedding = %+v, want failed without retry", res[0])
 	}
 }

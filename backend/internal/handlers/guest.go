@@ -142,6 +142,9 @@ func (h *GuestHandler) Create(c fuego.ContextWithBody[GuestCreateRequest]) (any,
 		if errors.Is(err, services.ErrGuestCapExceeded) {
 			return nil, fuego.BadRequestError{Title: err.Error()}
 		}
+		if errors.Is(err, services.ErrGuestNotFound) {
+			return nil, fuego.NotFoundError{Title: "Guest not found"}
+		}
 		if errors.Is(err, services.ErrSeatOverlap) || errors.Is(err, services.ErrTableNotFound) ||
 			errors.Is(err, services.ErrInvalidGuestPax) || errors.Is(err, services.ErrSeatRange) ||
 			errors.Is(err, services.ErrGuestPatchInvalid) {
@@ -370,7 +373,7 @@ func (h *GuestHandler) BulkImport(c fuego.ContextWithBody[BulkImportRequest]) (a
 		}
 		if errors.Is(err, services.ErrSeatOverlap) || errors.Is(err, services.ErrSeatRange) ||
 			errors.Is(err, services.ErrTableNotFound) || errors.Is(err, services.ErrGuestPatchInvalid) ||
-			errors.Is(err, services.ErrInvalidGuestPax) {
+			errors.Is(err, services.ErrInvalidGuestPax) || errors.Is(err, services.ErrGuestNotFound) {
 			return nil, seatAssignmentError(err)
 		}
 		slog.ErrorContext(ctx, "bulk import failed", "err", err)
@@ -410,6 +413,9 @@ func (h *GuestHandler) AssignSeat(c fuego.ContextWithBody[AssignSeatRequest]) (a
 }
 
 func seatAssignmentError(err error) error {
+	if errors.Is(err, services.ErrGuestNotFound) {
+		return fuego.NotFoundError{Title: "Guest not found"}
+	}
 	if errors.Is(err, services.ErrSeatOverlap) || errors.Is(err, services.ErrTableNotFound) || errors.Is(err, services.ErrInvalidGuestPax) || errors.Is(err, services.ErrSeatRange) || errors.Is(err, services.ErrGuestCapExceeded) || errors.Is(err, services.ErrGuestPatchInvalid) {
 		return fuego.BadRequestError{Title: err.Error()}
 	}

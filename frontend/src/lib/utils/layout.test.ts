@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { defaultSlot, reorderElements, clampHallSize, HALL_MIN, HALL_MAX } from './layout';
+import { defaultSlot, reorderElements, clampHallSize, clampElementSize, HALL_MIN, HALL_MAX, ELEMENT_MIN, ELEMENT_MAX } from './layout';
 import type { BanquetTable, HallElement } from '#lib/types/index.ts';
 
 const t = (x: number, y: number): BanquetTable => ({
@@ -49,5 +49,14 @@ describe('clampHallSize', () => {
 		expect(clampHallSize(9999)).toBe(HALL_MAX);
 		expect(clampHallSize(Number.NaN)).toBe(HALL_MIN);
 		expect(clampHallSize(860.7)).toBe(860);
+	});
+});
+
+describe('clampElementSize', () => {
+	it('keeps an element size inside the editor bounds', () => {
+		expect(clampElementSize(0)).toBe(ELEMENT_MIN);
+		expect(clampElementSize(-5)).toBe(ELEMENT_MIN);
+		expect(clampElementSize(999)).toBe(ELEMENT_MAX);
+		expect(clampElementSize(Number.NaN)).toBe(ELEMENT_MIN);
 	});
 });

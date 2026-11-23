@@ -108,11 +108,17 @@ func (s *GuestService) createGuestTx(ctx context.Context, tx *gorm.DB, g *models
 func (s *GuestService) mergeGuestUpdate(ctx context.Context, tx *gorm.DB, weddingID, id uuid.UUID, patch *GuestPatch, at time.Time) (*models.GuestRecord, bool, error) {
 	total, err := s.guestCountLocked(tx, weddingID)
 	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, false, ErrGuestNotFound
+		}
 		return nil, false, err
 	}
 	repo := repository.NewGuestRepo(tx)
 	locked, err := repo.FindByIDForUpdate(ctx, id, weddingID)
 	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, false, ErrGuestNotFound
+		}
 		return nil, false, err
 	}
 	if patch == nil {
@@ -503,6 +509,9 @@ func (s *GuestService) BulkCreate(ctx context.Context, guests []models.GuestReco
 	})
 	if err != nil {
 		// Transaction rolled back: nothing committed, nothing to broadcast.
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return 0, ErrGuestNotFound
+		}
 		return 0, err
 	}
 	for _, e := range events {
@@ -719,6 +728,11 @@ func (s *GuestService) applySyncMutation(ctx context.Context, weddingID uuid.UUI
 		if err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 			return s.createGuestTx(ctx, tx, g)
 		}); err != nil {
+			// A deleted wedding can never make this create succeed: drop it
+			// instead of blocking the offline queue forever.
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return SyncResult{GuestID: m.GuestID, Status: "failed", Reason: "wedding not found", Retryable: new(false)}
+			}
 			return failedSync(ctx, m.GuestID, err)
 		}
 		s.sseHub.publishGuest("create", g, weddingID)
@@ -726,7 +740,7 @@ func (s *GuestService) applySyncMutation(ctx context.Context, weddingID uuid.UUI
 
 	case SyncOpUpdate:
 		merged, applied, err := s.syncMerge(ctx, weddingID, gid, m.Payload, opTime)
-		if errors.Is(err, gorm.ErrRecordNotFound) {
+		if errors.Is(err, gorm.ErrRecordNotFound) || errors.Is(err, ErrGuestNotFound) {
 			return SyncResult{GuestID: m.GuestID, Status: "skipped", Reason: "not found"}
 		}
 		if err != nil {

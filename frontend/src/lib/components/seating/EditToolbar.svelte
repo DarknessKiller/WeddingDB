@@ -11,7 +11,8 @@ import ChevronsDown from 'lucide-svelte/icons/chevrons-down';
 import Undo2 from 'lucide-svelte/icons/undo-2';
 import Redo2 from 'lucide-svelte/icons/redo-2';
   import { LIMITS } from '#lib/utils/limits.ts';
-  import { clampHallSize, HALL_MAX, HALL_MIN } from '#lib/utils/layout.ts';
+  import { clampHallSize, clampElementSize, HALL_MAX, HALL_MIN, ELEMENT_MAX, ELEMENT_MIN } from '#lib/utils/layout.ts';
+  import { clampTableCapacity } from '#lib/utils/seat.ts';
 import AlignStartVertical from 'lucide-svelte/icons/align-start-vertical';
 import AlignCenterVertical from 'lucide-svelte/icons/align-center-vertical';
 import AlignEndVertical from 'lucide-svelte/icons/align-end-vertical';
@@ -299,20 +300,30 @@ import AlignVerticalDistributeCenter from 'lucide-svelte/icons/align-vertical-di
           id="sel-w"
           type="number"
           value={selectedItem.width ?? 10}
-          onchange={(e) => onUpdateSelected({ width: Number(e.currentTarget.value) })}
+          onchange={(e) => {
+            const input = e.currentTarget;
+            const v = clampElementSize(Number(input.value));
+            input.value = String(v);
+            onUpdateSelected({ width: v });
+          }}
           class="w-14 px-1.5 py-1 border border-gray-200 rounded-lg text-center"
-          min="1"
-          max="100"
+          min={ELEMENT_MIN}
+          max={ELEMENT_MAX}
         />
         <label for="sel-h" class="text-gray-500 ml-1">H</label>
         <input
           id="sel-h"
           type="number"
           value={selectedItem.height ?? 10}
-          onchange={(e) => onUpdateSelected({ height: Number(e.currentTarget.value) })}
+          onchange={(e) => {
+            const input = e.currentTarget;
+            const v = clampElementSize(Number(input.value));
+            input.value = String(v);
+            onUpdateSelected({ height: v });
+          }}
           class="w-14 px-1.5 py-1 border border-gray-200 rounded-lg text-center"
-          min="1"
-          max="100"
+          min={ELEMENT_MIN}
+          max={ELEMENT_MAX}
         />
       </div>
       <!-- Label -->
@@ -386,8 +397,10 @@ import AlignVerticalDistributeCenter from 'lucide-svelte/icons/align-vertical-di
           type="number"
           value={selectedItem.capacity ?? 10}
           onchange={(e) => {
-            const v = Math.floor(Number(e.currentTarget.value));
-            onUpdateSelected({ capacity: Math.min(LIMITS.tableCapacity, Math.max(1, seatedPax, Number.isFinite(v) ? v : 1)) });
+            const input = e.currentTarget;
+            const v = clampTableCapacity(Number(input.value), Math.max(1, seatedPax));
+            input.value = String(v);
+            onUpdateSelected({ capacity: v });
           }}
           class="w-14 px-1.5 py-1 border border-gray-200 rounded-lg text-center"
           min={Math.max(1, seatedPax)}
