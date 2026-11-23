@@ -53,16 +53,25 @@ describe('csvToGuests dietary and table resolution', () => {
 		expect(dropped).toBe(1);
 	});
 
+	it('counts caps in code points, not UTF-16 units', () => {
+		const { guests, dropped } = csvToGuests(parseCsv('name,dietary\n' + '😀'.repeat(60) + ',' + '😀'.repeat(60)));
+		expect(guests).toHaveLength(1);
+		expect(dropped).toBe(0);
+		expect(guests[0].dietary[0]).toHaveLength(120);
+	});
+
 	it('drops the seat when the table name does not resolve', () => {
 		const { rows, unresolved } = resolveImportTables(
 			[
 				{ table: 'Table 1', seat: 3 },
-				{ table: 'Gone', seat: 4 }
+				{ table: 'Gone', seat: 4 },
+				{ seat: 5 }
 			],
 			[{ id: 't1', name: 'table 1' }]
 		);
 		expect(rows[0]).toMatchObject({ tableId: 't1', seat: 3 });
 		expect(rows[1]).toMatchObject({ tableId: undefined, seat: undefined });
+		expect(rows[2].seat).toBeUndefined();
 		expect(unresolved).toBe(1);
 	});
 });

@@ -20,7 +20,7 @@ import (
 // to a check-in with a later client clock that committed while it waited.
 // Requires TEST_DATABASE_URL pointing at a *_test database.
 func TestSyncCheckOut_PostgresLosesToCheckInCommittedWhileWaiting(t *testing.T) {
-	dsn := pgDSN(t)
+	dsn := testutil.PgDSN(t)
 	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{})
 	if err != nil {
 		t.Fatalf("postgres open: %v", err)

@@ -20,7 +20,7 @@ import (
 // database whose name does not end in _test. Requires TEST_DATABASE_URL.
 func newPGTestDB(t *testing.T) *gorm.DB {
 	t.Helper()
-	db, err := gorm.Open(postgres.Open(pgDSN(t)), &gorm.Config{})
+	db, err := gorm.Open(postgres.Open(testutil.PgDSN(t)), &gorm.Config{})
 	if err != nil {
 		t.Fatalf("postgres open: %v", err)
 	}

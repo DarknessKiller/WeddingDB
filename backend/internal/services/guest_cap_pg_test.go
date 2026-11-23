@@ -11,6 +11,7 @@ import (
 
 	"weddingdb/internal/models"
 	"weddingdb/internal/repository"
+	"weddingdb/internal/testutil"
 
 	"github.com/google/uuid"
 	"gorm.io/driver/postgres"
@@ -23,7 +24,7 @@ import (
 //	TEST_DATABASE_URL=postgresql://postgres@127.0.0.1:55432/weddingdb_test?sslmode=disable \
 //	  go test ./internal/services -run TestGuestCap_PostgresConcurrent -v
 func TestGuestCap_PostgresConcurrent(t *testing.T) {
-	dsn := pgDSN(t)
+	dsn := testutil.PgDSN(t)
 	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{})
 	if err != nil {
 		t.Fatalf("postgres open: %v", err)

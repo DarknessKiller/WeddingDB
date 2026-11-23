@@ -19,7 +19,7 @@ import (
 )
 
 func TestGenerateCSV_FormulaInjection(t *testing.T) {
-	db, err := gorm.Open(postgres.Open(pgDSN(t)), &gorm.Config{})
+	db, err := gorm.Open(postgres.Open(testutil.PgDSN(t)), &gorm.Config{})
 	testutil.NoErr(t, err)
 	var dbName string
 	testutil.NoErr(t, db.Raw("SELECT current_database()").Scan(&dbName).Error)

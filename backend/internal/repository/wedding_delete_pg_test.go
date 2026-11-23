@@ -1,7 +1,6 @@
 package repository
 
 import (
-	"os"
 	"strings"
 	"testing"
 	"time"
@@ -15,25 +14,11 @@ import (
 	"gorm.io/gorm/clause"
 )
 
-// pgRepoDSN returns TEST_DATABASE_URL. Under CI an empty value is a failure,
-// not a skip: this is the only proof of the delete/create ordering.
-func pgRepoDSN(t *testing.T) string {
-	t.Helper()
-	dsn := os.Getenv("TEST_DATABASE_URL")
-	if dsn == "" {
-		if os.Getenv("CI") != "" {
-			t.Fatal("TEST_DATABASE_URL must be set in CI; this Postgres concurrency test may not silently skip")
-		}
-		t.Skip("set TEST_DATABASE_URL to run against Postgres")
-	}
-	return dsn
-}
-
 // TestWeddingDelete_NoOrphanGuestAfterConcurrentCreate proves the cascade takes
 // the wedding row lock first: a guest created while the delete waits on that
 // lock must be swept by the cascade, not left behind the wedding row's removal.
 func TestWeddingDelete_NoOrphanGuestAfterConcurrentCreate(t *testing.T) {
-	db, err := gorm.Open(postgres.Open(pgRepoDSN(t)), &gorm.Config{})
+	db, err := gorm.Open(postgres.Open(testutil.PgDSN(t)), &gorm.Config{})
 	if err != nil {
 		t.Fatalf("postgres open: %v", err)
 	}

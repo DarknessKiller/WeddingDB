@@ -20,7 +20,7 @@ import (
 // delete waits for the lock must survive the unassign. Requires
 // TEST_DATABASE_URL pointing at a *_test database.
 func TestTableDelete_DoesNotRevertConcurrentCheckIn(t *testing.T) {
-	dsn := pgDSN(t)
+	dsn := testutil.PgDSN(t)
 	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{})
 	if err != nil {
 		t.Fatalf("postgres open: %v", err)

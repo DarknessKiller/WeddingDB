@@ -21,7 +21,7 @@ import (
 // holds the wedding row blocks the write until it commits, and the write then
 // applies. Requires TEST_DATABASE_URL pointing at a *_test database.
 func TestCheckIn_WaitsForWeddingLock(t *testing.T) {
-	dsn := pgDSN(t)
+	dsn := testutil.PgDSN(t)
 	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{})
 	if err != nil {
 		t.Fatalf("postgres open: %v", err)
