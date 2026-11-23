@@ -8,6 +8,10 @@ export type GuestRow = Omit<GuestResponse, 'weddingId' | 'createdAt' | 'updatedA
 /** Patch fields in API names. undefined keeps the old value, null clears it. */
 export type GuestFields = Partial<GuestCreateData>;
 
+/** A guest row the public (kiosk) endpoint returns: staff-only fields are absent. */
+export type PublicGuestRow = Pick<GuestResponse, 'id' | 'name' | 'tableId' | 'seatNum' | 'pax' | 'isVip'> &
+	Partial<Pick<GuestResponse, 'pinyin'>>;
+
 const RSVP: RSVPStatus[] = ['confirmed', 'pending', 'declined', 'no_response'];
 function rsvp(v: unknown): RSVPStatus {
 	return RSVP.includes(v as RSVPStatus) ? (v as RSVPStatus) : 'no_response';
@@ -34,6 +38,24 @@ export function toGuest(r: GuestRow): Guest {
 		giftItem: r.giftItem ?? undefined,
 		createdAt,
 		updatedAt: r.updatedAt ? new Date(r.updatedAt) : createdAt
+	};
+}
+
+/** Public row to Guest. Same defaults as toGuest; staff-only fields never carry a value. */
+export function toPublicGuest(r: PublicGuestRow): Guest {
+	return {
+		id: r.id,
+		name: r.name ?? '',
+		pinyin: r.pinyin,
+		rsvp: 'no_response', // RSVP is staff-only; public rows never carry it
+		pax: r.pax ?? 1,
+		tableId: r.tableId ?? null,
+		seatNumber: r.seatNum ?? null,
+		checkedIn: false, // attendance is staff-only; never expose it to the kiosk
+		notes: '',
+		dietaryRequirements: [],
+		isVip: !!r.isVip,
+		createdAt: new Date()
 	};
 }
 

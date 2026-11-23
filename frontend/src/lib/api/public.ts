@@ -1,33 +1,7 @@
 import type { Guest } from '#lib/types/index.ts';
 import { weddingId } from '#lib/stores/weddingId.ts';
 import { get } from 'svelte/store';
-
-interface PublicGuest {
-	id: string;
-	name: string;
-	tableId: string | null;
-	seatNum: number | null;
-	pax: number;
-	isVip: boolean;
-	pinyin?: string;
-}
-
-export function mapGuest(raw: PublicGuest): Guest {
-	return {
-		id: raw.id,
-		name: raw.name ?? '',
-		pinyin: raw.pinyin,
-		rsvp: 'no_response', // RSVP is staff-only; public rows never carry it
-		pax: raw.pax ?? 1,
-		tableId: raw.tableId ?? null,
-		seatNumber: raw.seatNum ?? null,
-		checkedIn: false, // attendance is staff-only; never expose it to the kiosk
-		notes: '',
-		dietaryRequirements: [],
-		isVip: raw.isVip ?? false,
-		createdAt: new Date()
-	};
-}
+import { toPublicGuest, type PublicGuestRow } from '#lib/utils/guestTransform.ts';
 
 export async function publicListGuests(opts: { signal?: AbortSignal; wid?: string } = {}): Promise<Guest[]> {
 	// Callers on a reused component pass the route param: the store can still
@@ -39,7 +13,7 @@ export async function publicListGuests(opts: { signal?: AbortSignal; wid?: strin
 		const res = await fetch(`/api/public/weddings/${wid}/guests?limit=1000${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ''}`, { signal: opts.signal });
 		if (!res.ok) throw new Error('Failed to list guests');
 		const data = await res.json();
-		all.push(...(data.guests ?? []).map(mapGuest));
+		all.push(...(data.guests ?? []).map((raw: PublicGuestRow) => toPublicGuest(raw)));
 		cursor = data.nextCursor ?? undefined;
 	} while (cursor);
 	return all;

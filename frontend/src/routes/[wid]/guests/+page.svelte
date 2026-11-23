@@ -10,7 +10,7 @@
   import { deleteGuest as apiDeleteGuest, assignSeat, unassignSeat, bulkImportGuests } from '#lib/api/guests.ts';
   import type { GuestImportData } from '#lib/api/guests.ts';
   import { rankGuests } from '#lib/utils/guestSearch.ts';
-  import { trapFocus } from '#lib/utils/focus.ts';
+  import { trapFocus, registerEscape } from '#lib/utils/focus.ts';
   import { listTables } from '#lib/api/tables.ts';
   import type { BanquetTable } from '#lib/types/index.ts';
   import Badge from '#lib/components/ui/Badge.svelte';
@@ -102,16 +102,6 @@ import Users from 'lucide-svelte/icons/users';
 
   onMount(() => {
     loadTables();
-    function onKey(e: KeyboardEvent) {
-      if (e.key === 'Escape') {
-        contextMenu = null;
-        showMoveModal = false;
-        showBulkMoveModal = false;
-        showImportModal = false;
-      }
-    }
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
   });
 
   async function loadTables() {
@@ -433,6 +423,18 @@ import Users from 'lucide-svelte/icons/users';
   let bulkMoveTableId = $state('');
   let bulkMoveSeatStart = $state(1);
   let bulkMoveSaving = $state(false);
+
+  // Only the topmost dialog handles Escape: the move drawer and menu register
+  // their own, these two are inline modals.
+  $effect(() => {
+    if (!showBulkMoveModal) return;
+    return registerEscape(() => showBulkMoveModal = false);
+  });
+
+  $effect(() => {
+    if (!showImportModal) return;
+    return registerEscape(() => showImportModal = false);
+  });
 
   function requestBulkDelete() {
     if (selectedIds.size === 0) return;

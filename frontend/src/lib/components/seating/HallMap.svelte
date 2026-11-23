@@ -244,6 +244,13 @@ import RotateCcw from 'lucide-svelte/icons/rotate-ccw';
     return null;
   });
 
+  // Guests already seated in the selected table: capacity may not drop below them.
+  const selectedSeatedPax = $derived(
+    selectedId && isTableSelected
+      ? (tableGuestsRaw[String(selectedId)] ?? []).reduce((sum, g) => sum + (g.pax ?? 1), 0)
+      : 0
+  );
+
   // Reload/close: beforeNavigate only sees in-app navigation.
   onMount(() => {
     const warn = (e: BeforeUnloadEvent) => { if (dirty) e.preventDefault(); };
@@ -255,6 +262,8 @@ import RotateCcw from 'lucide-svelte/icons/rotate-ccw';
   onMount(() => {
     let ro: ResizeObserver | null = null;
     const canvasListeners: Array<[string, EventListener, any]> = [];
+    let rafId = 0;
+    let destroyed = false;
 
     if (containerEl) {
       ro = new ResizeObserver((entries) => {
@@ -268,6 +277,7 @@ import RotateCcw from 'lucide-svelte/icons/rotate-ccw';
 
     (async () => {
       const mod = await import('svelte-konva');
+      if (destroyed) return;
       // A finger wobbles a few pixels during a tap: land it as a tap, not a 3px drag.
       if ('ontouchstart' in window) (await import('konva')).default.dragDistance = 12;
       KonvaStage = mod.Stage;
@@ -279,8 +289,9 @@ import RotateCcw from 'lucide-svelte/icons/rotate-ccw';
       konvaLoaded = true;
 
       const attachHandlers = () => {
+        if (destroyed) return;
         const canvas = containerEl?.querySelector('canvas');
-        if (!canvas) { requestAnimationFrame(attachHandlers); return; }
+        if (!canvas) { rafId = requestAnimationFrame(attachHandlers); return; }
 
         // ponytail: store listeners for cleanup on destroy
         const onWheel = (e: Event) => {
@@ -336,10 +347,12 @@ import RotateCcw from 'lucide-svelte/icons/rotate-ccw';
           );
         }
       };
-      requestAnimationFrame(attachHandlers);
+      rafId = requestAnimationFrame(attachHandlers);
     })();
 
       return () => {
+      destroyed = true;
+      cancelAnimationFrame(rafId);
       ro?.disconnect();
       // Clean up canvas event listeners
       const canvas = containerEl?.querySelector('canvas');
@@ -788,6 +801,7 @@ import RotateCcw from 'lucide-svelte/icons/rotate-ccw';
     selectedId={selectedId}
     isTableSelected={isTableSelected}
     selectedItem={selectedItem}
+    seatedPax={selectedSeatedPax}
     snap={snapEnabled}
     canUndo={canUndo}
     canRedo={canRedo}

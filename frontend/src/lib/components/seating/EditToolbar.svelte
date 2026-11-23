@@ -29,6 +29,7 @@ import AlignVerticalDistributeCenter from 'lucide-svelte/icons/align-vertical-di
     selectedId = null,
     isTableSelected = false,
     selectedItem = null,
+    seatedPax = 0,
     snap = true,
     canUndo = false,
     canRedo = false,
@@ -53,6 +54,7 @@ import AlignVerticalDistributeCenter from 'lucide-svelte/icons/align-vertical-di
     selectedId?: string | null;
     isTableSelected?: boolean;
     selectedItem?: any;
+    seatedPax?: number;
     snap?: boolean;
     canUndo?: boolean;
     canRedo?: boolean;
@@ -374,9 +376,9 @@ import AlignVerticalDistributeCenter from 'lucide-svelte/icons/align-vertical-di
           id="sel-cap"
           type="number"
           value={selectedItem.capacity ?? 10}
-          onchange={(e) => onUpdateSelected({ capacity: Number(e.currentTarget.value) })}
+          onchange={(e) => onUpdateSelected({ capacity: Math.max(1, seatedPax, Number(e.currentTarget.value)) })}
           class="w-14 px-1.5 py-1 border border-gray-200 rounded-lg text-center"
-          min="1"
+          min={Math.max(1, seatedPax)}
           max="50"
         />
       </div>

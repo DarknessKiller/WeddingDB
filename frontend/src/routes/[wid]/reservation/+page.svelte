@@ -3,7 +3,6 @@
   import { weddingTitle } from '#lib/stores/weddingTitle.ts';
   import { goto } from '$app/navigation';
   import { cn } from '#lib/utils/index.ts';
-  import { z } from 'zod';
   import CheckCircle2 from 'lucide-svelte/icons/check-circle-2';
 import AlertCircle from 'lucide-svelte/icons/alert-circle';
   import { fetchAllGuests, createGuest } from '#lib/api/guests.ts';
@@ -14,6 +13,7 @@ import AlertCircle from 'lucide-svelte/icons/alert-circle';
   import { get } from 'svelte/store';
   import { onMount } from 'svelte';
   import { LIMITS } from '#lib/utils/limits.ts';
+  import { reservationSchema as schema, type ReservationForm as FormData } from '#lib/utils/reservation.ts';
   import type { BanquetTable, Guest, HallElement } from '#lib/types/index.ts';
   import HallMap from '#lib/components/seating/HallMap.svelte';
 
@@ -78,20 +78,6 @@ import AlertCircle from 'lucide-svelte/icons/alert-circle';
     form.tableId = id;
     form.seatNumbers = findClosestEmptySeats(id, form.pax);
   }
-
-  const schema = z.object({
-    name: z.string().min(1, 'Name is required').max(LIMITS.name),
-    email: z.string().email('Invalid email').max(LIMITS.email).optional().or(z.literal('')),
-    pax: z.number().min(1, 'At least 1 guest').max(10, 'Max 10 guests'),
-    rsvp: z.enum(['confirmed', 'pending', 'declined']),
-    tableId: z.string().nullable().optional(),
-    seatNumbers: z.array(z.number()).optional(),
-    dietary: z.array(z.string()).optional(),
-    notes: z.string().max(LIMITS.guestNotes).optional(),
-    isVip: z.boolean().optional(),
-  });
-
-  type FormData = z.infer<typeof schema>;
 
   let form = $state<FormData>({
     name: '',
@@ -298,7 +284,7 @@ import AlertCircle from 'lucide-svelte/icons/alert-circle';
               id="pax"
               type="number"
               min="1"
-              max="10"
+              max={LIMITS.guestPax}
               oninput={(e) => onPaxChange(Number(e.currentTarget.value) || 1)}
               value={form.pax}
               class={cn("w-full px-4 py-2.5 border rounded-xl text-sm bg-white outline-none transition-all",
