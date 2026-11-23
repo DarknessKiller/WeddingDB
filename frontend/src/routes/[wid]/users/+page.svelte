@@ -1,6 +1,5 @@
 <script lang="ts">
   import { page } from '$app/state';
-  let wid = $derived(page.params.wid ?? '');
   import { onMount } from 'svelte';
   import { trapFocus, registerEscape } from '#lib/utils/focus.ts';
   import { goto } from '$app/navigation';

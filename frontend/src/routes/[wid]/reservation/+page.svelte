@@ -11,7 +11,6 @@ import AlertCircle from 'lucide-svelte/icons/alert-circle';
   import { toGuest } from '#lib/utils/guestTransform.ts';
   import { listTables } from '#lib/api/tables.ts';
   import { getLayout } from '#lib/api/layout.ts';
-  import { onMount } from 'svelte';
   import { LIMITS } from '#lib/utils/limits.ts';
   import { reservationSchema as schema, seatSelectionError, type ReservationForm as FormData } from '#lib/utils/reservation.ts';
   import type { BanquetTable, Guest, HallElement } from '#lib/types/index.ts';
@@ -24,18 +23,29 @@ import AlertCircle from 'lucide-svelte/icons/alert-circle';
   let hallHeight = $state(1000);
   let dataLoaded = $state(false);
 
-  onMount(async () => {
+  async function loadData() {
+    const forWid = wid;
     try {
-      const [tablesRes, guestRows, layout] = await Promise.all([listTables(wid), fetchAllGuests(wid), getLayout(wid)]);
+      const [tablesRes, guestRows, layout] = await Promise.all([listTables(forWid), fetchAllGuests(forWid), getLayout(forWid)]);
+      // A newer route already reloaded: keep the old wedding off this form.
+      if (forWid !== wid) return;
       apiTables = tablesRes;
       apiGuests = guestRows.map(toGuest);
       elements = layout.elements;
       hallWidth = layout.hallWidth;
       hallHeight = layout.hallHeight;
       dataLoaded = true;
-    } catch (e) {
-      addToast('Failed to load data', 'error');
+    } catch {
+      if (forWid === wid) addToast('Failed to load data', 'error');
     }
+  }
+
+  $effect(() => {
+    if (!wid) return;
+    dataLoaded = false;
+    form.tableId = null;
+    form.seatNumbers = [];
+    void loadData();
   });
 
   let tableGuests = $derived.by(() => {

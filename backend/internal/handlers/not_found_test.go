@@ -2,8 +2,10 @@ package handlers
 
 import (
 	"context"
+	"mime"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"weddingdb/internal/middleware"
@@ -132,5 +134,30 @@ func TestReport_QueryFailureIs500(t *testing.T) {
 	s.Mux.ServeHTTP(rec, req)
 	if rec.Code != http.StatusInternalServerError {
 		t.Fatalf("status = %d, want 500, body %s", rec.Code, rec.Body.String())
+	}
+}
+
+// TestReport_ContentDispositionEscapesQuotes covers a wedding name containing a
+// quote: the header must remain a valid media type.
+func TestReport_ContentDispositionEscapesQuotes(t *testing.T) {
+	db := newSQLite(t, weddingEventsDDL, guestRecordsDDL, banquetTablesDDL)
+	wid := uuid.New()
+	testutil.NoErr(t, db.Create(&models.WeddingEvent{ID: wid, Name: `Ana "Annie" Lee`}).Error)
+	h := NewReportHandler(services.NewReportService(
+		repository.NewGuestRepo(db), repository.NewTableRepo(db), repository.NewWeddingRepo(db)))
+	s := fuego.NewServer(fuego.WithoutStartupMessages())
+	s.Mux.Handle("GET /api/weddings/{wid}/reports/angpao", http.HandlerFunc(h.ExportAngpao))
+
+	req := httptest.NewRequest(http.MethodGet, "/api/weddings/"+utils.EncodeUUID(wid)+"/reports/angpao?format=csv", nil)
+	rec := httptest.NewRecorder()
+	s.Mux.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200, body %s", rec.Code, rec.Body.String())
+	}
+	disp := rec.Header().Get("Content-Disposition")
+	if _, params, err := mime.ParseMediaType(disp); err != nil {
+		t.Fatalf("Content-Disposition %q is not a valid media type: %v", disp, err)
+	} else if !strings.Contains(params["filename"], `Ana "Annie" Lee`) {
+		t.Fatalf("filename = %q, want the wedding name with quotes", params["filename"])
 	}
 }

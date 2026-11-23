@@ -2,8 +2,8 @@ package handlers
 
 import (
 	"errors"
-	"fmt"
 	"log/slog"
+	"mime"
 	"net/http"
 	"strconv"
 	"strings"
@@ -58,7 +58,7 @@ func (h *ReportHandler) ExportAngpao(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/octet-stream")
 	// Sanitize filename: strip control chars, use RFC 5987 encoding for non-ASCII
 	safeFilename := sanitizeContentDisposition(filename)
-	w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="%s"`, safeFilename))
+	w.Header().Set("Content-Disposition", mime.FormatMediaType("attachment", map[string]string{"filename": safeFilename}))
 	w.Header().Set("Content-Length", strconv.Itoa(len(data)))
 	w.WriteHeader(http.StatusOK)
 	if _, err := w.Write(data); err != nil {

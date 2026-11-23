@@ -158,8 +158,8 @@ func TestSanitizeFilename(t *testing.T) {
 	}{
 		{"Normal Name", "Normal Name"},
 		{"Has/Slash", "Has-Slash"},
-		{`Has\Backslash`, `Has\\Backslash`},
-		{`Has"Quote`, `Has\"Quote`},
+		{`Has\Backslash`, `Has\Backslash`},
+		{`Has"Quote`, `Has"Quote`},
 		{"  Trimmed  ", "Trimmed"},
 		{strings.Repeat("A", 60), strings.Repeat("A", 50)},
 		{strings.Repeat("婚", 60), strings.Repeat("婚", 50)},

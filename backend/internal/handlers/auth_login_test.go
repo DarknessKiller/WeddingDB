@@ -54,3 +54,13 @@ func TestLogin_CredentialRejectionVsOutage(t *testing.T) {
 		}
 	})
 }
+
+// TestLogin_RejectsOverlongEmail keeps the rate-limit key bounded.
+func TestLogin_RejectsOverlongEmail(t *testing.T) {
+	a := newAuthRoutes(t)
+	email := strings.Repeat("a", 1000) + "@x.test"
+	rec := a.post("/api/auth/login", "", `{"email":"`+email+`","password":"wrong"}`)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400, body %s", rec.Code, rec.Body.String())
+	}
+}

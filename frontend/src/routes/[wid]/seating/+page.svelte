@@ -71,46 +71,42 @@ import Pencil from 'lucide-svelte/icons/pencil';
 
   let wid = $derived(page.params.wid ?? '');
 
-  async function loadData() {
+  async function loadData(): Promise<boolean> {
     const forWid = wid;
     const layout = await getLayout(forWid);
     // A newer route already reloaded: do not paint this wedding's rows for it.
-    if (forWid !== wid) return;
+    if (forWid !== wid) return false;
     if (layout) {
       allTables = layout.tables ?? [];
       elements = layout.elements ?? [];
       hallWidth = layout.hallWidth ?? 860;
       hallHeight = layout.hallHeight ?? 1000;
     } else {
-      allTables = await listTables(forWid);
+      const tables = await listTables(forWid);
+      if (forWid !== wid) return false;
+      allTables = tables;
     }
+    return true;
   }
 
   async function retry() {
     loading = true;
-    errored = false;
-    error = null;
-    try {
-      await loadData();
-    } catch (e: any) {
-      errored = true;
-      error = e.message ?? 'Failed to load seating data';
-      addToast(error ?? 'Failed to load seating data', 'error');
-    } finally {
-      loading = false;
-    }
+    await init();
   }
 
   async function init() {
+    const forWid = wid;
     try {
-      await loadData();
+      if (!await loadData()) return;
       errored = false;
       error = null;
     } catch (e: any) {
+      if (forWid !== wid) return;
       errored = true;
       error = e.message ?? 'Failed to load seating data';
       addToast(error ?? 'Failed to load seating data', 'error');
     } finally {
+      if (forWid !== wid) return;
       loading = false;
       const tableParam = page.url.searchParams.get('table');
       if (tableParam) {
@@ -128,7 +124,9 @@ import Pencil from 'lucide-svelte/icons/pencil';
     selectedTableId = null;
     showMobilePanel = false;
     editMode = false;
-    void init();
+    allTables = [];
+    elements = [];
+    void retry();
   });
 
   let selectedTable = $derived(selectedTableId ? allTables.find(t => t.id === selectedTableId) ?? null : null);

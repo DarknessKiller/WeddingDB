@@ -20,7 +20,6 @@ import Map from 'lucide-svelte/icons/map';
   import { getLayout, saveLayout } from '#lib/api/layout.ts';
   import { defaultSlot } from '#lib/utils/layout.ts';
   import { page } from '$app/state';
-  import { weddingId } from '#lib/stores/weddingId.ts';
   import type { BanquetTable, TableOccupancy, HallElement, HallLayoutData } from '#lib/types/index.ts';
 
   type TableCreateData = Omit<BanquetTable, 'id'>;

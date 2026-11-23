@@ -364,11 +364,10 @@ func (s *ReportService) sortedTableKeys(m map[string]int) []string {
 	return keys
 }
 
+// sanitizeFilename keeps the filename safe to display; mime.FormatMediaType
+// handles header escaping.
 func (s *ReportService) sanitizeFilename(name string) string {
-	name = strings.ReplaceAll(name, `\`, `\\`)
-	name = strings.ReplaceAll(name, `"`, `\"`)
 	name = strings.ReplaceAll(name, `/`, `-`)
-	name = strings.ReplaceAll(name, `\n`, `-`)
 	name = strings.TrimSpace(name)
 	if runes := []rune(name); len(runes) > 50 {
 		name = string(runes[:50])
