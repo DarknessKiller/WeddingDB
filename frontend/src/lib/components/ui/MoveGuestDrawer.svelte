@@ -11,6 +11,7 @@ import ArrowUpDown from 'lucide-svelte/icons/arrow-up-down';
     tables = [],
     guests = [],
     currentTableName = '—',
+    saving = false,
     onSave,
     onClose,
   }: {
@@ -18,6 +19,7 @@ import ArrowUpDown from 'lucide-svelte/icons/arrow-up-down';
     tables?: BanquetTable[];
     guests?: Guest[];
     currentTableName?: string;
+    saving?: boolean;
     onSave: (tableId: string, seatNum: number) => void;
     onClose: () => void;
   } = $props();
@@ -74,7 +76,7 @@ import ArrowUpDown from 'lucide-svelte/icons/arrow-up-down';
   });
 
   function save() {
-    if (!tableId || !rangeOk) return;
+    if (!tableId || !rangeOk || saving) return;
     onSave(tableId, seatNum);
   }
 </script>
@@ -143,7 +145,7 @@ import ArrowUpDown from 'lucide-svelte/icons/arrow-up-down';
     </div>
 
     <div class="drawer-footer flex">
-      <button onclick={save} disabled={!rangeOk}
+      <button onclick={save} disabled={!rangeOk || saving}
         class="w-full py-3 bg-red text-white rounded-xl text-sm font-semibold hover:bg-red-light transition-colors flex items-center justify-center gap-2 disabled:opacity-50">
         <ArrowUpDown class="w-4 h-4" /> Move to Table
       </button>

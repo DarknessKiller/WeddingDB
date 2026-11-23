@@ -129,6 +129,7 @@ import Pencil from 'lucide-svelte/icons/pencil';
     elements = [];
     showCheckinModal = false;
     checkinGuest = null;
+    checkingIn = false;
     void retry();
   });
 
@@ -561,6 +562,7 @@ import Pencil from 'lucide-svelte/icons/pencil';
 {#if showCheckinModal && checkinGuest}
   <CheckInModal
     guestName={checkinGuest.name}
+    loading={checkingIn}
     onConfirm={confirmCheckIn}
     onClose={() => showCheckinModal = false}
   />

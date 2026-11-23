@@ -16,7 +16,6 @@ var (
 	// already seated past the new capacity.
 	ErrCapacityBelowSeated = errors.New("capacity is below an already seated guest")
 	// Layout save failures keep their entity so the handler can name it.
-	ErrLayoutWeddingNotFound = errors.New("wedding not found")
 	ErrLayoutTableNotFound   = errors.New("layout table not found")
 	ErrLayoutElementNotFound = errors.New("layout element not found")
 )

@@ -37,9 +37,13 @@ func (s *TableService) Create(ctx context.Context, t *models.BanquetTable) error
 		if err := lockWedding(tx, t.WeddingID); err != nil {
 			return err
 		}
-		var wedding models.WeddingEvent
-		if err := tx.Select("id").Where("id = ?", t.WeddingID).First(&wedding).Error; err != nil {
-			return err
+		// sqlite skips the row lock, so it needs the existence read; Postgres
+		// learns the same fact from lockWedding.
+		if tx.Name() != "postgres" {
+			var wedding models.WeddingEvent
+			if err := tx.Select("id").Where("id = ?", t.WeddingID).First(&wedding).Error; err != nil {
+				return err
+			}
 		}
 		return repository.NewTableRepo(tx).Create(ctx, t)
 	})

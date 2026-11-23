@@ -764,6 +764,7 @@ import Users from 'lucide-svelte/icons/users';
     tables={moveTables}
     guests={allGuests}
     currentTableName={tables.find(t => t.id === g.tableId)?.name ?? '—'}
+    saving={moveSaving}
     onSave={confirmMoveTable}
     onClose={() => { showMoveModal = false; moveGuest = null; }}
   />
