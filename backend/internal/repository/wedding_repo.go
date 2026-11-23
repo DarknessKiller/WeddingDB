@@ -32,6 +32,20 @@ func (r *WeddingRepo) Create(ctx context.Context, w *models.WeddingEvent) error 
 	return r.db.WithContext(ctx).Create(w).Error
 }
 
+// CreateWithOwner inserts the wedding and the creator's grant in one
+// transaction, so a grant failure leaves no ownerless wedding behind.
+func (r *WeddingRepo) CreateWithOwner(ctx context.Context, w *models.WeddingEvent, ownerID uuid.UUID) error {
+	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Create(w).Error; err != nil {
+			return err
+		}
+		if ownerID == uuid.Nil {
+			return nil
+		}
+		return tx.Create(&models.UserWedding{ID: uuid.New(), UserID: ownerID, WeddingID: w.ID}).Error
+	})
+}
+
 // Update writes the mutable columns only, under the row lock. Save would
 // re-insert a deleted wedding: this report is 404 instead.
 func (r *WeddingRepo) Update(ctx context.Context, w *models.WeddingEvent) error {

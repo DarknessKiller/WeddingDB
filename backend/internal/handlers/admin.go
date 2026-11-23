@@ -79,14 +79,11 @@ func (h *AdminHandler) Create(c fuego.ContextWithBody[AdminRequest]) (any, error
 		Name:     body.Name,
 		Role:     body.Role,
 	}
-	if err := h.adminRepo.Create(ctx, admin); err != nil {
-		return nil, err
-	}
-	// Assign weddings if provided
-	if len(ids) > 0 {
-		if err := h.adminRepo.SetUserWeddings(ctx, admin.ID, ids); err != nil {
-			return nil, err
+	if err := h.adminRepo.CreateWithWeddings(ctx, admin, ids); err != nil {
+		if isUniqueViolation(err) {
+			return nil, fuego.ConflictError{Title: "Email already registered"}
 		}
+		return nil, err
 	}
 	c.SetStatus(201)
 	return admin, nil
@@ -106,7 +103,11 @@ func (h *AdminHandler) Delete(c fuego.ContextWithBody[any]) (any, error) {
 		return nil, fuego.BadRequestError{Title: "Cannot delete your own account"}
 	}
 	if _, err := h.adminRepo.FindByID(ctx, id); err != nil {
-		return nil, fuego.NotFoundError{Title: "User not found"}
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, fuego.NotFoundError{Title: "User not found"}
+		}
+		slog.ErrorContext(ctx, "load user failed", "user", id, "err", err)
+		return nil, fuego.InternalServerError{Title: "Failed to load user"}
 	}
 	if err := h.adminRepo.Delete(ctx, id); err != nil {
 		if errors.Is(err, repository.ErrLastAdmin) {

@@ -114,8 +114,9 @@ type SSEHub struct {
 	ready chan struct{}
 }
 
-// ssePublishQueue bounds the ordered publish queue. A full queue slows the
-// caller instead of dropping an event.
+// ssePublishQueue bounds the ordered publish queue. A full queue drops the
+// event and forces local clients to reconnect, so a slow Redis cannot block
+// guest writes.
 const ssePublishQueue = 1024
 
 type publishRequest struct {

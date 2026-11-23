@@ -449,7 +449,10 @@ func (s *GuestService) BulkCreate(ctx context.Context, guests []models.GuestReco
 			if g.SeatNum == nil {
 				if !checked[tid] {
 					if _, err := txTableRepo.FindByID(ctx, tid, g.WeddingID); err != nil {
-						return fmt.Errorf("table %s not found", tid.String())
+						if errors.Is(err, gorm.ErrRecordNotFound) {
+							return fmt.Errorf("%w: %s", ErrTableNotFound, tid.String())
+						}
+						return err
 					}
 					checked[tid] = true
 				}
@@ -506,6 +509,25 @@ func (h *SSEHub) publishGuest(eventType string, guest *models.GuestRecord, weddi
 	select {
 	case h.publish <- publishRequest{weddingID: weddingID, event: event}:
 	case <-h.ctx.Done():
+	default:
+		// Queue is full: never block the guest write after the DB commit. Drop
+		// the event and make this wedding's clients reconnect so they resync
+		// instead of keeping a snapshot that missed it.
+		h.reconnectWedding(weddingID)
+	}
+}
+
+// reconnectWedding closes each local client's Done, forcing a reconnect and
+// fresh snapshot.
+func (h *SSEHub) reconnectWedding(weddingID uuid.UUID) {
+	h.mu.RLock()
+	clients := make([]*SSEClient, 0, len(h.clients[weddingID]))
+	for _, client := range h.clients[weddingID] {
+		clients = append(clients, client)
+	}
+	h.mu.RUnlock()
+	for _, client := range clients {
+		client.doneOnce.Do(func() { close(client.Done) })
 	}
 }
 

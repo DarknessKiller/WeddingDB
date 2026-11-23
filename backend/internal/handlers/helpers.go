@@ -2,9 +2,12 @@ package handlers
 
 import (
 	"context"
+	"errors"
+	"strings"
 	"weddingdb/internal/middleware"
 
 	"github.com/google/uuid"
+	"gorm.io/gorm"
 )
 
 // AdminIDFromContext extracts admin ID from the request context.
@@ -58,6 +61,17 @@ func requireWeddingAccess(ctx context.Context, weddingID uuid.UUID) error {
 		return errForbidden("access denied to this wedding")
 	}
 	return nil
+}
+
+// isUniqueViolation reports whether err came from a unique index, so a
+// concurrent duplicate maps to 409 instead of 500.
+func isUniqueViolation(err error) bool {
+	if errors.Is(err, gorm.ErrDuplicatedKey) {
+		return true
+	}
+	msg := err.Error()
+	return strings.Contains(msg, "duplicate key value violates unique constraint") ||
+		strings.Contains(msg, "UNIQUE constraint failed")
 }
 
 type unauthorizedError struct{ msg string }

@@ -29,6 +29,11 @@ func (s *WeddingService) Create(ctx context.Context, w *models.WeddingEvent) err
 	return s.weddingRepo.Create(ctx, w)
 }
 
+// CreateWithOwner creates the wedding and grants its creator access atomically.
+func (s *WeddingService) CreateWithOwner(ctx context.Context, w *models.WeddingEvent, ownerID uuid.UUID) error {
+	return s.weddingRepo.CreateWithOwner(ctx, w, ownerID)
+}
+
 func (s *WeddingService) Update(ctx context.Context, w *models.WeddingEvent) error {
 	return s.weddingRepo.Update(ctx, w)
 }

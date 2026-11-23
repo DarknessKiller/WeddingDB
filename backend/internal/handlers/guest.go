@@ -342,6 +342,9 @@ func (h *GuestHandler) BulkImport(c fuego.ContextWithBody[BulkImportRequest]) (a
 			Notes:     g.Notes,
 			Dietary:   g.Dietary,
 		}
+		if g.SeatNum != nil && g.TableID == nil {
+			return nil, fuego.BadRequestError{Title: "Invalid guests[" + strconv.Itoa(i) + "].seatNum: tableId is required"}
+		}
 		if g.TableID != nil {
 			tid, err := DecodeID(*g.TableID)
 			if err != nil {
@@ -362,6 +365,11 @@ func (h *GuestHandler) BulkImport(c fuego.ContextWithBody[BulkImportRequest]) (a
 		}
 		if errors.Is(err, services.ErrGuestCapExceeded) {
 			return nil, fuego.BadRequestError{Title: err.Error()}
+		}
+		if errors.Is(err, services.ErrSeatOverlap) || errors.Is(err, services.ErrSeatRange) ||
+			errors.Is(err, services.ErrTableNotFound) || errors.Is(err, services.ErrGuestPatchInvalid) ||
+			errors.Is(err, services.ErrInvalidGuestPax) {
+			return nil, seatAssignmentError(err)
 		}
 		slog.ErrorContext(ctx, "bulk import failed", "err", err)
 		return nil, fuego.InternalServerError{Title: "Bulk import failed"}

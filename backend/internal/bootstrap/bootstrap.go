@@ -207,9 +207,42 @@ func Init(env config.Env, version string) *App {
 	}
 }
 
+const (
+	// migrateAdvisoryLockID is arbitrary but stable across deployments.
+	migrateAdvisoryLockID = 8421337
+	// pinyinBackfillPageSize bounds rows held in memory and updated per batch.
+	pinyinBackfillPageSize = 500
+)
+
 // Migrate applies schema changes and one-off data backfills. Run it as a
 // separate job before the server starts, not on every boot.
 func Migrate(ctx context.Context, db *gorm.DB) error {
+	if db.Name() == "postgres" {
+		// Serialize concurrent migrate jobs (rolling deploys, overlapping
+		// one-shot service instances) on one advisory lock. The lock lives on a
+		// dedicated connection so acquire and release use the same session.
+		sqlDB, err := db.DB()
+		if err != nil {
+			return fmt.Errorf("migrate: get database handle: %w", err)
+		}
+		conn, err := sqlDB.Conn(ctx)
+		if err != nil {
+			return fmt.Errorf("migrate: reserve lock connection: %w", err)
+		}
+		defer func() {
+			if err := conn.Close(); err != nil {
+				log.Printf("warning: close migrate lock connection: %v", err)
+			}
+		}()
+		if _, err := conn.ExecContext(ctx, "SELECT pg_advisory_lock($1)", migrateAdvisoryLockID); err != nil {
+			return fmt.Errorf("migrate: acquire advisory lock: %w", err)
+		}
+		defer func() {
+			if _, err := conn.ExecContext(context.Background(), "SELECT pg_advisory_unlock($1)", migrateAdvisoryLockID); err != nil {
+				log.Printf("warning: release migrate advisory lock: %v", err)
+			}
+		}()
+	}
 	db = db.WithContext(ctx)
 	if err := db.AutoMigrate(
 		&models.WeddingEvent{},
@@ -235,19 +268,30 @@ func Migrate(ctx context.Context, db *gorm.DB) error {
 	if err := db.Exec("CREATE INDEX IF NOT EXISTS idx_guest_records_missing_pinyin ON guest_records (id) WHERE name_pinyin IS NULL OR name_pinyin = ''").Error; err != nil {
 		return fmt.Errorf("create missing-pinyin index: %w", err)
 	}
-	var missing []models.GuestRecord
-	if err := db.Select("id", "name", "name_pinyin").
-		Where("(name_pinyin IS NULL OR name_pinyin = '') AND name <> ''").
-		Find(&missing).Error; err != nil {
-		return fmt.Errorf("load guests missing pinyin: %w", err)
-	}
-	for _, g := range missing {
-		py := models.GenerateNamePinyin(g.Name)
-		if py != g.NamePinyin {
-			if err := db.Model(&models.GuestRecord{}).Where("id = ?", g.ID).Update("name_pinyin", py).Error; err != nil {
-				return fmt.Errorf("backfill pinyin for guest %s: %w", g.ID, err)
+	var lastID uuid.UUID
+	for {
+		var missing []models.GuestRecord
+		q := db.Select("id", "name", "name_pinyin").
+			Where("(name_pinyin IS NULL OR name_pinyin = '') AND name <> ''").
+			Order("id").Limit(pinyinBackfillPageSize)
+		if lastID != uuid.Nil {
+			q = q.Where("id > ?", lastID)
+		}
+		if err := q.Find(&missing).Error; err != nil {
+			return fmt.Errorf("load guests missing pinyin: %w", err)
+		}
+		for _, g := range missing {
+			py := models.GenerateNamePinyin(g.Name)
+			if py != g.NamePinyin {
+				if err := db.Model(&models.GuestRecord{}).Where("id = ?", g.ID).Update("name_pinyin", py).Error; err != nil {
+					return fmt.Errorf("backfill pinyin for guest %s: %w", g.ID, err)
+				}
 			}
 		}
+		if len(missing) < pinyinBackfillPageSize {
+			break
+		}
+		lastID = missing[len(missing)-1].ID
 	}
 
 	// ponytail: GIN indexes for trigram search (ILIKE '%..%')
@@ -281,7 +325,8 @@ func Migrate(ctx context.Context, db *gorm.DB) error {
 		}
 	}
 	// Seed default elements for weddings that have none — one query, not one
-	// COUNT per wedding.
+	// COUNT per wedding. The advisory lock above serializes the check-and-create,
+	// so concurrent migrate runs cannot seed the same wedding twice.
 	var missingHall []uuid.UUID
 	if err := db.Model(&models.WeddingEvent{}).
 		Where("NOT EXISTS (SELECT 1 FROM hall_elements WHERE hall_elements.wedding_id = wedding_events.id)").

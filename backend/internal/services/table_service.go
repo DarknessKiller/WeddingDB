@@ -29,7 +29,18 @@ func (s *TableService) Get(ctx context.Context, id, weddingID uuid.UUID) (*model
 }
 
 func (s *TableService) Create(ctx context.Context, t *models.BanquetTable) error {
-	return s.tableRepo.Create(ctx, t)
+	// There is no foreign key on wedding_id, so verify the wedding exists (under
+	// the same lock guest writes take) before inserting an orphan table.
+	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := lockWedding(tx, t.WeddingID); err != nil {
+			return err
+		}
+		var wedding models.WeddingEvent
+		if err := tx.Select("id").Where("id = ?", t.WeddingID).First(&wedding).Error; err != nil {
+			return err
+		}
+		return repository.NewTableRepo(tx).Create(ctx, t)
+	})
 }
 
 func (s *TableService) Update(ctx context.Context, t *models.BanquetTable) error {

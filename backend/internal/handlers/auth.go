@@ -296,6 +296,9 @@ func (h *AuthHandler) Register(c fuego.ContextWithBody[RegisterRequest]) (any, e
 		Role:     "user",
 	}
 	if err := h.adminRepo.Create(ctx, admin); err != nil {
+		if isUniqueViolation(err) {
+			return nil, fuego.ConflictError{Title: "Email already registered"}
+		}
 		return nil, fuego.InternalServerError{Title: "Failed to create account"}
 	}
 	c.SetStatus(201)

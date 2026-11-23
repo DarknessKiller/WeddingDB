@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"errors"
+	"log/slog"
 	"strconv"
 	"strings"
 	"time"
@@ -10,7 +11,6 @@ import (
 	"weddingdb/internal/services"
 
 	"github.com/go-fuego/fuego"
-	"github.com/google/uuid"
 	"gorm.io/gorm"
 )
 
@@ -40,8 +40,12 @@ func (h *WeddingHandler) List(c fuego.ContextNoBody) (any, error) {
 		return []models.WeddingEvent{}, nil
 	}
 	w, err := h.weddingService.Get(ctx, *wid)
-	if err != nil {
+	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return nil, fuego.NotFoundError{Title: "Wedding not found"}
+	}
+	if err != nil {
+		slog.ErrorContext(ctx, "load wedding failed", "wedding", *wid, "err", err)
+		return nil, fuego.InternalServerError{Title: "Failed to load wedding"}
 	}
 	return []models.WeddingEvent{*w}, nil
 }
@@ -85,15 +89,10 @@ func (h *WeddingHandler) Create(c fuego.ContextWithBody[WeddingRequest]) (any, e
 	if err := services.ValidateWeddingText(w); err != nil {
 		return nil, fuego.BadRequestError{Title: err.Error()}
 	}
-	if err := h.weddingService.Create(ctx, w); err != nil {
+	// Link the creating admin to this wedding in the same transaction, so a
+	// grant failure does not leave an ownerless wedding for a retry to duplicate.
+	if err := h.weddingService.CreateWithOwner(ctx, w, AdminIDFromContext(ctx)); err != nil {
 		return nil, err
-	}
-	// Link the creating admin to this wedding
-	adminID := AdminIDFromContext(c.Context())
-	if adminID != uuid.Nil {
-		if err := h.adminRepo.AddUserWedding(ctx, adminID, w.ID); err != nil {
-			return nil, err
-		}
 	}
 	c.SetStatus(201)
 	return w, nil

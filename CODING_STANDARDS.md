@@ -397,8 +397,8 @@ Files: `backend/internal/services/auth_service.go`, `backend/internal/middleware
   The loser gets the successor token.
 - A consumed refresh token returns the same successor for 60 seconds
   (`refreshGraceWindow`). After that it is rejected as replayed. The family is not revoked.
-- Expired refresh token rows are removed by the boot-time cleanup in
-  `backend/internal/bootstrap/bootstrap.go`. Rows pile up between restarts.
+- Expired refresh token rows are removed by the cleanup in the migrate job
+  (`backend/cmd/migrate`, `bootstrap.Migrate`). Rows pile up between migrate runs.
 - Wedding selection (`POST /api/auth/select-wedding`, body `weddingId` and
   `refreshToken`) scopes only the caller's refresh token. Other sessions of the
   same user keep their scope.

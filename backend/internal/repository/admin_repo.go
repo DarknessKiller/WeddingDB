@@ -33,6 +33,24 @@ func (r *AdminRepo) Create(ctx context.Context, admin *models.AdminUser) error {
 	return r.db.WithContext(ctx).Create(admin).Error
 }
 
+// CreateWithWeddings inserts the user and their wedding grants in one
+// transaction, so a grant failure doesn't leave a user without the grants the
+// request asked for.
+func (r *AdminRepo) CreateWithWeddings(ctx context.Context, admin *models.AdminUser, weddingIDs []uuid.UUID) error {
+	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Create(admin).Error; err != nil {
+			return err
+		}
+		for _, wid := range weddingIDs {
+			uw := models.UserWedding{ID: uuid.New(), UserID: admin.ID, WeddingID: wid}
+			if err := tx.Create(&uw).Error; err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+}
+
 func (r *AdminRepo) List(ctx context.Context) ([]models.AdminUser, error) {
 	var admins []models.AdminUser
 	err := r.db.WithContext(ctx).Find(&admins).Error

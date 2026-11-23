@@ -147,6 +147,40 @@ func TestSSEHub_FanOut(t *testing.T) {
 	}
 }
 
+// A full publish queue must not block the guest write after commit. The event
+// is dropped and connected clients are forced to reconnect and resync.
+func TestSSEHub_PublishQueueFullReconnectsClients(t *testing.T) {
+	wid := uuid.New()
+	client := &SSEClient{ID: uuid.New().String(), WeddingID: wid, Done: make(chan struct{})}
+	hub := &SSEHub{
+		clients: map[uuid.UUID]map[string]*SSEClient{wid: {client.ID: client}},
+		ctx:     context.Background(),
+		publish: make(chan publishRequest, ssePublishQueue),
+	}
+	for range ssePublishQueue {
+		hub.publish <- publishRequest{}
+	}
+
+	done := make(chan struct{})
+	go func() {
+		hub.publishGuest("create", &models.GuestRecord{ID: uuid.New()}, wid)
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("publishGuest blocked on a full queue")
+	}
+	select {
+	case <-client.Done:
+	default:
+		t.Fatal("client was not asked to reconnect after a dropped event")
+	}
+	if len(hub.publish) != ssePublishQueue {
+		t.Fatalf("queue length = %d, want %d (event must be dropped)", len(hub.publish), ssePublishQueue)
+	}
+}
+
 func TestSSEHub_PublishBeforeReady(t *testing.T) {
 	hub := &SSEHub{
 		clients: make(map[uuid.UUID]map[string]*SSEClient),
