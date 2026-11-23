@@ -18,12 +18,14 @@ describe('TableDrawer capacity', () => {
 	});
 
 	it('clamps an out-of-range capacity to the backend cap', () => {
-		// The max attribute alone does not stop typing 999: the field renders and keeps the clamp.
+		// The max attribute alone does not stop typing 999: Save must refuse it,
+		// and committing the field clamps it.
 		const { body } = render(TableDrawer, {
 			props: { title: 'Edit Table', name: 'Table 1', capacity: 999, seatedFloor: 8, startEditing: true, onSave: () => {}, onClose: () => {} }
 		});
 		expect(body).toContain('max="200"');
-		expect(body).toMatch(/id="table-capacity"[^>]*value="200"/);
+		expect(body).toMatch(/<button[^>]*disabled[^>]*>[^<]*<svg[\s\S]*?Save/);
+		expect(clampTableCapacity(999, 8)).toBe(200);
 		expect(clampTableCapacity(2, 8)).toBe(8);
 	});
 });

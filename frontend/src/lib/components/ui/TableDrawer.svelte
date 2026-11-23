@@ -40,8 +40,9 @@ import Users from 'lucide-svelte/icons/users';
   const isEdit = $derived(title === 'Edit Table');
   const percentage = $derived(capacity > 0 ? Math.round((occupied / capacity) * 100) : 0);
   const floor = $derived(Math.max(1, seatedFloor));
-  // The field itself never shows or keeps an out-of-range value: the backend rejects it.
-  const capacityValue = $derived(clampTableCapacity(capacity, floor));
+  // Out-of-range values are clamped when the field is committed, not on every
+  // keystroke: clamping mid-entry would rewrite the digits the user is typing.
+  const capacityOutOfRange = $derived(capacity < floor || capacity > LIMITS.tableCapacity);
 </script>
 
 <!-- svelte-ignore a11y_no_static_element_interactions -->
@@ -72,8 +73,12 @@ import Users from 'lucide-svelte/icons/users';
           </div>
           <div class="form-field">
             <label for="table-capacity" class="form-label">Capacity</label>
-            <input id="table-capacity" type="number" min={floor} max={LIMITS.tableCapacity} value={capacityValue}
-              oninput={(e) => { capacity = clampTableCapacity(Number(e.currentTarget.value), floor); }}
+            <input id="table-capacity" type="number" min={floor} max={LIMITS.tableCapacity} bind:value={capacity}
+              onchange={(e) => {
+                const input = e.currentTarget;
+                capacity = clampTableCapacity(Number(input.value), floor);
+                input.value = String(capacity);
+              }}
               class="form-input" />
             {#if capacity < floor}
               <p class="text-xs text-red-600 mt-1">Capacity cannot be below the {seatedFloor} guests already seated.</p>
@@ -125,7 +130,7 @@ import Users from 'lucide-svelte/icons/users';
 
     {#if editing}
       <div class="drawer-footer flex">
-        <button onclick={onSave} disabled={saving || capacity < floor}
+        <button onclick={onSave} disabled={saving || capacityOutOfRange}
           class="w-full py-3 bg-red text-white rounded-xl text-sm font-semibold hover:bg-red-light transition-colors flex items-center justify-center gap-2">
           <Check class="w-4 h-4" /> {saving ? 'Saving...' : 'Save'}
         </button>

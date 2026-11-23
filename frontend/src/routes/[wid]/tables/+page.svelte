@@ -78,8 +78,9 @@ import Map from 'lucide-svelte/icons/map';
   // Seats already taken: the API floor is the highest occupied seat, not summed pax.
   const drawerSeatedFloor = $derived(editingTable ? getOcc(editingTable.id).highestSeat : 0);
 
-  // Grouped guests for the layout editor: its capacity floor needs the seated guests.
-  let tableGuests = $derived(groupGuestsByTable($guestList));
+  // Grouped guests for the layout editor, only while it is open: its capacity
+  // floor needs them, and the page otherwise ignores every SSE guest event.
+  let tableGuests = $derived(editMode ? groupGuestsByTable($guestList) : {});
 
   let prevGuestDrawerOpen = $state(false);
   let prevTableDrawerOpen = $state(false);
