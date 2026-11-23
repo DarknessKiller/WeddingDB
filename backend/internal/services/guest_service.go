@@ -315,6 +315,9 @@ func (s *GuestService) CheckIn(ctx context.Context, id, weddingID uuid.UUID, not
 	var merged *models.GuestRecord
 	applied := false
 	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := lockWedding(tx, weddingID); err != nil {
+			return err
+		}
 		repo := repository.NewGuestRepo(tx)
 		locked, err := repo.FindByIDForUpdate(ctx, id, weddingID)
 		if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -358,6 +361,9 @@ func (s *GuestService) CheckOut(ctx context.Context, id, weddingID uuid.UUID) er
 	var merged *models.GuestRecord
 	applied := false
 	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := lockWedding(tx, weddingID); err != nil {
+			return err
+		}
 		repo := repository.NewGuestRepo(tx)
 		locked, err := repo.FindByIDForUpdate(ctx, id, weddingID)
 		if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -712,6 +718,9 @@ func (s *GuestService) applySyncMutation(ctx context.Context, weddingID uuid.UUI
 	case SyncOpDelete:
 		var losing, deleted *models.GuestRecord
 		err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+			if err := lockWedding(tx, weddingID); err != nil {
+				return err
+			}
 			repo := repository.NewGuestRepo(tx)
 			locked, err := repo.FindByIDForUpdate(ctx, gid, weddingID)
 			if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -747,6 +756,9 @@ func (s *GuestService) applySyncMutation(ctx context.Context, weddingID uuid.UUI
 		var merged *models.GuestRecord
 		applied := false
 		err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+			if err := lockWedding(tx, weddingID); err != nil {
+				return err
+			}
 			repo := repository.NewGuestRepo(tx)
 			locked, err := repo.FindByIDForUpdate(ctx, gid, weddingID)
 			if err != nil {
@@ -803,6 +815,9 @@ func (s *GuestService) applySyncMutation(ctx context.Context, weddingID uuid.UUI
 		var merged *models.GuestRecord
 		applied := false
 		err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+			if err := lockWedding(tx, weddingID); err != nil {
+				return err
+			}
 			repo := repository.NewGuestRepo(tx)
 			locked, err := repo.FindByIDForUpdate(ctx, gid, weddingID)
 			if err != nil {
