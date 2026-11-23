@@ -25,6 +25,7 @@ import CheckCircle2 from 'lucide-svelte/icons/check-circle-2';
   let hallWidth = $state(860);
   let hallHeight = $state(1000);
   let dataLoading = $state(true);
+  let errored = $state(false);
   let highlightTableId = $state<string | null>(null);
   let showResults = $state(false);
   let sortCol = $state<string>('name');
@@ -99,6 +100,7 @@ import CheckCircle2 from 'lucide-svelte/icons/check-circle-2';
     if (!wid) return;
     tables = [];
     elements = [];
+    errored = false;
     dataLoading = true;
     void init(wid);
   });
@@ -107,10 +109,7 @@ import CheckCircle2 from 'lucide-svelte/icons/check-circle-2';
     try {
       // Guest list is already seeded by the layout via SSE store.
       // Only fetch tables and layout here.
-      const [t, layout] = await Promise.all([
-        listTables(forWid).catch(() => [] as BanquetTable[]),
-        getLayout(forWid).catch(() => null),
-      ]);
+      const [t, layout] = await Promise.all([listTables(forWid), getLayout(forWid)]);
       if (forWid !== wid) return;
       tables = t;
       if (layout) {
@@ -119,7 +118,9 @@ import CheckCircle2 from 'lucide-svelte/icons/check-circle-2';
         hallHeight = layout.hallHeight;
       }
     } catch {
-      if (forWid === wid) addToast('Failed to load data', 'error');
+      if (forWid !== wid) return;
+      errored = true;
+      addToast('Failed to load data', 'error');
     } finally {
       if (forWid === wid) dataLoading = false;
     }
@@ -304,7 +305,17 @@ import CheckCircle2 from 'lucide-svelte/icons/check-circle-2';
 
     <!-- Map (fills remaining space) -->
     <div class="flex-1 relative overflow-hidden min-w-0 flex flex-col">
-      {#if tables.length > 0}
+      {#if errored}
+        <div class="flex items-center justify-center h-full">
+          <div class="text-center px-6">
+            <p class="text-sm text-gray-600 mb-3">Failed to load the hall map.</p>
+            <button
+              class="px-4 py-2.5 bg-red text-white rounded-xl text-sm font-semibold hover:bg-red-light transition-colors"
+              onclick={() => { errored = false; dataLoading = true; void init(wid); }}
+            >Retry</button>
+          </div>
+        </div>
+      {:else if tables.length > 0}
         <HallMap
           tables={tables}
           {elements}

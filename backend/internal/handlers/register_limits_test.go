@@ -31,4 +31,14 @@ func TestRegisterRoutesJSONBodyLimit(t *testing.T) {
 			}
 		})
 	}
+
+	// The limit must hold for a content type no handler parses as JSON.
+	r := httptest.NewRequest(http.MethodPost, "/api/auth/register",
+		strings.NewReader(strings.Repeat("a", 1048577)))
+	r.Header.Set("Content-Type", "text/plain")
+	w := httptest.NewRecorder()
+	s.Mux.ServeHTTP(w, r)
+	if w.Code != http.StatusRequestEntityTooLarge {
+		t.Fatalf("text/plain status %d, want 413: %s", w.Code, w.Body.String())
+	}
 }
