@@ -1,4 +1,6 @@
 <script lang="ts">
+  import { page } from '$app/state';
+  let wid = $derived(page.params.wid ?? '');
   import { addToast } from '#lib/stores/index.ts';
   import { weddingTitle } from '#lib/stores/weddingTitle.ts';
   import { goto } from '$app/navigation';
@@ -9,8 +11,6 @@ import AlertCircle from 'lucide-svelte/icons/alert-circle';
   import { toGuest } from '#lib/utils/guestTransform.ts';
   import { listTables } from '#lib/api/tables.ts';
   import { getLayout } from '#lib/api/layout.ts';
-  import { weddingId } from '#lib/stores/weddingId.ts';
-  import { get } from 'svelte/store';
   import { onMount } from 'svelte';
   import { LIMITS } from '#lib/utils/limits.ts';
   import { reservationSchema as schema, seatSelectionError, type ReservationForm as FormData } from '#lib/utils/reservation.ts';
@@ -25,7 +25,6 @@ import AlertCircle from 'lucide-svelte/icons/alert-circle';
   let dataLoaded = $state(false);
 
   onMount(async () => {
-    const wid = get(weddingId);
     try {
       const [tablesRes, guestRows, layout] = await Promise.all([listTables(wid), fetchAllGuests(wid), getLayout(wid)]);
       apiTables = tablesRes;
@@ -181,8 +180,7 @@ import AlertCircle from 'lucide-svelte/icons/alert-circle';
     if (!validate()) return;
     isSubmitting = true;
     try {
-      const wid = get(weddingId);
-      const firstSeat = form.seatNumbers?.[0] ?? null;
+        const firstSeat = form.seatNumbers?.[0] ?? null;
       // "no table" reservations send no seats; fall back to form.pax so pax
       // is never 0 (backend rejects pax < 1).
       const assignedPax = form.seatNumbers?.length || form.pax;
@@ -408,7 +406,7 @@ import AlertCircle from 'lucide-svelte/icons/alert-circle';
               <CheckCircle2 class="w-4 h-4" /> Save Reservation
             {/if}
           </button>
-          <button type="button" onclick={() => goto(`/${$weddingId}/guests`)} class="px-6 py-3 border border-black/[0.06] bg-white/90 rounded-xl text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors">
+          <button type="button" onclick={() => goto(`/${wid}/guests`)} class="px-6 py-3 border border-black/[0.06] bg-white/90 rounded-xl text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors">
             Cancel
           </button>
         </div>

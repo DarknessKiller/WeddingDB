@@ -10,7 +10,6 @@
   import Badge from '#lib/components/ui/Badge.svelte';
   import { cn, getInitials } from '#lib/utils/index.ts';
   import { page } from '$app/state';
-  import { weddingId } from '#lib/stores/weddingId.ts';
   import Users from 'lucide-svelte/icons/users';
 import Star from 'lucide-svelte/icons/star';
 import X from 'lucide-svelte/icons/x';
@@ -73,14 +72,17 @@ import Pencil from 'lucide-svelte/icons/pencil';
   let wid = $derived(page.params.wid ?? '');
 
   async function loadData() {
-    const layout = await getLayout(wid);
+    const forWid = wid;
+    const layout = await getLayout(forWid);
+    // A newer route already reloaded: do not paint this wedding's rows for it.
+    if (forWid !== wid) return;
     if (layout) {
       allTables = layout.tables ?? [];
       elements = layout.elements ?? [];
       hallWidth = layout.hallWidth ?? 860;
       hallHeight = layout.hallHeight ?? 1000;
     } else {
-      allTables = await listTables(wid);
+      allTables = await listTables(forWid);
     }
   }
 
@@ -125,6 +127,7 @@ import Pencil from 'lucide-svelte/icons/pencil';
     if (!wid) return;
     selectedTableId = null;
     showMobilePanel = false;
+    editMode = false;
     void init();
   });
 
@@ -274,7 +277,7 @@ import Pencil from 'lucide-svelte/icons/pencil';
       </div>
       <p class="text-gray-500 font-medium">No tables yet</p>
       <p class="text-sm text-gray-500">Add tables first to manage seating.</p>
-      <button onclick={() => goto(`/${$weddingId}/tables`)} class="px-4 py-2.5 bg-red text-white rounded-xl text-sm font-semibold hover:bg-red-light transition-colors flex items-center gap-2">
+      <button onclick={() => goto(`/${wid}/tables`)} class="px-4 py-2.5 bg-red text-white rounded-xl text-sm font-semibold hover:bg-red-light transition-colors flex items-center gap-2">
         <Plus class="w-4 h-4" /> Add Tables
       </button>
     </div>
@@ -451,7 +454,7 @@ import Pencil from 'lucide-svelte/icons/pencil';
             </button>
           {/if}
         {/if}
-        <button onclick={() => goto(`/${$weddingId}/tables`)} class="w-full py-2.5 border border-black/[0.06] bg-white/90 rounded-xl text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors">
+        <button onclick={() => goto(`/${wid}/tables`)} class="w-full py-2.5 border border-black/[0.06] bg-white/90 rounded-xl text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors">
           Manage Tables
         </button>
       </div>

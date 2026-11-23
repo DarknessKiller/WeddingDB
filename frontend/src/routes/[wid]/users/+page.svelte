@@ -1,9 +1,10 @@
 <script lang="ts">
+  import { page } from '$app/state';
+  let wid = $derived(page.params.wid ?? '');
   import { onMount } from 'svelte';
   import { trapFocus, registerEscape } from '#lib/utils/focus.ts';
   import { goto } from '$app/navigation';
   import { addToast, getAuth } from '#lib/stores/index.ts';
-  import { weddingId } from '#lib/stores/weddingId.ts';
   import { listUsers, createUser, deleteUser, revokeUser, assignWeddings, resetPassword, getUserWeddings, updateRole, type User } from '#lib/api/users.ts';
   import { listWeddings, type Wedding } from '#lib/api/weddings.ts';
   import Plus from 'lucide-svelte/icons/plus';
@@ -26,7 +27,7 @@ import LogOut from 'lucide-svelte/icons/log-out';
 
   const auth = getAuth();
   if (auth.role !== 'admin') {
-    goto(`/${$weddingId}/dashboard`, { replaceState: true });
+    goto(`/${page.params.wid ?? ''}/dashboard`, { replaceState: true });
   }
 
   // Create modal

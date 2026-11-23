@@ -1,7 +1,7 @@
 <script lang="ts">
   import { page } from '$app/state';
+  let wid = $derived(page.params.wid ?? '');
   import { weddingTitle } from '#lib/stores/weddingTitle.ts';
-  import { weddingId } from '#lib/stores/weddingId.ts';
   import { exportAngpaoReport } from '#lib/api/reports.ts';
   import Download from 'lucide-svelte/icons/download';
 import FileSpreadsheet from 'lucide-svelte/icons/file-spreadsheet';
@@ -15,7 +15,7 @@ import Loader2 from 'lucide-svelte/icons/loader-2';
     exporting = format;
     error = '';
     try {
-      await exportAngpaoReport($weddingId, format);
+      await exportAngpaoReport(wid, format);
     } catch (e: any) {
       error = e.message ?? 'Export failed';
     } finally {
