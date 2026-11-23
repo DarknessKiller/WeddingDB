@@ -10,7 +10,6 @@
   import Badge from '#lib/components/ui/Badge.svelte';
   import { cn, getInitials } from '#lib/utils/index.ts';
   import { page } from '$app/state';
-  import { onMount } from 'svelte';
   import { weddingId } from '#lib/stores/weddingId.ts';
   import Users from 'lucide-svelte/icons/users';
 import Star from 'lucide-svelte/icons/star';
@@ -81,7 +80,7 @@ import Pencil from 'lucide-svelte/icons/pencil';
       hallWidth = layout.hallWidth ?? 860;
       hallHeight = layout.hallHeight ?? 1000;
     } else {
-      allTables = await listTables(wid).catch(() => []);
+      allTables = await listTables(wid);
     }
   }
 
@@ -100,7 +99,7 @@ import Pencil from 'lucide-svelte/icons/pencil';
     }
   }
 
-  onMount(async () => {
+  async function init() {
     try {
       await loadData();
       errored = false;
@@ -119,6 +118,14 @@ import Pencil from 'lucide-svelte/icons/pencil';
         }
       }
     }
+  }
+
+  // The route can change without remounting this page; reload for the new wid.
+  $effect(() => {
+    if (!wid) return;
+    selectedTableId = null;
+    showMobilePanel = false;
+    void init();
   });
 
   let selectedTable = $derived(selectedTableId ? allTables.find(t => t.id === selectedTableId) ?? null : null);

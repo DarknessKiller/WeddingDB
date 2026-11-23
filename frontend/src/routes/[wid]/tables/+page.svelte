@@ -32,8 +32,8 @@ import Map from 'lucide-svelte/icons/map';
   // ponytail: computed unused; kept only as the delete-guard sentinel for the old modal
   let tables = $state<BanquetTable[]>([]);
 
-  function publishTables() {
-    weddingTables.set({ wid, tables });
+  function publishTables(forWid = wid) {
+    weddingTables.set({ wid: forWid, tables });
   }
   let elements = $state<HallElement[]>([]);
   let hallWidth = $state(860);
@@ -99,9 +99,12 @@ import Map from 'lucide-svelte/icons/map';
   });
 
   async function loadData() {
-    const [layout, rawOcc] = await Promise.all([getLayout(wid), getOccupancy(wid)]);
+    const forWid = wid;
+    const [layout, rawOcc] = await Promise.all([getLayout(forWid), getOccupancy(forWid)]);
+    // A newer wid already reloaded: do not publish this wedding's rows for it.
+    if (forWid !== wid) return;
     tables = layout.tables ?? [];
-    publishTables();
+    publishTables(forWid);
     elements = layout.elements ?? [];
     hallWidth = layout.hallWidth ?? 860;
     hallHeight = layout.hallHeight ?? 1000;
@@ -280,7 +283,7 @@ import Map from 'lucide-svelte/icons/map';
       <button onclick={openCreate} class="px-2.5 sm:px-4 py-1.5 sm:py-2.5 bg-red text-white rounded-xl text-xs sm:text-sm font-semibold hover:bg-red-light transition-colors flex items-center gap-1.5 sm:gap-2">
         <Plus class="w-3.5 h-3.5 sm:w-4 sm:h-4" /> <span class="hidden sm:inline">Add Table</span><span class="sm:hidden">Add</span>
       </button>
-      <button onclick={() => goto(`/${$weddingId}/seating`)} class="px-2.5 sm:px-4 py-1.5 sm:py-2.5 border border-black/[0.06] bg-white/90 rounded-xl text-xs sm:text-sm font-semibold hover:bg-gray-50 transition-colors flex items-center gap-1.5 sm:gap-2">
+      <button onclick={() => goto(`/${wid}/seating`)} class="px-2.5 sm:px-4 py-1.5 sm:py-2.5 border border-black/[0.06] bg-white/90 rounded-xl text-xs sm:text-sm font-semibold hover:bg-gray-50 transition-colors flex items-center gap-1.5 sm:gap-2">
         <Users class="w-3.5 h-3.5 sm:w-4 sm:h-4" /> <span class="hidden sm:inline">Manage Seating</span><span class="sm:hidden">Seating</span>
       </button>
     </div>
@@ -342,9 +345,9 @@ import Map from 'lucide-svelte/icons/map';
         <!-- svelte-ignore a11y_no_static_element_interactions -->
         <!-- svelte-ignore a11y_click_events_have_key_events -->
         <div
-          onclick={() => goto(`/${$weddingId}/seating?table=${table.id}`)}
+          onclick={() => goto(`/${wid}/seating?table=${table.id}`)}
           oncontextmenu={(e) => handleCtx(e, table)}
-          onkeydown={(e) => { if (e.key === 'Enter' || e.key === ' ') goto(`/${$weddingId}/seating?table=${table.id}`); }}
+          onkeydown={(e) => { if (e.key === 'Enter' || e.key === ' ') goto(`/${wid}/seating?table=${table.id}`); }}
           class={cn(
             "bg-white/90 backdrop-blur-xl border rounded-2xl p-3 sm:p-5 flex flex-col items-center gap-2 sm:gap-3 transition-all cursor-pointer group relative",
             table.isVip ? "border-gold-200 hover:border-gold hover:shadow-lg hover:-translate-y-0.5" : "border-black/[0.06] hover:border-gold/30 hover:shadow-lg hover:-translate-y-0.5"
