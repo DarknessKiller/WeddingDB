@@ -127,7 +127,7 @@ async function drainQueue(wid: string): Promise<SyncSummary> {
 			// 403 means the queue belongs to another account (or lacks rights):
 			// never drop it silently; it must reach the owner-change prompt.
 			if (res.status >= 400 && res.status < 500 && res.status !== 401 && res.status !== 403 && res.status !== 429) {
-				dequeueByIds(wid, chunk.map((m) => m.mutationId));
+				await dequeueByIds(wid, chunk.map((m) => m.mutationId));
 				addToast(`${chunk.length} offline edit${chunk.length === 1 ? '' : 's'} discarded: rejected by the server`, 'error');
 				continue;
 			}

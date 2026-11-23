@@ -86,12 +86,17 @@
       syncing = true;
       try {
         // Queue and guest loading fail independently; one banner each.
+        let drained = false;
         try {
           await syncQueue(forWid);
           if (!cancelled) syncError = false;
+          drained = true;
         } catch {
           if (!cancelled) syncError = true;
         }
+        // Reseeding after a failed drain would overwrite the optimistic editing
+        // that is still queued; the next drain retries and reseeds.
+        if (!drained) return;
         try {
           // Refresh inside the syncing window so SSE events arriving mid-fetch
           // are queued and replayed after the seed instead of being clobbered.

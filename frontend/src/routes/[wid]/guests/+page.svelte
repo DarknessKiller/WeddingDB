@@ -245,7 +245,7 @@ import Users from 'lucide-svelte/icons/users';
       const items = [...(contextMenuEl?.querySelectorAll<HTMLElement>('[role="menuitem"]') ?? [])];
       if (!items.length) return;
       const i = items.indexOf(document.activeElement as HTMLElement);
-      const next = e.key === 'ArrowDown' ? (i + 1) % items.length : (i - 1 + items.length) % items.length;
+      const next = e.key === 'ArrowDown' ? (i + 1) % items.length : (i <= 0 ? items.length - 1 : i - 1);
       items[next]?.focus();
     }
   }

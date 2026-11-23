@@ -201,6 +201,27 @@ describe('offline queue storage', () => {
 		expect(getQueue('w1').map((m) => m.mutationId)).toEqual(['m1']);
 	});
 
+	it('a rejected chunk is dequeued before the drain reports completion', async () => {
+		let release!: () => void;
+		const gate = new Promise<void>((r) => (release = r));
+		vi.stubGlobal('navigator', { locks: { request: (_name: string, cb: () => void) => gate.then(() => cb()) } });
+		const { getQueue, syncQueue } = await import('./queue');
+		localStorage.setItem('offline_queue_w1', JSON.stringify([mutation(1)]));
+		apiFetch.mockResolvedValue({ ok: false, status: 400, text: async () => 'bad' } as Response);
+
+		const pending = syncQueue('w1');
+		let settled = false;
+		void pending.then(() => { settled = true; });
+		await new Promise((r) => setTimeout(r, 10));
+		// The chunk is dropped under the queue lock; until it is released the
+		// drain is not finished, so a retry cannot re-POST the same chunk.
+		expect(settled).toBe(false);
+
+		release();
+		expect((await pending).dropped).toBe(0);
+		expect(getQueue('w1')).toEqual([]);
+	});
+
 	it('merges a mutation another tab writes while enqueue is saving', async () => {
 		const map = new Map<string, string>();
 		let injected = false;
