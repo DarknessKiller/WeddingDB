@@ -646,7 +646,14 @@ import RotateCcw from 'lucide-svelte/icons/rotate-ccw';
       const newH = node.scaleY() * baseH / displayHallHeight * 100;
       node.scaleX(1);
       node.scaleY(1);
-      editElements[eidx] = { ...el, degree: rotation, width: clampElementSize(newW), height: clampElementSize(newH) };
+      editElements[eidx] = {
+        ...el,
+        degree: rotation,
+        width: clampElementSize(newW),
+        height: clampElementSize(newH),
+        x: Math.max(0, Math.min(100, node.x() / displayHallWidth * 100)),
+        y: Math.max(0, Math.min(100, node.y() / displayHallHeight * 100))
+      };
       commit();
       void refreshTransformerAfterUpdate();
     }

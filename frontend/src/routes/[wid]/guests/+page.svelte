@@ -10,7 +10,7 @@
   import { deleteGuest as apiDeleteGuest, assignSeat, unassignSeat, bulkImportGuests } from '#lib/api/guests.ts';
   import type { GuestImportData } from '#lib/api/guests.ts';
   import { rankGuests } from '#lib/utils/guestSearch.ts';
-  import { parseCsv, unquoteField } from '#lib/utils/csv.ts';
+  import { parseCsv, csvToGuests, type CsvGuestRow } from '#lib/utils/csv.ts';
   import { trapFocus, registerEscape } from '#lib/utils/focus.ts';
   import { listTables } from '#lib/api/tables.ts';
   import type { BanquetTable } from '#lib/types/index.ts';
@@ -334,35 +334,8 @@ import Users from 'lucide-svelte/icons/users';
     }
   }
 
-  function parseCSV(text: string): GuestImportData[] {
-    const rows = parseCsv(text);
-    if (rows.length < 2) return [];
-    const headers = rows[0].map(h => h.trim().toLowerCase());
-    const nameIdx = headers.findIndex(h => h === 'name');
-    if (nameIdx === -1) return [];
-    const emailIdx = headers.findIndex(h => h === 'email');
-    const paxIdx = headers.findIndex(h => h === 'pax');
-    const rsvpIdx = headers.findIndex(h => h === 'rsvp');
-    const vipIdx = headers.findIndex(h => h === 'vip' || h === 'isvip');
-    const notesIdx = headers.findIndex(h => h === 'notes');
-    const dietaryIdx = headers.findIndex(h => h === 'dietary');
-    const tableIdx = headers.findIndex(h => h === 'table' || h === 'tablename');
-    const seatIdx = headers.findIndex(h => h === 'seat' || h === 'seatnum' || h === 'seat_number');
-
-    return rows.slice(1).map(cells => {
-      const cols = cells.map(c => unquoteField(c.trim()));
-      return {
-        name: cols[nameIdx] || '',
-        email: emailIdx >= 0 ? cols[emailIdx] : undefined,
-        pax: paxIdx >= 0 ? parseInt(cols[paxIdx]) || 1 : 1,
-        rsvp: rsvpIdx >= 0 ? cols[rsvpIdx] : 'no_response',
-        isVip: vipIdx >= 0 ? cols[vipIdx]?.toLowerCase() === 'yes' || cols[vipIdx] === '1' || cols[vipIdx]?.toLowerCase() === 'true' : false,
-        notes: notesIdx >= 0 ? cols[notesIdx] : undefined,
-        dietary: dietaryIdx >= 0 ? cols[dietaryIdx]?.split(';').map(d => d.trim()).filter(Boolean) : [],
-        table: tableIdx >= 0 ? cols[tableIdx] : undefined,
-        seat: seatIdx >= 0 ? parseInt(cols[seatIdx]) || undefined : undefined,
-      };
-    }).filter(g => g.name);
+  function parseCSV(text: string): { guests: CsvGuestRow[]; dropped: number } {
+    return csvToGuests(parseCsv(text));
   }
 
   function handleImportFile(e: Event) {
@@ -374,11 +347,12 @@ import Users from 'lucide-svelte/icons/users';
     const reader = new FileReader();
     reader.onload = () => {
       try {
-        const guests = parseCSV(reader.result as string);
+        const { guests, dropped } = parseCSV(reader.result as string);
         if (guests.length === 0) {
-          importError = 'No valid guests found. Make sure CSV has a "name" column.';
+          importError = 'No valid guests found. Make sure CSV has a "name" column and values within the field limits.';
           return;
         }
+        importError = dropped > 0 ? `${dropped} row(s) skipped: name, email, or notes is too long.` : '';
         importPreview = guests;
       } catch {
         importError = 'Failed to parse CSV file.';

@@ -89,4 +89,14 @@ func TestGuestWrite_MissingWeddingIsNotFoundOrApplied(t *testing.T) {
 	if res[0].Status != "failed" || res[0].Retryable == nil || *res[0].Retryable {
 		t.Fatalf("offline create for a missing wedding = %+v, want failed without retry", res[0])
 	}
+
+	for _, op := range []SyncOp{SyncOpUpdate, SyncOpCheckIn, SyncOpCheckOut} {
+		res, err = svc.Sync(ctx, goneWedding, []SyncMutation{{
+			Op: op, GuestID: guestID.String(), ClientUpdatedAt: time.Now(), Payload: &payload,
+		}})
+		testutil.NoErr(t, err)
+		if res[0].Status != "skipped" {
+			t.Fatalf("offline %s for a missing wedding = %+v, want skipped", op, res[0])
+		}
+	}
 }
