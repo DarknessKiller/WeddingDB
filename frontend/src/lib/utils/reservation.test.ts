@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { reservationSchema } from './reservation';
 import { LIMITS } from './limits';
-import { seatSelectionError, closestEmptySeats } from './reservation.ts';
+import { seatSelectionError, closestEmptySeats, seatOccupant } from './reservation.ts';
 
 const base = { name: 'Alice', pax: 1, rsvp: 'pending' as const };
 
@@ -43,5 +43,23 @@ describe('closestEmptySeats', () => {
 
 	it('returns nothing when the party does not fit', () => {
 		expect(closestEmptySeats(3, new Set([1, 3]), 2)).toEqual([]);
+	});
+});
+
+describe('seatOccupant', () => {
+	const guests = [
+		{ tableId: 't1', seatNumber: 4, pax: 3 },
+		{ tableId: 't2', seatNumber: 1, pax: 1 },
+	];
+
+	it('finds the occupant of any seat in the booked range', () => {
+		expect(seatOccupant(guests, 't1', 4)).toBe(guests[0]);
+		expect(seatOccupant(guests, 't1', 6)).toBe(guests[0]);
+	});
+
+	it('reports nothing outside the range or on another table', () => {
+		expect(seatOccupant(guests, 't1', 3)).toBeUndefined();
+		expect(seatOccupant(guests, 't1', 7)).toBeUndefined();
+		expect(seatOccupant(guests, 't2', 5)).toBeUndefined();
 	});
 });

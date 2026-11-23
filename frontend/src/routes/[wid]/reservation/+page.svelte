@@ -12,7 +12,7 @@ import AlertCircle from 'lucide-svelte/icons/alert-circle';
   import { listTables } from '#lib/api/tables.ts';
   import { getLayout } from '#lib/api/layout.ts';
   import { LIMITS } from '#lib/utils/limits.ts';
-  import { reservationSchema as schema, seatSelectionError, closestEmptySeats, type ReservationForm as FormData } from '#lib/utils/reservation.ts';
+  import { reservationSchema as schema, seatSelectionError, closestEmptySeats, seatOccupant, type ReservationForm as FormData } from '#lib/utils/reservation.ts';
   import type { BanquetTable, Guest, HallElement } from '#lib/types/index.ts';
   import HallMap from '#lib/components/seating/HallMap.svelte';
 
@@ -103,12 +103,7 @@ import AlertCircle from 'lucide-svelte/icons/alert-circle';
   let isSubmitting = $state(false);
 
   function getSeatGuestLocal(tableId: string, seatNum: number): Guest | undefined {
-    return apiGuests.find(g =>
-      g.tableId === tableId &&
-      g.seatNumber !== null &&
-      seatNum >= g.seatNumber &&
-      seatNum < g.seatNumber + g.pax
-    );
+    return seatOccupant(apiGuests, tableId, seatNum);
   }
 
   function isSeatAvailable(seatNum: number): boolean {

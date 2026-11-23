@@ -44,3 +44,16 @@ export function closestEmptySeats(capacity: number, occupied: Set<number>, count
 	}
 	return [];
 }
+
+// seatOccupant returns the guest whose booked range covers seatNum, if any.
+// A party occupies seatNum..seatNum+pax-1, the same range the server checks.
+export function seatOccupant<T extends { tableId: string | null; seatNumber: number | null; pax: number }>(
+	guests: T[], tableId: string, seatNum: number
+): T | undefined {
+	return guests.find(g =>
+		g.tableId === tableId &&
+		g.seatNumber !== null &&
+		seatNum >= g.seatNumber &&
+		seatNum < g.seatNumber + g.pax
+	);
+}

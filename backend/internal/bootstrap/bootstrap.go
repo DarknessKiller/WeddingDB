@@ -140,32 +140,7 @@ func Init(env config.Env, version string) *App {
 
 	// Serve static frontend (SPA fallback to index.html)
 	staticDir := getEnv("STATIC_DIR", "./static")
-	server.Mux.HandleFunc("GET /{path...}", func(w http.ResponseWriter, r *http.Request) {
-		// Raw mux route: Fuego middleware does not run here, so set the
-		// baseline headers by hand (uploads have their own, stronger set).
-		middleware.SetSecurityHeaders(w)
-		path := r.PathValue("path")
-		if path == "" {
-			path = "index.html"
-		}
-		filePath := filepath.Join(staticDir, path)
-		if info, err := os.Stat(filePath); err == nil && !info.IsDir() {
-			stripped := strings.TrimPrefix(path, "/")
-			if strings.HasPrefix(stripped, "_app/") || strings.HasPrefix(stripped, "assets/") {
-				w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
-			} else if stripped == "index.html" {
-				w.Header().Set("Cache-Control", "no-cache")
-			}
-			if path == "favicon.svg" {
-				w.Header().Set("Cache-Control", "public, max-age=86400, s-maxage=604800, stale-while-revalidate=86400")
-			}
-			http.ServeFile(w, r, filePath)
-			return
-		}
-		// SPA fallback: serve index.html for client-side routing
-		w.Header().Set("Cache-Control", "no-cache") // deep links land here with a non-file path: mark no-cache so browser heuristics never serve stale chunk URLs after a redeploy
-		http.ServeFile(w, r, filepath.Join(staticDir, "index.html"))
-	})
+	server.Mux.HandleFunc("GET /{path...}", spaHandler(staticDir))
 
 	// Seed default admin if none exists
 	var count int64
@@ -365,4 +340,40 @@ func getEnv(key, fallback string) string {
 		return v
 	}
 	return fallback
+}
+
+// spaHandler serves the built frontend and falls back to index.html for client
+// routes. The wildcard value is unescaped, so reject traversal before any
+// filesystem access.
+func spaHandler(staticDir string) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		// Raw mux route: Fuego middleware does not run here, so set the
+		// baseline headers by hand (uploads have their own, stronger set).
+		middleware.SetSecurityHeaders(w)
+		path := r.PathValue("path")
+		if path == "" {
+			path = "index.html"
+		}
+		if strings.Contains(path, "..") || strings.HasPrefix(path, "/") {
+			http.NotFound(w, r)
+			return
+		}
+		filePath := filepath.Join(staticDir, path)
+		if info, err := os.Stat(filePath); err == nil && !info.IsDir() {
+			stripped := strings.TrimPrefix(path, "/")
+			if strings.HasPrefix(stripped, "_app/") || strings.HasPrefix(stripped, "assets/") {
+				w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
+			} else if stripped == "index.html" {
+				w.Header().Set("Cache-Control", "no-cache")
+			}
+			if path == "favicon.svg" {
+				w.Header().Set("Cache-Control", "public, max-age=86400, s-maxage=604800, stale-while-revalidate=86400")
+			}
+			http.ServeFile(w, r, filePath)
+			return
+		}
+		// SPA fallback: serve index.html for client-side routing
+		w.Header().Set("Cache-Control", "no-cache") // deep links land here with a non-file path: mark no-cache so browser heuristics never serve stale chunk URLs after a redeploy
+		http.ServeFile(w, r, filepath.Join(staticDir, "index.html"))
+	}
 }
