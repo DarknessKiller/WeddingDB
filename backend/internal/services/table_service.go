@@ -2,6 +2,7 @@ package services
 
 import (
 	"context"
+	"time"
 
 	"weddingdb/internal/models"
 	"weddingdb/internal/repository"
@@ -75,8 +76,21 @@ func (s *TableService) Delete(ctx context.Context, id, weddingID uuid.UUID) erro
 		if affected, err = guests.FindByTable(ctx, weddingID, id); err != nil {
 			return err
 		}
-		if err := guests.UnassignByTable(ctx, weddingID, id); err != nil {
-			return err
+		// Unseating carries the tableId group, so it goes through the shared
+		// merge: the group's field_times records this operation and an older
+		// queued move loses instead of re-seating the guest on a deleted table.
+		now := time.Now()
+		for i := range affected {
+			g := &affected[i]
+			candidate := *g
+			candidate.TableID = nil
+			candidate.SeatNum = nil
+			if won := mergeGuestWrite(g, &candidate, now, []string{groupTableID}); len(won) == 0 {
+				continue
+			}
+			if err := guests.Update(ctx, g); err != nil {
+				return err
+			}
 		}
 		return repository.NewTableRepo(tx).Delete(ctx, id, weddingID)
 	})
@@ -84,10 +98,7 @@ func (s *TableService) Delete(ctx context.Context, id, weddingID uuid.UUID) erro
 		return err
 	}
 	for i := range affected {
-		g := &affected[i]
-		g.TableID = nil
-		g.SeatNum = nil
-		s.sseHub.publishGuest("update", g, weddingID)
+		s.sseHub.publishGuest("update", &affected[i], weddingID)
 	}
 	return nil
 }

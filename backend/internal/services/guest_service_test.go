@@ -163,7 +163,7 @@ func TestCheckInPromotesRSVPAndAppendsNotes(t *testing.T) {
 			t.Fatalf("seed: %v", err)
 		}
 
-		if err := svc.CheckIn(ctx, gid, wid, " came with 2 kids "); err != nil {
+		if _, err := svc.CheckIn(ctx, gid, wid, " came with 2 kids "); err != nil {
 			t.Fatalf("checkin: %v", err)
 		}
 
@@ -182,7 +182,7 @@ func TestCheckInPromotesRSVPAndAppendsNotes(t *testing.T) {
 		}
 
 		// FIFO conflict: a second check-in must not overwrite the first note.
-		if err := svc.CheckIn(ctx, gid, wid, "late note"); !errors.Is(err, ErrAlreadyCheckedIn) {
+		if _, err := svc.CheckIn(ctx, gid, wid, "late note"); !errors.Is(err, ErrAlreadyCheckedIn) {
 			t.Errorf("second checkin err = %v, want ErrAlreadyCheckedIn", err)
 		}
 	})

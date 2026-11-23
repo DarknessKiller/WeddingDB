@@ -21,6 +21,9 @@ var (
 	ErrSeatRange       = errors.New("seat range exceeds table capacity")
 	ErrSSECapacity     = errors.New("too many streams for wedding")
 	ErrSSEUserCapacity = errors.New("too many streams for user")
+
+	// ErrGuestCapExceeded is returned when adding guests would cross the cap.
+	ErrGuestCapExceeded = errors.New("guest limit exceeded")
 )
 
 // ErrTokenRejected wraps every reason a presented access or refresh token is

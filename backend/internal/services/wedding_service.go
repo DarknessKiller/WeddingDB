@@ -30,8 +30,9 @@ func (s *WeddingService) CreateWithOwner(ctx context.Context, w *models.WeddingE
 	return s.weddingRepo.CreateWithOwner(ctx, w, ownerID)
 }
 
-func (s *WeddingService) Update(ctx context.Context, w *models.WeddingEvent) error {
-	return s.weddingRepo.Update(ctx, w)
+// Update writes only the columns the caller carried.
+func (s *WeddingService) Update(ctx context.Context, id uuid.UUID, fields map[string]any) error {
+	return s.weddingRepo.Update(ctx, id, fields)
 }
 
 func (s *WeddingService) Delete(ctx context.Context, id uuid.UUID) error {

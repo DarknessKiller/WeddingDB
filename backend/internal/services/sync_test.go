@@ -723,3 +723,239 @@ func TestSync_NegativeAngbaoRejected(t *testing.T) {
 		t.Fatalf("offline result = %+v, want failed", res[0])
 	}
 }
+
+// TestSync_ArrivalAndUndoFollowTime covers invariant 3: a check-in and its undo
+// are ordinary timed writes on their own columns. A newer undo wins, an older
+// one loses, and neither touches a column it does not carry.
+func TestSync_ArrivalAndUndoFollowTime(t *testing.T) {
+	svc, db, wid := newGuestSyncService(t)
+	ctx := context.Background()
+	gid := uuid.New()
+	base := time.Now().Add(-10 * time.Minute)
+	db.Create(&models.GuestRecord{
+		ID: gid, WeddingID: wid, Name: "Arrival", Pax: 1, RSVP: "pending", Notes: "keep",
+		CreatedAt: base, UpdatedAt: base,
+	})
+
+	arrive := base.Add(2 * time.Minute)
+	res, err := svc.Sync(ctx, wid, []SyncMutation{{
+		Op: SyncOpCheckIn, GuestID: gid.String(), ClientUpdatedAt: arrive,
+	}})
+	testutil.NoErr(t, err)
+	if res[0].Status != "applied" {
+		t.Fatalf("check-in should apply, got %v", res[0])
+	}
+	g, err := svc.Get(ctx, gid, wid)
+	testutil.NoErr(t, err)
+	if g.CheckedInAt == nil || g.CheckedInAt.Sub(arrive).Abs() > time.Second {
+		t.Fatalf("checkedInAt = %v, want the check-in time %v", g.CheckedInAt, arrive)
+	}
+	if g.RSVP != "confirmed" {
+		t.Fatalf("rsvp = %q, want confirmed", g.RSVP)
+	}
+	if g.Notes != "keep" {
+		t.Fatalf("check-in changed notes: %q", g.Notes)
+	}
+
+	// An undo older than the arrival loses and leaves the check-in in place.
+	res, err = svc.Sync(ctx, wid, []SyncMutation{{
+		Op: SyncOpCheckOut, GuestID: gid.String(), ClientUpdatedAt: base.Add(time.Minute),
+	}})
+	testutil.NoErr(t, err)
+	if res[0].Status != "skipped" {
+		t.Fatalf("older check-out should be skipped, got %v", res[0])
+	}
+	g, err = svc.Get(ctx, gid, wid)
+	testutil.NoErr(t, err)
+	if g.CheckedInAt == nil {
+		t.Fatal("older check-out reverted the check-in")
+	}
+
+	// A newer undo wins.
+	res, err = svc.Sync(ctx, wid, []SyncMutation{{
+		Op: SyncOpCheckOut, GuestID: gid.String(), ClientUpdatedAt: base.Add(3 * time.Minute),
+	}})
+	testutil.NoErr(t, err)
+	if res[0].Status != "applied" {
+		t.Fatalf("newer check-out should apply, got %v", res[0])
+	}
+	g, err = svc.Get(ctx, gid, wid)
+	testutil.NoErr(t, err)
+	if g.CheckedInAt != nil {
+		t.Fatalf("checkedInAt = %v, want nil after the undo", g.CheckedInAt)
+	}
+	if g.Notes != "keep" {
+		t.Fatalf("undo changed notes: %q", g.Notes)
+	}
+}
+
+// TestSync_ReplayOfAppliedBatchIsApplied covers invariant 5: a batch that
+// already applied answers "applied" for every mutation and changes nothing,
+// notes included.
+func TestSync_ReplayOfAppliedBatchIsApplied(t *testing.T) {
+	svc, db, wid := newGuestSyncService(t)
+	ctx := context.Background()
+	gid := uuid.New()
+	base := time.Now().Add(-10 * time.Minute)
+	db.Create(&models.GuestRecord{
+		ID: gid, WeddingID: wid, Name: "Replay", Pax: 1, Notes: "keep",
+		CreatedAt: base, UpdatedAt: base,
+	})
+
+	var notes, dietary SyncPayload
+	testutil.NoErr(t, json.Unmarshal([]byte(`{"notes":"no gift"}`), &notes))
+	testutil.NoErr(t, json.Unmarshal([]byte(`{"dietary":["vegan"]}`), &dietary))
+	batch := []SyncMutation{
+		{Op: SyncOpUpdate, GuestID: gid.String(), ClientUpdatedAt: base.Add(time.Minute), Payload: &notes},
+		{Op: SyncOpUpdate, GuestID: gid.String(), ClientUpdatedAt: base.Add(2 * time.Minute), Payload: &dietary},
+	}
+	first, err := svc.Sync(ctx, wid, batch)
+	testutil.NoErr(t, err)
+	for i, r := range first {
+		if r.Status != "applied" {
+			t.Fatalf("first run mutation %d = %+v, want applied", i, r)
+		}
+	}
+	before, err := svc.Get(ctx, gid, wid)
+	testutil.NoErr(t, err)
+
+	replay, err := svc.Sync(ctx, wid, batch)
+	testutil.NoErr(t, err)
+	for i, r := range replay {
+		if r.Status != "applied" {
+			t.Fatalf("replay mutation %d = %+v, want applied", i, r)
+		}
+	}
+
+	after, err := svc.Get(ctx, gid, wid)
+	testutil.NoErr(t, err)
+	if after.Notes != "no gift" {
+		t.Fatalf("replay changed notes: %q", after.Notes)
+	}
+	if len(after.Dietary) != 1 || after.Dietary[0] != "vegan" {
+		t.Fatalf("replay changed dietary: %v", after.Dietary)
+	}
+	if !after.UpdatedAt.Equal(before.UpdatedAt) {
+		t.Fatalf("replay moved updatedAt from %v to %v", before.UpdatedAt, after.UpdatedAt)
+	}
+	if !after.FieldTimes[groupNotes].Equal(before.FieldTimes[groupNotes]) {
+		t.Fatalf("replay moved the notes write time from %v to %v", before.FieldTimes[groupNotes], after.FieldTimes[groupNotes])
+	}
+}
+
+// TestSync_CheckOutReplayIsApplied covers invariant 5 for the undo op:
+// replaying an applied check-out answers "applied" and leaves the row as the
+// checkout left it.
+func TestSync_CheckOutReplayIsApplied(t *testing.T) {
+	svc, db, wid := newGuestSyncService(t)
+	ctx := context.Background()
+	gid := uuid.New()
+	base := time.Now().Add(-10 * time.Minute)
+	checkedIn := base.Add(time.Minute)
+	db.Create(&models.GuestRecord{
+		ID: gid, WeddingID: wid, Name: "Undo", Pax: 1, Notes: "arrived",
+		CheckedInAt: &checkedIn, CreatedAt: base, UpdatedAt: checkedIn,
+	})
+
+	undo := time.Time(base.Add(2 * time.Minute))
+	m := SyncMutation{Op: SyncOpCheckOut, GuestID: gid.String(), ClientUpdatedAt: undo}
+	res, err := svc.Sync(ctx, wid, []SyncMutation{m})
+	testutil.NoErr(t, err)
+	if res[0].Status != "applied" {
+		t.Fatalf("check-out should apply, got %v", res[0])
+	}
+
+	res, err = svc.Sync(ctx, wid, []SyncMutation{m})
+	testutil.NoErr(t, err)
+	if res[0].Status != "applied" {
+		t.Fatalf("replayed check-out should report applied, got %v", res[0])
+	}
+	g, err := svc.Get(ctx, gid, wid)
+	testutil.NoErr(t, err)
+	if g.CheckedInAt != nil {
+		t.Fatalf("replay re-checked-in the guest: %v", g.CheckedInAt)
+	}
+	if g.Notes != "arrived" {
+		t.Fatalf("replay changed notes: %q", g.Notes)
+	}
+}
+
+// TestSync_UpdateValidatesLikeOnline covers invariant 7: a value the online API
+// refuses fails the mutation without retry and leaves the row alone.
+func TestSync_UpdateValidatesLikeOnline(t *testing.T) {
+	svc, db, wid := newGuestSyncService(t)
+	ctx := context.Background()
+	gid := uuid.New()
+	base := time.Now().Add(-10 * time.Minute)
+	db.Create(&models.GuestRecord{
+		ID: gid, WeddingID: wid, Name: "Validated", Pax: 1, RSVP: "pending",
+		CreatedAt: base, UpdatedAt: base,
+	})
+
+	for _, body := range []string{`{"pax":0}`, `{"rsvp":"maybe"}`, `{"name":""}`} {
+		var patch SyncPayload
+		testutil.NoErr(t, json.Unmarshal([]byte(body), &patch))
+		if _, err := svc.UpdatePatch(ctx, gid, wid, &patch); !errors.Is(err, ErrGuestPatchInvalid) {
+			t.Fatalf("online %s err = %v, want ErrGuestPatchInvalid", body, err)
+		}
+		res, err := svc.Sync(ctx, wid, []SyncMutation{{
+			Op: SyncOpUpdate, GuestID: gid.String(),
+			ClientUpdatedAt: base.Add(time.Minute), Payload: &patch,
+		}})
+		testutil.NoErr(t, err)
+		if res[0].Status != "failed" || res[0].Retryable == nil || *res[0].Retryable {
+			t.Fatalf("offline %s = %+v, want failed without retry", body, res[0])
+		}
+	}
+
+	g, err := svc.Get(ctx, gid, wid)
+	testutil.NoErr(t, err)
+	if g.Name != "Validated" || g.Pax != 1 || g.RSVP != "pending" {
+		t.Fatalf("rejected writes changed the row: %+v", g)
+	}
+}
+
+// TestSync_TableUnassignLosesToTableDelete proves the table delete stamps the
+// tableId group: a queued seat move older than the delete must be skipped
+// instead of re-seating the guest on a table that no longer exists.
+func TestSync_TableUnassignLosesToTableDelete(t *testing.T) {
+	svc, db, wid := newGuestSyncService(t)
+	ctx := context.Background()
+	tableID := uuid.New()
+	seat := 3
+	testutil.NoErr(t, db.Create(&models.BanquetTable{ID: tableID, WeddingID: wid, Name: "T1", Capacity: 8}).Error)
+	gid := uuid.New()
+	base := time.Now().Add(-10 * time.Minute)
+	testutil.NoErr(t, db.Create(&models.GuestRecord{
+		ID: gid, WeddingID: wid, Name: "Seated", Pax: 1,
+		TableID: &tableID, SeatNum: &seat, CreatedAt: base, UpdatedAt: base,
+		// A row written through the merge already carries its group times.
+		FieldTimes: models.FieldTimes{groupTableID: base, groupPax: base, groupName: base},
+	}).Error)
+
+	queued := time.Now().Add(-10 * time.Second)
+	testutil.NoErr(t, NewTableService(repository.NewTableRepo(db), nil, db).Delete(ctx, tableID, wid))
+
+	moved := tableID.String()
+	var move SyncPayload
+	testutil.NoErr(t, json.Unmarshal([]byte(`{"tableId":"`+moved+`","seatNum":4}`), &move))
+	res, err := svc.Sync(ctx, wid, []SyncMutation{{
+		Op: SyncOpUpdate, GuestID: gid.String(), ClientUpdatedAt: queued, Payload: &move,
+	}})
+	testutil.NoErr(t, err)
+	if res[0].Status != "skipped" {
+		t.Fatalf("queued move older than the table delete = %+v, want skipped", res[0])
+	}
+	if res[0].ServerRecord == nil || res[0].ServerRecord.TableID != nil || res[0].ServerRecord.SeatNum != nil {
+		t.Fatalf("skipped record must be the unassigned row, got %+v", res[0].ServerRecord)
+	}
+
+	g, err := svc.Get(ctx, gid, wid)
+	testutil.NoErr(t, err)
+	if g.TableID != nil || g.SeatNum != nil {
+		t.Fatalf("guest was re-seated on a deleted table: table=%v seat=%v", g.TableID, g.SeatNum)
+	}
+	if g.FieldTimes[groupTableID].Before(queued) {
+		t.Fatalf("table delete left the tableId write time at %v, before the queued move %v", g.FieldTimes[groupTableID], queued)
+	}
+}

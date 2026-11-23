@@ -58,6 +58,26 @@ func TestWeddingGet_MissingIs404(t *testing.T) {
 	}
 }
 
+func TestWeddingDelete_MissingIs404(t *testing.T) {
+	db := newSQLite(t, weddingEventsDDL,
+		`CREATE TABLE guest_records (id TEXT PRIMARY KEY, wedding_id TEXT)`,
+		`CREATE TABLE banquet_tables (id TEXT PRIMARY KEY, wedding_id TEXT)`,
+		`CREATE TABLE hall_elements (id TEXT PRIMARY KEY, wedding_id TEXT)`,
+		`CREATE TABLE user_weddings (id TEXT PRIMARY KEY, wedding_id TEXT)`,
+	)
+	h := NewWeddingHandler(services.NewWeddingService(repository.NewWeddingRepo(db)), repository.NewAdminRepo(db))
+	s := fuego.NewServer(fuego.WithoutStartupMessages())
+	fuego.Delete(s, "/api/weddings/{id}", h.Delete)
+
+	req := httptest.NewRequest(http.MethodDelete, "/api/weddings/"+utils.EncodeUUID(uuid.New()), nil)
+	req = withAdmin(req)
+	rec := httptest.NewRecorder()
+	s.Mux.ServeHTTP(rec, req)
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("status = %d, want 404 for a missing wedding, body %s", rec.Code, rec.Body.String())
+	}
+}
+
 func TestLayoutGet_MissingWeddingIs404(t *testing.T) {
 	db := newSQLite(t, weddingEventsDDL,
 		`CREATE TABLE banquet_tables (id TEXT PRIMARY KEY, wedding_id TEXT, name TEXT, capacity INTEGER,

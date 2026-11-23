@@ -134,13 +134,6 @@ func (r *GuestRepo) Delete(ctx context.Context, id, weddingID uuid.UUID) error {
 	return r.db.WithContext(ctx).Where("id = ? AND wedding_id = ?", id, weddingID).Delete(&models.GuestRecord{}).Error
 }
 
-// UnassignByTable clears table_id and seat_num for all guests at a given table.
-func (r *GuestRepo) UnassignByTable(ctx context.Context, weddingID, tableID uuid.UUID) error {
-	return r.db.WithContext(ctx).Model(&models.GuestRecord{}).
-		Where("wedding_id = ? AND table_id = ?", weddingID, tableID).
-		Updates(map[string]interface{}{"table_id": nil, "seat_num": nil}).Error
-}
-
 func (r *GuestRepo) ListAllByWedding(ctx context.Context, weddingID uuid.UUID) ([]models.GuestRecord, error) {
 	guests := make([]models.GuestRecord, 0)
 	err := r.db.WithContext(ctx).Where("wedding_id = ?", weddingID).Order("name ASC").Find(&guests).Error

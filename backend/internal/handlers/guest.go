@@ -238,7 +238,8 @@ func (h *GuestHandler) CheckIn(c fuego.ContextWithBody[CheckInRequest]) (any, er
 	if len([]rune(body.Notes)) > services.MaxCheckInNoteLen {
 		return nil, fuego.BadRequestError{Title: "Check-in notes must be at most " + strconv.Itoa(services.MaxCheckInNoteLen) + " characters"}
 	}
-	if err := h.guestService.CheckIn(ctx, id, wid, body.Notes); err != nil {
+	guest, err := h.guestService.CheckIn(ctx, id, wid, body.Notes)
+	if err != nil {
 		if errors.Is(err, services.ErrAlreadyCheckedIn) {
 			return nil, fuego.ConflictError{Title: "Guest already checked in by another receptionist"}
 		}
@@ -249,10 +250,6 @@ func (h *GuestHandler) CheckIn(c fuego.ContextWithBody[CheckInRequest]) (any, er
 		if errors.As(err, &lenErr) {
 			return nil, fuego.BadRequestError{Title: err.Error()}
 		}
-		return nil, err
-	}
-	guest, err := h.guestService.Get(ctx, id, wid)
-	if err != nil {
 		return nil, err
 	}
 	return guest, nil

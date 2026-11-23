@@ -33,9 +33,6 @@ func NewGuestService(guestRepo *repository.GuestRepo, sseHub *SSEHub, db *gorm.D
 // guest entry with pax 2 counts as two guests.
 const MaxGuestsPerWedding = 1000
 
-// ErrGuestCapExceeded is returned when adding guests would cross the cap.
-var ErrGuestCapExceeded = errors.New("guest limit exceeded")
-
 func guestCapError(current, delta int) error {
 	return fmt.Errorf("%w: this wedding has %d guests; this change would make %d, over the %d-guest limit",
 		ErrGuestCapExceeded, current, current+delta, MaxGuestsPerWedding)
@@ -308,12 +305,12 @@ func (s *GuestService) UnassignSeat(ctx context.Context, id, weddingID uuid.UUID
 
 // CheckIn marks a guest as checked in and promotes their RSVP to confirmed.
 // Non-empty notes are appended to the locked guest's existing notes.
-// Returns ErrAlreadyCheckedIn if the guest was already checked in by another
-// receptionist (FIFO conflict).
-func (s *GuestService) CheckIn(ctx context.Context, id, weddingID uuid.UUID, notes string) error {
+// Returns the merged row, and ErrAlreadyCheckedIn if the guest was already
+// checked in by another receptionist (FIFO conflict).
+func (s *GuestService) CheckIn(ctx context.Context, id, weddingID uuid.UUID, notes string) (*models.GuestRecord, error) {
 	notes = strings.TrimSpace(notes)
 	if err := checkLen("Check-in notes", notes, MaxCheckInNoteLen); err != nil {
-		return err
+		return nil, err
 	}
 	var merged *models.GuestRecord
 	applied := false
@@ -349,12 +346,12 @@ func (s *GuestService) CheckIn(ctx context.Context, id, weddingID uuid.UUID, not
 		return repo.Update(ctx, locked)
 	})
 	if err != nil {
-		return err
+		return nil, err
 	}
 	if applied {
 		s.sseHub.publishGuest("checkin", merged, weddingID)
 	}
-	return nil
+	return merged, nil
 }
 
 func (s *GuestService) CheckOut(ctx context.Context, id, weddingID uuid.UUID) error {
