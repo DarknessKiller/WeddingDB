@@ -202,15 +202,26 @@ func (s *GuestService) UpdatePatch(ctx context.Context, id, weddingID uuid.UUID,
 }
 
 func (s *GuestService) Delete(ctx context.Context, id, weddingID uuid.UUID) error {
-	// Fetch guest before deletion so we can broadcast the event.
-	guest, err := s.guestRepo.FindByID(ctx, id, weddingID)
-	if errors.Is(err, gorm.ErrRecordNotFound) {
-		return ErrGuestNotFound
-	}
+	var guest *models.GuestRecord
+	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := lockWedding(tx, weddingID); err != nil {
+			return err
+		}
+		repo := repository.NewGuestRepo(tx)
+		locked, err := repo.FindByIDForUpdate(ctx, id, weddingID)
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return ErrGuestNotFound
+		}
+		if err != nil {
+			return err
+		}
+		if err := repo.Delete(ctx, id, weddingID); err != nil {
+			return err
+		}
+		guest = locked
+		return nil
+	})
 	if err != nil {
-		return err
-	}
-	if err := s.guestRepo.Delete(ctx, id, weddingID); err != nil {
 		return err
 	}
 	s.sseHub.publishGuest("delete", guest, weddingID)

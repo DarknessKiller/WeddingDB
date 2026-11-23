@@ -109,6 +109,26 @@ func TestCheckIn_WaitsForWeddingLock(t *testing.T) {
 			},
 		},
 		{
+			name: "delete",
+			op: func(ctx context.Context, wid, gid uuid.UUID) error {
+				return svc.Delete(ctx, gid, wid)
+			},
+			blocked: func(t *testing.T, gid uuid.UUID) {
+				var count int64
+				testutil.NoErr(t, db.Model(&models.GuestRecord{}).Where("id = ?", gid).Count(&count).Error)
+				if count != 1 {
+					t.Fatal("delete applied while the wedding row was locked")
+				}
+			},
+			want: func(t *testing.T, gid uuid.UUID) {
+				var count int64
+				testutil.NoErr(t, db.Model(&models.GuestRecord{}).Where("id = ?", gid).Count(&count).Error)
+				if count != 0 {
+					t.Fatal("guest still present, want the delete applied")
+				}
+			},
+		},
+		{
 			name: "sync delete",
 			op: func(ctx context.Context, wid, gid uuid.UUID) error {
 				_, err := svc.Sync(ctx, wid, []SyncMutation{{

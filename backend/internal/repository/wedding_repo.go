@@ -66,6 +66,11 @@ func (r *WeddingRepo) Update(ctx context.Context, id uuid.UUID, fields map[strin
 
 func (r *WeddingRepo) Delete(ctx context.Context, id uuid.UUID) error {
 	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		// Take the wedding row lock before the cascade: a guest write that holds
+		// it would otherwise insert rows after the sweep and leave orphans.
+		if err := lockWeddingRow(tx, id); err != nil {
+			return err
+		}
 		// Cascade: remove guests, tables, hall elements, and user associations
 		if err := tx.Where("wedding_id = ?", id).Delete(&models.GuestRecord{}).Error; err != nil {
 			return err
