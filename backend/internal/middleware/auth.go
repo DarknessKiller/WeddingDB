@@ -11,6 +11,10 @@ import (
 
 type contextKey string
 
+// changePasswordPath is the one authenticated route a session flagged for a
+// forced password change may call.
+const changePasswordPath = "/api/auth/change-password"
+
 const (
 	AdminIDKey   contextKey = "adminId"
 	WeddingIDKey contextKey = "weddingId"
@@ -32,6 +36,13 @@ func AuthMiddleware(authService *services.AuthService) func(http.Handler) http.H
 			claims, err := authService.ValidateToken(r.Context(), token)
 			if err != nil {
 				WriteAuthError(w, err)
+				return
+			}
+
+			// An admin-reset password must be replaced before anything else.
+			// Logout and refresh are public routes, so only change-password stays open.
+			if claims.ForcePasswordChange && r.URL.Path != changePasswordPath {
+				http.Error(w, `{"error":"Password change required"}`, http.StatusForbidden)
 				return
 			}
 

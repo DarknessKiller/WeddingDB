@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"maps"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -57,6 +59,11 @@ type SSEClient struct {
 }
 
 const sseLeaseDuration = 30 * time.Second
+
+// sseResyncType is a control event, not a guest mutation: every replica closes
+// its local streams for the wedding so clients reconnect and refetch a snapshot
+// that includes an event this deployment could not deliver.
+const sseResyncType = "resync"
 
 // KEYS[1] holds the wedding's leases (cap 100), KEYS[2] the user's (cap 5).
 // Returns 1 on success, 0 when the wedding is full, -1 when the user is.
@@ -112,10 +119,17 @@ type SSEHub struct {
 	// ponytail: closed after PSubscribe ACKs so the first Publish is not lost during Redis warm-up.
 	// Race B (client joins SSE mid-publish) is not addressed here — fix needs a per-wedding replay buffer.
 	ready chan struct{}
+	// stopped closes when publishLoop has drained the queue and exited.
+	stopped chan struct{}
+	// resyncInFlight collapses resync broadcasts during a Redis outage: one
+	// marker per wedding at a time, so a broken Redis cannot turn every failed
+	// event into another blocking publish.
+	resyncInFlight sync.Map
 }
 
-// ssePublishQueue bounds the ordered publish queue. A full queue slows the
-// caller instead of dropping an event.
+// ssePublishQueue bounds the ordered publish queue. A full queue drops the
+// event and forces local clients to reconnect, so a slow Redis cannot block
+// guest writes.
 const ssePublishQueue = 1024
 
 type publishRequest struct {
@@ -126,7 +140,10 @@ type publishRequest struct {
 // NewSSEHub creates a new SSEHub and starts the Redis subscriber.
 func NewSSEHub(rdb *redis.Client) *SSEHub {
 	ctx, cancel := context.WithCancel(context.Background())
-	hub := &SSEHub{clients: make(map[uuid.UUID]map[string]*SSEClient), redis: rdb, ctx: ctx, cancel: cancel, publish: make(chan publishRequest, ssePublishQueue), ready: make(chan struct{})}
+	hub := &SSEHub{clients: make(map[uuid.UUID]map[string]*SSEClient), redis: rdb, ctx: ctx, cancel: cancel, publish: make(chan publishRequest, ssePublishQueue), ready: make(chan struct{}), stopped: make(chan struct{})}
+	// Created here, not in the goroutine, so Shutdown reads it without a race.
+	// With no pattern yet it makes no network call; subscribeRedis subscribes.
+	hub.pubsub = rdb.PSubscribe(ctx)
 	go hub.subscribeRedis()
 	go hub.publishLoop()
 	select {
@@ -139,7 +156,9 @@ func NewSSEHub(rdb *redis.Client) *SSEHub {
 
 // subscribeRedis listens on the wildcard Redis channel and fans out to local clients.
 func (h *SSEHub) subscribeRedis() {
-	h.pubsub = h.redis.PSubscribe(h.ctx, "wedding:*:guests")
+	if err := h.pubsub.PSubscribe(h.ctx, "wedding:*:guests"); err != nil {
+		log.Printf("SSE: PSubscribe failed: %v", err)
+	}
 	// Wait for Redis to confirm the subscription is active
 	if err := h.pubsub.Ping(h.ctx); err != nil {
 		log.Printf("SSE: PSubscribe ping failed: %v", err)
@@ -156,6 +175,10 @@ func (h *SSEHub) subscribeRedis() {
 			}
 			wid := extractWeddingID(msg.Channel)
 			if wid == uuid.Nil {
+				continue
+			}
+			if strings.HasPrefix(msg.Payload, `{"type":"`+sseResyncType+`"`) {
+				h.reconnectWedding(wid)
 				continue
 			}
 			h.mu.RLock()
@@ -255,17 +278,36 @@ func (h *SSEHub) Unsubscribe(client *SSEClient) {
 	log.Printf("SSE: client %s disconnected from wedding %s", client.ID, client.WeddingID)
 }
 
-// publishLoop drains the publish queue in order.
+// publishLoop drains the publish queue in order. On shutdown it publishes
+// what is still queued, so writes committed during the HTTP drain still reach
+// other replicas.
 func (h *SSEHub) publishLoop() {
+	defer close(h.stopped)
 	for {
 		select {
 		case <-h.ctx.Done():
-			return
-		case req := <-h.publish:
-			if err := h.Publish(context.Background(), req.weddingID, req.event); err != nil {
-				log.Printf("SSE: publish %s for guest %s in wedding %s: %v", req.event.Type, req.event.GuestID, req.weddingID, err)
+			for {
+				select {
+				case req := <-h.publish:
+					h.publishQueued(req)
+				default:
+					return
+				}
 			}
+		case req := <-h.publish:
+			h.publishQueued(req)
 		}
+	}
+}
+
+func (h *SSEHub) publishQueued(req publishRequest) {
+	if err := h.Publish(context.Background(), req.weddingID, req.event); err != nil {
+		log.Printf("SSE: publish %s for guest %s in wedding %s: %v", req.event.Type, req.event.GuestID, req.weddingID, err)
+		// This replica could not publish, so no replica's clients can
+		// trust their snapshot. Reconnect local clients and ask every
+		// replica to do the same through Redis.
+		h.reconnectWedding(req.weddingID)
+		h.broadcastResync(context.Background(), req.weddingID)
 	}
 }
 
@@ -283,9 +325,26 @@ func (h *SSEHub) Publish(ctx context.Context, weddingID uuid.UUID, event GuestEv
 	return h.redis.Publish(ctx, fmt.Sprintf("wedding:%s:guests", weddingID.String()), data).Err()
 }
 
-// Shutdown gracefully stops the Redis subscriber.
-func (h *SSEHub) Shutdown() {
+// CloseStreams ends every local SSE stream so the HTTP server can drain. The
+// hub keeps publishing; call Shutdown after the server has stopped.
+func (h *SSEHub) CloseStreams() {
+	h.mu.RLock()
+	weddings := slices.Collect(maps.Keys(h.clients))
+	h.mu.RUnlock()
+	for _, wid := range weddings {
+		h.reconnectWedding(wid)
+	}
+}
+
+// Shutdown publishes the events still queued, bounded by ctx, then stops the
+// Redis subscriber.
+func (h *SSEHub) Shutdown(ctx context.Context) {
 	h.cancel()
+	select {
+	case <-h.stopped:
+	case <-ctx.Done():
+		log.Printf("SSE: shutdown before the publish queue drained: %v", ctx.Err())
+	}
 	if h.pubsub != nil {
 		if err := h.pubsub.Close(); err != nil {
 			log.Printf("SSE: subscriber close failed: %v", err)

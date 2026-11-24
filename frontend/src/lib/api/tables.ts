@@ -39,6 +39,8 @@ export async function deleteTable(weddingId: string, id: string): Promise<void> 
 export interface RawOccupancy {
 	TableID: string;
 	Pax: number;
+	// Highest occupied seat end (MAX(seat_num + pax - 1)); 0 when the table is empty.
+	HighestSeat?: number;
 }
 
 export async function getOccupancy(weddingId: string): Promise<RawOccupancy[]> {

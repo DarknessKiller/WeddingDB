@@ -1,9 +1,10 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
   import { weddingTitle } from '#lib/stores/weddingTitle.ts';
   import { goto } from '$app/navigation';
   import { cn } from '#lib/utils/index.ts';
   import { addToast, isDrawerOpen } from '#lib/stores/index.ts';
+  import { guestList } from '#lib/stores/guestEvents.ts';
+  import { groupGuestsByTable } from '#lib/utils/seat.ts';
   import TableDrawer from '#lib/components/ui/TableDrawer.svelte';
   import ConfirmDialog from '#lib/components/ui/ConfirmDialog.svelte';
   import Star from 'lucide-svelte/icons/star';
@@ -15,10 +16,10 @@ import Trash2 from 'lucide-svelte/icons/trash-2';
 import AlertCircle from 'lucide-svelte/icons/alert-circle';
 import Map from 'lucide-svelte/icons/map';
   import { listTables, createTable, updateTable, deleteTable, getOccupancy } from '#lib/api/tables.ts';
+  import { weddingTables } from '#lib/stores/index.ts';
   import { getLayout, saveLayout } from '#lib/api/layout.ts';
   import { defaultSlot } from '#lib/utils/layout.ts';
-  import { weddingId } from '#lib/stores/weddingId.ts';
-  import { get } from 'svelte/store';
+  import { page } from '$app/state';
   import type { BanquetTable, TableOccupancy, HallElement, HallLayoutData } from '#lib/types/index.ts';
 
   type TableCreateData = Omit<BanquetTable, 'id'>;
@@ -29,6 +30,10 @@ import Map from 'lucide-svelte/icons/map';
 
   // ponytail: computed unused; kept only as the delete-guard sentinel for the old modal
   let tables = $state<BanquetTable[]>([]);
+
+  function publishTables(forWid = wid) {
+    weddingTables.set({ wid: forWid, tables });
+  }
   let elements = $state<HallElement[]>([]);
   let hallWidth = $state(860);
   let hallHeight = $state(1000);
@@ -73,19 +78,32 @@ import Map from 'lucide-svelte/icons/map';
   let saving = $state(false);
 
   const drawerOccupied = $derived(editingTable ? getOcc(editingTable.id).occupied : 0);
+  // Seats already taken: the API floor is the highest occupied seat, not summed pax.
+  const drawerSeatedFloor = $derived(editingTable ? getOcc(editingTable.id).highestSeat : 0);
 
-  let prevDrawerOpen = $state(false);
+  // Grouped guests for the layout editor, only while it is open: its capacity
+  // floor needs them, and the page otherwise ignores every SSE guest event.
+  let tableGuests = $derived(editMode ? groupGuestsByTable($guestList) : {});
+
+  let prevGuestDrawerOpen = $state(false);
+  let prevTableDrawerOpen = $state(false);
   $effect(() => {
-    const isOpen = $isDrawerOpen;
-    if (prevDrawerOpen && !isOpen) {
-      loadData();
+    const guestOpen = $isDrawerOpen;
+    const tableOpen = showDrawer;
+    if ((prevGuestDrawerOpen && !guestOpen) || (prevTableDrawerOpen && !tableOpen)) {
+      loadData().catch((e: any) => addToast(e.message ?? 'Failed to reload tables', 'error'));
     }
-    prevDrawerOpen = isOpen;
+    prevGuestDrawerOpen = guestOpen;
+    prevTableDrawerOpen = tableOpen;
   });
 
   async function loadData() {
-    const [layout, rawOcc] = await Promise.all([getLayout(wid), getOccupancy(wid)]);
+    const forWid = wid;
+    const [layout, rawOcc] = await Promise.all([getLayout(forWid), getOccupancy(forWid)]);
+    // A newer wid already reloaded: do not publish this wedding's rows for it.
+    if (forWid !== wid) return;
     tables = layout.tables ?? [];
+    publishTables(forWid);
     elements = layout.elements ?? [];
     hallWidth = layout.hallWidth ?? 860;
     hallHeight = layout.hallHeight ?? 1000;
@@ -99,6 +117,7 @@ import Map from 'lucide-svelte/icons/map';
         tableName: table?.name ?? '',
         occupied: o.Pax,
         capacity,
+        highestSeat: o.HighestSeat ?? 0,
         percentage: capacity > 0 ? Math.round((o.Pax / capacity) * 100) : 0
       };
     }
@@ -107,12 +126,12 @@ import Map from 'lucide-svelte/icons/map';
 
   // ponytail: previously the modal's live preview; no longer rendered
 
-  const wid = get(weddingId);
+  let wid = $derived(page.params.wid ?? '');
 
-  function getOcc(tableId: string): { occupied: number; percentage: number } {
+  function getOcc(tableId: string): { occupied: number; percentage: number; highestSeat: number } {
     const occ = occupancy[tableId];
-    if (occ) return occ;
-    return { occupied: 0, percentage: 0 };
+    if (occ) return { ...occ, highestSeat: occ.highestSeat ?? 0 };
+    return { occupied: 0, percentage: 0, highestSeat: 0 };
   }
 
   function openCreate() {
@@ -130,6 +149,8 @@ import Map from 'lucide-svelte/icons/map';
     formVip = table.isVip;
     showDrawer = true;
     contextMenu = null;
+    // Occupancy may have changed from another tab/device: refresh the floor.
+    loadData().catch((e: any) => addToast(e.message ?? 'Failed to refresh occupancy', 'error'));
   }
 
   function closeDrawer() {
@@ -152,10 +173,12 @@ import Map from 'lucide-svelte/icons/map';
       if (editingTable) {
         const updated = await updateTable(wid, editingTable.id, data);
         tables = tables.map(t => t.id === editingTable!.id ? updated : t);
+        publishTables();
         addToast('Table updated', 'success');
       } else {
         const created = await createTable(wid, data);
         tables = [...tables, created];
+        publishTables();
         addToast('Table created', 'success');
       }
       closeDrawer();
@@ -183,6 +206,7 @@ import Map from 'lucide-svelte/icons/map';
     try {
       await deleteTable(wid, table.id);
       tables = tables.filter(t => t.id !== table.id);
+      publishTables();
       addToast(`Table ${table.name} deleted`, 'info');
     } catch (e: any) {
       addToast(e.message ?? 'Delete failed', 'error');
@@ -236,7 +260,9 @@ import Map from 'lucide-svelte/icons/map';
     }
   }
 
-  onMount(() => retry());
+  $effect(() => {
+    if (wid) retry();
+  });
 </script>
 
 <svelte:head> <title>{$weddingTitle ? `${$weddingTitle} – Tables` : 'Tables – WeddingDB'}</title></svelte:head>
@@ -256,7 +282,7 @@ import Map from 'lucide-svelte/icons/map';
       <button onclick={openCreate} class="px-2.5 sm:px-4 py-1.5 sm:py-2.5 bg-red text-white rounded-xl text-xs sm:text-sm font-semibold hover:bg-red-light transition-colors flex items-center gap-1.5 sm:gap-2">
         <Plus class="w-3.5 h-3.5 sm:w-4 sm:h-4" /> <span class="hidden sm:inline">Add Table</span><span class="sm:hidden">Add</span>
       </button>
-      <button onclick={() => goto(`/${$weddingId}/seating`)} class="px-2.5 sm:px-4 py-1.5 sm:py-2.5 border border-black/[0.06] bg-white/90 rounded-xl text-xs sm:text-sm font-semibold hover:bg-gray-50 transition-colors flex items-center gap-1.5 sm:gap-2">
+      <button onclick={() => goto(`/${wid}/seating`)} class="px-2.5 sm:px-4 py-1.5 sm:py-2.5 border border-black/[0.06] bg-white/90 rounded-xl text-xs sm:text-sm font-semibold hover:bg-gray-50 transition-colors flex items-center gap-1.5 sm:gap-2">
         <Users class="w-3.5 h-3.5 sm:w-4 sm:h-4" /> <span class="hidden sm:inline">Manage Seating</span><span class="sm:hidden">Seating</span>
       </button>
     </div>
@@ -270,7 +296,7 @@ import Map from 'lucide-svelte/icons/map';
         {elements}
         {hallWidth}
         {hallHeight}
-        tableGuests={{}}
+        {tableGuests}
         onSaveLayout={handleSaveLayout}
         onCancelEdit={handleCancelEdit}
       />
@@ -318,9 +344,9 @@ import Map from 'lucide-svelte/icons/map';
         <!-- svelte-ignore a11y_no_static_element_interactions -->
         <!-- svelte-ignore a11y_click_events_have_key_events -->
         <div
-          onclick={() => goto(`/${$weddingId}/seating?table=${table.id}`)}
+          onclick={() => goto(`/${wid}/seating?table=${table.id}`)}
           oncontextmenu={(e) => handleCtx(e, table)}
-          onkeydown={(e) => { if (e.key === 'Enter' || e.key === ' ') goto(`/${$weddingId}/seating?table=${table.id}`); }}
+          onkeydown={(e) => { if (e.key === 'Enter' || e.key === ' ') goto(`/${wid}/seating?table=${table.id}`); }}
           class={cn(
             "bg-white/90 backdrop-blur-xl border rounded-2xl p-3 sm:p-5 flex flex-col items-center gap-2 sm:gap-3 transition-all cursor-pointer group relative",
             table.isVip ? "border-gold-200 hover:border-gold hover:shadow-lg hover:-translate-y-0.5" : "border-black/[0.06] hover:border-gold/30 hover:shadow-lg hover:-translate-y-0.5"
@@ -413,6 +439,7 @@ import Map from 'lucide-svelte/icons/map';
     bind:capacity={formCapacity}
     bind:isVip={formVip}
     occupied={drawerOccupied}
+    seatedFloor={drawerSeatedFloor}
     {saving}
     startEditing={!editingTable}
     onSave={handleSave}

@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { get } from 'svelte/store';
 import { seedGuests, applyGuestResponse, guestList } from './guestEvents';
 import type { GuestResponse } from '#lib/api/guests.ts';
+import { toGuest } from '#lib/utils/guestTransform.ts';
 
 vi.mock('#lib/stores/index.ts', () => ({
 	selectedGuest: { get: () => null, set: vi.fn(), update: vi.fn(), subscribe: vi.fn(() => vi.fn()) }
@@ -32,6 +33,13 @@ describe('applyGuestResponse', () => {
 		applyGuestResponse(resp('g1'));
 		expect(get(guestList).map((g) => g.id)).toEqual(['g1']);
 		expect(get(guestList)[0].updatedAt?.toISOString()).toBe('2026-01-01T00:00:00.000Z');
+	});
+
+	it('ignores a slow response older than the row already seen', () => {
+		seedGuests([toGuest(resp('g1', 'Newest'))]);
+		// A PUT answered after a newer SSE event must not regress row or watermark.
+		applyGuestResponse({ ...resp('g1', 'Older'), updatedAt: '2025-12-31T00:00:00Z' });
+		expect(get(guestList)[0].name).toBe('Newest');
 	});
 
 	it('replaces in place without duplicating on repeated responses', () => {

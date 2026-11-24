@@ -3,20 +3,24 @@
   import { get } from 'svelte/store';
   import type { Guest, RSVPStatus } from '#lib/types/index.ts';
   import { weddingTitle } from '#lib/stores/weddingTitle.ts';
-  import { selectedGuest, isDrawerOpen, drawerStartEditing, drawerCreateMode, addToast, showSeatNumbers } from '#lib/stores/index.ts';
+  import { selectedGuest, isDrawerOpen, drawerStartEditing, drawerCreateMode, addToast, showSeatNumbers, weddingTables } from '#lib/stores/index.ts';
   import { weddingId } from '#lib/stores/weddingId.ts';
-  import { guestList, guestMap } from '#lib/stores/guestEvents.ts';
+  import { guestList, guestMap, refreshGuests } from '#lib/stores/guestEvents.ts';
   import { goto } from '$app/navigation';
-  import { deleteGuest as apiDeleteGuest, assignSeat, unassignSeat, bulkImportGuests } from '#lib/api/guests.ts';
+  import { deleteGuest as apiDeleteGuest, assignSeat, unassignSeat, bulkImportGuests, fetchAllGuests } from '#lib/api/guests.ts';
+  import { syncQueue } from '#lib/offline/queue.ts';
   import type { GuestImportData } from '#lib/api/guests.ts';
   import { rankGuests } from '#lib/utils/guestSearch.ts';
-  import { trapFocus } from '#lib/utils/focus.ts';
+  import { parseCsv, csvToGuests, resolveImportTables, type CsvGuestRow } from '#lib/utils/csv.ts';
+  import { trapFocus, registerEscape } from '#lib/utils/focus.ts';
   import { listTables } from '#lib/api/tables.ts';
   import type { BanquetTable } from '#lib/types/index.ts';
   import Badge from '#lib/components/ui/Badge.svelte';
   import ConfirmDialog from '#lib/components/ui/ConfirmDialog.svelte';
   import MoveGuestDrawer from '#lib/components/ui/MoveGuestDrawer.svelte';
   import { getInitials } from '#lib/utils/index.ts';
+  import { toGuest } from '#lib/utils/guestTransform.ts';
+  import { getQueue } from '#lib/offline/queue.ts';
   import Search from 'lucide-svelte/icons/search';
 import Download from 'lucide-svelte/icons/download';
 import Upload from 'lucide-svelte/icons/upload';
@@ -29,7 +33,6 @@ import FileText from 'lucide-svelte/icons/file-text';
 import AlertCircle from 'lucide-svelte/icons/alert-circle';
 import X from 'lucide-svelte/icons/x';
 import Users from 'lucide-svelte/icons/users';
-  import { onMount } from 'svelte';
 
   let searchQuery = $state('');
   let rsvpFilter = $state<RSVPStatus | 'all'>('all');
@@ -40,11 +43,14 @@ import Users from 'lucide-svelte/icons/users';
   let sortDir = $state<'asc' | 'desc'>('asc');
   let selectedIds = $state<Set<string>>(new Set());
   let contextMenu = $state<{ x: number; y: number; guest: Guest } | null>(null);
+  let contextMenuEl = $state<HTMLElement>();
+  let menuReturnFocus: HTMLElement | null = null;
   let menuWidth = 180;
   let menuHeight = 200;
   let showUnassignConfirm = $state(false);
   let unassignTarget = $state<Guest | null>(null);
   let showDeleteConfirm = $state(false);
+  let showBulkDeleteConfirm = $state(false);
   let deleteTarget = $state<Guest | null>(null);
 
   // Derive guest list from SSE store — updates in real time.
@@ -83,7 +89,8 @@ import Users from 'lucide-svelte/icons/users';
 
   let wid = $state('');
 
-  const unsubscribeWedding = weddingId.subscribe(v => { wid = v; });
+  // Another wedding's guest ids must not stay selected for bulk delete or move.
+  const unsubscribeWedding = weddingId.subscribe(v => { if (v !== wid) selectedIds = new Set(); wid = v; });
   onDestroy(unsubscribeWedding);
 
   let prevDrawerOpen = $state(false);
@@ -95,27 +102,7 @@ import Users from 'lucide-svelte/icons/users';
     prevDrawerOpen = isOpen;
   });
 
-  let tables = $state<BanquetTable[]>([]);
-
-  onMount(() => {
-    loadTables();
-    function onKey(e: KeyboardEvent) {
-      if (e.key === 'Escape') {
-        contextMenu = null;
-        showMoveModal = false;
-        showBulkMoveModal = false;
-        showImportModal = false;
-      }
-    }
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  });
-
-  async function loadTables() {
-    try {
-      tables = await listTables(wid);
-    } catch {}
-  }
+  let tables = $derived($weddingTables.wid === wid ? $weddingTables.tables : []);
 
   // Local search (no request while typing), then the status filter.
   // A query keeps its relevance order; without one the column sort applies.
@@ -221,8 +208,42 @@ import Users from 'lucide-svelte/icons/users';
 
   function handleCtx(e: MouseEvent, guest: Guest) {
     e.preventDefault();
-    contextMenu = { x: e.clientX, y: e.clientY, guest };
+    menuReturnFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    let { clientX: x, clientY: y } = e;
+    // Keyboard activation (Enter/Space on the trigger) reports (0,0): anchor
+    // the menu to the trigger instead of the top-left corner.
+    if (x === 0 && y === 0 && e.currentTarget instanceof Element) {
+      const r = e.currentTarget.getBoundingClientRect();
+      x = r.left;
+      y = r.bottom;
+    }
+    contextMenu = { x, y, guest };
   }
+
+  function menuKeydown(e: KeyboardEvent) {
+    if (e.key === 'Escape') { e.stopPropagation(); contextMenu = null; }
+    // Tab leaves the menu entirely instead of walking behind the overlay.
+    else if (e.key === 'Tab') contextMenu = null;
+    else if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+      e.preventDefault();
+      const items = [...(contextMenuEl?.querySelectorAll<HTMLElement>('[role="menuitem"]') ?? [])];
+      if (!items.length) return;
+      const i = items.indexOf(document.activeElement as HTMLElement);
+      const next = e.key === 'ArrowDown' ? (i + 1) % items.length : (i <= 0 ? items.length - 1 : i - 1);
+      items[next]?.focus();
+    }
+  }
+
+  // Keyboard path: focus the first item on open, restore the trigger on close
+  // unless a dialog (drawer/confirm) took over focus.
+  $effect(() => {
+    if (contextMenu) {
+      contextMenuEl?.querySelector<HTMLElement>('[role="menuitem"]')?.focus();
+    } else if (menuReturnFocus) {
+      if (!document.querySelector('[role="dialog"]')) menuReturnFocus.focus();
+      menuReturnFocus = null;
+    }
+  });
 
   async function deleteGuest(guest: Guest) {
     try {
@@ -287,17 +308,19 @@ import Users from 'lucide-svelte/icons/users';
 
   async function confirmMoveTable(tableId: string, seatNum: number) {
     if (!moveGuest) return;
+    // Capture the guest: closing the drawer clears moveGuest while the request runs.
+    const guest = moveGuest;
     const target = moveTables.find(t => String(t.id) === tableId);
     const cap = target?.capacity ?? 10;
-    if (seatNum < 1 || seatNum + moveGuest.pax - 1 > cap) {
-      addToast(`No room for ${moveGuest.pax} pax starting at seat ${seatNum}`, 'error');
+    if (seatNum < 1 || seatNum + guest.pax - 1 > cap) {
+      addToast(`No room for ${guest.pax} pax starting at seat ${seatNum}`, 'error');
       return;
     }
     moveSaving = true;
     try {
-      await assignSeat(wid, moveGuest.id, tableId, seatNum);
+      await assignSeat(wid, guest.id, tableId, seatNum);
       // SSE will update the store automatically.
-      addToast(`${moveGuest.name} moved to table`, 'success');
+      addToast(`${guest.name} moved to table`, 'success');
       showMoveModal = false;
     } catch (e: any) {
       addToast(e.message ?? 'Move failed', 'error');
@@ -306,35 +329,14 @@ import Users from 'lucide-svelte/icons/users';
     }
   }
 
-  function parseCSV(text: string): GuestImportData[] {
-    const lines = text.trim().split('\n');
-    if (lines.length < 2) return [];
-    const headers = lines[0].split(',').map(h => h.trim().toLowerCase());
-    const nameIdx = headers.findIndex(h => h === 'name');
-    if (nameIdx === -1) return [];
-    const emailIdx = headers.findIndex(h => h === 'email');
-    const paxIdx = headers.findIndex(h => h === 'pax');
-    const rsvpIdx = headers.findIndex(h => h === 'rsvp');
-    const vipIdx = headers.findIndex(h => h === 'vip' || h === 'isvip');
-    const notesIdx = headers.findIndex(h => h === 'notes');
-    const dietaryIdx = headers.findIndex(h => h === 'dietary');
-    const tableIdx = headers.findIndex(h => h === 'table' || h === 'tablename');
-    const seatIdx = headers.findIndex(h => h === 'seat' || h === 'seatnum' || h === 'seat_number');
+  function parseCSV(text: string): { guests: CsvGuestRow[]; dropped: number } {
+    return csvToGuests(parseCsv(text));
+  }
 
-    return lines.slice(1).filter(l => l.trim()).map(line => {
-      const cols = line.split(',').map(c => c.trim().replace(/^"|"$/g, ''));
-      return {
-        name: cols[nameIdx] || '',
-        email: emailIdx >= 0 ? cols[emailIdx] : undefined,
-        pax: paxIdx >= 0 ? parseInt(cols[paxIdx]) || 1 : 1,
-        rsvp: rsvpIdx >= 0 ? cols[rsvpIdx] : 'no_response',
-        isVip: vipIdx >= 0 ? cols[vipIdx]?.toLowerCase() === 'yes' || cols[vipIdx] === '1' || cols[vipIdx]?.toLowerCase() === 'true' : false,
-        notes: notesIdx >= 0 ? cols[notesIdx] : undefined,
-        dietary: dietaryIdx >= 0 ? cols[dietaryIdx]?.split(';').map(d => d.trim()).filter(Boolean) : [],
-        table: tableIdx >= 0 ? cols[tableIdx] : undefined,
-        seat: seatIdx >= 0 ? parseInt(cols[seatIdx]) || undefined : undefined,
-      };
-    }).filter(g => g.name);
+  let importReadId = 0;
+
+  function hasQueuedEdits(w: string): boolean {
+    return getQueue(w).length > 0;
   }
 
   function handleImportFile(e: Event) {
@@ -343,19 +345,31 @@ import Users from 'lucide-svelte/icons/users';
     if (!file) return;
     importFile = file;
     importError = '';
+    // A failed read must not leave the previous file's rows importable.
+    importPreview = [];
+    const readId = ++importReadId;
     const reader = new FileReader();
     reader.onload = () => {
+      if (readId !== importReadId) return;
       try {
-        const guests = parseCSV(reader.result as string);
+        const { guests, dropped } = parseCSV(reader.result as string);
         if (guests.length === 0) {
-          importError = 'No valid guests found. Make sure CSV has a "name" column.';
+          importError = 'No valid guests found. Make sure CSV has a "name" column and values within the field limits.';
+          importPreview = [];
           return;
         }
+        importError = dropped > 0 ? `${dropped} row(s) skipped: missing name or a value over the field limit.` : '';
         importPreview = guests;
       } catch {
         importError = 'Failed to parse CSV file.';
       }
     };
+    reader.onerror = () => {
+      if (readId !== importReadId) return;
+      importError = 'Failed to read CSV file.';
+    };
+    // Reset so choosing the same file again fires change after a failed parse.
+    input.value = '';
     reader.readAsText(file);
   }
 
@@ -364,11 +378,10 @@ import Users from 'lucide-svelte/icons/users';
     importing = true;
     try {
       // Resolve table names to IDs
-      const resolved = importPreview.map(g => {
-        if (!g.table) return g;
-        const match = tables.find(t => t.name.toLowerCase() === g.table!.toLowerCase());
-        return { ...g, tableId: match?.id };
-      });
+      const { rows: resolved, unresolved } = resolveImportTables(importPreview, tables);
+      if (unresolved > 0) {
+        addToast(`${unresolved} row(s) kept unseated: table name missing or not found`, 'error');
+      }
       const result = await bulkImportGuests(resolved.map(g => ({
         name: g.name,
         email: g.email,
@@ -384,7 +397,23 @@ import Users from 'lucide-svelte/icons/users';
       showImportModal = false;
       importPreview = [];
       importFile = null;
-      // SSE will update the store with new guests automatically.
+      // Do not wait for the SSE echo: reseed so tables and seating update even
+      // when the stream is down. Queued edits must survive, as in the layout.
+      try {
+        // Mirror the layout: drain queued edits before reseeding. A drain that
+        // leaves retryable mutations queued must not lose their optimistic
+        // values, so keep the current list and tell the user.
+        if (hasQueuedEdits(wid)) {
+          await syncQueue(wid);
+          if (hasQueuedEdits(wid)) {
+            addToast('Imported guests; the list refreshes after queued edits sync', 'error');
+            return;
+          }
+        }
+        await refreshGuests(async () => (await fetchAllGuests(wid)).map(toGuest), wid);
+      } catch {
+        addToast('Imported guests; the list refreshes after queued edits sync', 'error');
+      }
     } catch (e: any) {
       addToast(e.message || 'Import failed', 'error');
     } finally {
@@ -397,16 +426,41 @@ import Users from 'lucide-svelte/icons/users';
   let bulkMoveSeatStart = $state(1);
   let bulkMoveSaving = $state(false);
 
+  // Only the topmost dialog handles Escape: the move drawer and menu register
+  // their own, these two are inline modals.
+  $effect(() => {
+    if (!showBulkMoveModal) return;
+    return registerEscape(() => showBulkMoveModal = false);
+  });
+
+  $effect(() => {
+    if (!showImportModal) return;
+    return registerEscape(() => showImportModal = false);
+  });
+
+  function requestBulkDelete() {
+    if (selectedIds.size === 0) return;
+    showBulkDeleteConfirm = true;
+  }
+
+  async function confirmBulkDelete() {
+    showBulkDeleteConfirm = false;
+    await bulkDelete();
+  }
+
   async function bulkDelete() {
     if (selectedIds.size === 0) return;
     const ids = [...selectedIds];
-    try {
-      await Promise.all(ids.map(id => apiDeleteGuest(wid, id)));
-      addToast(`Deleted ${ids.length} guests`, 'info');
-      selectedIds = new Set();
-    } catch (e: any) {
-      addToast(e.message ?? 'Bulk delete failed', 'error');
+    // allSettled: one refused guest must not hide the ones that did delete.
+    const results = await Promise.allSettled(ids.map(id => apiDeleteGuest(wid, id)));
+    const failedIds = ids.filter((_, i) => results[i].status === 'rejected');
+    const deleted = ids.length - failedIds.length;
+    if (deleted) addToast(`Deleted ${deleted} guest${deleted === 1 ? '' : 's'}`, 'info');
+    if (failedIds.length) {
+      const reason = (results.find(r => r.status === 'rejected') as PromiseRejectedResult).reason;
+      addToast(`${failedIds.length} of ${ids.length} guests could not be deleted${reason?.message ? `: ${reason.message}` : ''}`, 'error');
     }
+    selectedIds = new Set(failedIds);
   }
 
   function openBulkMove() {
@@ -503,15 +557,14 @@ import Users from 'lucide-svelte/icons/users';
       />
     </div>
     <div class="flex items-center gap-1 sm:gap-2 flex-wrap">
-      <select bind:value={rsvpFilter} class="px-2 sm:px-3 py-2 border border-gray-200 rounded-xl text-sm bg-white focus:border-gold outline-none">
-        aria-label="Filter by RSVP status"
+      <select bind:value={rsvpFilter} aria-label="Filter by RSVP status" class="px-2 sm:px-3 py-2 border border-gray-200 rounded-xl text-sm bg-white focus:border-gold outline-none">
         <option value="all">All Status</option>
         <option value="confirmed">Confirmed</option>
         <option value="pending">Pending</option>
         <option value="declined">Declined</option>
         <option value="no_response">No Response</option>
       </select>
-      <button onclick={() => { showImportModal = true; importPreview = []; importFile = null; importError = ''; }}
+      <button onclick={() => { importReadId++; showImportModal = true; importPreview = []; importFile = null; importError = ''; }}
         class="px-2 sm:px-3 py-1.5 sm:py-2.5 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-xl text-xs sm:text-sm font-semibold transition-colors flex items-center gap-1 sm:gap-1.5">
         <Upload class="w-3.5 h-3.5 sm:w-4 sm:h-4" /> <span class="hidden sm:inline">Import CSV</span><span class="sm:hidden">Import</span>
       </button>
@@ -528,7 +581,7 @@ import Users from 'lucide-svelte/icons/users';
     <div class="mb-4 px-4 py-3 bg-red-50 border border-red-100 rounded-xl flex items-center gap-3 text-sm">
       <span class="font-semibold text-red">{selectedIds.size} selected</span>
       <button onclick={openBulkMove} class="px-3 py-1.5 bg-white/90 border border-black/[0.06] rounded-lg text-xs font-medium hover:bg-gray-50">Move Table</button>
-      <button onclick={bulkDelete} class="px-3 py-1.5 bg-white border border-red-200 rounded-lg text-xs font-medium text-red hover:bg-red-50">Delete</button>
+      <button onclick={requestBulkDelete} class="px-3 py-1.5 bg-white border border-red-200 rounded-lg text-xs font-medium text-red hover:bg-red-50">Delete</button>
     </div>
   {/if}
 
@@ -565,11 +618,14 @@ import Users from 'lucide-svelte/icons/users';
                 <input type="checkbox" aria-label="Select all guests" checked={selectedIds.size === filtered.length && filtered.length > 0} onchange={toggleSelectAll} class="rounded w-6 h-6" />
               </th>
               {#each columns as col}
-                <th
-                  class="px-4 py-3 text-left text-[12px] font-semibold uppercase tracking-wider text-gray-500 cursor-pointer select-none hover:text-gray-700"
-                  onclick={() => toggleSort(col.key)}
-                >
-                  <span class="inline-flex items-center gap-1">{col.label} <ArrowUpDown class="w-3 h-3" /></span>
+                <th class="px-4 py-3 text-left">
+                  <button
+                    type="button"
+                    class="inline-flex items-center gap-1 text-[12px] font-semibold uppercase tracking-wider text-gray-500 cursor-pointer select-none hover:text-gray-700"
+                    onclick={() => toggleSort(col.key)}
+                  >
+                    {col.label} <ArrowUpDown class="w-3 h-3" />
+                  </button>
                 </th>
               {/each}
               <th class="px-4 py-3 text-left text-[12px] font-semibold uppercase tracking-wider text-gray-500">Notes</th>
@@ -679,21 +735,23 @@ import Users from 'lucide-svelte/icons/users';
   <div class="fixed inset-0 z-[599]" onclick={() => contextMenu = null} role="presentation"></div>
   <!-- svelte-ignore a11y_no_static_element_interactions -->
   <!-- svelte-ignore a11y_click_events_have_key_events -->
-  <div class="fixed z-[600] bg-white/95 backdrop-blur-xl border border-black/[0.06] rounded-xl shadow-xl py-1.5 min-w-[180px]"
-    style={getMenuStyle(contextMenu.x, contextMenu.y)} onclick={(e) => e.stopPropagation()}>
-    <button class="w-full flex items-center gap-2.5 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50" onclick={() => { $drawerStartEditing = true; openGuest(contextMenu!.guest); contextMenu = null; }}>
+  <div bind:this={contextMenuEl} role="menu" aria-label="Guest actions" tabindex="-1"
+    class="fixed z-[600] bg-white/95 backdrop-blur-xl border border-black/[0.06] rounded-xl shadow-xl py-1.5 min-w-[180px]"
+    style={getMenuStyle(contextMenu.x, contextMenu.y)} onclick={(e) => e.stopPropagation()}
+    onkeydown={menuKeydown}>
+    <button type="button" role="menuitem" class="w-full flex items-center gap-2.5 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50" onclick={() => { $drawerStartEditing = true; openGuest(contextMenu!.guest); contextMenu = null; }}>
       <Pencil class="w-4 h-4" /> Edit
     </button>
-    <button class="w-full flex items-center gap-2.5 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50" onclick={() => openMoveTable(contextMenu!.guest)}>
+    <button type="button" role="menuitem" class="w-full flex items-center gap-2.5 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50" onclick={() => openMoveTable(contextMenu!.guest)}>
       <ArrowUpDown class="w-4 h-4" /> Move Table
     </button>
     {#if contextMenu!.guest.tableId}
-      <button class="w-full flex items-center gap-2.5 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50" onclick={() => unassignGuest(contextMenu!.guest)}>
+      <button type="button" role="menuitem" class="w-full flex items-center gap-2.5 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50" onclick={() => unassignGuest(contextMenu!.guest)}>
         <ArrowUpDown class="w-4 h-4" /> Unassign Table
       </button>
     {/if}
     <hr class="my-1 border-gray-100" />
-    <button class="w-full flex items-center gap-2.5 px-4 py-2 text-sm text-red hover:bg-red-50" onclick={() => requestDelete(contextMenu!.guest)}>
+    <button type="button" role="menuitem" class="w-full flex items-center gap-2.5 px-4 py-2 text-sm text-red hover:bg-red-50" onclick={() => requestDelete(contextMenu!.guest)}>
       <Trash2 class="w-4 h-4" /> Delete
     </button>
   </div>
@@ -707,6 +765,7 @@ import Users from 'lucide-svelte/icons/users';
     tables={moveTables}
     guests={allGuests}
     currentTableName={tables.find(t => t.id === g.tableId)?.name ?? '—'}
+    saving={moveSaving}
     onSave={confirmMoveTable}
     onClose={() => { showMoveModal = false; moveGuest = null; }}
   />
@@ -820,4 +879,15 @@ import Users from 'lucide-svelte/icons/users';
   variant="danger"
   onConfirm={confirmDelete}
   onCancel={() => { showDeleteConfirm = false; deleteTarget = null; }}
+/>
+
+<ConfirmDialog
+  open={showBulkDeleteConfirm}
+  title="Delete Guests"
+  message={`Delete ${selectedIds.size} selected guest${selectedIds.size === 1 ? '' : 's'}? This cannot be undone.`}
+  confirmLabel="Delete"
+  cancelLabel="Cancel"
+  variant="danger"
+  onConfirm={confirmBulkDelete}
+  onCancel={() => { showBulkDeleteConfirm = false; }}
 />

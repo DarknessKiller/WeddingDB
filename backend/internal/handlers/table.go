@@ -2,12 +2,14 @@ package handlers
 
 import (
 	"errors"
+	"log/slog"
 	"strings"
 	"weddingdb/internal/models"
 	"weddingdb/internal/repository"
 	"weddingdb/internal/services"
 
 	"github.com/go-fuego/fuego"
+	"gorm.io/gorm"
 )
 
 type TableHandler struct{ tableService *services.TableService }
@@ -67,7 +69,11 @@ func (h *TableHandler) Create(c fuego.ContextWithBody[TableRequest]) (any, error
 		IsVip:     body.IsVip,
 	}
 	if err := h.tableService.Create(ctx, table); err != nil {
-		return nil, err
+		if errors.Is(err, gorm.ErrRecordNotFound) || errors.Is(err, services.ErrWeddingNotFound) {
+			return nil, fuego.NotFoundError{Title: "Wedding not found"}
+		}
+		slog.ErrorContext(ctx, "create table failed", "wedding", wid, "err", err)
+		return nil, fuego.InternalServerError{Title: "Failed to create table"}
 	}
 	c.SetStatus(201)
 	return table, nil
@@ -88,8 +94,12 @@ func (h *TableHandler) Update(c fuego.ContextWithBody[TableRequest]) (any, error
 		return nil, fuego.BadRequestError{Title: "Invalid ID"}
 	}
 	table, err := h.tableService.Get(ctx, id, wid)
-	if err != nil {
+	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return nil, fuego.NotFoundError{Title: "Table not found"}
+	}
+	if err != nil {
+		slog.ErrorContext(ctx, "load table failed", "table", id, "err", err)
+		return nil, fuego.InternalServerError{Title: "Failed to load table"}
 	}
 	if strings.TrimSpace(body.Name) == "" {
 		return nil, fuego.BadRequestError{Title: "Name is required"}
@@ -110,7 +120,11 @@ func (h *TableHandler) Update(c fuego.ContextWithBody[TableRequest]) (any, error
 		if errors.Is(err, repository.ErrCapacityBelowSeated) {
 			return nil, fuego.BadRequestError{Title: err.Error()}
 		}
-		return nil, err
+		if errors.Is(err, services.ErrTableNotFound) || errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, fuego.NotFoundError{Title: "Table not found"}
+		}
+		slog.ErrorContext(ctx, "update table failed", "table", id, "err", err)
+		return nil, fuego.InternalServerError{Title: "Failed to update table"}
 	}
 	return table, nil
 }

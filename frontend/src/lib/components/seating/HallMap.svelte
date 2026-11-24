@@ -6,7 +6,8 @@
   import EditToolbar from './EditToolbar.svelte';
   import ConfirmDialog from '#lib/components/ui/ConfirmDialog.svelte';
   import type { BanquetTable as BanquetTableType, HallElement, Guest } from '#lib/types/index.ts';
-  import { reorderElements } from '#lib/utils/layout.ts';
+  import { reorderElements, clampElementSize } from '#lib/utils/layout.ts';
+  import { highestOccupiedSeat } from '#lib/utils/seat.ts';
   import { LIMITS } from '#lib/utils/limits.ts';
   import { addToast } from '#lib/stores/index.ts';
   import ZoomIn from 'lucide-svelte/icons/zoom-in';
@@ -244,6 +245,12 @@ import RotateCcw from 'lucide-svelte/icons/rotate-ccw';
     return null;
   });
 
+  // Capacity floor mirrors the server rule: the highest occupied seat end
+  // (MAX(seat_num + pax - 1)), not the summed pax. Guests without a seat are ignored.
+  const selectedSeatedPax = $derived(
+    selectedId && isTableSelected ? highestOccupiedSeat(tableGuestsRaw[String(selectedId)] ?? []) : 0
+  );
+
   // Reload/close: beforeNavigate only sees in-app navigation.
   onMount(() => {
     const warn = (e: BeforeUnloadEvent) => { if (dirty) e.preventDefault(); };
@@ -255,6 +262,8 @@ import RotateCcw from 'lucide-svelte/icons/rotate-ccw';
   onMount(() => {
     let ro: ResizeObserver | null = null;
     const canvasListeners: Array<[string, EventListener, any]> = [];
+    let rafId = 0;
+    let destroyed = false;
 
     if (containerEl) {
       ro = new ResizeObserver((entries) => {
@@ -268,6 +277,7 @@ import RotateCcw from 'lucide-svelte/icons/rotate-ccw';
 
     (async () => {
       const mod = await import('svelte-konva');
+      if (destroyed) return;
       // A finger wobbles a few pixels during a tap: land it as a tap, not a 3px drag.
       if ('ontouchstart' in window) (await import('konva')).default.dragDistance = 12;
       KonvaStage = mod.Stage;
@@ -279,8 +289,9 @@ import RotateCcw from 'lucide-svelte/icons/rotate-ccw';
       konvaLoaded = true;
 
       const attachHandlers = () => {
+        if (destroyed) return;
         const canvas = containerEl?.querySelector('canvas');
-        if (!canvas) { requestAnimationFrame(attachHandlers); return; }
+        if (!canvas) { rafId = requestAnimationFrame(attachHandlers); return; }
 
         // ponytail: store listeners for cleanup on destroy
         const onWheel = (e: Event) => {
@@ -299,7 +310,7 @@ import RotateCcw from 'lucide-svelte/icons/rotate-ccw';
           let pinchStartDist = 0;
           let pinchStartZoom = 1;
 
-          canvas.addEventListener('touchstart', (e: TouchEvent) => {
+          const onTouchStart = (e: TouchEvent) => {
               if (e.touches.length !== 2) return;
               // Second finger: a pinch, not a move of whatever the first one grabbed.
               cancelDrag();
@@ -310,9 +321,9 @@ import RotateCcw from 'lucide-svelte/icons/rotate-ccw';
               const dy = e.touches[0].clientY - e.touches[1].clientY;
               pinchStartDist = Math.hypot(dx, dy);
               pinchStartZoom = zoom;
-          }, { passive: true });
+          };
 
-          canvas.addEventListener('touchmove', (e: TouchEvent) => {
+          const onTouchMove = (e: TouchEvent) => {
               if (e.touches.length !== 2 || pinchStartDist === 0) return;
               e.preventDefault();
               const [a, b] = [e.touches[0], e.touches[1]];
@@ -320,19 +331,28 @@ import RotateCcw from 'lucide-svelte/icons/rotate-ccw';
               const dist = Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY);
 
               zoomAt(pinchStartZoom * (dist / pinchStartDist), (a.clientX + b.clientX) / 2 - rect.left, (a.clientY + b.clientY) / 2 - rect.top);
-            },
-            { passive: false }
-          );
-
-          canvas.addEventListener('touchend', (e: TouchEvent) => {
+          };
+          const onTouchEnd = (e: TouchEvent) => {
               if (e.touches.length < 2) pinchStartDist = 0;
-          }, { passive: true });
+          };
+          canvas.addEventListener('touchstart', onTouchStart, { passive: true });
+          canvas.addEventListener('touchmove', onTouchMove, { passive: false });
+          canvas.addEventListener('touchend', onTouchEnd, { passive: true });
+          canvas.addEventListener('touchcancel', onTouchEnd, { passive: true });
+          canvasListeners.push(
+            ['touchstart', onTouchStart as EventListener, { passive: true }],
+            ['touchmove', onTouchMove as EventListener, { passive: false }],
+            ['touchend', onTouchEnd as EventListener, { passive: true }],
+            ['touchcancel', onTouchEnd as EventListener, { passive: true }]
+          );
         }
       };
-      requestAnimationFrame(attachHandlers);
+      rafId = requestAnimationFrame(attachHandlers);
     })();
 
       return () => {
+      destroyed = true;
+      cancelAnimationFrame(rafId);
       ro?.disconnect();
       // Clean up canvas event listeners
       const canvas = containerEl?.querySelector('canvas');
@@ -626,7 +646,14 @@ import RotateCcw from 'lucide-svelte/icons/rotate-ccw';
       const newH = node.scaleY() * baseH / displayHallHeight * 100;
       node.scaleX(1);
       node.scaleY(1);
-      editElements[eidx] = { ...el, degree: rotation, width: newW, height: newH };
+      editElements[eidx] = {
+        ...el,
+        degree: rotation,
+        width: clampElementSize(newW),
+        height: clampElementSize(newH),
+        x: Math.max(0, Math.min(100, node.x() / displayHallWidth * 100)),
+        y: Math.max(0, Math.min(100, node.y() / displayHallHeight * 100))
+      };
       commit();
       void refreshTransformerAfterUpdate();
     }
@@ -718,7 +745,9 @@ import RotateCcw from 'lucide-svelte/icons/rotate-ccw';
   }
 
   function handleKeydown(e: KeyboardEvent) {
-    if (mode !== 'edit' || isTypingTarget(e.target)) return;
+    // A dialog or drawer owns the keyboard while open: deleting elements behind
+    // it would hit something the user cannot see.
+    if (mode !== 'edit' || isTypingTarget(e.target) || document.querySelector('[role="dialog"]')) return;
     const mod = e.metaKey || e.ctrlKey;
     if (mod && e.key.toLowerCase() === 'z') {
       e.preventDefault();
@@ -779,6 +808,7 @@ import RotateCcw from 'lucide-svelte/icons/rotate-ccw';
     selectedId={selectedId}
     isTableSelected={isTableSelected}
     selectedItem={selectedItem}
+    seatedPax={selectedSeatedPax}
     snap={snapEnabled}
     canUndo={canUndo}
     canRedo={canRedo}
@@ -931,6 +961,7 @@ import RotateCcw from 'lucide-svelte/icons/rotate-ccw';
             <KTransformer
               bind:this={transformerEl}
               rotateEnabled={true}
+              flipEnabled={false}
               enabledAnchors={isTableSelected ? [] : undefined}
               anchorSize={coarsePointer ? 18 : 8}
               rotateAnchorOffset={coarsePointer ? 48 : 30}

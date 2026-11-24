@@ -120,13 +120,21 @@ func (h *AuthHandler) Login(c fuego.ContextWithBody[LoginRequest]) (TokenRespons
 	if err := h.authService.CheckCredentialIPRate(c.Context(), ip); err != nil {
 		return TokenResponse{}, fuego.HTTPError{Status: http.StatusTooManyRequests, Title: err.Error()}
 	}
+	// Bound the address before it becomes a Redis key: an unbounded body would
+	// let one failed attempt store a megabyte-sized key.
+	if len([]rune(body.Email)) > services.MaxEmailLen {
+		return TokenResponse{}, fuego.BadRequestError{Title: "Invalid email or password"}
+	}
 	if err := h.authService.CheckLoginAccountRate(c.Context(), body.Email, ip); err != nil {
 		return TokenResponse{}, fuego.HTTPError{Status: http.StatusTooManyRequests, Title: err.Error()}
 	}
 	result, err := h.authService.Login(c.Context(), body.Email, body.Password)
 	if err != nil {
-		h.authService.RecordLoginFailure(c.Context(), body.Email, ip)
-		return TokenResponse{}, fuego.UnauthorizedError{Title: err.Error()}
+		if errors.Is(err, services.ErrInvalidCredentials) {
+			h.authService.RecordLoginFailure(c.Context(), body.Email, ip)
+			return TokenResponse{}, fuego.UnauthorizedError{Title: "Invalid email or password"}
+		}
+		return TokenResponse{}, authError(err)
 	}
 	return TokenResponse{
 		AccessToken:         result.AccessToken,
@@ -220,8 +228,12 @@ func (h *AuthHandler) ChangePassword(c fuego.ContextWithBody[ChangePasswordReque
 	adminID := AdminIDFromContext(c.Context())
 	ctx := c.Context()
 	admin, err := h.adminRepo.FindByID(ctx, adminID)
-	if err != nil {
+	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return nil, fuego.NotFoundError{Title: "User not found"}
+	}
+	if err != nil {
+		slog.ErrorContext(ctx, "load user failed", "user", adminID, "err", err)
+		return nil, fuego.InternalServerError{Title: "Failed to load user"}
 	}
 	// A forced change follows an admin reset, so the old password is not known.
 	if !admin.ForcePasswordChange {
@@ -293,6 +305,9 @@ func (h *AuthHandler) Register(c fuego.ContextWithBody[RegisterRequest]) (any, e
 		Role:     "user",
 	}
 	if err := h.adminRepo.Create(ctx, admin); err != nil {
+		if isEmailUniqueViolation(err) {
+			return nil, fuego.ConflictError{Title: "Email already registered"}
+		}
 		return nil, fuego.InternalServerError{Title: "Failed to create account"}
 	}
 	c.SetStatus(201)

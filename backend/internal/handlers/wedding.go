@@ -1,7 +1,9 @@
 package handlers
 
 import (
+	"context"
 	"errors"
+	"log/slog"
 	"strconv"
 	"strings"
 	"time"
@@ -40,8 +42,12 @@ func (h *WeddingHandler) List(c fuego.ContextNoBody) (any, error) {
 		return []models.WeddingEvent{}, nil
 	}
 	w, err := h.weddingService.Get(ctx, *wid)
-	if err != nil {
+	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return nil, fuego.NotFoundError{Title: "Wedding not found"}
+	}
+	if err != nil {
+		slog.ErrorContext(ctx, "load wedding failed", "wedding", *wid, "err", err)
+		return nil, fuego.InternalServerError{Title: "Failed to load wedding"}
 	}
 	return []models.WeddingEvent{*w}, nil
 }
@@ -55,7 +61,14 @@ func (h *WeddingHandler) Get(c fuego.ContextNoBody) (any, error) {
 	if err := requireWeddingAccess(ctx, id); err != nil {
 		return nil, fuego.ForbiddenError{Title: err.Error()}
 	}
-	return h.weddingService.Get(ctx, id)
+	w, err := h.weddingService.Get(ctx, id)
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, fuego.NotFoundError{Title: "Wedding not found"}
+	}
+	if err != nil {
+		return nil, err
+	}
+	return w, nil
 }
 
 func (h *WeddingHandler) Create(c fuego.ContextWithBody[WeddingRequest]) (any, error) {
@@ -78,15 +91,10 @@ func (h *WeddingHandler) Create(c fuego.ContextWithBody[WeddingRequest]) (any, e
 	if err := services.ValidateWeddingText(w); err != nil {
 		return nil, fuego.BadRequestError{Title: err.Error()}
 	}
-	if err := h.weddingService.Create(ctx, w); err != nil {
+	// Link the creating admin to this wedding in the same transaction, so a
+	// grant failure does not leave an ownerless wedding for a retry to duplicate.
+	if err := h.weddingService.CreateWithOwner(ctx, w, AdminIDFromContext(ctx)); err != nil {
 		return nil, err
-	}
-	// Link the creating admin to this wedding
-	adminID := AdminIDFromContext(c.Context())
-	if adminID != uuid.Nil {
-		if err := h.adminRepo.AddUserWedding(ctx, adminID, w.ID); err != nil {
-			return nil, err
-		}
 	}
 	c.SetStatus(201)
 	return w, nil
@@ -106,28 +114,46 @@ func (h *WeddingHandler) Update(c fuego.ContextWithBody[WeddingRequest]) (any, e
 		return nil, fuego.BadRequestError{Title: "Invalid request"}
 	}
 	w, err := h.weddingService.Get(ctx, id)
-	if err != nil {
+	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return nil, fuego.NotFoundError{Title: "Wedding not found"}
+	}
+	if err != nil {
+		slog.ErrorContext(ctx, "load wedding failed", "wedding", id, "err", err)
+		return nil, fuego.InternalServerError{Title: "Failed to load wedding"}
 	}
 	name := strings.TrimSpace(body.Name)
 	if name == "" {
 		return nil, fuego.BadRequestError{Title: "Name is required"}
 	}
 	w.Name = name
+	fields := map[string]any{"name": name}
 	if body.Date != "" {
 		d, err := time.Parse("2006-01-02", body.Date)
 		if err != nil {
 			return nil, fuego.BadRequestError{Title: "Invalid date format, use YYYY-MM-DD"}
 		}
 		w.Date = d
+		fields["date"] = d
 	}
 	if err := services.ValidateWeddingText(w); err != nil {
 		return nil, fuego.BadRequestError{Title: err.Error()}
 	}
-	if err := h.weddingService.Update(ctx, w); err != nil {
+	if err := h.weddingService.Update(ctx, id, fields); err != nil {
 		return nil, weddingUpdateError(err)
 	}
-	return w, nil
+	return h.reloadAfterUpdate(ctx, id, w), nil
+}
+
+// reloadAfterUpdate returns the stored row so the response carries the
+// updatedAt the server wrote, not the value read before the write. A failed
+// re-read keeps the committed write a 200 with the value already in hand.
+func (h *WeddingHandler) reloadAfterUpdate(ctx context.Context, id uuid.UUID, w *models.WeddingEvent) *models.WeddingEvent {
+	stored, err := h.weddingService.Get(ctx, id)
+	if err != nil {
+		slog.ErrorContext(ctx, "reload wedding after update failed", "wedding", id, "err", err)
+		return w
+	}
+	return stored
 }
 
 // KioskSettingsRequest uses pointers so an omitted field stays unchanged.
@@ -163,33 +189,47 @@ func (h *WeddingHandler) UpdateKioskSettings(c fuego.ContextWithBody[KioskSettin
 		return nil, fuego.BadRequestError{Title: "Invalid request"}
 	}
 	w, err := h.weddingService.Get(ctx, id)
-	if err != nil {
+	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return nil, fuego.NotFoundError{Title: "Wedding not found"}
 	}
+	if err != nil {
+		slog.ErrorContext(ctx, "load wedding failed", "wedding", id, "err", err)
+		return nil, fuego.InternalServerError{Title: "Failed to load wedding"}
+	}
+	// Only the fields this request carried are written, so a concurrent kiosk
+	// save cannot revert one of them from a stale snapshot.
+	fields := make(map[string]any, 14)
 	if body.Name != nil {
 		name := strings.TrimSpace(*body.Name)
 		if name == "" {
 			return nil, fuego.BadRequestError{Title: "Name is required"}
 		}
 		w.Name = name
+		fields["name"] = name
 	}
 	if body.VenueName != nil {
 		w.VenueName = strings.TrimSpace(*body.VenueName)
+		fields["venue_name"] = w.VenueName
 	}
 	if body.VenueAddress != nil {
 		w.VenueAddress = strings.TrimSpace(*body.VenueAddress)
+		fields["venue_address"] = w.VenueAddress
 	}
 	if body.KioskDescription != nil {
 		w.KioskDescription = strings.TrimSpace(*body.KioskDescription)
+		fields["kiosk_description"] = w.KioskDescription
 	}
 	if body.KioskLogoUrl != nil {
 		w.KioskLogoUrl = sanitizeURL(*body.KioskLogoUrl)
+		fields["kiosk_logo_url"] = w.KioskLogoUrl
 	}
 	if body.KioskBackgroundUrl != nil {
 		w.KioskBackgroundUrl = sanitizeURL(*body.KioskBackgroundUrl)
+		fields["kiosk_background_url"] = w.KioskBackgroundUrl
 	}
 	if body.KioskBackgroundBlur != nil {
 		w.KioskBackgroundBlur = max(0, min(20, *body.KioskBackgroundBlur))
+		fields["kiosk_background_blur"] = w.KioskBackgroundBlur
 	}
 	if body.KioskBackgroundSize != nil {
 		size := strings.TrimSpace(*body.KioskBackgroundSize)
@@ -197,6 +237,7 @@ func (h *WeddingHandler) UpdateKioskSettings(c fuego.ContextWithBody[KioskSettin
 			return nil, fuego.BadRequestError{Title: "kioskBackgroundSize must be cover, contain, or auto"}
 		}
 		w.KioskBackgroundSize = size
+		fields["kiosk_background_size"] = size
 	}
 	if body.KioskLogoSize != nil {
 		size := strings.TrimSpace(*body.KioskLogoSize)
@@ -204,35 +245,51 @@ func (h *WeddingHandler) UpdateKioskSettings(c fuego.ContextWithBody[KioskSettin
 			return nil, fuego.BadRequestError{Title: "kioskLogoSize must be cover, contain, or auto"}
 		}
 		w.KioskLogoSize = size
+		fields["kiosk_logo_size"] = size
 	}
 	if err := applyPosition(&w.KioskBackgroundPosX, body.KioskBackgroundPosX, validPositionsX, "kioskBackgroundPosX", "left, center, right"); err != nil {
 		return nil, err
 	}
+	if body.KioskBackgroundPosX != nil {
+		fields["kiosk_background_pos_x"] = w.KioskBackgroundPosX
+	}
 	if err := applyPosition(&w.KioskBackgroundPosY, body.KioskBackgroundPosY, validPositionsY, "kioskBackgroundPosY", "top, center, bottom"); err != nil {
 		return nil, err
+	}
+	if body.KioskBackgroundPosY != nil {
+		fields["kiosk_background_pos_y"] = w.KioskBackgroundPosY
 	}
 	if err := applyPosition(&w.KioskLogoPosX, body.KioskLogoPosX, validPositionsX, "kioskLogoPosX", "left, center, right"); err != nil {
 		return nil, err
 	}
+	if body.KioskLogoPosX != nil {
+		fields["kiosk_logo_pos_x"] = w.KioskLogoPosX
+	}
 	if err := applyPosition(&w.KioskLogoPosY, body.KioskLogoPosY, validPositionsY, "kioskLogoPosY", "top, center, bottom"); err != nil {
 		return nil, err
 	}
+	if body.KioskLogoPosY != nil {
+		fields["kiosk_logo_pos_y"] = w.KioskLogoPosY
+	}
 	if body.ShowSeatNumbers != nil {
 		w.ShowSeatNumbers = *body.ShowSeatNumbers
+		fields["show_seat_numbers"] = w.ShowSeatNumbers
 	}
 	if body.KioskIdleResetSeconds != nil {
 		w.KioskIdleResetSeconds = max(0, min(3600, *body.KioskIdleResetSeconds))
+		fields["kiosk_idle_reset_seconds"] = w.KioskIdleResetSeconds
 	}
 	if err := services.ValidateWeddingText(w); err != nil {
 		return nil, fuego.BadRequestError{Title: err.Error()}
 	}
-	if err := h.weddingService.Update(ctx, w); err != nil {
+	if err := h.weddingService.Update(ctx, id, fields); err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, fuego.NotFoundError{Title: "Wedding not found"}
 		}
+		slog.ErrorContext(ctx, "update kiosk settings failed", "wedding", id, "err", err)
 		return nil, fuego.InternalServerError{Title: "Failed to update kiosk settings"}
 	}
-	return w, nil
+	return h.reloadAfterUpdate(ctx, id, w), nil
 }
 
 // weddingUpdateError maps a save that matched no row to 404, so a wedding
@@ -254,6 +311,9 @@ func (h *WeddingHandler) Delete(c fuego.ContextWithBody[any]) (any, error) {
 		return nil, fuego.BadRequestError{Title: "Invalid ID"}
 	}
 	if err := h.weddingService.Delete(ctx, id); err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, fuego.NotFoundError{Title: "Wedding not found"}
+		}
 		return nil, err
 	}
 	c.SetStatus(204)

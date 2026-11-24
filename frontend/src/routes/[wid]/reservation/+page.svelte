@@ -1,42 +1,54 @@
 <script lang="ts">
+  import { page } from '$app/state';
+  let wid = $derived(page.params.wid ?? '');
   import { addToast } from '#lib/stores/index.ts';
   import { weddingTitle } from '#lib/stores/weddingTitle.ts';
   import { goto } from '$app/navigation';
   import { cn } from '#lib/utils/index.ts';
-  import { z } from 'zod';
   import CheckCircle2 from 'lucide-svelte/icons/check-circle-2';
 import AlertCircle from 'lucide-svelte/icons/alert-circle';
-  import { fetchAllGuests, createGuest } from '#lib/api/guests.ts';
-  import { toGuest } from '#lib/utils/guestTransform.ts';
+  import { createGuest } from '#lib/api/guests.ts';
+  import { guestList } from '#lib/stores/guestEvents.ts';
   import { listTables } from '#lib/api/tables.ts';
   import { getLayout } from '#lib/api/layout.ts';
-  import { weddingId } from '#lib/stores/weddingId.ts';
-  import { get } from 'svelte/store';
-  import { onMount } from 'svelte';
   import { LIMITS } from '#lib/utils/limits.ts';
+  import { reservationSchema as schema, seatSelectionError, closestEmptySeats, seatOccupant, type ReservationForm as FormData } from '#lib/utils/reservation.ts';
   import type { BanquetTable, Guest, HallElement } from '#lib/types/index.ts';
   import HallMap from '#lib/components/seating/HallMap.svelte';
 
   let apiTables = $state<BanquetTable[]>([]);
-  let apiGuests = $state<Guest[]>([]);
+  // Seeded by the [wid] layout over SSE, so a seat taken elsewhere shows here.
+  let apiGuests = $derived($guestList);
   let elements = $state<HallElement[]>([]);
   let hallWidth = $state(860);
   let hallHeight = $state(1000);
-  let dataLoaded = $state(false);
+  let errored = $state(false);
 
-  onMount(async () => {
-    const wid = get(weddingId);
+  async function loadData() {
+    const forWid = wid;
     try {
-      const [tablesRes, guestRows, layout] = await Promise.all([listTables(wid), fetchAllGuests(wid), getLayout(wid)]);
+      const [tablesRes, layout] = await Promise.all([listTables(forWid), getLayout(forWid)]);
+      // A newer route already reloaded: keep the old wedding off this form.
+      if (forWid !== wid) return;
       apiTables = tablesRes;
-      apiGuests = guestRows.map(toGuest);
       elements = layout.elements;
       hallWidth = layout.hallWidth;
       hallHeight = layout.hallHeight;
-      dataLoaded = true;
-    } catch (e) {
+    } catch {
+      if (forWid !== wid) return;
+      errored = true;
       addToast('Failed to load data', 'error');
     }
+  }
+
+  $effect(() => {
+    if (!wid) return;
+    errored = false;
+    apiTables = [];
+    elements = [];
+    form.tableId = null;
+    form.seatNumbers = [];
+    void loadData();
   });
 
   let tableGuests = $derived.by(() => {
@@ -58,11 +70,7 @@ import AlertCircle from 'lucide-svelte/icons/alert-circle';
         .filter(g => g.tableId === tableId && g.seatNumber !== null)
         .flatMap(g => Array.from({ length: g.pax }, (_, i) => g.seatNumber! + i))
     );
-    const seats: number[] = [];
-    for (let i = 1; i <= table.capacity && seats.length < count; i++) {
-      if (!occupied.has(i)) seats.push(i);
-    }
-    return seats;
+    return closestEmptySeats(table.capacity, occupied, count);
   }
 
   function handleSeatClick(tableId: string, seatNum: number, guest: Guest | null) {
@@ -78,20 +86,6 @@ import AlertCircle from 'lucide-svelte/icons/alert-circle';
     form.tableId = id;
     form.seatNumbers = findClosestEmptySeats(id, form.pax);
   }
-
-  const schema = z.object({
-    name: z.string().min(1, 'Name is required').max(LIMITS.name),
-    email: z.string().email('Invalid email').max(LIMITS.email).optional().or(z.literal('')),
-    pax: z.number().min(1, 'At least 1 guest').max(10, 'Max 10 guests'),
-    rsvp: z.enum(['confirmed', 'pending', 'declined']),
-    tableId: z.string().nullable().optional(),
-    seatNumbers: z.array(z.number()).optional(),
-    dietary: z.array(z.string()).optional(),
-    notes: z.string().max(LIMITS.guestNotes).optional(),
-    isVip: z.boolean().optional(),
-  });
-
-  type FormData = z.infer<typeof schema>;
 
   let form = $state<FormData>({
     name: '',
@@ -109,12 +103,7 @@ import AlertCircle from 'lucide-svelte/icons/alert-circle';
   let isSubmitting = $state(false);
 
   function getSeatGuestLocal(tableId: string, seatNum: number): Guest | undefined {
-    return apiGuests.find(g =>
-      g.tableId === tableId &&
-      g.seatNumber !== null &&
-      seatNum >= g.seatNumber &&
-      seatNum < g.seatNumber + g.pax
-    );
+    return seatOccupant(apiGuests, tableId, seatNum);
   }
 
   function isSeatAvailable(seatNum: number): boolean {
@@ -171,25 +160,22 @@ import AlertCircle from 'lucide-svelte/icons/alert-circle';
   ];
 
   function validate() {
-    const result = schema.safeParse(form);
-    if (result.success) {
-      errors = {};
-      return true;
-    }
     const fieldErrors: Record<string, string> = {};
-    for (const issue of result.error.issues) {
-      const field = issue.path[0] as string;
-      if (!fieldErrors[field]) fieldErrors[field] = issue.message;
+    const result = schema.safeParse(form);
+    if (!result.success) {
+      for (const issue of result.error.issues) {
+        const field = issue.path[0] as string;
+        if (!fieldErrors[field]) fieldErrors[field] = issue.message;
+      }
     }
-    // Custom validation
-    if (form.tableId && (!form.seatNumbers || form.seatNumbers.length === 0)) {
-      fieldErrors.seatNumbers = 'Select at least one seat';
-    }
-    if (form.tableId && form.seatNumbers && form.seatNumbers.length < form.pax) {
-      fieldErrors.seatNumbers = `Select ${form.pax} seat(s) for ${form.pax} guest(s)`;
+    const seatError = seatSelectionError(form);
+    if (seatError) fieldErrors.seatNumbers = seatError;
+    // The store is live: someone may have taken a shown seat since it was picked.
+    else if (form.tableId && form.seatNumbers?.some(seat => getSeatGuestLocal(form.tableId!, seat))) {
+      fieldErrors.seatNumbers = 'Seat(s) now taken; pick again';
     }
     errors = fieldErrors;
-    return false;
+    return Object.keys(fieldErrors).length === 0;
   }
 
   function toggleDietary(id: string) {
@@ -202,8 +188,7 @@ import AlertCircle from 'lucide-svelte/icons/alert-circle';
     if (!validate()) return;
     isSubmitting = true;
     try {
-      const wid = get(weddingId);
-      const firstSeat = form.seatNumbers?.[0] ?? null;
+        const firstSeat = form.seatNumbers?.[0] ?? null;
       // "no table" reservations send no seats; fall back to form.pax so pax
       // is never 0 (backend rejects pax < 1).
       const assignedPax = form.seatNumbers?.length || form.pax;
@@ -223,7 +208,7 @@ import AlertCircle from 'lucide-svelte/icons/alert-circle';
       addToast(`Reservation for ${form.name} saved successfully`, 'success');
       goto(`/${wid}/guests`);
     } catch (e) {
-      addToast('Failed to save reservation', 'error');
+      addToast(e instanceof Error ? e.message : 'Failed to save reservation', 'error');
     } finally {
       isSubmitting = false;
     }
@@ -234,6 +219,15 @@ import AlertCircle from 'lucide-svelte/icons/alert-circle';
 
 
 <div class="flex flex-col sm:flex-row h-full">
+  {#if errored}
+    <div class="p-4 border-b border-black/[0.06]">
+      <p class="text-sm text-gray-600 mb-2">Could not load the hall map.</p>
+      <button
+        class="px-4 py-2 bg-red text-white rounded-xl text-sm font-semibold hover:bg-red-light transition-colors"
+        onclick={() => { errored = false; void loadData(); }}
+      >Retry</button>
+    </div>
+  {/if}
   <!-- Left: Hall Map (hidden on mobile, shown on desktop) -->
   <div class="hidden sm:flex flex-1 flex-col relative">
     {#if apiTables.length > 0}
@@ -298,7 +292,7 @@ import AlertCircle from 'lucide-svelte/icons/alert-circle';
               id="pax"
               type="number"
               min="1"
-              max="10"
+              max={LIMITS.guestPax}
               oninput={(e) => onPaxChange(Number(e.currentTarget.value) || 1)}
               value={form.pax}
               class={cn("w-full px-4 py-2.5 border rounded-xl text-sm bg-white outline-none transition-all",
@@ -429,7 +423,7 @@ import AlertCircle from 'lucide-svelte/icons/alert-circle';
               <CheckCircle2 class="w-4 h-4" /> Save Reservation
             {/if}
           </button>
-          <button type="button" onclick={() => goto(`/${$weddingId}/guests`)} class="px-6 py-3 border border-black/[0.06] bg-white/90 rounded-xl text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors">
+          <button type="button" onclick={() => goto(`/${wid}/guests`)} class="px-6 py-3 border border-black/[0.06] bg-white/90 rounded-xl text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors">
             Cancel
           </button>
         </div>

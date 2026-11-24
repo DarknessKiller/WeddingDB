@@ -3,6 +3,7 @@ package config
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -12,6 +13,7 @@ import (
 	"time"
 
 	"github.com/go-fuego/fuego"
+	"github.com/jackc/pgx/v5/pgconn"
 )
 
 func TestNewFuegoServer_SetsOpenAPIInfo(t *testing.T) {
@@ -71,6 +73,21 @@ func TestUntypedErrorsAreGeneric(t *testing.T) {
 	r.Header.Set("Accept", "text/plain")
 	s.Mux.ServeHTTP(w, r)
 	if w.Code != http.StatusInternalServerError || strings.Contains(w.Body.String(), "driver secret query") {
+		t.Fatalf("status %d, body %s", w.Code, w.Body.String())
+	}
+}
+
+// A write that timed out waiting for the wedding row lock is retryable: 503,
+// not the generic 500, and still no driver text.
+func TestLockTimeoutIsRetryable(t *testing.T) {
+	s := NewFuegoServer(Env{Port: "0"}, "test")
+	fuego.Get(s, "/busy", func(fuego.ContextNoBody) (any, error) {
+		return nil, fmt.Errorf("create guest: %w", &pgconn.PgError{Code: "55P03", Message: "canceling statement due to lock timeout"})
+	})
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest(http.MethodGet, "/busy", nil)
+	s.Mux.ServeHTTP(w, r)
+	if w.Code != http.StatusServiceUnavailable || strings.Contains(w.Body.String(), "lock timeout") {
 		t.Fatalf("status %d, body %s", w.Code, w.Body.String())
 	}
 }

@@ -36,7 +36,17 @@ func (r *LayoutRepo) SaveLayout(
 	incoming []models.HallElement,
 ) error {
 	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		if err := lockWeddingRow(tx, weddingID); err != nil {
+		// One locked read: the probe is the lock, so a concurrent delete cannot
+		// land between an existence check and the lock.
+		var exists models.WeddingEvent
+		q := tx.Select("id").Where("id = ?", weddingID)
+		if tx.Name() == "postgres" {
+			if err := setLockTimeout(tx); err != nil {
+				return err
+			}
+			q = q.Clauses(clause.Locking{Strength: "UPDATE"})
+		}
+		if err := q.First(&exists).Error; err != nil {
 			return err
 		}
 		existing, err := elementsByWedding(tx.WithContext(ctx), weddingID)
@@ -63,7 +73,7 @@ func (r *LayoutRepo) SaveLayout(
 				return res.Error
 			}
 			if res.RowsAffected == 0 {
-				return gorm.ErrRecordNotFound
+				return ErrLayoutTableNotFound
 			}
 		}
 		for i := range toCreate {
@@ -85,7 +95,7 @@ func (r *LayoutRepo) SaveLayout(
 				return res.Error
 			}
 			if res.RowsAffected == 0 {
-				return gorm.ErrRecordNotFound
+				return ErrLayoutElementNotFound
 			}
 		}
 		if len(toDelete) > 0 {
@@ -98,12 +108,22 @@ func (r *LayoutRepo) SaveLayout(
 	})
 }
 
-// lockWeddingRow takes the wedding row lock the layout save shares with every
-// guest and table write. The row lock is Postgres-only; sqlite has one writer.
-func lockWeddingRow(tx *gorm.DB, weddingID uuid.UUID) error {
+// LockWedding takes the wedding row lock every guest, table and layout write
+// shares. The row lock is Postgres-only; sqlite has one writer.
+func LockWedding(tx *gorm.DB, weddingID uuid.UUID) error {
 	if tx.Name() != "postgres" {
 		return nil
 	}
+	if err := setLockTimeout(tx); err != nil {
+		return err
+	}
 	return tx.Clauses(clause.Locking{Strength: "UPDATE"}).
 		Select("id").Where("id = ?", weddingID).First(&models.WeddingEvent{}).Error
+}
+
+// setLockTimeout bounds every lock wait for the rest of tx, so a write queued
+// behind a slow one fails fast (SQLSTATE 55P03) instead of holding a pool
+// connection until the holder commits.
+func setLockTimeout(tx *gorm.DB) error {
+	return tx.Exec("SET LOCAL lock_timeout = '5s'").Error
 }

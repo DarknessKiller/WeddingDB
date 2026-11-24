@@ -20,8 +20,10 @@ CONTAINER=${COMPOSE_CONTAINER:-${CONTAINER:-}}
 : "${CONTAINER:?No postgres container found; set CONTAINER if Compose is unavailable}"
 DB_USER=${DB_USER:-weddingdb}
 SCRATCH="${DB_NAME}_restore"
-# Never leave a half-restored scratch database behind.
-trap 'docker exec "$CONTAINER" dropdb -U "$DB_USER" --if-exists -- "$SCRATCH" >/dev/null 2>&1 || true' EXIT
+PREV="${DB_NAME}_prev"
+# Never leave a half-restored scratch database behind, and put the previous
+# database back if the swap fails after it was renamed aside.
+trap 'rc=$?; if [[ $rc -ne 0 && ${SWAPPED:-0} == 1 ]]; then docker exec "$CONTAINER" psql -X -U "$DB_USER" -d postgres -v ON_ERROR_STOP=1 -c "ALTER DATABASE \"$PREV\" RENAME TO \"$DB_NAME\"" >/dev/null 2>&1 || echo "Rollback failed: database saved as $PREV" >&2; fi; docker exec "$CONTAINER" dropdb -U "$DB_USER" --if-exists -- "$SCRATCH" >/dev/null 2>&1 || true' EXIT
 docker exec "$CONTAINER" dropdb -U "$DB_USER" --if-exists -- "$SCRATCH"
 docker exec "$CONTAINER" createdb -U "$DB_USER" -E UTF8 -T template0 -- "$SCRATCH"
 # Load into the scratch database first: gzip -t cannot prove the SQL applies,
@@ -35,10 +37,18 @@ UNION ALL SELECT 'admin_users', count(*) FROM admin_users;"
 EXISTS=$(docker exec "$CONTAINER" psql -X -U "$DB_USER" -d postgres -v ON_ERROR_STOP=1 -Atc "SELECT 1 FROM pg_database WHERE datname = '$DB_NAME'")
 if [[ $EXISTS == 1 ]]; then
     if [[ ${3:-} != --force ]]; then
-        echo "Database $DB_NAME exists; refusing restore. --force drops and recreates it." >&2
+        echo "Database $DB_NAME exists; refusing restore. --force replaces it, keeping it as $PREV until the swap succeeds." >&2
         exit 1
     fi
-    docker exec "$CONTAINER" dropdb -U "$DB_USER" -- "$DB_NAME"
+    # Rename aside, do not drop: a dropped database cannot be restored when the
+    # rename of the scratch database fails.
+    docker exec "$CONTAINER" dropdb -U "$DB_USER" --if-exists -- "$PREV"
+    docker exec "$CONTAINER" psql -X -U "$DB_USER" -d postgres -v ON_ERROR_STOP=1 -c "ALTER DATABASE \"$DB_NAME\" RENAME TO \"$PREV\""
+    SWAPPED=1
 fi
 # Swap the verified scratch database into place.
 docker exec "$CONTAINER" psql -X -U "$DB_USER" -d postgres -v ON_ERROR_STOP=1 -c "ALTER DATABASE \"$SCRATCH\" RENAME TO \"$DB_NAME\""
+if [[ ${SWAPPED:-0} == 1 ]]; then
+    SWAPPED=0
+    docker exec "$CONTAINER" dropdb -U "$DB_USER" -- "$PREV"
+fi

@@ -1,59 +1,20 @@
-import type { Guest, BanquetTable } from '#lib/types/index.ts';
+import type { Guest } from '#lib/types/index.ts';
 import { weddingId } from '#lib/stores/weddingId.ts';
 import { get } from 'svelte/store';
+import { toPublicGuest, type PublicGuestRow } from '#lib/utils/guestTransform.ts';
 
-interface PublicGuest {
-	id: string;
-	name: string;
-	tableId: string | null;
-	seatNum: number | null;
-	pax: number;
-	isVip: boolean;
-	pinyin?: string;
-}
-
-export function mapGuest(raw: PublicGuest): Guest {
-	return {
-		id: raw.id,
-		name: raw.name ?? '',
-		pinyin: raw.pinyin,
-		rsvp: 'no_response', // RSVP is staff-only; public rows never carry it
-		pax: raw.pax ?? 1,
-		tableId: raw.tableId ?? null,
-		seatNumber: raw.seatNum ?? null,
-		checkedIn: false, // attendance is staff-only; never expose it to the kiosk
-		notes: '',
-		dietaryRequirements: [],
-		isVip: raw.isVip ?? false,
-		createdAt: new Date()
-	};
-}
-
-export async function publicSearchGuests(query: string): Promise<Guest[]> {
-	const wid = get(weddingId);
-	const res = await fetch(`/api/public/weddings/${wid}/guests/search?q=${encodeURIComponent(query)}`);
-	if (!res.ok) throw new Error('Search failed');
-	const data: PublicGuest[] = await res.json();
-	return data.map(mapGuest);
-}
-
-export async function publicListGuests(opts: { signal?: AbortSignal } = {}): Promise<Guest[]> {
-	const wid = get(weddingId);
+export async function publicListGuests(opts: { signal?: AbortSignal; wid?: string } = {}): Promise<Guest[]> {
+	// Callers on a reused component pass the route param: the store can still
+	// hold the previous wedding when the page loads.
+	const wid = opts.wid || get(weddingId);
 	const all: Guest[] = [];
 	let cursor: string | undefined;
 	do {
 		const res = await fetch(`/api/public/weddings/${wid}/guests?limit=1000${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ''}`, { signal: opts.signal });
 		if (!res.ok) throw new Error('Failed to list guests');
 		const data = await res.json();
-		all.push(...(data.guests ?? []).map(mapGuest));
+		all.push(...(data.guests ?? []).map((raw: PublicGuestRow) => toPublicGuest(raw)));
 		cursor = data.nextCursor ?? undefined;
 	} while (cursor);
 	return all;
-}
-
-export async function publicListTables(): Promise<BanquetTable[]> {
-	const wid = get(weddingId);
-	const res = await fetch(`/api/public/weddings/${wid}/tables`);
-	if (!res.ok) throw new Error('Failed to list tables');
-	return res.json();
 }

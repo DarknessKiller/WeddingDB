@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { toGuest, reviveGuest, applyGuestPatch } from './guestTransform';
+import { toGuest, toPublicGuest, reviveGuest, applyGuestPatch } from './guestTransform';
 import type { GuestResponse } from '#lib/api/guests.ts';
 
 const row: GuestResponse = {
@@ -14,6 +14,16 @@ describe('guestTransform', () => {
 		const g = toGuest(row);
 		expect(g).toMatchObject({ seatNumber: 3, dietaryRequirements: ['vegan'], angbaoAmount: 88, giftItem: 'vase', checkedIn: true, pinyin: 'alice' });
 		expect(g.updatedAt?.toISOString()).toBe('2026-01-03T00:00:00.000Z');
+	});
+
+	it('maps a public row without carrying staff-only fields', () => {
+		const g = toPublicGuest({ id: 'g1', name: 'Alice', tableId: 't1', seatNum: 3, pax: 2, isVip: true, pinyin: 'alice' });
+		expect(g).toMatchObject({ id: 'g1', name: 'Alice', tableId: 't1', seatNumber: 3, pax: 2, isVip: true, pinyin: 'alice' });
+		expect(g).toMatchObject({ rsvp: 'no_response', checkedIn: false, notes: '', dietaryRequirements: [] });
+		expect(g.checkedInAt).toBeUndefined();
+		expect(g.email).toBeUndefined();
+		expect(g.angbaoAmount).toBeUndefined();
+		expect(g.giftItem).toBeUndefined();
 	});
 
 	it('revives a cached Guest without losing seat, dietary or angbao', () => {

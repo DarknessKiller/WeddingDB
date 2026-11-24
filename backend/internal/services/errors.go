@@ -21,6 +21,13 @@ var (
 	ErrSeatRange       = errors.New("seat range exceeds table capacity")
 	ErrSSECapacity     = errors.New("too many streams for wedding")
 	ErrSSEUserCapacity = errors.New("too many streams for user")
+
+	// ErrGuestCapExceeded is returned when adding guests would cross the cap.
+	ErrGuestCapExceeded = errors.New("guest limit exceeded")
+
+	// ErrGuestIDTaken is returned when a client-chosen guest ID already
+	// belongs to another wedding.
+	ErrGuestIDTaken = errors.New("guest ID already in use")
 )
 
 // ErrTokenRejected wraps every reason a presented access or refresh token is
@@ -33,3 +40,11 @@ var (
 	ErrAdminNotFound   = errors.New("admin not found")
 	ErrNoWeddingAccess = errors.New("no access to this wedding")
 )
+
+// ErrInvalidCredentials is returned by Login for an unknown email or a wrong
+// password. Any other login error is an outage, not a rejection.
+var ErrInvalidCredentials = errors.New("invalid credentials")
+
+// ErrWeddingNotFound is returned by report generation when the wedding row
+// does not exist.
+var ErrWeddingNotFound = errors.New("wedding not found")

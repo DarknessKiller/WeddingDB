@@ -6,6 +6,7 @@ import (
 	"errors"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -22,7 +23,7 @@ func testSSEHub(t *testing.T) *SSEHub {
 	mr := miniredis.RunT(t)
 	rdb := redis.NewClient(&redis.Options{Addr: mr.Addr()})
 	hub := NewSSEHub(rdb)
-	t.Cleanup(func() { hub.Shutdown(); testutil.NoErr(t, rdb.Close()) })
+	t.Cleanup(func() { hub.Shutdown(context.Background()); testutil.NoErr(t, rdb.Close()) })
 	return hub
 }
 
@@ -144,6 +145,101 @@ func TestSSEHub_FanOut(t *testing.T) {
 		case <-time.After(100 * time.Millisecond):
 			t.Errorf("client %d: timed out waiting for event", i)
 		}
+	}
+}
+
+// A full publish queue must not block the guest write after commit. The event
+// is dropped and connected clients are forced to reconnect and resync.
+func TestSSEHub_PublishQueueFullReconnectsClients(t *testing.T) {
+	wid := uuid.New()
+	client := &SSEClient{ID: uuid.New().String(), WeddingID: wid, Done: make(chan struct{})}
+	hub := &SSEHub{
+		clients: map[uuid.UUID]map[string]*SSEClient{wid: {client.ID: client}},
+		ctx:     context.Background(),
+		publish: make(chan publishRequest, ssePublishQueue),
+	}
+	for range ssePublishQueue {
+		hub.publish <- publishRequest{}
+	}
+
+	done := make(chan struct{})
+	go func() {
+		hub.publishGuest("create", &models.GuestRecord{ID: uuid.New()}, wid)
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("publishGuest blocked on a full queue")
+	}
+	select {
+	case <-client.Done:
+	default:
+		t.Fatal("client was not asked to reconnect after a dropped event")
+	}
+	if len(hub.publish) != ssePublishQueue {
+		t.Fatalf("queue length = %d, want %d (event must be dropped)", len(hub.publish), ssePublishQueue)
+	}
+}
+
+// A dropped event must resync clients on every replica, not only the one that
+// dropped it: the Redis marker closes the other replica's streams.
+func TestSSEHub_PublishQueueFullResyncsOtherReplicas(t *testing.T) {
+	mr := miniredis.RunT(t)
+	rdb1 := redis.NewClient(&redis.Options{Addr: mr.Addr()})
+	rdb2 := redis.NewClient(&redis.Options{Addr: mr.Addr()})
+	t.Cleanup(func() {
+		testutil.NoErr(t, rdb1.Close())
+		testutil.NoErr(t, rdb2.Close())
+	})
+	other := NewSSEHub(rdb2)
+	t.Cleanup(func() { other.Shutdown(context.Background()) })
+
+	wid := uuid.New()
+	client := testSubscribe(t, other, wid)
+
+	hub := &SSEHub{
+		clients: make(map[uuid.UUID]map[string]*SSEClient),
+		ctx:     context.Background(),
+		redis:   rdb1,
+		publish: make(chan publishRequest, ssePublishQueue),
+		ready:   make(chan struct{}),
+	}
+	close(hub.ready)
+	for range ssePublishQueue {
+		hub.publish <- publishRequest{}
+	}
+	hub.publishGuest("create", &models.GuestRecord{ID: uuid.New()}, wid)
+
+	select {
+	case <-client.Done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("client on another replica was not asked to resync after a dropped event")
+	}
+}
+
+// A failed Publish must still reconnect local clients, so they refetch instead
+// of keeping a snapshot that missed the event.
+func TestSSEHub_PublishFailureReconnectsClients(t *testing.T) {
+	wid := uuid.New()
+	client := &SSEClient{ID: uuid.New().String(), WeddingID: wid, Done: make(chan struct{})}
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+	hub := &SSEHub{
+		clients: map[uuid.UUID]map[string]*SSEClient{wid: {client.ID: client}},
+		ctx:     ctx,
+		cancel:  cancel,
+		publish: make(chan publishRequest, 1),
+		ready:   make(chan struct{}), // never closed: Publish fails
+		stopped: make(chan struct{}),
+	}
+	go hub.publishLoop()
+	hub.publish <- publishRequest{weddingID: wid, event: GuestEvent{Type: "create"}}
+
+	select {
+	case <-client.Done:
+	case <-time.After(time.Second):
+		t.Fatal("client was not asked to reconnect after a failed Publish")
 	}
 }
 
@@ -417,6 +513,88 @@ func TestSSEHub_PublishKeepsOrder(t *testing.T) {
 			}
 		case <-time.After(2 * time.Second):
 			t.Fatalf("timed out waiting for event %d", i)
+		}
+	}
+}
+
+// countPublishHook counts PUBLISH commands so resync de-duplication is observable.
+type countPublishHook struct{ n int32 }
+
+func (h *countPublishHook) DialHook(next redis.DialHook) redis.DialHook { return next }
+
+func (h *countPublishHook) ProcessHook(next redis.ProcessHook) redis.ProcessHook {
+	return func(ctx context.Context, cmd redis.Cmder) error {
+		if strings.EqualFold(cmd.Name(), "publish") {
+			atomic.AddInt32(&h.n, 1)
+		}
+		return next(ctx, cmd)
+	}
+}
+
+func (h *countPublishHook) ProcessPipelineHook(next redis.ProcessPipelineHook) redis.ProcessPipelineHook {
+	return next
+}
+
+// A Redis outage must not turn every failed event into another blocking resync
+// publish: one marker per wedding at a time is enough to force clients to refetch.
+func TestSSEHub_BroadcastResyncSingleFlight(t *testing.T) {
+	mr := miniredis.RunT(t)
+	rdb := redis.NewClient(&redis.Options{Addr: mr.Addr()})
+	t.Cleanup(func() { testutil.NoErr(t, rdb.Close()) })
+	hook := &countPublishHook{}
+	rdb.AddHook(hook)
+	hub := &SSEHub{redis: rdb, ready: make(chan struct{})}
+	close(hub.ready)
+	wid := uuid.New()
+
+	hub.resyncInFlight.Store(wid, struct{}{})
+	hub.broadcastResync(context.Background(), wid)
+	if got := atomic.LoadInt32(&hook.n); got != 0 {
+		t.Fatalf("published %d resync markers while one was in flight, want 0", got)
+	}
+	hub.resyncInFlight.Delete(wid)
+	hub.broadcastResync(context.Background(), wid)
+	if got := atomic.LoadInt32(&hook.n); got != 1 {
+		t.Fatalf("published %d resync markers after the in-flight one finished, want 1", got)
+	}
+}
+
+// Shutdown order: CloseStreams ends local streams but keeps publishing, and
+// Shutdown still publishes every event queued before it, so writes committed
+// during the HTTP drain reach other replicas.
+func TestSSEHub_ShutdownPublishesQueuedEvents(t *testing.T) {
+	mr := miniredis.RunT(t)
+	rdb := redis.NewClient(&redis.Options{Addr: mr.Addr()})
+	t.Cleanup(func() { testutil.NoErr(t, rdb.Close()) })
+	hub := NewSSEHub(rdb)
+	wid := uuid.New()
+	sub := rdb.Subscribe(t.Context(), "wedding:"+wid.String()+":guests")
+	t.Cleanup(func() { testutil.NoErr(t, sub.Close()) })
+	_, err := sub.Receive(t.Context())
+	testutil.NoErr(t, err)
+
+	client := testSubscribe(t, hub, wid)
+	hub.CloseStreams()
+	select {
+	case <-client.Done:
+	default:
+		t.Fatal("CloseStreams left the local stream open")
+	}
+
+	const events = 200
+	for range events {
+		hub.publishGuest("create", &models.GuestRecord{ID: uuid.New()}, wid)
+	}
+	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+	defer cancel()
+	hub.Shutdown(ctx)
+
+	ch := sub.Channel()
+	for i := range events {
+		select {
+		case <-ch:
+		case <-time.After(2 * time.Second):
+			t.Fatalf("received %d of %d events queued before shutdown", i, events)
 		}
 	}
 }

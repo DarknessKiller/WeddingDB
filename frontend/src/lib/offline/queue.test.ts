@@ -1,11 +1,12 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 const apiFetch = vi.fn();
+const clearGuestCaches = vi.hoisted(() => vi.fn());
 vi.mock('#lib/api/client.ts', () => ({ apiFetch: (...a: unknown[]) => apiFetch(...a) }));
 vi.mock('#lib/stores/index.ts', () => ({ addToast: vi.fn() }));
 vi.mock('#lib/stores/guestEvents.ts', async () => {
 	const { writable } = await import('svelte/store');
-	return { applyGuestResponse: vi.fn(), guestMap: writable(new Map([['g1', { updatedAt: new Date('2025-12-31T00:00:00Z') }]])) };
+	return { applyGuestResponse: vi.fn(), clearGuestCaches, guestMap: writable(new Map([['g1', { updatedAt: new Date('2025-12-31T00:00:00Z') }]])) };
 });
 
 function memoryStorage() {
@@ -30,6 +31,7 @@ function ok(results: unknown[]) {
 beforeEach(() => {
 	vi.resetModules();
 	apiFetch.mockReset();
+	clearGuestCaches.mockReset();
 	vi.stubGlobal('localStorage', memoryStorage());
 	vi.stubGlobal('window', { dispatchEvent: () => true });
 });
@@ -47,6 +49,67 @@ describe('offline queue storage', () => {
 
 		expect(apiFetch.mock.calls.map((c) => JSON.parse(c[1].body).mutations.length)).toEqual([100, 100, 50]);
 		expect(r.applied).toBe(250);
+		expect(getQueue('w1')).toEqual([]);
+	});
+
+	it('serializes the read-modify-write through the Web Lock so concurrent writes do not lose a mutation', async () => {
+		let chain: Promise<unknown> = Promise.resolve();
+		// Real browser locks resolve the callback asynchronously, never inline.
+		const request = vi.fn((_name: string, cb: () => void | Promise<void>) => (chain = chain.then(() => Promise.resolve().then(cb))));
+		vi.stubGlobal('navigator', { locks: { request } });
+		const { enqueue, getQueue } = await import('./queue');
+
+		await Promise.all([enqueue('w1', mutation(1)), enqueue('w1', mutation(2))]);
+		await chain;
+
+		expect(request).toHaveBeenCalledTimes(2);
+		expect(request.mock.calls[0][0]).toBe('offline_queue_w1');
+		expect(getQueue('w1').map((m) => m.mutationId)).toEqual(['m1', 'm2']);
+	});
+
+	it('persists a mutation synchronously, before the async lock callback runs', async () => {
+		let release!: () => void;
+		const gate = new Promise<void>((r) => (release = r));
+		const request = vi.fn((_name: string, cb: () => void) => gate.then(() => cb()));
+		vi.stubGlobal('navigator', { locks: { request } });
+		const { enqueue, getQueue } = await import('./queue');
+
+		const pending = enqueue('w1', mutation(1));
+		// A reload right after the edit must find it already in localStorage.
+		expect(getQueue('w1').map((m) => m.mutationId)).toEqual(['m1']);
+
+		release();
+		await pending;
+	});
+
+	it('handles a Web Lock rejection without losing the persisted mutation', async () => {
+		const request = vi.fn(() => Promise.reject(new Error('lock denied')));
+		vi.stubGlobal('navigator', { locks: { request } });
+		const { enqueue, getQueue } = await import('./queue');
+
+		await expect(enqueue('w1', mutation(1))).resolves.toBeUndefined();
+		expect(getQueue('w1').map((m) => m.mutationId)).toEqual(['m1']);
+	});
+
+	it('dequeues under the enqueue lock instead of clobbering a pending write', async () => {
+		let chain: Promise<unknown> = Promise.resolve();
+		let release!: () => void;
+		const gate = new Promise<void>((r) => (release = r));
+		const request = vi.fn((_name: string, cb: () => void) => (chain = chain.then(() => cb())));
+		vi.stubGlobal('navigator', { locks: { request } });
+		const { dequeueByIds, getQueue } = await import('./queue');
+		localStorage.setItem('offline_queue_w1', JSON.stringify([mutation(1)]));
+
+		chain = chain.then(() => gate);
+		const pending = dequeueByIds('w1', ['m1']);
+		await Promise.resolve();
+		// Still queued until the lock is free; an unlocked dequeue would have
+		// read and rewritten already.
+		expect(getQueue('w1').map((m) => m.mutationId)).toEqual(['m1']);
+		expect(request).toHaveBeenCalledWith('offline_queue_w1', expect.any(Function));
+
+		release();
+		await pending;
 		expect(getQueue('w1')).toEqual([]);
 	});
 
@@ -71,6 +134,19 @@ describe('offline queue storage', () => {
 		expect(getQueue('w1')).toEqual([]);
 		expect(localStorage.getItem('offline_owner')).toBe('id-b');
 		for (let i = 0; i < localStorage.length; i++) expect(localStorage.getItem(localStorage.key(i)!)).not.toContain('bob@x.io');
+	});
+
+	it('clears the previous account cached guest lists when the owner changes', async () => {
+		const { claimQueues } = await import('./queue');
+		await claimQueues('id-a', 'alice@x.io', () => true);
+		localStorage.setItem('offline_cache_w1', '[{"email":"a@b.c"}]');
+
+		await claimQueues('id-b', 'bob@x.io', () => true);
+		expect(clearGuestCaches).toHaveBeenCalledOnce();
+
+		clearGuestCaches.mockClear();
+		await claimQueues('id-b', 'bob@x.io', () => true);
+		expect(clearGuestCaches).not.toHaveBeenCalled();
 	});
 
 	it('keeps the edits when the new user declines the discard', async () => {
@@ -113,6 +189,113 @@ describe('offline queue storage', () => {
 		]));
 
 		expect(await syncQueue('w1')).toEqual({ applied: 0, skipped: 0, dropped: 1 });
+		expect(getQueue('w1').map((m) => m.mutationId)).toEqual(['m2']);
+	});
+
+	it('403 keeps the queue for the owner-change prompt instead of discarding it', async () => {
+		const { enqueue, getQueue, syncQueue } = await import('./queue');
+		enqueue('w1', mutation(1));
+		apiFetch.mockResolvedValue({ ok: false, status: 403, text: async () => 'forbidden' } as Response);
+
+		await expect(syncQueue('w1')).rejects.toThrow(/403/);
+		expect(getQueue('w1').map((m) => m.mutationId)).toEqual(['m1']);
+	});
+
+	it('a rejected chunk is dequeued before the drain reports completion', async () => {
+		let release!: () => void;
+		const gate = new Promise<void>((r) => (release = r));
+		vi.stubGlobal('navigator', { locks: { request: (_name: string, cb: () => void) => gate.then(() => cb()) } });
+		const { getQueue, syncQueue } = await import('./queue');
+		localStorage.setItem('offline_queue_w1', JSON.stringify([mutation(1)]));
+		apiFetch.mockResolvedValue({ ok: false, status: 400, text: async () => 'bad' } as Response);
+
+		const pending = syncQueue('w1');
+		let settled = false;
+		void pending.then(() => { settled = true; });
+		await new Promise((r) => setTimeout(r, 10));
+		// The chunk is dropped under the queue lock; until it is released the
+		// drain is not finished, so a retry cannot re-POST the same chunk.
+		expect(settled).toBe(false);
+
+		release();
+		expect((await pending).dropped).toBe(0);
+		expect(getQueue('w1')).toEqual([]);
+	});
+
+	it('merges a mutation another tab writes while enqueue is saving', async () => {
+		const map = new Map<string, string>();
+		let injected = false;
+		vi.stubGlobal('localStorage', {
+			get length() { return map.size; },
+			key: (i: number) => [...map.keys()][i] ?? null,
+			getItem: (k: string) => map.get(k) ?? null,
+			removeItem: (k: string) => void map.delete(k),
+			setItem: (k: string, v: string) => {
+				map.set(k, String(v));
+				if (k === 'offline_queue_w1' && !injected) {
+					injected = true;
+					// Another tab's write lands between our read and our next read.
+					map.set(k, JSON.stringify([mutation(99)]));
+				}
+			}
+		});
+		const { enqueue, getQueue } = await import('./queue');
+
+		enqueue('w1', mutation(1));
+
+		expect(getQueue('w1').map((m) => m.mutationId)).toEqual(['m99', 'm1']);
+	});
+
+	it('keeps the newest mutation when the cross-tab merge overflows the cap', async () => {
+		const map = new Map<string, string>();
+		let injected = false;
+		vi.stubGlobal('localStorage', {
+			get length() { return map.size; },
+			key: (i: number) => [...map.keys()][i] ?? null,
+			getItem: (k: string) => map.get(k) ?? null,
+			removeItem: (k: string) => void map.delete(k),
+			setItem: (k: string, v: string) => {
+				map.set(k, String(v));
+				if (k === 'offline_queue_w1' && !injected) {
+					injected = true;
+					// Another tab fills the queue to the cap between our write and re-read.
+					map.set(k, JSON.stringify(Array.from({ length: 500 }, (_, i) => mutation(1000 + i))));
+				}
+			}
+		});
+		vi.stubGlobal('navigator', {}); // no Web Locks: the fallback merge is the only rescue
+		const { enqueue, getQueue } = await import('./queue');
+
+		enqueue('w1', mutation(1));
+
+		const ids = getQueue('w1').map((m) => m.mutationId);
+		expect(ids).toHaveLength(500);
+		expect(ids.at(-1)).toBe('m1');
+	});
+
+	it('re-drops mutations another tab writes back while dequeuing', async () => {
+		const map = new Map<string, string>();
+		let armed = false;
+		let injected = false;
+		vi.stubGlobal('localStorage', {
+			get length() { return map.size; },
+			key: (i: number) => [...map.keys()][i] ?? null,
+			getItem: (k: string) => map.get(k) ?? null,
+			removeItem: (k: string) => void map.delete(k),
+			setItem: (k: string, v: string) => {
+				map.set(k, String(v));
+				if (armed && !injected && k === 'offline_queue_w1') {
+					injected = true;
+					map.set(k, JSON.stringify([mutation(1), mutation(2)]));
+				}
+			}
+		});
+		const { dequeueByIds, getQueue } = await import('./queue');
+		localStorage.setItem('offline_queue_w1', JSON.stringify([mutation(1)]));
+		armed = true;
+
+		dequeueByIds('w1', ['m1']);
+
 		expect(getQueue('w1').map((m) => m.mutationId)).toEqual(['m2']);
 	});
 

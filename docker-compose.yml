@@ -21,11 +21,24 @@ services:
     volumes:
       - uploads:/app/uploads
     depends_on:
+      migrate:
+        condition: service_completed_successfully
       postgres:
         condition: service_healthy
       redis:
         condition: service_started
     restart: unless-stopped
+
+  # One-shot schema/data migration; the app no longer runs DDL at boot.
+  migrate:
+    image: ghcr.io/darknesskiller/weddingdb:latest
+    command: ["./migrate"]
+    environment:
+      DATABASE_URL: "postgresql://weddingdb:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set}@postgres:5432/weddingdb?sslmode=disable"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
 
   postgres:
     image: postgres:16-alpine

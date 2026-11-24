@@ -7,6 +7,7 @@ import Users from 'lucide-svelte/icons/users';
   import { cn } from '#lib/utils/index.ts';
   import { trapFocus, registerEscape } from '#lib/utils/focus.ts';
   import { LIMITS } from '#lib/utils/limits.ts';
+  import { clampTableCapacity } from '#lib/utils/seat.ts';
   import { untrack, onMount } from 'svelte';
 
   let {
@@ -15,6 +16,7 @@ import Users from 'lucide-svelte/icons/users';
     capacity = $bindable(10),
     isVip = $bindable(false),
     occupied = 0,
+    seatedFloor = 0,
     saving = false,
     startEditing = false,
     onSave,
@@ -25,6 +27,8 @@ import Users from 'lucide-svelte/icons/users';
     capacity?: number;
     isVip?: boolean;
     occupied?: number;
+    // Capacity floor: the highest occupied seat end the API enforces.
+    seatedFloor?: number;
     saving?: boolean;
     startEditing?: boolean;
     onSave: () => void;
@@ -35,6 +39,10 @@ import Users from 'lucide-svelte/icons/users';
   onMount(() => registerEscape(onClose));
   const isEdit = $derived(title === 'Edit Table');
   const percentage = $derived(capacity > 0 ? Math.round((occupied / capacity) * 100) : 0);
+  const floor = $derived(Math.max(1, seatedFloor));
+  // Out-of-range values are clamped when the field is committed, not on every
+  // keystroke: clamping mid-entry would rewrite the digits the user is typing.
+  const capacityOutOfRange = $derived(capacity < floor || capacity > LIMITS.tableCapacity);
 </script>
 
 <!-- svelte-ignore a11y_no_static_element_interactions -->
@@ -65,7 +73,18 @@ import Users from 'lucide-svelte/icons/users';
           </div>
           <div class="form-field">
             <label for="table-capacity" class="form-label">Capacity</label>
-            <input id="table-capacity" type="number" min="1" bind:value={capacity} class="form-input" />
+            <input id="table-capacity" type="number" min={floor} max={LIMITS.tableCapacity} bind:value={capacity}
+              onchange={(e) => {
+                const input = e.currentTarget;
+                capacity = clampTableCapacity(Number(input.value), floor);
+                input.value = String(capacity);
+              }}
+              class="form-input" />
+            {#if capacity < floor}
+              <p class="text-xs text-red-600 mt-1">Capacity cannot be below the {seatedFloor} guests already seated.</p>
+            {:else if capacity > LIMITS.tableCapacity}
+              <p class="text-xs text-red-600 mt-1">Capacity cannot exceed {LIMITS.tableCapacity}.</p>
+            {/if}
           </div>
           <label class="form-check-label">
             <input type="checkbox" bind:checked={isVip} class="rounded" /> VIP Table
@@ -113,7 +132,7 @@ import Users from 'lucide-svelte/icons/users';
 
     {#if editing}
       <div class="drawer-footer flex">
-        <button onclick={onSave} disabled={saving}
+        <button onclick={onSave} disabled={saving || capacityOutOfRange}
           class="w-full py-3 bg-red text-white rounded-xl text-sm font-semibold hover:bg-red-light transition-colors flex items-center justify-center gap-2">
           <Check class="w-4 h-4" /> {saving ? 'Saving...' : 'Save'}
         </button>

@@ -2,9 +2,12 @@ package handlers
 
 import (
 	"context"
+	"errors"
+	"strings"
 	"weddingdb/internal/middleware"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgconn"
 )
 
 // AdminIDFromContext extracts admin ID from the request context.
@@ -58,6 +61,17 @@ func requireWeddingAccess(ctx context.Context, weddingID uuid.UUID) error {
 		return errForbidden("access denied to this wedding")
 	}
 	return nil
+}
+
+// isEmailUniqueViolation reports whether err came from the admin email unique
+// index, so a concurrent duplicate maps to 409 without blaming an unrelated
+// constraint (such as a duplicate wedding grant) on the email.
+func isEmailUniqueViolation(err error) bool {
+	if pgErr, ok := errors.AsType[*pgconn.PgError](err); ok {
+		return pgErr.Code == "23505" && pgErr.ConstraintName == "idx_admin_users_email"
+	}
+	// sqlite, used in tests, exposes the column but not a constraint name.
+	return strings.Contains(err.Error(), "UNIQUE constraint failed: admin_users.email")
 }
 
 type unauthorizedError struct{ msg string }

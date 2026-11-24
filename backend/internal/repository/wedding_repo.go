@@ -28,16 +28,30 @@ func (r *WeddingRepo) List(ctx context.Context) ([]models.WeddingEvent, error) {
 	return weddings, err
 }
 
-func (r *WeddingRepo) Create(ctx context.Context, w *models.WeddingEvent) error {
-	return r.db.WithContext(ctx).Create(w).Error
+// CreateWithOwner inserts the wedding and the creator's grant in one
+// transaction, so a grant failure leaves no ownerless wedding behind.
+func (r *WeddingRepo) CreateWithOwner(ctx context.Context, w *models.WeddingEvent, ownerID uuid.UUID) error {
+	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Create(w).Error; err != nil {
+			return err
+		}
+		if ownerID == uuid.Nil {
+			return nil
+		}
+		return tx.Create(&models.UserWedding{ID: uuid.New(), UserID: ownerID, WeddingID: w.ID}).Error
+	})
 }
 
-// Update writes the mutable columns only, under the row lock. Save would
-// re-insert a deleted wedding: this report is 404 instead.
-func (r *WeddingRepo) Update(ctx context.Context, w *models.WeddingEvent) error {
+// Update writes only the columns the caller carried, under the row lock, so a
+// save cannot revert a column another request changed in the meantime. Save
+// would re-insert a deleted wedding: this report is 404 instead.
+func (r *WeddingRepo) Update(ctx context.Context, id uuid.UUID, fields map[string]any) error {
 	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		q := tx.Model(&models.WeddingEvent{}).Where("id = ?", w.ID)
+		q := tx.Model(&models.WeddingEvent{}).Where("id = ?", id)
 		if tx.Name() == "postgres" {
+			if err := setLockTimeout(tx); err != nil {
+				return err
+			}
 			q = q.Clauses(clause.Locking{Strength: "UPDATE"})
 		}
 		// Read the row under the lock. A count would be invalid here: Postgres
@@ -46,31 +60,20 @@ func (r *WeddingRepo) Update(ctx context.Context, w *models.WeddingEvent) error 
 		if err := q.First(&existing).Error; err != nil {
 			return err
 		}
-		return tx.Model(&models.WeddingEvent{}).Where("id = ?", w.ID).Updates(map[string]any{
-			"name":                     w.Name,
-			"date":                     w.Date,
-			"venue_name":               w.VenueName,
-			"venue_address":            w.VenueAddress,
-			"kiosk_description":        w.KioskDescription,
-			"kiosk_logo_url":           w.KioskLogoUrl,
-			"kiosk_background_url":     w.KioskBackgroundUrl,
-			"kiosk_background_blur":    w.KioskBackgroundBlur,
-			"kiosk_background_size":    w.KioskBackgroundSize,
-			"kiosk_background_pos_x":   w.KioskBackgroundPosX,
-			"kiosk_background_pos_y":   w.KioskBackgroundPosY,
-			"kiosk_logo_size":          w.KioskLogoSize,
-			"kiosk_logo_pos_x":         w.KioskLogoPosX,
-			"kiosk_logo_pos_y":         w.KioskLogoPosY,
-			"show_seat_numbers":        w.ShowSeatNumbers,
-			"kiosk_idle_reset_seconds": w.KioskIdleResetSeconds,
-			"hall_width":               w.HallWidth,
-			"hall_height":              w.HallHeight,
-		}).Error
+		if len(fields) == 0 {
+			return nil
+		}
+		return tx.Model(&models.WeddingEvent{}).Where("id = ?", id).Updates(fields).Error
 	})
 }
 
 func (r *WeddingRepo) Delete(ctx context.Context, id uuid.UUID) error {
 	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		// Take the wedding row lock before the cascade: a guest write that holds
+		// it would otherwise insert rows after the sweep and leave orphans.
+		if err := LockWedding(tx, id); err != nil {
+			return err
+		}
 		// Cascade: remove guests, tables, hall elements, and user associations
 		if err := tx.Where("wedding_id = ?", id).Delete(&models.GuestRecord{}).Error; err != nil {
 			return err
@@ -84,6 +87,13 @@ func (r *WeddingRepo) Delete(ctx context.Context, id uuid.UUID) error {
 		if err := tx.Where("wedding_id = ?", id).Delete(&models.UserWedding{}).Error; err != nil {
 			return err
 		}
-		return tx.Delete(&models.WeddingEvent{}, id).Error
+		res := tx.Delete(&models.WeddingEvent{}, id)
+		if res.Error != nil {
+			return res.Error
+		}
+		if res.RowsAffected == 0 {
+			return gorm.ErrRecordNotFound
+		}
+		return nil
 	})
 }

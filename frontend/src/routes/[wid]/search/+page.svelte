@@ -3,7 +3,6 @@
   import { weddingTitle } from '#lib/stores/weddingTitle.ts';
   import { getLayout } from '#lib/api/layout.ts';
   import { addToast, selectedGuest, isDrawerOpen } from '#lib/stores/index.ts';
-  import { weddingId } from '#lib/stores/weddingId.ts';
   import { guestList } from '#lib/stores/guestEvents.ts';
   import { get } from 'svelte/store';
   import Badge from '#lib/components/ui/Badge.svelte';
@@ -11,11 +10,12 @@
   import { formatPartySize } from '#lib/utils/seat.ts';
   import Search from 'lucide-svelte/icons/search';
 import CheckCircle2 from 'lucide-svelte/icons/check-circle-2';
-  import { onMount } from 'svelte';
+  import { page } from '$app/state';
   import type { Guest, BanquetTable, HallElement } from '#lib/types/index.ts';
   import { rankGuests } from '#lib/utils/guestSearch.ts';
   import HallMap from '#lib/components/seating/HallMap.svelte';
 
+  let wid = $derived(page.params.wid ?? '');
   let query = $state('');
   let results = $state<Guest[]>([]);
 
@@ -25,6 +25,7 @@ import CheckCircle2 from 'lucide-svelte/icons/check-circle-2';
   let hallWidth = $state(860);
   let hallHeight = $state(1000);
   let dataLoading = $state(true);
+  let errored = $state(false);
   let highlightTableId = $state<string | null>(null);
   let showResults = $state(false);
   let sortCol = $state<string>('name');
@@ -94,22 +95,22 @@ import CheckCircle2 from 'lucide-svelte/icons/check-circle-2';
     }
   }
 
-  let initialized = $state(false);
-
-  onMount(() => {
-    init();
+  // The route can change without remounting this page; reload for the new wid.
+  $effect(() => {
+    if (!wid) return;
+    tables = [];
+    elements = [];
+    errored = false;
+    dataLoading = true;
+    void init(wid);
   });
 
-  async function init() {
-    if (initialized) return;
-    initialized = true;
+  async function init(forWid: string) {
     try {
       // Guest list is already seeded by the layout via SSE store.
       // Only fetch tables and layout here.
-      const [t, layout] = await Promise.all([
-        listTables(get(weddingId)).catch(() => [] as BanquetTable[]),
-        getLayout(get(weddingId)).catch(() => null),
-      ]);
+      const [t, layout] = await Promise.all([listTables(forWid), getLayout(forWid)]);
+      if (forWid !== wid) return;
       tables = t;
       if (layout) {
         elements = layout.elements;
@@ -117,9 +118,11 @@ import CheckCircle2 from 'lucide-svelte/icons/check-circle-2';
         hallHeight = layout.hallHeight;
       }
     } catch {
+      if (forWid !== wid) return;
+      errored = true;
       addToast('Failed to load data', 'error');
     } finally {
-      dataLoading = false;
+      if (forWid === wid) dataLoading = false;
     }
   }
 
@@ -302,7 +305,17 @@ import CheckCircle2 from 'lucide-svelte/icons/check-circle-2';
 
     <!-- Map (fills remaining space) -->
     <div class="flex-1 relative overflow-hidden min-w-0 flex flex-col">
-      {#if tables.length > 0}
+      {#if errored}
+        <div class="flex items-center justify-center h-full">
+          <div class="text-center px-6">
+            <p class="text-sm text-gray-600 mb-3">Failed to load the hall map.</p>
+            <button
+              class="px-4 py-2.5 bg-red text-white rounded-xl text-sm font-semibold hover:bg-red-light transition-colors"
+              onclick={() => { errored = false; dataLoading = true; void init(wid); }}
+            >Retry</button>
+          </div>
+        </div>
+      {:else if tables.length > 0}
         <HallMap
           tables={tables}
           {elements}

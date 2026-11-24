@@ -1,15 +1,18 @@
 import { goto } from '$app/navigation';
 import { getAuth, setAuth, clearAuth } from '#lib/stores/index.ts';
 import { setWeddingId } from '#lib/stores/weddingId.ts';
+import { clearGuestStores, clearGuestCaches } from '#lib/stores/guestEvents.ts';
 
 const BASE = '';
 
 // Serialize concurrent refresh attempts — only one refresh in flight at a time.
 let refreshPromise: Promise<boolean> | null = null;
 
-export function getAccessToken(): string {
-	const { accessToken } = getAuth();
-	return accessToken ?? '';
+// Chrome/Firefox say "Failed to fetch"/"NetworkError"; Safari says "Load failed".
+// A failed request is a fallback-to-cache case; a 4xx is not.
+export function isNetworkError(e: unknown): boolean {
+	if (typeof navigator !== 'undefined' && navigator.onLine === false) return true;
+	return e instanceof TypeError && /failed to fetch|networkerror|load failed/i.test((e as Error).message || '');
 }
 
 async function doRefresh(): Promise<boolean> {
@@ -40,6 +43,10 @@ async function doRefresh(): Promise<boolean> {
 	if (refreshRes.status !== 401) return false;
 	clearAuth();
 	setWeddingId('');
+	// A revoked session must not leave the guest cache (emails, notes, angbao)
+	// on the device for the next account.
+	clearGuestStores();
+	clearGuestCaches();
 	if (typeof window !== 'undefined') window.location.href = '/login';
 	return false;
 }

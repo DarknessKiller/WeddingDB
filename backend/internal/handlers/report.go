@@ -1,8 +1,9 @@
 package handlers
 
 import (
-	"fmt"
+	"errors"
 	"log/slog"
+	"mime"
 	"net/http"
 	"strconv"
 	"strings"
@@ -44,7 +45,12 @@ func (h *ReportHandler) ExportAngpao(w http.ResponseWriter, r *http.Request) {
 		data, filename, err = h.reportService.GenerateCSV(ctx, wid)
 	}
 
+	if errors.Is(err, services.ErrWeddingNotFound) {
+		http.Error(w, "Wedding not found", http.StatusNotFound)
+		return
+	}
 	if err != nil {
+		slog.ErrorContext(ctx, "generate report failed", "wid", wid, "format", format, "err", err)
 		http.Error(w, "Failed to generate report", http.StatusInternalServerError)
 		return
 	}
@@ -52,7 +58,7 @@ func (h *ReportHandler) ExportAngpao(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/octet-stream")
 	// Sanitize filename: strip control chars, use RFC 5987 encoding for non-ASCII
 	safeFilename := sanitizeContentDisposition(filename)
-	w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="%s"`, safeFilename))
+	w.Header().Set("Content-Disposition", mime.FormatMediaType("attachment", map[string]string{"filename": safeFilename}))
 	w.Header().Set("Content-Length", strconv.Itoa(len(data)))
 	w.WriteHeader(http.StatusOK)
 	if _, err := w.Write(data); err != nil {

@@ -39,9 +39,12 @@ func TestTableCreate_NameBounds(t *testing.T) {
 			capacity INTEGER, x REAL NOT NULL DEFAULT 0, y REAL NOT NULL DEFAULT 0,
 			degree REAL NOT NULL DEFAULT 0, is_vip INTEGER,
 			created_at DATETIME, updated_at DATETIME)`,
+		weddingEventsDDL,
 	} {
 		testutil.NoErr(t, db.Exec(stmt).Error)
 	}
+	wid := uuid.New()
+	testutil.NoErr(t, db.Create(&models.WeddingEvent{ID: wid, Name: "Wedding"}).Error)
 
 	svc := services.NewTableService(repository.NewTableRepo(db), nil, db)
 	s := fuego.NewServer(fuego.WithoutStartupMessages())
@@ -49,7 +52,7 @@ func TestTableCreate_NameBounds(t *testing.T) {
 
 	post := func(name string) *httptest.ResponseRecorder {
 		body := `{"name":"` + name + `","capacity":8}`
-		req := httptest.NewRequest(http.MethodPost, "/api/weddings/"+utils.EncodeUUID(uuid.New())+"/tables", strings.NewReader(body))
+		req := httptest.NewRequest(http.MethodPost, "/api/weddings/"+utils.EncodeUUID(wid)+"/tables", strings.NewReader(body))
 		req.Header.Set("Content-Type", "application/json")
 		rec := httptest.NewRecorder()
 		s.Mux.ServeHTTP(rec, req)

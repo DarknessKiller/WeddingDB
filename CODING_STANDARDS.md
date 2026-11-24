@@ -80,6 +80,10 @@ Files: `backend/internal/{handlers,services,repository,models,utils}`.
 - Lock order: a write that touches guests or tables locks the wedding row first,
   then the table row (`lockWedding`, `lockTable` in `services`). Another order
   can deadlock against guest writes.
+- The wedding row lock sets `SET LOCAL lock_timeout = '5s'` (`repository.LockWedding`),
+  so a waiter fails fast instead of holding a pool connection. The global error
+  handler maps Postgres `55P03` to HTTP 503 "Busy saving another change, please
+  retry". Test: `TestLockTimeoutIsRetryable`.
 - A check-then-write guard (last admin, guest cap, seat overlap) runs the check
   and the write in one transaction that holds a row lock. A count outside the
   write's transaction races.
@@ -159,6 +163,10 @@ Files: `backend/internal/config/{config,server}.go`,
   weddings retain independent capacity. Redis must preserve lease keys and its
   clock must not jump forward while streams are active. Each keepalive tick
   re-runs `ValidateToken`; a rejected token closes the stream, an outage keeps it.
+- Shutdown order: `SSEHub.CloseStreams`, then `Server.Shutdown`, then
+  `SSEHub.Shutdown`. The publish loop keeps draining until the HTTP drain ends,
+  so writes committed during the drain still reach other replicas.
+  Test: `TestSSEHub_ShutdownPublishesQueuedEvents`.
 - Uploads have a per-file limit (5 MiB) and no rate limit or disk quota, by
   owner decision.
 
@@ -223,6 +231,10 @@ Files: `frontend/src/lib/utils/limits.ts` (`LIMITS`),
   a template.
 - A field the API rejects is not a field the form may accept. Online, the whole
   submit fails. Offline, the edit retries until the queue drops it.
+- Number caps are checked before save, not only by `min`/`max`: the guest drawer
+  saves on click, so the browser never enforces them. `guestFormSchema` in
+  `frontend/src/lib/utils/reservation.ts` checks name, pax (1 to `LIMITS.guestPax`)
+  and angbao (integer, 0 or more) and shows the error next to the field.
 - HTML `maxlength` counts UTF-16 units and Go counts runes, so HTML is stricter
   for emoji, never looser.
 - Passwords are ASCII only, 8 to 72 characters. `validatePassword` rejects every
@@ -265,7 +277,13 @@ Design record: [ADR 001](docs/adr/001-offline-sync.md) and
   drains before the guest list is reseeded.
 - The kiosk is read-only. Check-in stays on the staff seating screen.
 - Bulk import is blocked offline.
-- Create uses a client-generated id that is final. No rewrite is needed.
+- Create uses a client-generated UUID that is final. No rewrite is needed. The
+  online POST sends the same `id`, and a network-error fallback queues the create
+  under that id, so a lost response never makes a second guest. The server
+  answers a create whose id already exists in the wedding with the stored guest
+  (HTTP 200, no write, no SSE). An id owned by another wedding returns 409.
+  Test: `TestGuestCreate_ClientIDIsIdempotent`.
+- A queued fallback reuses the `clientUpdatedAt` taken before the online attempt.
 
 ### Per-column last write wins
 
@@ -306,9 +324,13 @@ list does not cover is a question for the owner, not a bug to fix.
    Target test: `TestSync_TableAndSeatWinTogether`.
 3. **Undo is neutral.** Check-in writes `checkedInAt`, `rsvp`, and the payload
    fields it carries. Check-out writes `checkedInAt = null`. Both follow the same
-   time rule as any edit. Tests: `TestSync_ArrivalAndUndoFollowTime`,
+   time rule as any edit. A check-in on a guest already checked in keeps
+   `checkedInAt`, `rsvp` and `notes` as stored; only `angbaoAmt` and `giftItem`
+   merge. With no column won it is `skipped` with reason "already checked in".
+   Tests: `TestSync_ArrivalAndUndoFollowTime`,
    `TestSync_UndoBeatsUnrelatedNewerEdit`,
-   `TestSyncCheckOut_PostgresLosesToCheckInCommittedWhileWaiting`.
+   `TestSyncCheckOut_PostgresLosesToCheckInCommittedWhileWaiting`,
+   `TestSync_CheckInReplayWhileCheckedInIsSkipped`.
 4. **Delete is a row write.** A delete applies when newer than every write on the
    row. An older delete fails and stays queued. Test: `TestSync_DeleteLosesLWW_Failed`.
 5. **Replay is a no-op.** A mutation already applied reports `applied` and changes
@@ -390,18 +412,21 @@ Files: `backend/internal/services/auth_service.go`, `backend/internal/middleware
 - Access JWTs carry `tv` (token version). Redis holds the current version per user
   at `user:{id}:tv`. A missing key means version 0 (lazy init).
 - Logout blacklists the access token's `jti` at `blacklist:jti:{jti}` for the
-  token's remaining life.
+  token's remaining life. It deletes the presented refresh token and every
+  successor along `replaced_by` (`TokenRepo.DeleteChain`), so logging out with a
+  consumed token ends the session too. Test: `TestTokenRepo_DeleteChainFollowsSuccessors`.
 - Admin revoke deletes the user's refresh tokens in Postgres, then increments `tv`.
 - Refresh tokens rotate in one Postgres transaction (`TokenRepo.Rotate`). A
   conditional update on `rotated_at IS NULL` lets exactly one concurrent caller win.
   The loser gets the successor token.
 - A consumed refresh token returns the same successor for 60 seconds
   (`refreshGraceWindow`). After that it is rejected as replayed. The family is not revoked.
-- Expired refresh token rows are removed by the boot-time cleanup in
-  `backend/internal/bootstrap/bootstrap.go`. Rows pile up between restarts.
+- Expired refresh token rows are removed by the cleanup in the migrate job
+  (`backend/cmd/migrate`, `bootstrap.Migrate`). Rows pile up between migrate runs.
 - Wedding selection (`POST /api/auth/select-wedding`, body `weddingId` and
   `refreshToken`) scopes only the caller's refresh token. Other sessions of the
-  same user keep their scope.
+  same user keep their scope. A rotated token cannot be rescoped
+  (`rotated_at IS NULL`); the call returns 401 and the client refreshes first.
 
 ### Rules
 
@@ -426,6 +451,12 @@ Files: `backend/internal/services/auth_service.go`, `backend/internal/middleware
   after the row is gone.
 - An admin password reset sets `ForcePasswordChange`. The next change-password call
   skips the current-password proof once, clears the flag, and revokes sessions.
+- Access tokens carry the flag as the `fpc` claim, set at mint. While it is set,
+  `AuthMiddleware` answers every authenticated route except
+  `/api/auth/change-password` with 403 "Password change required". Reset and
+  change-password both revoke sessions, so the claim never goes stale. Tests:
+  `TestAuthMiddleware_ForcePasswordChangeBlocksOtherRoutes`,
+  `TestRegisteredGuestCreate_ForcePasswordAndClientID`.
 - Revocation deletes refresh tokens before the token-version bump and again after
   it. A refresh token carries the version it was minted at. A token, or successor,
   older than the current version is deleted and rejected.

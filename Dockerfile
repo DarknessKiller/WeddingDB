@@ -14,6 +14,7 @@ COPY backend/go.mod backend/go.sum ./
 RUN go mod download
 COPY backend/ ./
 RUN CGO_ENABLED=0 go build -ldflags "-X main.version=${VERSION}" -o server ./cmd/server/
+RUN CGO_ENABLED=0 go build -o migrate ./cmd/migrate/
 RUN mkdir -p /uploads
 
 
@@ -21,6 +22,7 @@ RUN mkdir -p /uploads
 FROM gcr.io/distroless/static-debian13
 WORKDIR /app
 COPY --from=backend-build /app/backend/server ./server
+COPY --from=backend-build /app/backend/migrate ./migrate
 # uploads is a mounted volume: pre-chown so a fresh volume inherits non-root ownership.
 COPY --chown=65532:65532 --from=backend-build /uploads ./uploads
 COPY --from=frontend-build /app/frontend/build ./static

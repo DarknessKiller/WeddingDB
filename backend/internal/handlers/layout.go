@@ -9,6 +9,7 @@ import (
 	"weddingdb/internal/services"
 
 	"github.com/go-fuego/fuego"
+	"gorm.io/gorm"
 )
 
 type LayoutHandler struct {
@@ -75,6 +76,9 @@ func (h *LayoutHandler) Get(c fuego.ContextNoBody) (any, error) {
 		return nil, err
 	}
 	wedding, err := h.weddingService.Get(ctx, wid)
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, fuego.NotFoundError{Title: "Wedding not found"}
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -151,6 +155,16 @@ func (h *LayoutHandler) Save(c fuego.ContextWithBody[LayoutRequest]) (any, error
 	if err := h.layoutService.Save(ctx, wid, body.HallWidth, body.HallHeight, tables, elements); err != nil {
 		if errors.Is(err, repository.ErrCapacityBelowSeated) {
 			return nil, fuego.BadRequestError{Title: err.Error()}
+		}
+		if errors.Is(err, repository.ErrLayoutElementNotFound) {
+			return nil, fuego.NotFoundError{Title: "Element not found"}
+		}
+		if errors.Is(err, services.ErrTableNotFound) || errors.Is(err, repository.ErrLayoutTableNotFound) {
+			return nil, fuego.NotFoundError{Title: "Table not found"}
+		}
+		// A bare not-found now only comes from the locked wedding read.
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, fuego.NotFoundError{Title: "Wedding not found"}
 		}
 		log.Printf("layout save error: %v", err)
 		return nil, fuego.InternalServerError{Title: "Failed to save layout"}

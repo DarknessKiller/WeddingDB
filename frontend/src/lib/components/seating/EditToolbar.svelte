@@ -11,6 +11,8 @@ import ChevronsDown from 'lucide-svelte/icons/chevrons-down';
 import Undo2 from 'lucide-svelte/icons/undo-2';
 import Redo2 from 'lucide-svelte/icons/redo-2';
   import { LIMITS } from '#lib/utils/limits.ts';
+  import { clampHallSize, clampElementSize, HALL_MAX, HALL_MIN, ELEMENT_MAX, ELEMENT_MIN } from '#lib/utils/layout.ts';
+  import { clampTableCapacity } from '#lib/utils/seat.ts';
 import AlignStartVertical from 'lucide-svelte/icons/align-start-vertical';
 import AlignCenterVertical from 'lucide-svelte/icons/align-center-vertical';
 import AlignEndVertical from 'lucide-svelte/icons/align-end-vertical';
@@ -29,6 +31,7 @@ import AlignVerticalDistributeCenter from 'lucide-svelte/icons/align-vertical-di
     selectedId = null,
     isTableSelected = false,
     selectedItem = null,
+    seatedPax = 0,
     snap = true,
     canUndo = false,
     canRedo = false,
@@ -53,6 +56,7 @@ import AlignVerticalDistributeCenter from 'lucide-svelte/icons/align-vertical-di
     selectedId?: string | null;
     isTableSelected?: boolean;
     selectedItem?: any;
+    seatedPax?: number;
     snap?: boolean;
     canUndo?: boolean;
     canRedo?: boolean;
@@ -218,20 +222,28 @@ import AlignVerticalDistributeCenter from 'lucide-svelte/icons/align-vertical-di
       id="hall-w"
       type="number"
       value={hallWidth}
-      onchange={(e) => onWidthChange(Number(e.currentTarget.value))}
+      onchange={(e) => {
+        const v = clampHallSize(Number(e.currentTarget.value));
+        e.currentTarget.value = String(v);
+        onWidthChange(v);
+      }}
       class="w-16 px-1.5 py-1 border border-gray-200 rounded-lg text-center"
-      min="200"
-      max="3000"
+      min={HALL_MIN}
+      max={HALL_MAX}
     />
     <label for="hall-h" class="text-gray-500 ml-1">H</label>
     <input
       id="hall-h"
       type="number"
       value={hallHeight}
-      onchange={(e) => onHeightChange(Number(e.currentTarget.value))}
+      onchange={(e) => {
+        const v = clampHallSize(Number(e.currentTarget.value));
+        e.currentTarget.value = String(v);
+        onHeightChange(v);
+      }}
       class="w-16 px-1.5 py-1 border border-gray-200 rounded-lg text-center"
-      min="200"
-      max="3000"
+      min={HALL_MIN}
+      max={HALL_MAX}
     />
   </div>
 
@@ -288,20 +300,30 @@ import AlignVerticalDistributeCenter from 'lucide-svelte/icons/align-vertical-di
           id="sel-w"
           type="number"
           value={selectedItem.width ?? 10}
-          onchange={(e) => onUpdateSelected({ width: Number(e.currentTarget.value) })}
+          onchange={(e) => {
+            const input = e.currentTarget;
+            const v = clampElementSize(Number(input.value));
+            input.value = String(v);
+            onUpdateSelected({ width: v });
+          }}
           class="w-14 px-1.5 py-1 border border-gray-200 rounded-lg text-center"
-          min="1"
-          max="100"
+          min={ELEMENT_MIN}
+          max={ELEMENT_MAX}
         />
         <label for="sel-h" class="text-gray-500 ml-1">H</label>
         <input
           id="sel-h"
           type="number"
           value={selectedItem.height ?? 10}
-          onchange={(e) => onUpdateSelected({ height: Number(e.currentTarget.value) })}
+          onchange={(e) => {
+            const input = e.currentTarget;
+            const v = clampElementSize(Number(input.value));
+            input.value = String(v);
+            onUpdateSelected({ height: v });
+          }}
           class="w-14 px-1.5 py-1 border border-gray-200 rounded-lg text-center"
-          min="1"
-          max="100"
+          min={ELEMENT_MIN}
+          max={ELEMENT_MAX}
         />
       </div>
       <!-- Label -->
@@ -374,10 +396,15 @@ import AlignVerticalDistributeCenter from 'lucide-svelte/icons/align-vertical-di
           id="sel-cap"
           type="number"
           value={selectedItem.capacity ?? 10}
-          onchange={(e) => onUpdateSelected({ capacity: Number(e.currentTarget.value) })}
+          onchange={(e) => {
+            const input = e.currentTarget;
+            const v = clampTableCapacity(Number(input.value), Math.max(1, seatedPax));
+            input.value = String(v);
+            onUpdateSelected({ capacity: v });
+          }}
           class="w-14 px-1.5 py-1 border border-gray-200 rounded-lg text-center"
-          min="1"
-          max="50"
+          min={Math.max(1, seatedPax)}
+          max={LIMITS.tableCapacity}
         />
       </div>
       <div class="flex items-center gap-1">

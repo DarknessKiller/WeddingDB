@@ -54,16 +54,30 @@ func (r *TableRepo) CheckCapacity(ctx context.Context, weddingID, tableID uuid.U
 }
 
 func (r *TableRepo) Update(ctx context.Context, t *models.BanquetTable) error {
-	return r.db.WithContext(ctx).Model(t).Where("id = ? AND wedding_id = ?", t.ID, t.WeddingID).Updates(map[string]interface{}{
+	res := r.db.WithContext(ctx).Model(t).Where("id = ? AND wedding_id = ?", t.ID, t.WeddingID).Updates(map[string]interface{}{
 		"name":     t.Name,
 		"capacity": t.Capacity,
 		"x":        t.X,
 		"y":        t.Y,
 		"degree":   t.Degree,
 		"is_vip":   t.IsVip,
-	}).Error
+	})
+	if res.Error != nil {
+		return res.Error
+	}
+	if res.RowsAffected == 0 {
+		return gorm.ErrRecordNotFound
+	}
+	return nil
 }
 
 func (r *TableRepo) Delete(ctx context.Context, id, weddingID uuid.UUID) error {
-	return r.db.WithContext(ctx).Where("id = ? AND wedding_id = ?", id, weddingID).Delete(&models.BanquetTable{}).Error
+	res := r.db.WithContext(ctx).Where("id = ? AND wedding_id = ?", id, weddingID).Delete(&models.BanquetTable{})
+	if res.Error != nil {
+		return res.Error
+	}
+	if res.RowsAffected == 0 {
+		return gorm.ErrRecordNotFound
+	}
+	return nil
 }

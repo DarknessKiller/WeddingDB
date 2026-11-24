@@ -65,28 +65,30 @@ func (h *AdminHandler) Create(c fuego.ContextWithBody[AdminRequest]) (any, error
 	if err != nil {
 		return nil, fuego.InternalServerError{Title: "Failed to hash password"}
 	}
+	var ids []uuid.UUID
+	seen := make(map[uuid.UUID]struct{}, len(body.Weddings))
+	for _, ws := range body.Weddings {
+		id, err := DecodeID(ws)
+		if err != nil {
+			return nil, fuego.BadRequestError{Title: "Invalid weddings: invalid wedding ID"}
+		}
+		if _, ok := seen[id]; ok {
+			continue
+		}
+		seen[id] = struct{}{}
+		ids = append(ids, id)
+	}
 	admin := &models.AdminUser{
 		Email:    body.Email,
 		Password: string(hash),
 		Name:     body.Name,
 		Role:     body.Role,
 	}
-	if err := h.adminRepo.Create(ctx, admin); err != nil {
+	if err := h.adminRepo.CreateWithWeddings(ctx, admin, ids); err != nil {
+		if isEmailUniqueViolation(err) {
+			return nil, fuego.ConflictError{Title: "Email already registered"}
+		}
 		return nil, err
-	}
-	// Assign weddings if provided
-	if len(body.Weddings) > 0 {
-		var ids []uuid.UUID
-		for _, ws := range body.Weddings {
-			if id, err := DecodeID(ws); err == nil {
-				ids = append(ids, id)
-			}
-		}
-		if len(ids) > 0 {
-			if err := h.adminRepo.SetUserWeddings(ctx, admin.ID, ids); err != nil {
-				return nil, err
-			}
-		}
 	}
 	c.SetStatus(201)
 	return admin, nil
@@ -106,7 +108,11 @@ func (h *AdminHandler) Delete(c fuego.ContextWithBody[any]) (any, error) {
 		return nil, fuego.BadRequestError{Title: "Cannot delete your own account"}
 	}
 	if _, err := h.adminRepo.FindByID(ctx, id); err != nil {
-		return nil, fuego.NotFoundError{Title: "User not found"}
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, fuego.NotFoundError{Title: "User not found"}
+		}
+		slog.ErrorContext(ctx, "load user failed", "user", id, "err", err)
+		return nil, fuego.InternalServerError{Title: "Failed to load user"}
 	}
 	if err := h.adminRepo.Delete(ctx, id); err != nil {
 		if errors.Is(err, repository.ErrLastAdmin) {
@@ -142,14 +148,26 @@ func (h *AdminHandler) AssignWeddings(c fuego.ContextWithBody[AssignWeddingsRequ
 		return nil, fuego.BadRequestError{Title: "Invalid ID"}
 	}
 	admin, err := h.adminRepo.FindByID(ctx, id)
-	if err != nil {
+	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return nil, fuego.NotFoundError{Title: "Admin not found"}
 	}
+	if err != nil {
+		slog.ErrorContext(ctx, "load user failed", "user", id, "err", err)
+		return nil, fuego.InternalServerError{Title: "Failed to load user"}
+	}
+	kept := make(map[uuid.UUID]bool, len(body.Weddings))
 	var ids []uuid.UUID
 	for _, ws := range body.Weddings {
-		if wid, err := DecodeID(ws); err == nil {
-			ids = append(ids, wid)
+		wid, err := DecodeID(ws)
+		if err != nil {
+			return nil, fuego.BadRequestError{Title: "Invalid weddings: invalid wedding ID"}
 		}
+		// A repeated id would violate idx_user_wedding; grant it once.
+		if kept[wid] {
+			continue
+		}
+		kept[wid] = true
+		ids = append(ids, wid)
 	}
 	// Fetch the old grants so removing access can revoke live sessions. Without
 	// them the revocation below cannot run, so the request fails instead of
@@ -160,10 +178,6 @@ func (h *AdminHandler) AssignWeddings(c fuego.ContextWithBody[AssignWeddingsRequ
 	}
 	if err := h.adminRepo.SetUserWeddings(ctx, admin.ID, ids); err != nil {
 		return nil, fuego.InternalServerError{Title: "Failed to assign weddings"}
-	}
-	kept := make(map[uuid.UUID]bool, len(ids))
-	for _, wid := range ids {
-		kept[wid] = true
 	}
 	for _, w := range oldWeddings {
 		if !kept[w.ID] {
@@ -186,6 +200,11 @@ func (h *AdminHandler) GetUserWeddings(c fuego.ContextNoBody) (any, error) {
 	id, err := DecodeID(c.PathParam("id"))
 	if err != nil {
 		return nil, fuego.BadRequestError{Title: "Invalid ID"}
+	}
+	if _, err := h.adminRepo.FindByID(ctx, id); errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, fuego.NotFoundError{Title: "User not found"}
+	} else if err != nil {
+		return nil, err
 	}
 	weddings, err := h.adminRepo.GetUserWeddings(ctx, id)
 	if err != nil {
@@ -220,8 +239,12 @@ func (h *AdminHandler) ResetPassword(c fuego.ContextWithBody[ResetPasswordReques
 		return nil, fuego.BadRequestError{Title: "Use change-password to change your own password"}
 	}
 	admin, err := h.adminRepo.FindByID(ctx, id)
-	if err != nil {
+	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return nil, fuego.NotFoundError{Title: "User not found"}
+	}
+	if err != nil {
+		slog.ErrorContext(ctx, "load user failed", "user", id, "err", err)
+		return nil, fuego.InternalServerError{Title: "Failed to load user"}
 	}
 	hash, err := bcrypt.GenerateFromPassword([]byte(body.Password), bcrypt.DefaultCost)
 	if err != nil {
@@ -271,12 +294,19 @@ func (h *AdminHandler) UpdateRole(c fuego.ContextWithBody[UpdateRoleRequest]) (a
 	}
 	// Fetch user once for guard check and update
 	admin, err := h.adminRepo.FindByID(ctx, id)
-	if err != nil {
+	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return nil, fuego.NotFoundError{Title: "User not found"}
+	}
+	if err != nil {
+		slog.ErrorContext(ctx, "load user failed", "user", id, "err", err)
+		return nil, fuego.InternalServerError{Title: "Failed to load user"}
 	}
 	if err := h.adminRepo.UpdateRole(ctx, id, body.Role); err != nil {
 		if errors.Is(err, repository.ErrLastAdmin) {
 			return nil, fuego.BadRequestError{Title: "Cannot demote the last admin"}
+		}
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, fuego.NotFoundError{Title: "User not found"}
 		}
 		return nil, fuego.InternalServerError{Title: "Failed to update role"}
 	}
@@ -307,8 +337,11 @@ func (h *AdminHandler) RevokeUser(c fuego.ContextNoBody) (any, error) {
 	}
 
 	// Verify user exists
-	if _, err := h.adminRepo.FindByID(c.Context(), id); err != nil {
+	if _, err := h.adminRepo.FindByID(c.Context(), id); errors.Is(err, gorm.ErrRecordNotFound) {
 		return nil, fuego.NotFoundError{Title: "User not found"}
+	} else if err != nil {
+		slog.ErrorContext(c.Context(), "load user failed", "user", id, "err", err)
+		return nil, fuego.InternalServerError{Title: "Failed to load user"}
 	}
 
 	if err := h.authService.RevokeUserTokens(c.Context(), id); err != nil {

@@ -1,9 +1,9 @@
 <script lang="ts">
+  import { page } from '$app/state';
   import { onMount } from 'svelte';
-  import { trapFocus } from '#lib/utils/focus.ts';
+  import { trapFocus, registerEscape } from '#lib/utils/focus.ts';
   import { goto } from '$app/navigation';
   import { addToast, getAuth } from '#lib/stores/index.ts';
-  import { weddingId } from '#lib/stores/weddingId.ts';
   import { listUsers, createUser, deleteUser, revokeUser, assignWeddings, resetPassword, getUserWeddings, updateRole, type User } from '#lib/api/users.ts';
   import { listWeddings, type Wedding } from '#lib/api/weddings.ts';
   import Plus from 'lucide-svelte/icons/plus';
@@ -18,6 +18,7 @@ import LogOut from 'lucide-svelte/icons/log-out';
   import { weddingTitle } from '#lib/stores/weddingTitle.ts';
   import PasswordRequirements from '#lib/components/ui/PasswordRequirements.svelte';
   import { LIMITS, PASSWORD_PATTERN } from '#lib/utils/limits.ts';
+  import { canSaveGrants, grantsLoading, loadWeddingGrants, type GrantsState } from '#lib/utils/userGrants.ts';
 
   let admins = $state<User[]>([]);
   let weddings = $state<Wedding[]>([]);
@@ -25,7 +26,7 @@ import LogOut from 'lucide-svelte/icons/log-out';
 
   const auth = getAuth();
   if (auth.role !== 'admin') {
-    goto(`/${$weddingId}/dashboard`, { replaceState: true });
+    goto(`/${page.params.wid ?? ''}/dashboard`, { replaceState: true });
   }
 
   // Create modal
@@ -56,13 +57,30 @@ import LogOut from 'lucide-svelte/icons/log-out';
   // Assign weddings modal
   let assignTarget = $state<User | null>(null);
   let assignWeddingIds = $state<string[]>([]);
+  let assignGrants = $state<GrantsState>(grantsLoading());
   let assignSaving = $state(false);
+  let canSaveAssign = $derived(canSaveGrants(assignGrants));
+
+  $effect(() => {
+    if (!showCreate) return;
+    return registerEscape(() => showCreate = false);
+  });
+
+  $effect(() => {
+    if (!assignTarget) return;
+    return registerEscape(() => assignTarget = null);
+  });
 
   // Reset password modal
   let resetTarget = $state<User | null>(null);
   let resetPassword_ = $state('');
   let resetConfirmPassword = $state('');
   let resetSaving = $state(false);
+
+  $effect(() => {
+    if (!resetTarget) return;
+    return registerEscape(() => resetTarget = null);
+  });
 
   let resetPasswordMismatch = $derived(resetConfirmPassword.length > 0 && resetPassword_ !== resetConfirmPassword);
   let canReset = $derived(
@@ -163,16 +181,22 @@ import LogOut from 'lucide-svelte/icons/log-out';
     }
   }
 
-  function openAssign(user: User) {
+  async function openAssign(user: User) {
     assignTarget = user;
     assignWeddingIds = [];
-    getUserWeddings(user.id).then(weds => {
-      assignWeddingIds = weds.map(w => w.id);
-    }).catch(() => {});
+    assignGrants = grantsLoading();
+    const forId = user.id;
+    const grants = await loadWeddingGrants(() => getUserWeddings(forId));
+    // A stale response must not land on a different target: a save would replace
+    // that user's grants with these ids.
+    if (assignTarget?.id !== forId) return;
+    assignGrants = grants;
+    assignWeddingIds = grants.ids;
+    if (grants.error) addToast(grants.error, 'error');
   }
 
   async function handleAssign() {
-    if (!assignTarget) return;
+    if (!assignTarget || !canSaveAssign) return;
     assignSaving = true;
     try {
       await assignWeddings(assignTarget.id, assignWeddingIds);
@@ -348,7 +372,7 @@ import LogOut from 'lucide-svelte/icons/log-out';
 {#if showCreate}
   <div class="fixed inset-0 z-50 flex items-center justify-center p-4">
     <div class="absolute inset-0 bg-black/30 backdrop-blur-md" onclick={() => showCreate = false} role="presentation"></div>
-    <div use:trapFocus role="dialog" aria-modal="true" aria-label="Add user" tabindex="-1" onkeydown={(e) => { if (e.key === 'Escape') showCreate = false; }} class="relative bg-white/95 backdrop-blur-xl rounded-2xl shadow-2xl w-full max-w-md overflow-hidden">
+    <div use:trapFocus role="dialog" aria-modal="true" aria-label="Add user" tabindex="-1" class="relative bg-white/95 backdrop-blur-xl rounded-2xl shadow-2xl w-full max-w-md overflow-hidden">
       <div class="flex items-center justify-between p-5 border-b border-gray-100">
         <h3 class="font-bold text-gray-900">Add User</h3>
         <button onclick={() => showCreate = false} aria-label="Close" class="w-11 h-11 rounded-lg flex items-center justify-center hover:bg-gray-100 transition-colors">
@@ -403,7 +427,7 @@ import LogOut from 'lucide-svelte/icons/log-out';
 {#if assignTarget}
   <div class="fixed inset-0 z-50 flex items-center justify-center p-4">
     <div class="absolute inset-0 bg-black/30 backdrop-blur-md" onclick={() => assignTarget = null} role="presentation"></div>
-    <div use:trapFocus role="dialog" aria-modal="true" aria-label="Assign weddings" tabindex="-1" onkeydown={(e) => { if (e.key === 'Escape') assignTarget = null; }} class="relative bg-white/95 backdrop-blur-xl rounded-2xl shadow-2xl w-full max-w-sm overflow-hidden">
+    <div use:trapFocus role="dialog" aria-modal="true" aria-label="Assign weddings" tabindex="-1" class="relative bg-white/95 backdrop-blur-xl rounded-2xl shadow-2xl w-full max-w-sm overflow-hidden">
       <div class="flex items-center justify-between p-5 border-b border-gray-100">
         <h3 class="font-bold text-gray-900">Assign Weddings</h3>
         <button onclick={() => assignTarget = null} aria-label="Close" class="w-11 h-11 rounded-lg flex items-center justify-center hover:bg-gray-100 transition-colors">
@@ -412,7 +436,17 @@ import LogOut from 'lucide-svelte/icons/log-out';
       </div>
       <div class="p-5 space-y-4">
         <p class="text-sm text-gray-600">Assign weddings to <strong>{assignTarget.name}</strong></p>
-        {#if weddings.length === 0}
+        {#if assignGrants.loading}
+          <p class="text-sm text-gray-500 italic">Loading weddings...</p>
+        {:else if assignGrants.error}
+          <div class="space-y-2">
+            <p class="text-sm text-red">{assignGrants.error}</p>
+            <button onclick={() => openAssign(assignTarget!)}
+              class="px-3 py-2 border border-black/[0.06] bg-white/90 rounded-xl text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors">
+              Retry
+            </button>
+          </div>
+        {:else if weddings.length === 0}
           <p class="text-sm text-gray-500 italic">No weddings available</p>
         {:else}
           <div class="space-y-2 max-h-60 overflow-y-auto">
@@ -426,7 +460,7 @@ import LogOut from 'lucide-svelte/icons/log-out';
         {/if}
       </div>
       <div class="flex gap-3 p-5 pt-0">
-        <button onclick={handleAssign} disabled={assignSaving}
+        <button onclick={handleAssign} disabled={assignSaving || !canSaveAssign}
           class="flex-1 py-2.5 bg-red text-white rounded-xl text-sm font-semibold hover:bg-red-light transition-colors disabled:opacity-50">
           {assignSaving ? 'Saving...' : 'Save'}
         </button>
@@ -442,7 +476,7 @@ import LogOut from 'lucide-svelte/icons/log-out';
 {#if resetTarget}
   <div class="fixed inset-0 z-50 flex items-center justify-center p-4">
     <div class="absolute inset-0 bg-black/30 backdrop-blur-md" onclick={() => resetTarget = null} role="presentation"></div>
-    <div use:trapFocus role="dialog" aria-modal="true" aria-label="Reset password" tabindex="-1" onkeydown={(e) => { if (e.key === 'Escape') resetTarget = null; }} class="relative bg-white/95 backdrop-blur-xl rounded-2xl shadow-2xl w-full max-w-md overflow-hidden">
+    <div use:trapFocus role="dialog" aria-modal="true" aria-label="Reset password" tabindex="-1" class="relative bg-white/95 backdrop-blur-xl rounded-2xl shadow-2xl w-full max-w-md overflow-hidden">
       <div class="flex items-center justify-between p-5 border-b border-gray-100">
         <h3 class="font-bold text-gray-900">Reset Password</h3>
         <button onclick={() => resetTarget = null} aria-label="Close" class="w-11 h-11 rounded-lg flex items-center justify-center hover:bg-gray-100 transition-colors">

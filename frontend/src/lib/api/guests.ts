@@ -1,20 +1,21 @@
-import { apiFetch } from './client';
+import { apiFetch, isNetworkError } from './client';
 import { get } from 'svelte/store';
 import { weddingId } from '#lib/stores/weddingId.ts';
 import { applyGuestResponse, guestMap, removeGuest, upsertGuest } from '#lib/stores/guestEvents.ts';
 import { enqueue, type SyncOp } from '#lib/offline/queue.ts';
-import { applyGuestPatch, type GuestFields } from '#lib/utils/guestTransform.ts';
+import { applyGuestPatch, toGuest, type GuestFields } from '#lib/utils/guestTransform.ts';
 
 function isOffline() {
 	return typeof navigator !== 'undefined' && !navigator.onLine;
 }
-function isNetworkError(e: unknown) {
-	if (isOffline()) return true;
-	// Chrome/Firefox say "Failed to fetch"/"NetworkError"; Safari says "Load failed".
-	return e instanceof TypeError && /failed to fetch|networkerror|load failed/i.test((e as Error).message || '');
-}
 function genId(): string {
-	try { return crypto.randomUUID(); } catch { return `${Date.now()}-${Math.random().toString(36).slice(2)}`; }
+	if (typeof crypto.randomUUID === 'function') return crypto.randomUUID();
+	// randomUUID needs a secure context (plain-HTTP LAN); the backend still wants an RFC 4122 v4 UUID.
+	const b = crypto.getRandomValues(new Uint8Array(16));
+	b[6] = (b[6] & 0x0f) | 0x40;
+	b[8] = (b[8] & 0x3f) | 0x80;
+	const h = Array.from(b, (x) => x.toString(16).padStart(2, '0')).join('');
+	return `${h.slice(0, 8)}-${h.slice(8, 12)}-${h.slice(12, 16)}-${h.slice(16, 20)}-${h.slice(20)}`;
 }
 function nowIso() { return new Date().toISOString(); }
 function optimisticPatch(op: SyncOp, guestId: string, data: GuestFields = {}) {
@@ -74,6 +75,8 @@ export interface GuestResponse {
 }
 
 export interface GuestCreateData {
+	/** Client-minted UUID: a retried POST returns the existing guest instead of a duplicate. */
+	id?: string;
 	name: string;
 	email?: string;
 	pax: number;
@@ -108,6 +111,13 @@ export async function fetchAllGuests(weddingId: string): Promise<GuestResponse[]
 	return all;
 }
 
+// errorMessage keeps the server's title (seat overlap, cap) so a rejected save
+// says why, not just the status.
+async function errorMessage(res: Response, fallback: string): Promise<string> {
+	const err = await res.json().catch(() => null);
+	return err?.title || `${fallback}: ${res.status}`;
+}
+
 export async function getGuest(weddingId: string, guestId: string): Promise<GuestResponse> {
 	const res = await apiFetch(`/api/weddings/${weddingId}/guests/${guestId}`);
 	if (!res.ok) throw new Error(`Failed to get guest: ${res.status}`);
@@ -115,22 +125,23 @@ export async function getGuest(weddingId: string, guestId: string): Promise<Gues
 }
 
 export async function createGuest(weddingId: string, data: GuestCreateData): Promise<GuestResponse> {
-	const doQueue = (id: string) => {
-		enqueue(weddingId, { mutationId: genId(), op: 'create', guestId: id, clientUpdatedAt: nowIso(), payload: data as unknown as Record<string, unknown> });
-	};
+	// One id for the POST and its queued fallback: if the POST landed but the
+	// response was lost, the replay merges into that guest instead of duplicating it.
+	const id = genId();
 	try {
-		const res = await apiFetch(`/api/weddings/${weddingId}/guests`, { method: 'POST', body: JSON.stringify(data) });
-		if (!res.ok) throw new Error(`Failed to create guest: ${res.status}`);
+		const res = await apiFetch(`/api/weddings/${weddingId}/guests`, { method: 'POST', body: JSON.stringify({ ...data, id }) });
+		if (!res.ok) throw new Error(await errorMessage(res, 'Failed to create guest'));
 		const resp: GuestResponse = await res.json();
 		applyGuestResponse(resp);
 		return resp;
 	} catch (e) {
 		if (isNetworkError(e)) {
-			const id = genId();
-			doQueue(id);
+			enqueue(weddingId, { mutationId: genId(), op: 'create', guestId: id, clientUpdatedAt: nowIso(), payload: data as unknown as Record<string, unknown> });
 			const now = nowIso();
 			const resp: GuestResponse = { id, weddingId, name: data.name, email: data.email || '', pax: data.pax, rsvp: data.rsvp, isVip: data.isVip, notes: data.notes, dietary: data.dietary, tableId: data.tableId ?? null, seatNum: data.seatNum ?? null, checkedInAt: null, angbaoAmt: data.angbaoAmt ?? null, giftItem: data.giftItem ?? null, createdAt: now, updatedAt: now };
-			applyGuestResponse(resp);
+			// Local clock, not a server timestamp: insert without seeding the
+			// staleness watermark, or a fast clock would discard real server rows.
+			upsertGuest(toGuest(resp));
 			return resp;
 		}
 		throw e;
@@ -157,7 +168,7 @@ export async function updateGuest(weddingId: string, guestId: string, data: Part
 	if (isOffline()) { doQueue(); return offlineGuestResponse(weddingId, guestId); }
 	try {
 		const res = await apiFetch(`/api/weddings/${weddingId}/guests/${guestId}`, { method: 'PUT', body: JSON.stringify(data) });
-		if (!res.ok) throw new Error(`Failed to update guest: ${res.status}`);
+		if (!res.ok) throw new Error(await errorMessage(res, 'Failed to update guest'));
 		const resp: GuestResponse = await res.json();
 		applyGuestResponse(resp);
 		return resp;
@@ -172,7 +183,7 @@ export async function deleteGuest(weddingId: string, guestId: string): Promise<v
 	if (isOffline()) { doQueue(); return; }
 	try {
 		const res = await apiFetch(`/api/weddings/${weddingId}/guests/${guestId}`, { method: 'DELETE' });
-		if (!res.ok) throw new Error(`Failed to delete guest: ${res.status}`);
+		if (!res.ok) throw new Error(await errorMessage(res, 'Failed to delete guest'));
 		// Don't wait for the SSE echo: the row is gone from every store now.
 		optimisticPatch('delete', guestId);
 	} catch (e) {
@@ -186,7 +197,11 @@ export async function deleteGuest(weddingId: string, guestId: string): Promise<v
 export async function checkInGuest(weddingId: string, guestId: string, notes?: string): Promise<void> {
 	const trimmed = (notes ?? '').trim();
 	const payload = trimmed ? { notes: trimmed } : undefined;
-	const doQueue = () => { enqueue(weddingId, { mutationId: genId(), op: 'checkin', guestId, clientUpdatedAt: nowIso(), payload: payload ?? null }); optimisticPatch('checkin', guestId, payload); };
+	// Stamped before the online attempt: if that POST landed and only the response
+	// was lost, the replay is not newer than the server's check-in, so the server
+	// skips it instead of appending the notes twice.
+	const clientUpdatedAt = nowIso();
+	const doQueue = () => { enqueue(weddingId, { mutationId: genId(), op: 'checkin', guestId, clientUpdatedAt, payload: payload ?? null }); optimisticPatch('checkin', guestId, payload); };
 	if (isOffline()) { doQueue(); return; }
 	try {
 		const res = await apiFetch(`/api/weddings/${weddingId}/guests/${guestId}/checkin`, { method: 'POST', body: JSON.stringify({ notes: trimmed }) });
@@ -219,7 +234,7 @@ export async function assignSeat(weddingId: string, guestId: string, tableId: st
 	if (isOffline()) { doQueue(); return; }
 	try {
 		const res = await apiFetch(`/api/weddings/${weddingId}/guests/${guestId}/seat`, { method: 'POST', body: JSON.stringify(payload) });
-		if (!res.ok) throw new Error(`Failed to assign seat: ${res.status}`);
+		if (!res.ok) throw new Error(await errorMessage(res, 'Failed to assign seat'));
 		// Seating maps read the shared guest store; patch it instead of relying on
 		// the SSE echo, so a save shows its new occupancy immediately.
 		optimisticPatch('update', guestId, payload);
@@ -234,7 +249,7 @@ export async function unassignSeat(weddingId: string, guestId: string): Promise<
 	if (isOffline()) { doQueue(); return; }
 	try {
 		const res = await apiFetch(`/api/weddings/${weddingId}/guests/${guestId}/seat`, { method: 'DELETE' });
-		if (!res.ok) throw new Error(`Failed to unassign seat: ${res.status}`);
+		if (!res.ok) throw new Error(await errorMessage(res, 'Failed to unassign seat'));
 		optimisticPatch('update', guestId, { tableId: null, seatNum: null });
 	} catch (e) {
 		if (isNetworkError(e)) { doQueue(); return; }

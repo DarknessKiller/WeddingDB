@@ -9,6 +9,7 @@ import (
 
 	"github.com/getkin/kin-openapi/openapi3"
 	"github.com/go-fuego/fuego"
+	"github.com/jackc/pgx/v5/pgconn"
 )
 
 // maxBodyBytes is the JSON and form body limit; uploads keep their own
@@ -29,6 +30,11 @@ func NewFuegoServer(env Env, version string) *fuego.Server {
 				}
 				if _, ok := errors.AsType[fuego.ErrorWithStatus](err); ok {
 					return fuego.ErrorHandler(ctx, err)
+				}
+				// lock_not_available: the wedding row lock wait hit lock_timeout.
+				// The write is safe to retry once the other one finishes.
+				if pgErr, ok := errors.AsType[*pgconn.PgError](err); ok && pgErr.Code == "55P03" {
+					return fuego.HTTPError{Status: http.StatusServiceUnavailable, Title: "Busy saving another change, please retry"}
 				}
 				slog.ErrorContext(ctx, "request failed", "error", err)
 				return fuego.InternalServerError{Title: "Internal Server Error"}

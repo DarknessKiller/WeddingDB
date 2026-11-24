@@ -10,6 +10,8 @@ import (
 	"weddingdb/internal/services"
 
 	"github.com/go-fuego/fuego"
+	"github.com/google/uuid"
+	"gorm.io/gorm"
 )
 
 type GuestHandler struct{ guestService *services.GuestService }
@@ -30,6 +32,9 @@ type GuestCreateRequest struct {
 	SeatNum   *int     `json:"seatNum"`
 	AngbaoAmt *int     `json:"angbaoAmt"`
 	GiftItem  *string  `json:"giftItem"`
+	// ID is an optional client-generated guest ID, so a retried create
+	// returns the guest the first attempt stored instead of a duplicate.
+	ID *string `json:"id"`
 }
 
 func (h *GuestHandler) List(c fuego.ContextNoBody) (any, error) {
@@ -74,8 +79,12 @@ func (h *GuestHandler) Get(c fuego.ContextNoBody) (any, error) {
 		return nil, fuego.BadRequestError{Title: "Invalid ID"}
 	}
 	guest, err := h.guestService.Get(ctx, id, wid)
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, guestMissingError(err)
+	}
 	if err != nil {
-		return nil, fuego.NotFoundError{Title: "Guest not found"}
+		slog.ErrorContext(ctx, "load guest failed", "guest", id, "wedding", wid, "err", err)
+		return nil, fuego.InternalServerError{Title: "Failed to load guest"}
 	}
 	return guest, nil
 }
@@ -112,11 +121,39 @@ func (h *GuestHandler) Create(c fuego.ContextWithBody[GuestCreateRequest]) (any,
 		IsVip:     body.IsVip,
 		Notes:     body.Notes,
 		Dietary:   body.Dietary,
+		AngbaoAmt: body.AngbaoAmt,
+		GiftItem:  body.GiftItem,
+	}
+	if body.ID != nil {
+		// DecodeID accepts the same plain or base64 UUID forms as sync.
+		if guest.ID, err = DecodeID(*body.ID); err != nil || guest.ID == uuid.Nil {
+			return nil, fuego.BadRequestError{Title: "Invalid guest ID"}
+		}
 	}
 	if err := services.ValidateGuestText(guest); err != nil {
 		return nil, fuego.BadRequestError{Title: err.Error()}
 	}
-	if err := h.guestService.Create(ctx, guest); err != nil {
+	// Decode the seat before creating so guest and seat land in one transaction.
+	if body.SeatNum != nil && (body.TableID == nil || *body.TableID == "") {
+		return nil, fuego.BadRequestError{Title: "seatNum: tableId is required"}
+	}
+	if body.TableID != nil && *body.TableID != "" {
+		tid, err := DecodeID(*body.TableID)
+		if err != nil {
+			return nil, fuego.BadRequestError{Title: "Invalid table ID"}
+		}
+		seatNum := 1
+		if body.SeatNum != nil {
+			seatNum = *body.SeatNum
+		}
+		guest.TableID = &tid
+		guest.SeatNum = &seatNum
+	}
+	created, err := h.guestService.Create(ctx, guest)
+	if err != nil {
+		if errors.Is(err, services.ErrGuestIDTaken) {
+			return nil, fuego.ConflictError{Title: "Guest ID already in use"}
+		}
 		var lenErr services.FieldLenError
 		if errors.As(err, &lenErr) {
 			return nil, fuego.BadRequestError{Title: err.Error()}
@@ -124,29 +161,18 @@ func (h *GuestHandler) Create(c fuego.ContextWithBody[GuestCreateRequest]) (any,
 		if errors.Is(err, services.ErrGuestCapExceeded) {
 			return nil, fuego.BadRequestError{Title: err.Error()}
 		}
-		return nil, err
-	}
-	c.SetStatus(201)
-	if body.TableID != nil && *body.TableID != "" {
-		tid, err := DecodeID(*body.TableID)
-		if err != nil {
-			if err := h.guestService.Delete(ctx, guest.ID, wid); err != nil {
-				slog.Warn("rollback guest after invalid table failed", "guest", guest.ID, "err", err)
-			}
-			return nil, fuego.BadRequestError{Title: "Invalid table ID"}
+		if isGuestMissing(err) {
+			return nil, guestMissingError(err)
 		}
-		seatNum := 1
-		if body.SeatNum != nil {
-			seatNum = *body.SeatNum
-		}
-		if err := h.guestService.AssignSeat(ctx, guest.ID, wid, tid, seatNum); err != nil {
-			if err := h.guestService.Delete(ctx, guest.ID, wid); err != nil {
-				slog.Warn("rollback guest after seat assignment failed", "guest", guest.ID, "err", err)
-			}
+		if errors.Is(err, services.ErrSeatOverlap) || errors.Is(err, services.ErrTableNotFound) ||
+			errors.Is(err, services.ErrInvalidGuestPax) || errors.Is(err, services.ErrSeatRange) ||
+			errors.Is(err, services.ErrGuestPatchInvalid) {
 			return nil, seatAssignmentError(err)
 		}
-		guest.TableID = &tid
-		guest.SeatNum = &seatNum
+		return nil, err
+	}
+	if created {
+		c.SetStatus(201)
 	}
 	return guest, nil
 }
@@ -169,8 +195,8 @@ func (h *GuestHandler) Update(c fuego.ContextWithBody[*services.GuestPatch]) (an
 	}
 	guest, err := h.guestService.UpdatePatch(ctx, id, wid, body)
 	if err != nil {
-		if errors.Is(err, services.ErrGuestNotFound) {
-			return nil, fuego.NotFoundError{Title: "Guest not found"}
+		if isGuestMissing(err) {
+			return nil, guestMissingError(err)
 		}
 		if errors.Is(err, services.ErrGuestPatchInvalid) ||
 			errors.Is(err, services.ErrGuestCapExceeded) ||
@@ -200,8 +226,8 @@ func (h *GuestHandler) Delete(c fuego.ContextWithBody[any]) (any, error) {
 		return nil, fuego.BadRequestError{Title: "Invalid ID"}
 	}
 	if err := h.guestService.Delete(ctx, id, wid); err != nil {
-		if errors.Is(err, services.ErrGuestNotFound) {
-			return nil, fuego.NotFoundError{Title: "Guest not found"}
+		if isGuestMissing(err) {
+			return nil, guestMissingError(err)
 		}
 		return nil, err
 	}
@@ -236,21 +262,18 @@ func (h *GuestHandler) CheckIn(c fuego.ContextWithBody[CheckInRequest]) (any, er
 	if len([]rune(body.Notes)) > services.MaxCheckInNoteLen {
 		return nil, fuego.BadRequestError{Title: "Check-in notes must be at most " + strconv.Itoa(services.MaxCheckInNoteLen) + " characters"}
 	}
-	if err := h.guestService.CheckIn(ctx, id, wid, body.Notes); err != nil {
+	guest, err := h.guestService.CheckIn(ctx, id, wid, body.Notes)
+	if err != nil {
 		if errors.Is(err, services.ErrAlreadyCheckedIn) {
 			return nil, fuego.ConflictError{Title: "Guest already checked in by another receptionist"}
 		}
-		if errors.Is(err, services.ErrGuestNotFound) {
-			return nil, fuego.NotFoundError{Title: "Guest not found"}
+		if isGuestMissing(err) {
+			return nil, guestMissingError(err)
 		}
 		var lenErr services.FieldLenError
 		if errors.As(err, &lenErr) {
 			return nil, fuego.BadRequestError{Title: err.Error()}
 		}
-		return nil, err
-	}
-	guest, err := h.guestService.Get(ctx, id, wid)
-	if err != nil {
 		return nil, err
 	}
 	return guest, nil
@@ -267,8 +290,8 @@ func (h *GuestHandler) CheckOut(c fuego.ContextWithBody[any]) (any, error) {
 		return nil, fuego.BadRequestError{Title: "Invalid ID"}
 	}
 	if err := h.guestService.CheckOut(ctx, id, wid); err != nil {
-		if errors.Is(err, services.ErrGuestNotFound) {
-			return nil, fuego.NotFoundError{Title: "Guest not found"}
+		if isGuestMissing(err) {
+			return nil, guestMissingError(err)
 		}
 		return nil, err
 	}
@@ -324,7 +347,7 @@ func (h *GuestHandler) BulkImport(c fuego.ContextWithBody[BulkImportRequest]) (a
 		return nil, fuego.BadRequestError{Title: "Invalid wedding ID"}
 	}
 	var guests []models.GuestRecord
-	for _, g := range body.Guests {
+	for i, g := range body.Guests {
 		if g.Name == "" {
 			continue
 		}
@@ -344,11 +367,18 @@ func (h *GuestHandler) BulkImport(c fuego.ContextWithBody[BulkImportRequest]) (a
 			IsVip:     g.IsVip,
 			Notes:     g.Notes,
 			Dietary:   g.Dietary,
+			AngbaoAmt: g.AngbaoAmt,
+			GiftItem:  g.GiftItem,
+		}
+		if g.SeatNum != nil && g.TableID == nil {
+			return nil, fuego.BadRequestError{Title: "Invalid guests[" + strconv.Itoa(i) + "].seatNum: tableId is required"}
 		}
 		if g.TableID != nil {
-			if tid, err := DecodeID(*g.TableID); err == nil {
-				gr.TableID = &tid
+			tid, err := DecodeID(*g.TableID)
+			if err != nil {
+				return nil, fuego.BadRequestError{Title: "Invalid guests[" + strconv.Itoa(i) + "].tableId"}
 			}
+			gr.TableID = &tid
 		}
 		if g.SeatNum != nil {
 			gr.SeatNum = g.SeatNum
@@ -364,7 +394,13 @@ func (h *GuestHandler) BulkImport(c fuego.ContextWithBody[BulkImportRequest]) (a
 		if errors.Is(err, services.ErrGuestCapExceeded) {
 			return nil, fuego.BadRequestError{Title: err.Error()}
 		}
-		return nil, fuego.BadRequestError{Title: "Bulk import failed"}
+		if errors.Is(err, services.ErrSeatOverlap) || errors.Is(err, services.ErrSeatRange) ||
+			errors.Is(err, services.ErrTableNotFound) || errors.Is(err, services.ErrGuestPatchInvalid) ||
+			errors.Is(err, services.ErrInvalidGuestPax) || isGuestMissing(err) {
+			return nil, seatAssignmentError(err)
+		}
+		slog.ErrorContext(ctx, "bulk import failed", "err", err)
+		return nil, fuego.InternalServerError{Title: "Bulk import failed"}
 	}
 	return map[string]any{"imported": count}, nil
 }
@@ -399,7 +435,23 @@ func (h *GuestHandler) AssignSeat(c fuego.ContextWithBody[AssignSeatRequest]) (a
 	return nil, nil
 }
 
+// isGuestMissing covers a deleted wedding as well: a guest write under it can
+// never succeed.
+func isGuestMissing(err error) bool {
+	return errors.Is(err, services.ErrGuestNotFound) || errors.Is(err, services.ErrWeddingNotFound)
+}
+
+func guestMissingError(err error) error {
+	if errors.Is(err, services.ErrWeddingNotFound) {
+		return fuego.NotFoundError{Title: "Wedding not found"}
+	}
+	return fuego.NotFoundError{Title: "Guest not found"}
+}
+
 func seatAssignmentError(err error) error {
+	if isGuestMissing(err) {
+		return guestMissingError(err)
+	}
 	if errors.Is(err, services.ErrSeatOverlap) || errors.Is(err, services.ErrTableNotFound) || errors.Is(err, services.ErrInvalidGuestPax) || errors.Is(err, services.ErrSeatRange) || errors.Is(err, services.ErrGuestCapExceeded) || errors.Is(err, services.ErrGuestPatchInvalid) {
 		return fuego.BadRequestError{Title: err.Error()}
 	}
@@ -417,8 +469,8 @@ func (h *GuestHandler) UnassignSeat(c fuego.ContextNoBody) (any, error) {
 		return nil, fuego.BadRequestError{Title: "Invalid ID"}
 	}
 	if err := h.guestService.UnassignSeat(ctx, guestID, wid); err != nil {
-		if errors.Is(err, services.ErrGuestNotFound) {
-			return nil, fuego.NotFoundError{Title: "Guest not found"}
+		if isGuestMissing(err) {
+			return nil, guestMissingError(err)
 		}
 		return nil, err
 	}

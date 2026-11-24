@@ -1,7 +1,7 @@
 import { apiFetch } from '#lib/api/client.ts';
 import { addToast } from '#lib/stores/index.ts';
 import { get } from 'svelte/store';
-import { applyGuestResponse, guestMap } from '#lib/stores/guestEvents.ts';
+import { applyGuestResponse, clearGuestCaches, guestMap } from '#lib/stores/guestEvents.ts';
 import type { GuestResponse } from '#lib/api/guests.ts';
 
 export type SyncOp = 'create' | 'update' | 'delete' | 'checkin' | 'checkout';
@@ -24,27 +24,63 @@ export function getQueue(wid: string): QueuedMutation[] {
 	try { return JSON.parse(localStorage.getItem(qkey(wid)) || '[]'); } catch { return []; }
 }
 function setQueue(wid: string, q: QueuedMutation[]) {
-	localStorage.setItem(qkey(wid), JSON.stringify(q.slice(0, 500)));
+	localStorage.setItem(qkey(wid), JSON.stringify(q.slice(-500)));
 }
 
-export function enqueue(wid: string, m: QueuedMutation) {
+export function enqueue(wid: string, m: QueuedMutation): Promise<void> {
 	// The guest's updatedAt as this device last saw it, read before the optimistic patch. Null for a create.
 	m.baseUpdatedAt ??= get(guestMap).get(m.guestId)?.updatedAt?.toISOString() ?? null;
-	const q = getQueue(wid);
-	if (q.length >= 500) {
-		q.shift();
-		addToast('Offline queue full: the oldest edit was dropped', 'error');
+	const write = () => {
+		const q = getQueue(wid);
+		if (q.length >= 500) {
+			q.shift();
+			addToast('Offline queue full: the oldest edit was dropped', 'error');
+		}
+		q.push(m);
+		setQueue(wid, q);
+		// Without Web Locks another tab can write between the read above and this
+		// write. Re-read and merge by mutationId so its edit survives ours.
+		const persisted = getQueue(wid);
+		if (!persisted.some((x) => x.mutationId === m.mutationId)) {
+			persisted.push(m);
+			setQueue(wid, persisted);
+		}
+		notifyChanged();
+		addToast(`Queued offline (${Math.max(q.length, persisted.length)})`, 'info');
+	};
+	// Persist synchronously first: a reload right after the edit must keep it.
+	write();
+	// Then merge again under the lock, serialized across tabs; the fallback merge
+	// above only rescues writes that land after ours.
+	if (typeof navigator !== 'undefined' && navigator.locks) {
+		return navigator.locks.request(qkey(wid), () => {
+			const q = getQueue(wid);
+			if (q.some((x) => x.mutationId === m.mutationId)) return;
+			if (q.length >= 500) q.shift();
+			q.push(m);
+			setQueue(wid, q);
+			notifyChanged();
+		}).catch(() => {});
 	}
-	q.push(m);
-	setQueue(wid, q);
-	notifyChanged();
-	addToast(`Queued offline (${q.length})`, 'info');
+	return Promise.resolve();
 }
 
-export function dequeueByIds(wid: string, ids: string[]) {
+export function dequeueByIds(wid: string, ids: string[]): void | Promise<void> {
 	const s = new Set(ids);
-	setQueue(wid, getQueue(wid).filter(x => !s.has(x.mutationId)));
-	notifyChanged();
+	const write = () => {
+		setQueue(wid, getQueue(wid).filter(x => !s.has(x.mutationId)));
+		// A concurrent tab may have written the removed mutations back; drop them again.
+		const after = getQueue(wid);
+		const left = after.filter((x) => !s.has(x.mutationId));
+		if (left.length !== after.length) setQueue(wid, left);
+		notifyChanged();
+	};
+	// Same lock as enqueue: an unlocked read-modify-write could land after
+	// another tab's locked enqueue and delete its fresh mutation.
+	if (typeof navigator !== 'undefined' && navigator.locks) {
+		return navigator.locks.request(qkey(wid), write);
+	}
+	write();
 }
 
 export function cacheGuests(wid: string, guests: unknown[]) {
@@ -88,8 +124,10 @@ async function drainQueue(wid: string): Promise<SyncSummary> {
 			const t = await res.text().catch(() => '');
 			// A rejected body is rejected every time: keeping it would block the
 			// queue for good. Drop the chunk and say so.
-			if (res.status >= 400 && res.status < 500 && res.status !== 401 && res.status !== 429) {
-				dequeueByIds(wid, chunk.map((m) => m.mutationId));
+			// 403 means the queue belongs to another account (or lacks rights):
+			// never drop it silently; it must reach the owner-change prompt.
+			if (res.status >= 400 && res.status < 500 && res.status !== 401 && res.status !== 403 && res.status !== 429) {
+				await dequeueByIds(wid, chunk.map((m) => m.mutationId));
 				addToast(`${chunk.length} offline edit${chunk.length === 1 ? '' : 's'} discarded: rejected by the server`, 'error');
 				continue;
 			}
@@ -112,7 +150,7 @@ async function drainQueue(wid: string): Promise<SyncSummary> {
 				if (r.reason) droppedReasons.push(r.reason);
 			}
 		}
-		dequeueByIds(wid, doneIds);
+		await dequeueByIds(wid, doneIds);
 		if (droppedReasons.length) {
 			addToast(`${droppedReasons.length} offline edit${droppedReasons.length === 1 ? '' : 's'} discarded: ${droppedReasons[0]}`, 'error');
 		}
@@ -154,6 +192,8 @@ export async function claimQueues(
 		// Declined: keep the edits and the old owner, so the next login asks again.
 		if (count && !confirmDiscard(count, prevLabel)) return;
 		for (const wid of left) localStorage.removeItem(qkey(wid));
+		// The previous account's cached guest lists hold emails and angbao amounts.
+		clearGuestCaches();
 		notifyChanged();
 	}
 	localStorage.setItem(OWNER_KEY, ownerId);

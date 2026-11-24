@@ -28,7 +28,9 @@ func RegisterRoutes(
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			contentType, _, _ := strings.Cut(r.Header.Get("Content-Type"), ";")
 			contentType = strings.ToLower(strings.TrimSpace(contentType))
-			if contentType != "multipart/form-data" && contentType != "application/x-www-form-urlencoded" && contentType != "application/octet-stream" && contentType != "application/xml" && contentType != "application/yaml" && contentType != "application/x-yaml" && contentType != "text/yaml" && contentType != "text/plain" {
+			// Multipart keeps its own streaming limit in Upload; every other body
+			// is buffered here so the 413 is produced before any handler runs.
+			if contentType != "multipart/form-data" {
 				body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, 1048576))
 				if err != nil {
 					if _, ok := errors.AsType[*http.MaxBytesError](err); ok {

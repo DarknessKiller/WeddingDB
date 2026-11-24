@@ -19,9 +19,10 @@ import ArrowUpDown from 'lucide-svelte/icons/arrow-up-down';
   import { getInitials, cn } from '#lib/utils/index.ts';
   import { formatSeatRange } from '#lib/utils/seat.ts';
   import { guestPatch } from '#lib/utils/guestPatch.ts';
+  import { guestFormErrors } from '#lib/utils/reservation.ts';
   import { addToast } from '#lib/stores/index.ts';
   import { weddingId } from '#lib/stores/weddingId.ts';
-  import { guestList } from '#lib/stores/guestEvents.ts';
+  import { patchGuest } from '#lib/stores/guestEvents.ts';
   import { updateGuest, createGuest, checkInGuest, checkOutGuest, unassignSeat, getGuest, ConflictError } from '#lib/api/guests.ts';
   import { toGuest } from '#lib/utils/guestTransform.ts';
   import { get } from 'svelte/store';
@@ -43,6 +44,7 @@ import ArrowUpDown from 'lucide-svelte/icons/arrow-up-down';
   let editing = $state(false);
   $effect(() => { editing = startEditing || createMode; });
   let saving = $state(false);
+  let checkingIn = $state(false);
 
   let localGuest = $state<Guest>();
   $effect(() => { localGuest = guest; });
@@ -176,9 +178,18 @@ import ArrowUpDown from 'lucide-svelte/icons/arrow-up-down';
     angbaoAmt: '',
     giftItem: '',
   });
+  // Errors show after the first save attempt, then track each keystroke.
+  let triedSave = $state(false);
+  let errors = $derived(triedSave ? guestFormErrors(form) : {});
 
+  // Reset the form when the drawer switches guest or enters edit mode. An SSE
+  // upsert replaces the guest object mid-edit, and that must not wipe typed fields.
+  let formKey: { id: string | undefined; editing: boolean } | undefined;
   $effect(() => {
     if (!guest) return;
+    if (formKey?.id === guest.id && formKey.editing === editing) return;
+    formKey = { id: guest.id, editing };
+    triedSave = false;
     form.name = guest.name;
     form.email = guest.email ?? '';
     form.pax = guest.pax;
@@ -191,6 +202,8 @@ import ArrowUpDown from 'lucide-svelte/icons/arrow-up-down';
   });
 
   async function save() {
+    triedSave = true;
+    if (Object.keys(guestFormErrors(form)).length) return;
     saving = true;
     try {
       const wid = get(weddingId);
@@ -225,33 +238,32 @@ import ArrowUpDown from 'lucide-svelte/icons/arrow-up-down';
 
   function cancel() { editing = false; onClose(); }
 
-  // Heal the guest list through the store when the SSE echo is lost —
-  // same update path the guests page uses.
-  function pushGuestPatch(id: string, patch: Partial<Guest>) {
-    guestList.update(list => list.map(g => g.id === id ? { ...g, ...patch } : g));
-  }
-
   async function handleCheckIn(notes: string) {
     if (!guest) return;
+    // The prop can clear while the request runs; keep this guest.
+    const target = guest;
+    checkingIn = true;
     const wid = get(weddingId);
     try {
-      await checkInGuest(wid, guest.id, notes);
+      await checkInGuest(wid, target.id, notes);
       // Notes are appended by the server and echoed back over SSE (or by the
       // offline optimisticPatch when queued) — appending here too duplicated them.
-      guest.checkedIn = true;
-      guest.checkedInAt = new Date();
-      guest.rsvp = 'confirmed';
-      pushGuestPatch(guest.id, { checkedIn: true, checkedInAt: guest.checkedInAt, rsvp: 'confirmed' });
-      localGuest = { ...guest };
+      target.checkedIn = true;
+      target.checkedInAt = new Date();
+      target.rsvp = 'confirmed';
+      patchGuest(target.id, { checkedIn: true, checkedInAt: target.checkedInAt, rsvp: 'confirmed' });
+      localGuest = { ...target };
       showCheckInModal = false;
-      addToast(`${guest.name} checked in`, 'success');
+      addToast(`${target.name} checked in`, 'success');
     } catch (e: any) {
       if (e instanceof ConflictError) {
         showCheckInModal = false;
-        addToast(`${guest.name} was already checked in`, 'info');
+        addToast(`${target.name} was already checked in`, 'info');
       } else {
         addToast(e.message ?? 'Check-in failed', 'error');
       }
+    } finally {
+      checkingIn = false;
     }
   }
 
@@ -262,7 +274,7 @@ import ArrowUpDown from 'lucide-svelte/icons/arrow-up-down';
       await checkOutGuest(wid, guest.id);
       guest.checkedIn = false;
       guest.checkedInAt = undefined;
-      pushGuestPatch(guest.id, { checkedIn: false, checkedInAt: undefined });
+      patchGuest(guest.id, { checkedIn: false, checkedInAt: undefined });
       localGuest = { ...guest };
       addToast(`${guest.name} checked out`, 'success');
       await refreshGuest();
@@ -284,7 +296,7 @@ import ArrowUpDown from 'lucide-svelte/icons/arrow-up-down';
       await unassignSeat(wid, guest.id);
       guest.tableId = null;
       guest.seatNumber = null;
-      pushGuestPatch(guest.id, { tableId: null, seatNumber: null });
+      patchGuest(guest.id, { tableId: null, seatNumber: null });
       localGuest = { ...guest };
       addToast(`${guest.name} unassigned from table`, 'success');
     } catch (e: any) {
@@ -333,7 +345,8 @@ import ArrowUpDown from 'lucide-svelte/icons/arrow-up-down';
         <div class="form-grid">
           <div class="form-field">
             <label for="guest-name" class="form-label">Name</label>
-            <input id="guest-name" bind:value={form.name} maxlength={LIMITS.name} class="form-input" />
+            <input id="guest-name" bind:value={form.name} maxlength={LIMITS.name} required aria-invalid={!!errors.name} aria-describedby={errors.name ? 'guest-name-error' : undefined} class="form-input" />
+            {#if errors.name}<p id="guest-name-error" class="text-xs text-red-600 mt-1">{errors.name[0]}</p>{/if}
           </div>
           <div class="form-field">
             <label for="guest-email" class="form-label">Email</label>
@@ -342,7 +355,8 @@ import ArrowUpDown from 'lucide-svelte/icons/arrow-up-down';
           <div class="form-row-2">
             <div class="form-field">
               <label for="guest-pax" class="form-label">Pax</label>
-              <input id="guest-pax" type="number" min="1" max={LIMITS.guestPax} bind:value={form.pax} class="form-input" />
+              <input id="guest-pax" type="number" min="1" max={LIMITS.guestPax} step="1" bind:value={form.pax} aria-invalid={!!errors.pax} aria-describedby={errors.pax ? 'guest-pax-error' : undefined} class="form-input" />
+              {#if errors.pax}<p id="guest-pax-error" class="text-xs text-red-600 mt-1">{errors.pax[0]}</p>{/if}
             </div>
             <div class="form-field">
               <label for="guest-rsvp" class="form-label">RSVP</label>
@@ -376,7 +390,8 @@ import ArrowUpDown from 'lucide-svelte/icons/arrow-up-down';
           </div>
           <div class="form-field">
             <label for="guest-angbao" class="form-label">Angbao Amount (RM)</label>
-            <input id="guest-angbao" type="number" min="0" bind:value={form.angbaoAmt} placeholder="0" class="form-input" />
+            <input id="guest-angbao" type="number" min="0" step="1" bind:value={form.angbaoAmt} placeholder="0" aria-invalid={!!errors.angbaoAmt} aria-describedby={errors.angbaoAmt ? 'guest-angbao-error' : undefined} class="form-input" />
+            {#if errors.angbaoAmt}<p id="guest-angbao-error" class="text-xs text-red-600 mt-1">{errors.angbaoAmt[0]}</p>{/if}
           </div>
           <div class="form-field">
             <label for="guest-gift" class="form-label">Gift Item</label>
@@ -531,6 +546,7 @@ import ArrowUpDown from 'lucide-svelte/icons/arrow-up-down';
 {#if showCheckInModal && guest}
   <CheckInModal
     guestName={guest.name}
+    loading={checkingIn}
     onConfirm={handleCheckIn}
     onClose={() => showCheckInModal = false}
   />

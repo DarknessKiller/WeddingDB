@@ -2,7 +2,6 @@ package services
 
 import (
 	"context"
-	"os"
 	"sync"
 	"testing"
 	"time"
@@ -14,16 +13,13 @@ import (
 )
 
 func TestSSEHub_DistributedWeddingLimit(t *testing.T) {
-	addr := os.Getenv("TEST_REDIS_ADDR")
-	if addr == "" {
-		t.Skip("set TEST_REDIS_ADDR to run real Redis integration test")
-	}
+	addr := testutil.RedisAddr(t)
 	rdb := redis.NewClient(&redis.Options{Addr: addr})
 	t.Cleanup(func() { testutil.NoErr(t, rdb.Close()) })
 	testutil.NoErr(t, rdb.Ping(context.Background()).Err())
 	hubs := []*SSEHub{NewSSEHub(rdb), NewSSEHub(rdb)}
 	for _, hub := range hubs {
-		t.Cleanup(hub.Shutdown)
+		t.Cleanup(func() { hub.Shutdown(context.Background()) })
 	}
 	wid := uuid.New()
 	clients := make([]*SSEClient, 200)
@@ -71,13 +67,10 @@ func TestSSEHub_DistributedWeddingLimit(t *testing.T) {
 }
 
 func TestSSEHub_RenewalFailureClosesStream(t *testing.T) {
-	addr := os.Getenv("TEST_REDIS_ADDR")
-	if addr == "" {
-		t.Skip("set TEST_REDIS_ADDR to run real Redis integration test")
-	}
+	addr := testutil.RedisAddr(t)
 	rdb := redis.NewClient(&redis.Options{Addr: addr})
 	hub := NewSSEHub(rdb)
-	t.Cleanup(hub.Shutdown)
+	t.Cleanup(func() { hub.Shutdown(context.Background()) })
 	client, err := hub.Subscribe(context.Background(), uuid.New(), uuid.New())
 	testutil.NoErr(t, err)
 	testutil.NoErr(t, rdb.Close())

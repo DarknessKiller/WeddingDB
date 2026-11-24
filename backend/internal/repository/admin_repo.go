@@ -33,6 +33,24 @@ func (r *AdminRepo) Create(ctx context.Context, admin *models.AdminUser) error {
 	return r.db.WithContext(ctx).Create(admin).Error
 }
 
+// CreateWithWeddings inserts the user and their wedding grants in one
+// transaction, so a grant failure doesn't leave a user without the grants the
+// request asked for.
+func (r *AdminRepo) CreateWithWeddings(ctx context.Context, admin *models.AdminUser, weddingIDs []uuid.UUID) error {
+	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Create(admin).Error; err != nil {
+			return err
+		}
+		for _, wid := range weddingIDs {
+			uw := models.UserWedding{ID: uuid.New(), UserID: admin.ID, WeddingID: wid}
+			if err := tx.Create(&uw).Error; err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+}
+
 func (r *AdminRepo) List(ctx context.Context) ([]models.AdminUser, error) {
 	var admins []models.AdminUser
 	err := r.db.WithContext(ctx).Find(&admins).Error
@@ -83,7 +101,14 @@ func (r *AdminRepo) UpdateRole(ctx context.Context, id uuid.UUID, role string) e
 				return err
 			}
 		}
-		return tx.Model(&models.AdminUser{}).Where("id = ?", id).Update("role", role).Error
+		res := tx.Model(&models.AdminUser{}).Where("id = ?", id).Update("role", role)
+		if res.Error != nil {
+			return res.Error
+		}
+		if res.RowsAffected == 0 {
+			return gorm.ErrRecordNotFound
+		}
+		return nil
 	})
 }
 
@@ -137,21 +162,4 @@ func (r *AdminRepo) HasWeddingAccess(ctx context.Context, userID, weddingID uuid
 		Where("user_id = ? AND wedding_id = ?", userID, weddingID).
 		Count(&count).Error
 	return count > 0, err
-}
-
-// AddUserWedding adds a wedding association if it doesn't already exist.
-func (r *AdminRepo) AddUserWedding(ctx context.Context, userID, weddingID uuid.UUID) error {
-	exists, err := r.HasWeddingAccess(ctx, userID, weddingID)
-	if err != nil {
-		return err
-	}
-	if exists {
-		return nil
-	}
-	uw := models.UserWedding{
-		ID:        uuid.New(),
-		UserID:    userID,
-		WeddingID: weddingID,
-	}
-	return r.db.WithContext(ctx).Create(&uw).Error
 }

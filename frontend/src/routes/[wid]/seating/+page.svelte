@@ -2,16 +2,15 @@
   import HallMap from '#lib/components/seating/HallMap.svelte';
   import { weddingTitle } from '#lib/stores/weddingTitle.ts';
   import { selectedGuest, isDrawerOpen, addToast } from '#lib/stores/index.ts';
-  import { weddingId } from '#lib/stores/weddingId.ts';
   import { guestList, tableOccupancy } from '#lib/stores/guestEvents.ts';
   import { goto } from '$app/navigation';
   import { assignSeat, checkInGuest, checkOutGuest, ConflictError } from '#lib/api/guests.ts';
   import { listTables } from '#lib/api/tables.ts';
   import { getLayout, saveLayout } from '#lib/api/layout.ts';
   import Badge from '#lib/components/ui/Badge.svelte';
-  import { cn } from '#lib/utils/index.ts';
+  import { cn, getInitials } from '#lib/utils/index.ts';
+  import { seatOccupant } from '#lib/utils/reservation.ts';
   import { page } from '$app/state';
-  import { onMount } from 'svelte';
   import Users from 'lucide-svelte/icons/users';
 import Star from 'lucide-svelte/icons/star';
 import X from 'lucide-svelte/icons/x';
@@ -24,7 +23,6 @@ import Banknote from 'lucide-svelte/icons/banknote';
 import Gift from 'lucide-svelte/icons/gift';
 import Pencil from 'lucide-svelte/icons/pencil';
   import CheckInModal from '#lib/components/ui/CheckInModal.svelte';
-  import { get } from 'svelte/store';
   import type { BanquetTable, Guest, RSVPStatus, TableOccupancy, HallElement } from '#lib/types/index.ts';
 
   let allTables = $state<BanquetTable[]>([]);
@@ -66,50 +64,51 @@ import Pencil from 'lucide-svelte/icons/pencil';
     panelDragY = 0;
   }
   let checkinGuest = $state<Guest | null>(null);
+  let checkingIn = $state(false);
 
   // Guest rows and occupancy live in the SSE-backed stores: a local mirror went
   // stale and needed a hand-written patch on every mutation.
   let allGuests = $derived($guestList);
   let unassignedGuests = $derived(allGuests.filter(g => g.tableId === null));
 
-  async function loadData() {
-    const wid = get(weddingId);
-    const layout = await getLayout(wid);
+  let wid = $derived(page.params.wid ?? '');
+
+  async function loadData(): Promise<boolean> {
+    const forWid = wid;
+    const layout = await getLayout(forWid);
+    // A newer route already reloaded: do not paint this wedding's rows for it.
+    if (forWid !== wid) return false;
     if (layout) {
       allTables = layout.tables ?? [];
       elements = layout.elements ?? [];
       hallWidth = layout.hallWidth ?? 860;
       hallHeight = layout.hallHeight ?? 1000;
     } else {
-      allTables = await listTables(wid).catch(() => []);
+      const tables = await listTables(forWid);
+      if (forWid !== wid) return false;
+      allTables = tables;
     }
+    return true;
   }
 
   async function retry() {
     loading = true;
-    errored = false;
-    error = null;
-    try {
-      await loadData();
-    } catch (e: any) {
-      errored = true;
-      error = e.message ?? 'Failed to load seating data';
-      addToast(error ?? 'Failed to load seating data', 'error');
-    } finally {
-      loading = false;
-    }
+    await init();
   }
 
-  onMount(async () => {
+  async function init() {
+    const forWid = wid;
     try {
-      await loadData();
+      if (!await loadData()) return;
       errored = false;
       error = null;
     } catch (e: any) {
+      if (forWid !== wid) return;
       errored = true;
       error = e.message ?? 'Failed to load seating data';
       addToast(error ?? 'Failed to load seating data', 'error');
     } finally {
+      if (forWid !== wid) return;
       loading = false;
       const tableParam = page.url.searchParams.get('table');
       if (tableParam) {
@@ -119,6 +118,20 @@ import Pencil from 'lucide-svelte/icons/pencil';
         }
       }
     }
+  }
+
+  // The route can change without remounting this page; reload for the new wid.
+  $effect(() => {
+    if (!wid) return;
+    selectedTableId = null;
+    showMobilePanel = false;
+    editMode = false;
+    allTables = [];
+    elements = [];
+    showCheckinModal = false;
+    checkinGuest = null;
+    checkingIn = false;
+    void retry();
   });
 
   let selectedTable = $derived(selectedTableId ? allTables.find(t => t.id === selectedTableId) ?? null : null);
@@ -167,13 +180,8 @@ import Pencil from 'lucide-svelte/icons/pencil';
     guestSearch = '';
   }
 
-  function getInitials(name: string): string {
-    return name.split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase();
-  }
-
   async function assignGuestToSeat(guest: Guest, seatNum: number) {
     if (!selectedTable) return;
-    const wid = get(weddingId);
     try {
       await assignSeat(wid, guest.id, String(selectedTable.id), seatNum);
       assigningSeat = null;
@@ -195,25 +203,28 @@ import Pencil from 'lucide-svelte/icons/pencil';
 
   async function confirmCheckIn(notes: string) {
     if (!checkinGuest) return;
-    const wid = get(weddingId);
+    // Capture the guest: a route change clears checkinGuest while the request runs.
+    const target = checkinGuest;
+    checkingIn = true;
     try {
-      await checkInGuest(wid, checkinGuest.id, notes);
+      await checkInGuest(wid, target.id, notes);
       // Notes and the check-in flags come back through the store.
       showCheckinModal = false;
-      addToast(`${checkinGuest.name} checked in`, 'success');
+      addToast(`${target.name} checked in`, 'success');
     } catch (e: any) {
       if (e instanceof ConflictError) {
         // Another receptionist checked the guest in first.
         showCheckinModal = false;
-        addToast(`${checkinGuest.name} was already checked in by another receptionist`, 'error');
+        addToast(`${target.name} was already checked in by another receptionist`, 'error');
         return;
       }
       addToast(e.message ?? 'Check-in failed', 'error');
+    } finally {
+      checkingIn = false;
     }
   }
 
   async function handleCheckOut(guest: Guest) {
-    const wid = get(weddingId);
     try {
       await checkOutGuest(wid, guest.id);
       addToast(`${guest.name} checked out`, 'success');
@@ -223,7 +234,6 @@ import Pencil from 'lucide-svelte/icons/pencil';
   }
 
   async function handleSaveLayout(editTables: BanquetTable[], editElements: HallElement[], hw: number, hh: number) {
-    const wid = get(weddingId);
     try {
       await saveLayout(wid, {
         hallWidth: hw,
@@ -275,7 +285,7 @@ import Pencil from 'lucide-svelte/icons/pencil';
       </div>
       <p class="text-gray-500 font-medium">No tables yet</p>
       <p class="text-sm text-gray-500">Add tables first to manage seating.</p>
-      <button onclick={() => goto(`/${$weddingId}/tables`)} class="px-4 py-2.5 bg-red text-white rounded-xl text-sm font-semibold hover:bg-red-light transition-colors flex items-center gap-2">
+      <button onclick={() => goto(`/${wid}/tables`)} class="px-4 py-2.5 bg-red text-white rounded-xl text-sm font-semibold hover:bg-red-light transition-colors flex items-center gap-2">
         <Plus class="w-4 h-4" /> Add Tables
       </button>
     </div>
@@ -354,7 +364,7 @@ import Pencil from 'lucide-svelte/icons/pencil';
         <div class="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">Seat Assignments</div>
         {#each Array(selectedTable.capacity) as _, seatIdx}
           {@const seatNum = seatIdx + 1}
-          {@const guest = selectedTableGuests.find(g => g.seatNumber !== null && seatNum >= g.seatNumber && seatNum < g.seatNumber + g.pax)}
+          {@const guest = seatOccupant(selectedTableGuests, String(selectedTable.id), seatNum)}
           <button
             class="w-full flex items-center gap-3 p-2.5 rounded-xl transition-all duration-150 text-left {guest ? 'hover:bg-gray-50' : 'hover:bg-gray-50/50'}"
             onclick={() => {
@@ -452,7 +462,7 @@ import Pencil from 'lucide-svelte/icons/pencil';
             </button>
           {/if}
         {/if}
-        <button onclick={() => goto(`/${$weddingId}/tables`)} class="w-full py-2.5 border border-black/[0.06] bg-white/90 rounded-xl text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors">
+        <button onclick={() => goto(`/${wid}/tables`)} class="w-full py-2.5 border border-black/[0.06] bg-white/90 rounded-xl text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors">
           Manage Tables
         </button>
       </div>
@@ -501,7 +511,7 @@ import Pencil from 'lucide-svelte/icons/pencil';
         <div class="grid grid-cols-2 gap-2">
           {#each Array(selectedTable.capacity) as _, seatIdx}
             {@const seatNum = seatIdx + 1}
-            {@const guest = selectedTableGuests.find(g => g.seatNumber !== null && seatNum >= g.seatNumber && seatNum < g.seatNumber + g.pax)}
+            {@const guest = seatOccupant(selectedTableGuests, String(selectedTable.id), seatNum)}
             <button
               class="flex items-center gap-2 p-2 rounded-lg text-left {guest ? 'bg-gray-50' : 'bg-white border border-gray-100'}"
               onclick={() => { if (guest) { $selectedGuest = guest; $isDrawerOpen = true; } }}
@@ -553,6 +563,7 @@ import Pencil from 'lucide-svelte/icons/pencil';
 {#if showCheckinModal && checkinGuest}
   <CheckInModal
     guestName={checkinGuest.name}
+    loading={checkingIn}
     onConfirm={confirmCheckIn}
     onClose={() => showCheckinModal = false}
   />

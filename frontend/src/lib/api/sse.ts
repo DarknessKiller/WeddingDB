@@ -20,6 +20,9 @@ class SSEClient {
 	private reconnectTimeout: ReturnType<typeof setTimeout> | null = null;
 	private reconnectDelay = 1000;
 	private maxReconnectDelay = 30000;
+	// A 401 refresh leaves a gap with no stream. Keep it flagged so the next
+	// successful connect still reports `reconnect` and the caller runs resync.
+	private tokenGap = false;
 	private wid = '';
 
 	connect(weddingId: string) {
@@ -41,11 +44,21 @@ class SSEClient {
 				headers: { Authorization: `Bearer ${accessToken}` },
 				signal: controller.signal
 			});
-			// An expired token would fail every retry: refresh it before reconnecting.
-			if (response.status === 401) await refreshIfNeeded();
+			// An expired token would fail every retry: refresh it and reconnect
+			// now, not after the backoff the 401 left behind.
+			if (response.status === 401) {
+				const refreshed = await refreshIfNeeded();
+				if (refreshed) {
+					this.tokenGap = true;
+					this.reconnectDelay = 1000;
+					this.connect(this.wid);
+					return;
+				}
+			}
 			if (!response.ok || !response.body) throw new Error(`SSE request failed: ${response.status}`);
 
-			const reconnect = this.reconnectDelay > 1000;
+			const reconnect = this.tokenGap || this.reconnectDelay > 1000;
+			this.tokenGap = false;
 			this.reconnectDelay = 1000;
 			this.statusHandlers.forEach((handler) => handler('connected', reconnect));
 			const reader = response.body.getReader();
@@ -85,6 +98,7 @@ class SSEClient {
 		if (this.reconnectTimeout) clearTimeout(this.reconnectTimeout);
 		this.reconnectTimeout = null;
 		this.reconnectDelay = 1000;
+		this.tokenGap = false;
 	}
 
 	onEvent(handler: EventHandler): () => void {

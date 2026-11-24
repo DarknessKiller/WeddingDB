@@ -1,5 +1,23 @@
 import type { BanquetTable, HallElement } from '#lib/types/index.ts';
 
+// Hall size bounds the layout editor enforces before saving: the API only
+// rejects non-positive values, so a typo must not reach it.
+export const HALL_MIN = 200;
+export const HALL_MAX = 3000;
+
+export function clampHallSize(value: number): number {
+	const v = Math.floor(Number(value));
+	return Math.min(HALL_MAX, Math.max(HALL_MIN, Number.isFinite(v) ? v : HALL_MIN));
+}
+
+export const ELEMENT_MIN = 1;
+export const ELEMENT_MAX = 100;
+
+export function clampElementSize(value: number): number {
+	const v = Math.floor(Number(value));
+	return Math.min(ELEMENT_MAX, Math.max(ELEMENT_MIN, Number.isFinite(v) ? v : ELEMENT_MIN));
+}
+
 // ponytail: fixed 5-col default grid; drag exists for everything else
 export function defaultSlot(tables: BanquetTable[]): { x: number; y: number } {
 	const taken = new Set(tables.map((t) => `${Math.round(t.x)},${Math.round(t.y)}`));

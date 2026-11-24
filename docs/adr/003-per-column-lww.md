@@ -47,6 +47,9 @@ stored time. Online and offline writes use this same rule.
 - Seat overlap and the guest cap are checked on the merged result, not per
   mutation.
 - Ties count as newer, matching current offline code.
+- Check-in on a guest already checked in keeps `checkedInAt`, `rsvp` and
+  `notes`. A replay from a device whose clock runs ahead would otherwise win and
+  append its note twice. `angbaoAmt` and `giftItem` still merge by this rule.
 
 ## Alternatives
 

@@ -24,7 +24,7 @@ func TestTableDelete_PublishesUnassignedGuests(t *testing.T) {
 	mr := miniredis.RunT(t)
 	rdb := redis.NewClient(&redis.Options{Addr: mr.Addr()})
 	hub := NewSSEHub(rdb)
-	t.Cleanup(hub.Shutdown)
+	t.Cleanup(func() { hub.Shutdown(context.Background()) })
 
 	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
 	if err != nil {

@@ -35,7 +35,8 @@ export function guestPatch(guest: Guest, form: GuestFormValues): GuestPatch {
 	if (form.isVip !== guest.isVip) patch.isVip = form.isVip;
 	if (form.notes !== guest.notes) patch.notes = form.notes;
 	if (!sameList(form.dietary, guest.dietaryRequirements)) patch.dietary = form.dietary;
-	const angbaoAmt = form.angbaoAmt.trim() === '' ? null : Number(form.angbaoAmt);
+	const angbaoRaw = String(form.angbaoAmt ?? '').trim();
+	const angbaoAmt = angbaoRaw === '' ? null : Number(angbaoRaw);
 	if (angbaoAmt !== (guest.angbaoAmount ?? null)) patch.angbaoAmt = angbaoAmt;
 	const giftItem = form.giftItem.trim() === '' ? null : form.giftItem;
 	if (giftItem !== (guest.giftItem ?? null)) patch.giftItem = giftItem;

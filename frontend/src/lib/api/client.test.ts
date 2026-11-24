@@ -6,7 +6,9 @@ function memoryStorage() {
 		getItem: (k: string) => map.get(k) ?? null,
 		setItem: (k: string, v: string) => void map.set(k, String(v)),
 		removeItem: (k: string) => void map.delete(k),
-		clear: () => map.clear()
+		clear: () => map.clear(),
+		get length() { return map.size; },
+		key: (i: number) => [...map.keys()][i] ?? null,
 	};
 }
 
@@ -79,10 +81,20 @@ describe('apiFetch refresh recovery', () => {
 		expect(getAuth()).toMatchObject({ accessToken: 'old-access', refreshToken: 'refresh-1' });
 	});
 
+	it('classifies fetch failures as network errors and 4xx as real errors', async () => {
+		const { isNetworkError } = await import('./client');
+		expect(isNetworkError(new TypeError('Failed to fetch'))).toBe(true);
+		expect(isNetworkError(new TypeError('Load failed'))).toBe(true);
+		expect(isNetworkError(new Error('Failed to list guests: 403'))).toBe(false);
+		expect(isNetworkError(new Error('Failed to list guests: 500'))).toBe(false);
+	});
+
 	it('clears the session when the server rejects the refresh token', async () => {
 		fetchMock
 			.mockResolvedValueOnce(res({}, 401))
 			.mockResolvedValueOnce(res({ title: 'invalid refresh token' }, 401));
+
+		localStorage.setItem('offline_cache_w1', '[{"email":"a@b.c","angbaoAmount":88}]');
 
 		const { apiFetch } = await import('./client');
 		const { getAuth } = await import('#lib/stores/index.ts');
@@ -90,6 +102,7 @@ describe('apiFetch refresh recovery', () => {
 
 		expect(result.status).toBe(401);
 		expect(location.href).toBe('/login');
+		expect(localStorage.getItem('offline_cache_w1')).toBeNull();
 		expect(getAuth().accessToken).toBeNull();
 		expect(localStorage.getItem('weddingdb_refresh_token')).toBeNull();
 	});

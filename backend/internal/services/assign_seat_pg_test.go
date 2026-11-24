@@ -9,6 +9,7 @@ import (
 
 	"weddingdb/internal/models"
 	"weddingdb/internal/repository"
+	"weddingdb/internal/testutil"
 
 	"github.com/google/uuid"
 	"gorm.io/driver/postgres"
@@ -18,7 +19,7 @@ import (
 // TestAssignSeat_PostgresConcurrent races 20 guests for one seat; exactly one
 // may win. Requires TEST_DATABASE_URL pointing at a *_test database.
 func TestAssignSeat_PostgresConcurrent(t *testing.T) {
-	dsn := pgDSN(t)
+	dsn := testutil.PgDSN(t)
 	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{})
 	if err != nil {
 		t.Fatalf("postgres open: %v", err)

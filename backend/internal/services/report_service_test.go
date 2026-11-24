@@ -19,7 +19,7 @@ import (
 )
 
 func TestGenerateCSV_FormulaInjection(t *testing.T) {
-	db, err := gorm.Open(postgres.Open(pgDSN(t)), &gorm.Config{})
+	db, err := gorm.Open(postgres.Open(testutil.PgDSN(t)), &gorm.Config{})
 	testutil.NoErr(t, err)
 	var dbName string
 	testutil.NoErr(t, db.Raw("SELECT current_database()").Scan(&dbName).Error)
@@ -158,10 +158,12 @@ func TestSanitizeFilename(t *testing.T) {
 	}{
 		{"Normal Name", "Normal Name"},
 		{"Has/Slash", "Has-Slash"},
-		{`Has\Backslash`, `Has\\Backslash`},
-		{`Has"Quote`, `Has\"Quote`},
+		{`Has\Backslash`, `Has\Backslash`},
+		{`Has"Quote`, `Has"Quote`},
 		{"  Trimmed  ", "Trimmed"},
 		{strings.Repeat("A", 60), strings.Repeat("A", 50)},
+		{strings.Repeat("婚", 60), strings.Repeat("婚", 50)},
+		{"   ", "report"},
 	}
 	for _, tt := range tests {
 		got := svc.sanitizeFilename(tt.in)

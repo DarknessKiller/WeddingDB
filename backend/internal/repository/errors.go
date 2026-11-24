@@ -15,4 +15,7 @@ var (
 	// ErrCapacityBelowSeated refuses a table shrink that would strand a guest
 	// already seated past the new capacity.
 	ErrCapacityBelowSeated = errors.New("capacity is below an already seated guest")
+	// Layout save failures keep their entity so the handler can name it.
+	ErrLayoutTableNotFound   = errors.New("layout table not found")
+	ErrLayoutElementNotFound = errors.New("layout element not found")
 )

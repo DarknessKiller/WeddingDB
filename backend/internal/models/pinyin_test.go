@@ -1,6 +1,10 @@
 package models
 
-import "testing"
+import (
+	"strings"
+	"testing"
+	"unicode/utf8"
+)
 
 func TestGenerateNamePinyin(t *testing.T) {
 	tests := []struct {
@@ -24,5 +28,15 @@ func TestGenerateNamePinyin(t *testing.T) {
 		if got != tt.want {
 			t.Errorf("GenerateNamePinyin(%q) = %q, want %q", tt.input, got, tt.want)
 		}
+	}
+}
+
+func TestGenerateNamePinyin_CapsAtColumnSize(t *testing.T) {
+	got := GenerateNamePinyin(strings.Repeat("张", 255))
+	if n := utf8.RuneCountInString(got); n != maxPinyinLen {
+		t.Fatalf("pinyin length = %d runes, want %d", n, maxPinyinLen)
+	}
+	if want := strings.Repeat("zhang", 255)[:maxPinyinLen]; got != want {
+		t.Fatalf("pinyin = %q, want the first %d characters of the romanized name", got, maxPinyinLen)
 	}
 }

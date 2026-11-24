@@ -7,6 +7,7 @@ import (
 
 	"github.com/google/uuid"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 type TokenRepo struct{ db *gorm.DB }
@@ -49,14 +50,36 @@ func (r *TokenRepo) DeleteByToken(ctx context.Context, token string) (int64, err
 	return res.RowsAffected, res.Error
 }
 
+// DeleteChain deletes token and every successor it was rotated into, so ending
+// a session with an already-rotated token also ends the session it became.
+// RETURNING reads replaced_by from the row as deleted, so a rotation that
+// commits while the delete waits on its row lock is still followed.
+func (r *TokenRepo) DeleteChain(ctx context.Context, token string) error {
+	for token != "" {
+		var deleted []models.RefreshToken
+		err := r.db.WithContext(ctx).Clauses(clause.Returning{Columns: []clause.Column{{Name: "replaced_by"}}}).
+			Where("token = ?", token).Delete(&deleted).Error
+		if err != nil {
+			return err
+		}
+		if len(deleted) == 0 || deleted[0].ReplacedBy == nil {
+			return nil
+		}
+		token = *deleted[0].ReplacedBy
+	}
+	return nil
+}
+
 // UpdateWeddingScope persists the selected wedding onto the caller's own live
 // refresh token, so Refresh re-mints a scoped access token instead of dropping
 // back to an unscoped (nil) wedding. Other sessions of the same user keep theirs.
+// A rotated token is not live: its successor carries the session, and scoping
+// the consumed row would be lost on the next refresh.
 // A token that matches no live row is reported as not found: silently returning
 // success would hand back a token whose scope was never persisted.
 func (r *TokenRepo) UpdateWeddingScope(ctx context.Context, adminID uuid.UUID, token string, weddingID uuid.UUID) error {
 	res := r.db.WithContext(ctx).Model(&models.RefreshToken{}).
-		Where("admin_id = ? AND token = ? AND expires_at > ?", adminID, token, time.Now()).
+		Where("admin_id = ? AND token = ? AND expires_at > ? AND rotated_at IS NULL", adminID, token, time.Now()).
 		Update("wedding_id", weddingID)
 	if res.Error != nil {
 		return res.Error

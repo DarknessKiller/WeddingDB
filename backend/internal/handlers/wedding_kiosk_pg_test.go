@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
-	"os"
 	"strings"
 	"testing"
 
@@ -13,6 +12,7 @@ import (
 	"weddingdb/internal/models"
 	"weddingdb/internal/repository"
 	"weddingdb/internal/services"
+	"weddingdb/internal/testutil"
 	"weddingdb/internal/utils"
 
 	"github.com/go-fuego/fuego"
@@ -28,10 +28,7 @@ import (
 //	TEST_DATABASE_URL=postgresql://weddingdb@127.0.0.1:25432/weddingdb_test?sslmode=disable \
 //	  go test ./internal/handlers -run TestUpdateKioskSettings_PostgresRoundTrip -v
 func TestUpdateKioskSettings_PostgresRoundTrip(t *testing.T) {
-	dsn := os.Getenv("TEST_DATABASE_URL")
-	if dsn == "" {
-		t.Skip("set TEST_DATABASE_URL to run against Postgres")
-	}
+	dsn := testutil.PgDSN(t)
 	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{})
 	if err != nil {
 		t.Fatalf("postgres open: %v", err)
@@ -102,6 +99,7 @@ func TestUpdateKioskSettings_PostgresRoundTrip(t *testing.T) {
 		if got["kioskBackgroundPosX"] != "37%" {
 			t.Errorf("update returned kioskBackgroundPosX = %v, want 37%%", got["kioskBackgroundPosX"])
 		}
+		putUpdatedAt := got["updatedAt"]
 		if got["venueName"] != "Old Hall" || got["venueAddress"] != "Old Address" {
 			t.Errorf("partial payload cleared omitted fields: %v", got)
 		}
@@ -119,6 +117,10 @@ func TestUpdateKioskSettings_PostgresRoundTrip(t *testing.T) {
 		}
 		if got["venueName"] != "Old Hall" {
 			t.Errorf("persisted venueName = %v, want Old Hall", got["venueName"])
+		}
+		// The PUT response must carry the stored updatedAt, not the pre-write one.
+		if got["updatedAt"] == nil || got["updatedAt"] != putUpdatedAt {
+			t.Errorf("PUT updatedAt = %v, follow-up GET = %v; response must carry the stored value", putUpdatedAt, got["updatedAt"])
 		}
 	})
 
