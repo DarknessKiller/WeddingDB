@@ -19,6 +19,7 @@ import ArrowUpDown from 'lucide-svelte/icons/arrow-up-down';
   import { getInitials, cn } from '#lib/utils/index.ts';
   import { formatSeatRange } from '#lib/utils/seat.ts';
   import { guestPatch } from '#lib/utils/guestPatch.ts';
+  import { guestFormErrors } from '#lib/utils/reservation.ts';
   import { addToast } from '#lib/stores/index.ts';
   import { weddingId } from '#lib/stores/weddingId.ts';
   import { patchGuest } from '#lib/stores/guestEvents.ts';
@@ -177,6 +178,9 @@ import ArrowUpDown from 'lucide-svelte/icons/arrow-up-down';
     angbaoAmt: '',
     giftItem: '',
   });
+  // Errors show after the first save attempt, then track each keystroke.
+  let triedSave = $state(false);
+  let errors = $derived(triedSave ? guestFormErrors(form) : {});
 
   // Reset the form when the drawer switches guest or enters edit mode. An SSE
   // upsert replaces the guest object mid-edit, and that must not wipe typed fields.
@@ -185,6 +189,7 @@ import ArrowUpDown from 'lucide-svelte/icons/arrow-up-down';
     if (!guest) return;
     if (formKey?.id === guest.id && formKey.editing === editing) return;
     formKey = { id: guest.id, editing };
+    triedSave = false;
     form.name = guest.name;
     form.email = guest.email ?? '';
     form.pax = guest.pax;
@@ -197,6 +202,8 @@ import ArrowUpDown from 'lucide-svelte/icons/arrow-up-down';
   });
 
   async function save() {
+    triedSave = true;
+    if (Object.keys(guestFormErrors(form)).length) return;
     saving = true;
     try {
       const wid = get(weddingId);
@@ -338,7 +345,8 @@ import ArrowUpDown from 'lucide-svelte/icons/arrow-up-down';
         <div class="form-grid">
           <div class="form-field">
             <label for="guest-name" class="form-label">Name</label>
-            <input id="guest-name" bind:value={form.name} maxlength={LIMITS.name} class="form-input" />
+            <input id="guest-name" bind:value={form.name} maxlength={LIMITS.name} required aria-invalid={!!errors.name} aria-describedby={errors.name ? 'guest-name-error' : undefined} class="form-input" />
+            {#if errors.name}<p id="guest-name-error" class="text-xs text-red-600 mt-1">{errors.name[0]}</p>{/if}
           </div>
           <div class="form-field">
             <label for="guest-email" class="form-label">Email</label>
@@ -347,7 +355,8 @@ import ArrowUpDown from 'lucide-svelte/icons/arrow-up-down';
           <div class="form-row-2">
             <div class="form-field">
               <label for="guest-pax" class="form-label">Pax</label>
-              <input id="guest-pax" type="number" min="1" max={LIMITS.guestPax} bind:value={form.pax} class="form-input" />
+              <input id="guest-pax" type="number" min="1" max={LIMITS.guestPax} step="1" bind:value={form.pax} aria-invalid={!!errors.pax} aria-describedby={errors.pax ? 'guest-pax-error' : undefined} class="form-input" />
+              {#if errors.pax}<p id="guest-pax-error" class="text-xs text-red-600 mt-1">{errors.pax[0]}</p>{/if}
             </div>
             <div class="form-field">
               <label for="guest-rsvp" class="form-label">RSVP</label>
@@ -381,7 +390,8 @@ import ArrowUpDown from 'lucide-svelte/icons/arrow-up-down';
           </div>
           <div class="form-field">
             <label for="guest-angbao" class="form-label">Angbao Amount (RM)</label>
-            <input id="guest-angbao" type="number" min="0" bind:value={form.angbaoAmt} placeholder="0" class="form-input" />
+            <input id="guest-angbao" type="number" min="0" step="1" bind:value={form.angbaoAmt} placeholder="0" aria-invalid={!!errors.angbaoAmt} aria-describedby={errors.angbaoAmt ? 'guest-angbao-error' : undefined} class="form-input" />
+            {#if errors.angbaoAmt}<p id="guest-angbao-error" class="text-xs text-red-600 mt-1">{errors.angbaoAmt[0]}</p>{/if}
           </div>
           <div class="form-field">
             <label for="guest-gift" class="form-label">Gift Item</label>

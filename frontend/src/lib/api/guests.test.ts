@@ -77,3 +77,38 @@ describe('server rejection reason', () => {
 		await expect(deleteGuest('w1', 'g1')).rejects.toThrow('guest has a queued edit');
 	});
 });
+
+describe('lost response retry', () => {
+	it('sends one client UUID with the create and reuses it for the queued fallback', async () => {
+		vi.stubGlobal('navigator', { onLine: true });
+		// No randomUUID (plain-HTTP origin): the fallback must still be a v4 UUID.
+		const real = globalThis.crypto;
+		vi.stubGlobal('crypto', { getRandomValues: (a: Uint8Array<ArrayBuffer>) => real.getRandomValues(a) });
+		const { createGuest } = await import('./guests');
+		const { apiFetch } = await import('#lib/api/client.ts');
+		vi.mocked(apiFetch).mockRejectedValue(new TypeError('Failed to fetch'));
+
+		const created = await createGuest('w1', { name: 'A', pax: 1, rsvp: 'pending', isVip: false, notes: '', dietary: [] });
+
+		const sent = JSON.parse(vi.mocked(apiFetch).mock.calls.at(-1)![1]!.body as string);
+		expect(sent.id).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
+		expect(created.id).toBe(sent.id);
+		expect(JSON.parse(store.get('offline_queue_w1')!)[0].guestId).toBe(sent.id);
+	});
+
+	it('queues a failed online check-in with the time stamped before the attempt', async () => {
+		vi.stubGlobal('navigator', { onLine: true });
+		vi.useFakeTimers({ now: new Date('2030-01-01T00:00:00Z') });
+		const { checkInGuest } = await import('./guests');
+		const { apiFetch } = await import('#lib/api/client.ts');
+		vi.mocked(apiFetch).mockImplementation(async () => {
+			// The server stamped its check-in, then the response was lost.
+			vi.setSystemTime(new Date('2030-01-01T00:00:05Z'));
+			throw new TypeError('Failed to fetch');
+		});
+
+		await checkInGuest('w1', 'g1', 'late');
+
+		expect(JSON.parse(store.get('offline_queue_w1')!)[0].clientUpdatedAt).toBe('2030-01-01T00:00:00.000Z');
+	});
+});

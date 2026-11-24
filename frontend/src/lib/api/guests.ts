@@ -9,7 +9,13 @@ function isOffline() {
 	return typeof navigator !== 'undefined' && !navigator.onLine;
 }
 function genId(): string {
-	try { return crypto.randomUUID(); } catch { return `${Date.now()}-${Math.random().toString(36).slice(2)}`; }
+	if (typeof crypto.randomUUID === 'function') return crypto.randomUUID();
+	// randomUUID needs a secure context (plain-HTTP LAN); the backend still wants an RFC 4122 v4 UUID.
+	const b = crypto.getRandomValues(new Uint8Array(16));
+	b[6] = (b[6] & 0x0f) | 0x40;
+	b[8] = (b[8] & 0x3f) | 0x80;
+	const h = Array.from(b, (x) => x.toString(16).padStart(2, '0')).join('');
+	return `${h.slice(0, 8)}-${h.slice(8, 12)}-${h.slice(12, 16)}-${h.slice(16, 20)}-${h.slice(20)}`;
 }
 function nowIso() { return new Date().toISOString(); }
 function optimisticPatch(op: SyncOp, guestId: string, data: GuestFields = {}) {
@@ -69,6 +75,8 @@ export interface GuestResponse {
 }
 
 export interface GuestCreateData {
+	/** Client-minted UUID: a retried POST returns the existing guest instead of a duplicate. */
+	id?: string;
 	name: string;
 	email?: string;
 	pax: number;
@@ -117,19 +125,18 @@ export async function getGuest(weddingId: string, guestId: string): Promise<Gues
 }
 
 export async function createGuest(weddingId: string, data: GuestCreateData): Promise<GuestResponse> {
-	const doQueue = (id: string) => {
-		enqueue(weddingId, { mutationId: genId(), op: 'create', guestId: id, clientUpdatedAt: nowIso(), payload: data as unknown as Record<string, unknown> });
-	};
+	// One id for the POST and its queued fallback: if the POST landed but the
+	// response was lost, the replay merges into that guest instead of duplicating it.
+	const id = genId();
 	try {
-		const res = await apiFetch(`/api/weddings/${weddingId}/guests`, { method: 'POST', body: JSON.stringify(data) });
+		const res = await apiFetch(`/api/weddings/${weddingId}/guests`, { method: 'POST', body: JSON.stringify({ ...data, id }) });
 		if (!res.ok) throw new Error(await errorMessage(res, 'Failed to create guest'));
 		const resp: GuestResponse = await res.json();
 		applyGuestResponse(resp);
 		return resp;
 	} catch (e) {
 		if (isNetworkError(e)) {
-			const id = genId();
-			doQueue(id);
+			enqueue(weddingId, { mutationId: genId(), op: 'create', guestId: id, clientUpdatedAt: nowIso(), payload: data as unknown as Record<string, unknown> });
 			const now = nowIso();
 			const resp: GuestResponse = { id, weddingId, name: data.name, email: data.email || '', pax: data.pax, rsvp: data.rsvp, isVip: data.isVip, notes: data.notes, dietary: data.dietary, tableId: data.tableId ?? null, seatNum: data.seatNum ?? null, checkedInAt: null, angbaoAmt: data.angbaoAmt ?? null, giftItem: data.giftItem ?? null, createdAt: now, updatedAt: now };
 			// Local clock, not a server timestamp: insert without seeding the
@@ -190,7 +197,11 @@ export async function deleteGuest(weddingId: string, guestId: string): Promise<v
 export async function checkInGuest(weddingId: string, guestId: string, notes?: string): Promise<void> {
 	const trimmed = (notes ?? '').trim();
 	const payload = trimmed ? { notes: trimmed } : undefined;
-	const doQueue = () => { enqueue(weddingId, { mutationId: genId(), op: 'checkin', guestId, clientUpdatedAt: nowIso(), payload: payload ?? null }); optimisticPatch('checkin', guestId, payload); };
+	// Stamped before the online attempt: if that POST landed and only the response
+	// was lost, the replay is not newer than the server's check-in, so the server
+	// skips it instead of appending the notes twice.
+	const clientUpdatedAt = nowIso();
+	const doQueue = () => { enqueue(weddingId, { mutationId: genId(), op: 'checkin', guestId, clientUpdatedAt, payload: payload ?? null }); optimisticPatch('checkin', guestId, payload); };
 	if (isOffline()) { doQueue(); return; }
 	try {
 		const res = await apiFetch(`/api/weddings/${weddingId}/guests/${guestId}/checkin`, { method: 'POST', body: JSON.stringify({ notes: trimmed }) });

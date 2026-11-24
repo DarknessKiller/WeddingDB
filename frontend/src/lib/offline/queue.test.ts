@@ -246,6 +246,33 @@ describe('offline queue storage', () => {
 		expect(getQueue('w1').map((m) => m.mutationId)).toEqual(['m99', 'm1']);
 	});
 
+	it('keeps the newest mutation when the cross-tab merge overflows the cap', async () => {
+		const map = new Map<string, string>();
+		let injected = false;
+		vi.stubGlobal('localStorage', {
+			get length() { return map.size; },
+			key: (i: number) => [...map.keys()][i] ?? null,
+			getItem: (k: string) => map.get(k) ?? null,
+			removeItem: (k: string) => void map.delete(k),
+			setItem: (k: string, v: string) => {
+				map.set(k, String(v));
+				if (k === 'offline_queue_w1' && !injected) {
+					injected = true;
+					// Another tab fills the queue to the cap between our write and re-read.
+					map.set(k, JSON.stringify(Array.from({ length: 500 }, (_, i) => mutation(1000 + i))));
+				}
+			}
+		});
+		vi.stubGlobal('navigator', {}); // no Web Locks: the fallback merge is the only rescue
+		const { enqueue, getQueue } = await import('./queue');
+
+		enqueue('w1', mutation(1));
+
+		const ids = getQueue('w1').map((m) => m.mutationId);
+		expect(ids).toHaveLength(500);
+		expect(ids.at(-1)).toBe('m1');
+	});
+
 	it('re-drops mutations another tab writes back while dequeuing', async () => {
 		const map = new Map<string, string>();
 		let armed = false;

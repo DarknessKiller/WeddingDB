@@ -26,6 +26,8 @@
   let loadError = $state(false);
   // Queue sync and guest loading fail independently; one banner each.
   let syncError = $state(false);
+  // The current wedding's drain+reseed, so "Sync now" takes the same path as reconnect.
+  let syncNow: (() => Promise<void>) | undefined;
 
   function refreshQueued() {
     if (typeof window === 'undefined' || !wid) return;
@@ -60,6 +62,9 @@
   $effect(() => {
     const forWid = wid;
     if (!forWid) return;
+    // Before any await: an in-flight load for the previous wedding checks this
+    // id in seedGuests and must see it already changed, or it seeds under this one.
+    setWeddingId(forWid);
     // Do not show the previous wedding's tables, count or seat setting until
     // this wedding's fetches land (or fail).
     weddingTables.set({ wid: '', tables: [] });
@@ -72,6 +77,12 @@
     let cancelled = false;
     let localCleanupSSE: (() => void) | undefined;
     let localCleanupListeners: (() => void) | undefined;
+    // Drop a load that finishes after this wedding closed, before it is seeded.
+    const loadThis = async () => {
+      const list = await loadGuests(forWid);
+      if (cancelled) throw new Error('wedding closed');
+      return list;
+    };
 
     // Queue drains before reseed, on SSE reconnect too.
     const syncThenLoad = async () => {
@@ -84,7 +95,7 @@
         syncError = true;
         throw e;
       }
-      return loadGuests(forWid);
+      return loadThis();
     };
 
     let syncing = false;
@@ -109,7 +120,7 @@
         try {
           // Refresh inside the syncing window so SSE events arriving mid-fetch
           // are queued and replayed after the seed instead of being clobbered.
-          await refreshGuests(() => loadGuests(forWid), forWid);
+          await refreshGuests(loadThis, forWid);
           if (cancelled) return;
           loadError = false;
           refreshQueued();
@@ -120,6 +131,7 @@
         syncing = false;
       }
     }
+    syncNow = doSync;
 
     const onOnline = () => { offline = false; refreshQueued(); doSync(); };
     const onOffline = () => { offline = true; };
@@ -127,7 +139,6 @@
 
     void (async () => {
       if (!await validateToken() || cancelled) return;
-      setWeddingId(forWid);
       authChecked = true;
 
       window.addEventListener('online', onOnline);
@@ -146,7 +157,15 @@
       refreshQueued();
 
       // initial sync before seed
-      if (navigator.onLine) { try { await syncQueue(forWid); } catch {} }
+      if (navigator.onLine) {
+        try {
+          await syncQueue(forWid);
+          if (!cancelled) syncError = false;
+        } catch {
+          // Edits stay queued; say so instead of hiding it behind a clean reseed.
+          if (!cancelled) syncError = true;
+        }
+      }
 
       if (cancelled) return;
       // Subscribe before the snapshot; guestEvents queues mutations until seeding completes.
@@ -154,10 +173,9 @@
       try {
         // refreshGuests keeps the syncing window open across fetch+seed even if
         // initializeSSE early-returned, so mid-fetch SSE events can't be clobbered.
-        await refreshGuests(() => loadGuests(forWid), forWid);
+        await refreshGuests(loadThis, forWid);
         if (cancelled) return;
         loadError = false;
-        syncError = false;
       } catch {
         if (!cancelled) loadError = true;
       }
@@ -178,6 +196,7 @@
 
     return () => {
       cancelled = true;
+      if (syncNow === doSync) syncNow = undefined;
       localCleanupListeners?.();
       localCleanupSSE?.();
     };
@@ -213,15 +232,15 @@
 
     <div class="main-area">
       {#if offline}
-        <div class="offline-banner">Offline — changes queued{queued ? ` (${queued})` : ''}</div>
+        <div class="offline-banner" role="status">Offline — changes queued{queued ? ` (${queued})` : ''}</div>
       {:else if queued}
-        <div class="offline-banner queued">{queued} queued — syncing on reconnect <button onclick={async () => { try { await syncQueue(wid); syncError = false; } catch { addToast('Could not sync queued edits', 'error'); } refreshQueued(); }}>Sync now</button></div>
+        <div class="offline-banner queued" role="status">{queued} queued — syncing on reconnect <button onclick={() => syncNow?.()}>Sync now</button></div>
       {/if}
       {#if loadError}
-        <div class="offline-banner">Could not load guests <button onclick={retryGuests}>Retry</button></div>
+        <div class="offline-banner" role="status">Could not load guests <button onclick={retryGuests}>Retry</button></div>
       {/if}
       {#if syncError}
-        <div class="offline-banner">Could not sync changes — edits stay queued</div>
+        <div class="offline-banner" role="status">Could not sync changes — edits stay queued</div>
       {/if}
       <Header />
       <main class="main-content">

@@ -16,6 +16,23 @@ export const reservationSchema = z.object({
 
 export type ReservationForm = z.infer<typeof reservationSchema>;
 
+const ANGBAO_ERROR = 'Angbao must be a whole number, 0 or more';
+
+/** Guest drawer schema; the caps mirror the guest create and update endpoints. */
+export const guestFormSchema = z.object({
+	name: z.string().trim().min(1, 'Name is required').max(LIMITS.name, `Max ${LIMITS.name} characters`),
+	pax: z.number({ error: 'Pax must be a whole number' }).int('Pax must be a whole number')
+		.min(1, 'At least 1 guest').max(LIMITS.guestPax, `Max ${LIMITS.guestPax} guests`),
+	// A number input reads '' or null when empty: both mean no angbao.
+	angbaoAmt: z.union([z.literal(''), z.null(), z.undefined(), z.number().int(ANGBAO_ERROR).min(0, ANGBAO_ERROR)], { error: ANGBAO_ERROR }),
+});
+
+/** Per-field messages for the guest drawer form, empty when it may be saved. */
+export function guestFormErrors(form: unknown): { name?: string[]; pax?: string[]; angbaoAmt?: string[] } {
+	const r = guestFormSchema.safeParse(form);
+	return r.success ? {} : z.flattenError(r.error).fieldErrors;
+}
+
 // seatSelectionError returns the seat rule violation for a table reservation,
 // or undefined when the selection covers the party or no table is chosen.
 export function seatSelectionError(form: {

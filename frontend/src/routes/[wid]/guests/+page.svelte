@@ -89,7 +89,8 @@ import Users from 'lucide-svelte/icons/users';
 
   let wid = $state('');
 
-  const unsubscribeWedding = weddingId.subscribe(v => { wid = v; });
+  // Another wedding's guest ids must not stay selected for bulk delete or move.
+  const unsubscribeWedding = weddingId.subscribe(v => { if (v !== wid) selectedIds = new Set(); wid = v; });
   onDestroy(unsubscribeWedding);
 
   let prevDrawerOpen = $state(false);

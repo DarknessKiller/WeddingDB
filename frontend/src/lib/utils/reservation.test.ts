@@ -63,3 +63,18 @@ describe('seatOccupant', () => {
 		expect(seatOccupant(guests, 't2', 5)).toBeUndefined();
 	});
 });
+
+describe('guestFormErrors', () => {
+	it('blocks the values the guest API rejects, with a message per field', async () => {
+		const { guestFormErrors } = await import('./reservation.ts');
+		expect(guestFormErrors({ name: 'Alice', pax: 2, angbaoAmt: '' })).toEqual({});
+		expect(guestFormErrors({ name: 'Alice', pax: 1, angbaoAmt: null })).toEqual({});
+		expect(guestFormErrors({ name: 'Alice', pax: LIMITS.guestPax, angbaoAmt: 0 })).toEqual({});
+		const bad = guestFormErrors({ name: '   ', pax: 1.5, angbaoAmt: -1 });
+		expect(bad.name?.[0]).toBe('Name is required');
+		expect(bad.pax?.[0]).toBe('Pax must be a whole number');
+		expect(bad.angbaoAmt?.[0]).toBe('Angbao must be a whole number, 0 or more');
+		expect(guestFormErrors({ name: 'A', pax: null, angbaoAmt: 1.5 })).toMatchObject({ pax: ['Pax must be a whole number'], angbaoAmt: ['Angbao must be a whole number, 0 or more'] });
+		expect(guestFormErrors({ name: 'A', pax: LIMITS.guestPax + 1, angbaoAmt: '' }).pax?.[0]).toBe(`Max ${LIMITS.guestPax} guests`);
+	});
+});

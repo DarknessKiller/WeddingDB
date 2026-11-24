@@ -24,7 +24,7 @@ export function getQueue(wid: string): QueuedMutation[] {
 	try { return JSON.parse(localStorage.getItem(qkey(wid)) || '[]'); } catch { return []; }
 }
 function setQueue(wid: string, q: QueuedMutation[]) {
-	localStorage.setItem(qkey(wid), JSON.stringify(q.slice(0, 500)));
+	localStorage.setItem(qkey(wid), JSON.stringify(q.slice(-500)));
 }
 
 export function enqueue(wid: string, m: QueuedMutation): Promise<void> {
