@@ -29,10 +29,10 @@ func TestGuestCap_Create(t *testing.T) {
 	ctx := context.Background()
 	seedGuestRows(t, db, wid, 999, 1)
 
-	if err := svc.Create(ctx, &models.GuestRecord{WeddingID: wid, Name: "Last", Pax: 1}); err != nil {
+	if _, err := svc.Create(ctx, &models.GuestRecord{WeddingID: wid, Name: "Last", Pax: 1}); err != nil {
 		t.Fatalf("guest 1000 should fit: %v", err)
 	}
-	err := svc.Create(ctx, &models.GuestRecord{WeddingID: wid, Name: "Over", Pax: 1})
+	_, err := svc.Create(ctx, &models.GuestRecord{WeddingID: wid, Name: "Over", Pax: 1})
 	if !errors.Is(err, ErrGuestCapExceeded) {
 		t.Fatalf("guest 1001 should be rejected, got %v", err)
 	}
@@ -44,10 +44,10 @@ func TestGuestCap_CountsPartySize(t *testing.T) {
 	seedGuestRows(t, db, wid, 998, 1)
 
 	couple := &models.GuestRecord{ID: uuid.New(), WeddingID: wid, Name: "Couple", Pax: 2}
-	if err := svc.Create(ctx, couple); err != nil {
+	if _, err := svc.Create(ctx, couple); err != nil {
 		t.Fatalf("couple should fit exactly: %v", err)
 	}
-	if err := svc.Create(ctx, &models.GuestRecord{WeddingID: wid, Name: "Over", Pax: 1}); !errors.Is(err, ErrGuestCapExceeded) {
+	if _, err := svc.Create(ctx, &models.GuestRecord{WeddingID: wid, Name: "Over", Pax: 1}); !errors.Is(err, ErrGuestCapExceeded) {
 		t.Fatalf("full wedding should reject another guest, got %v", err)
 	}
 
@@ -105,7 +105,7 @@ func TestGuestCap_LegacyOverCapAllowsDecrease(t *testing.T) {
 	ctx := context.Background()
 	seedGuestRows(t, db, wid, 1005, 1)
 
-	if err := svc.Create(ctx, &models.GuestRecord{WeddingID: wid, Name: "Over", Pax: 1}); !errors.Is(err, ErrGuestCapExceeded) {
+	if _, err := svc.Create(ctx, &models.GuestRecord{WeddingID: wid, Name: "Over", Pax: 1}); !errors.Is(err, ErrGuestCapExceeded) {
 		t.Fatalf("adding to an over-cap wedding must fail, got %v", err)
 	}
 

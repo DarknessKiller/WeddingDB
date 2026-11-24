@@ -10,6 +10,7 @@ import (
 	"weddingdb/internal/services"
 
 	"github.com/go-fuego/fuego"
+	"github.com/google/uuid"
 	"gorm.io/gorm"
 )
 
@@ -31,6 +32,9 @@ type GuestCreateRequest struct {
 	SeatNum   *int     `json:"seatNum"`
 	AngbaoAmt *int     `json:"angbaoAmt"`
 	GiftItem  *string  `json:"giftItem"`
+	// ID is an optional client-generated guest ID, so a retried create
+	// returns the guest the first attempt stored instead of a duplicate.
+	ID *string `json:"id"`
 }
 
 func (h *GuestHandler) List(c fuego.ContextNoBody) (any, error) {
@@ -120,6 +124,12 @@ func (h *GuestHandler) Create(c fuego.ContextWithBody[GuestCreateRequest]) (any,
 		AngbaoAmt: body.AngbaoAmt,
 		GiftItem:  body.GiftItem,
 	}
+	if body.ID != nil {
+		// DecodeID accepts the same plain or base64 UUID forms as sync.
+		if guest.ID, err = DecodeID(*body.ID); err != nil || guest.ID == uuid.Nil {
+			return nil, fuego.BadRequestError{Title: "Invalid guest ID"}
+		}
+	}
 	if err := services.ValidateGuestText(guest); err != nil {
 		return nil, fuego.BadRequestError{Title: err.Error()}
 	}
@@ -139,7 +149,11 @@ func (h *GuestHandler) Create(c fuego.ContextWithBody[GuestCreateRequest]) (any,
 		guest.TableID = &tid
 		guest.SeatNum = &seatNum
 	}
-	if err := h.guestService.Create(ctx, guest); err != nil {
+	created, err := h.guestService.Create(ctx, guest)
+	if err != nil {
+		if errors.Is(err, services.ErrGuestIDTaken) {
+			return nil, fuego.ConflictError{Title: "Guest ID already in use"}
+		}
 		var lenErr services.FieldLenError
 		if errors.As(err, &lenErr) {
 			return nil, fuego.BadRequestError{Title: err.Error()}
@@ -157,7 +171,9 @@ func (h *GuestHandler) Create(c fuego.ContextWithBody[GuestCreateRequest]) (any,
 		}
 		return nil, err
 	}
-	c.SetStatus(201)
+	if created {
+		c.SetStatus(201)
+	}
 	return guest, nil
 }
 

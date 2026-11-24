@@ -11,6 +11,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/redis/go-redis/v9"
 
+	"weddingdb/internal/models"
 	"weddingdb/internal/testutil"
 )
 
@@ -366,5 +367,18 @@ func TestParseTokenUnsafe_ExtractsClaims(t *testing.T) {
 	}
 	if claims.Role != "viewer" {
 		t.Errorf("Role = %q, want %q", claims.Role, "viewer")
+	}
+}
+
+// The access token carries the admin's forced-password-change flag, so the
+// middleware can enforce it without a database read.
+func TestSignAccessToken_CarriesForcePasswordChange(t *testing.T) {
+	svc, _ := newTestAuthService(t, "test-secret-123")
+	tok, err := svc.signAccessToken(&models.AdminUser{ID: uuid.New(), Role: "user", ForcePasswordChange: true}, nil, 0)
+	testutil.NoErr(t, err)
+	claims, err := svc.ValidateToken(t.Context(), tok)
+	testutil.NoErr(t, err)
+	if !claims.ForcePasswordChange {
+		t.Fatal("token lost the forced password change flag")
 	}
 }

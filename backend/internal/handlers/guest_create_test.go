@@ -126,3 +126,41 @@ func TestGuestCreate_SeatWithoutTableIs400(t *testing.T) {
 		t.Fatalf("status = %d, want 400, body %s", rec.Code, rec.Body.String())
 	}
 }
+
+// A create retried with its client ID returns the stored guest with 200 and no
+// second row; the same ID under another wedding is 409 without its data.
+func TestGuestCreate_ClientIDIsIdempotent(t *testing.T) {
+	db := newSQLite(t, guestRecordsDDL, banquetTablesDDL)
+	svc := services.NewGuestService(repository.NewGuestRepo(db), nil, db)
+	s := fuego.NewServer(fuego.WithoutStartupMessages())
+	fuego.Post(s, "/api/weddings/{wid}/guests", NewGuestHandler(svc).Create)
+
+	post := func(wid uuid.UUID, body string) *httptest.ResponseRecorder {
+		req := httptest.NewRequest(http.MethodPost, "/api/weddings/"+utils.EncodeUUID(wid)+"/guests", strings.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+		rec := httptest.NewRecorder()
+		s.Mux.ServeHTTP(rec, req)
+		return rec
+	}
+	wid, gid := uuid.New(), uuid.New()
+	first := `{"id":"` + utils.EncodeUUID(gid) + `","name":"Alice","pax":1}`
+	if rec := post(wid, first); rec.Code != http.StatusCreated {
+		t.Fatalf("first create status = %d, want 201, body %s", rec.Code, rec.Body.String())
+	}
+	rec := post(wid, `{"id":"`+gid.String()+`","name":"Alice retried","pax":1}`)
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"Alice"`) {
+		t.Fatalf("retry = %d %s, want 200 with the stored guest", rec.Code, rec.Body.String())
+	}
+	var count int64
+	testutil.NoErr(t, db.Model(&models.GuestRecord{}).Where("id = ?", gid).Count(&count).Error)
+	if count != 1 {
+		t.Fatalf("guest rows = %d, want 1", count)
+	}
+	rec = post(uuid.New(), `{"id":"`+gid.String()+`","name":"Mallory","pax":1}`)
+	if rec.Code != http.StatusConflict || strings.Contains(rec.Body.String(), "Alice") {
+		t.Fatalf("other wedding = %d %s, want 409 without the guest", rec.Code, rec.Body.String())
+	}
+	if rec := post(wid, `{"id":"not-an-id!","name":"Bob","pax":1}`); rec.Code != http.StatusBadRequest {
+		t.Fatalf("bad id status = %d, want 400", rec.Code)
+	}
+}

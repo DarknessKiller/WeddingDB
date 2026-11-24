@@ -8,8 +8,10 @@ import (
 
 	"weddingdb/internal/models"
 	"weddingdb/internal/repository"
+	"weddingdb/internal/testutil"
 
 	"github.com/google/uuid"
+	"gorm.io/gorm"
 )
 
 // seedTable inserts a banquet table in wid and returns its id.
@@ -88,6 +90,29 @@ func TestBulkCreate_RejectsSeatOverlap(t *testing.T) {
 	}
 	if created != 0 {
 		t.Fatalf("created = %d, want 0 (batch rolled back)", created)
+	}
+}
+
+// An import reads each table's occupants once, not once per seated row, and
+// still sees the rows it inserted earlier in the batch.
+func TestBulkCreate_ReadsTableOccupancyOnce(t *testing.T) {
+	svc, _, wid := newGuestSyncService(t)
+	tid := seedTable(t, svc, wid, "T1", 10)
+	guestReads := 0
+	testutil.NoErr(t, svc.db.Callback().Query().After("gorm:query").Register("count_guest_reads", func(tx *gorm.DB) {
+		if tx.Statement.Table == "guest_records" {
+			guestReads++
+		}
+	}))
+
+	batch := make([]models.GuestRecord, 0, 5)
+	for i := range 5 {
+		batch = append(batch, models.GuestRecord{ID: uuid.New(), WeddingID: wid, Name: "G", Pax: 1, TableID: &tid, SeatNum: intPtr(i + 1)})
+	}
+	created, err := svc.BulkCreate(context.Background(), batch)
+	testutil.NoErr(t, err)
+	if created != 5 || guestReads != 1 {
+		t.Fatalf("created = %d, guest reads = %d, want 5 and 1", created, guestReads)
 	}
 }
 

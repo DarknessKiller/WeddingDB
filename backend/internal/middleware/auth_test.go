@@ -159,3 +159,34 @@ func TestAuthMiddleware_RedisDownIs503(t *testing.T) {
 		t.Errorf("body leaks driver text: %q", body)
 	}
 }
+
+// A session flagged for a forced password change reaches change-password and
+// nothing else.
+func TestAuthMiddleware_ForcePasswordChangeBlocksOtherRoutes(t *testing.T) {
+	secret := "test-secret"
+	mw := AuthMiddleware(newAuthService(t, secret))
+	handler := mw(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	tok, err := jwt.NewWithClaims(jwt.SigningMethodHS256, services.AccessClaims{
+		AdminID: uuid.New(), Role: "user", ForcePasswordChange: true,
+		RegisteredClaims: jwt.RegisteredClaims{
+			ID: uuid.New().String(), ExpiresAt: jwt.NewNumericDate(time.Now().Add(15 * time.Minute)),
+		},
+	}).SignedString([]byte(secret))
+	testutil.NoErr(t, err)
+
+	for path, want := range map[string]int{
+		"/api/weddings":             http.StatusForbidden,
+		"/api/auth/select-wedding":  http.StatusForbidden,
+		"/api/auth/change-password": http.StatusOK,
+	} {
+		req := httptest.NewRequest(http.MethodPost, path, nil)
+		req.Header.Set("Authorization", "Bearer "+tok)
+		rec := httptest.NewRecorder()
+		handler.ServeHTTP(rec, req)
+		if rec.Code != want {
+			t.Errorf("%s status = %d, want %d", path, rec.Code, want)
+		}
+	}
+}

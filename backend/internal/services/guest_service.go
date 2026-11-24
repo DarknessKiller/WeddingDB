@@ -15,6 +15,7 @@ import (
 	"weddingdb/internal/utils"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgconn"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
@@ -39,13 +40,8 @@ func guestCapError(current, delta int) error {
 }
 
 // lockWedding takes the wedding row lock every guest write takes first.
-// The row lock is Postgres-only; sqlite (tests) has one writer.
 func lockWedding(tx *gorm.DB, weddingID uuid.UUID) error {
-	if tx.Name() != "postgres" {
-		return nil
-	}
-	return tx.Clauses(clause.Locking{Strength: "UPDATE"}).
-		Select("id").Where("id = ?", weddingID).First(&models.WeddingEvent{}).Error
+	return repository.LockWedding(tx, weddingID)
 }
 
 // weddingLockError names a deleted wedding instead of reporting the guest that
@@ -195,15 +191,52 @@ func (s *GuestService) Get(ctx context.Context, id, weddingID uuid.UUID) (*model
 	return s.guestRepo.FindByID(ctx, id, weddingID)
 }
 
-func (s *GuestService) Create(ctx context.Context, g *models.GuestRecord) error {
+// Create inserts g and reports whether it made a new row. A client-chosen ID
+// that already names a guest in this wedding is a retried create: g becomes the
+// stored guest and nothing is written or published. An ID that belongs to
+// another wedding is ErrGuestIDTaken.
+func (s *GuestService) Create(ctx context.Context, g *models.GuestRecord) (bool, error) {
+	var existing *models.GuestRecord
 	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if g.ID != uuid.Nil {
+			// Read under the wedding lock, so a concurrent retry of the same
+			// create sees the row the first one inserted.
+			if err := lockWedding(tx, g.WeddingID); err != nil {
+				return weddingLockError(err)
+			}
+			found, err := repository.NewGuestRepo(tx).FindByID(ctx, g.ID, g.WeddingID)
+			if err == nil {
+				existing = found
+				return nil
+			}
+			if !errors.Is(err, gorm.ErrRecordNotFound) {
+				return err
+			}
+		}
 		return s.createGuestTx(ctx, tx, g)
 	})
 	if err != nil {
-		return err
+		if g.ID != uuid.Nil && isGuestIDViolation(err) {
+			return false, ErrGuestIDTaken
+		}
+		return false, err
+	}
+	if existing != nil {
+		*g = *existing
+		return false, nil
 	}
 	s.sseHub.publishGuest("create", g, g.WeddingID)
-	return nil
+	return true, nil
+}
+
+// isGuestIDViolation reports a guest insert that hit the primary key. Guest
+// rows have no other unique constraint, so this is an ID another wedding owns.
+func isGuestIDViolation(err error) bool {
+	if pgErr, ok := errors.AsType[*pgconn.PgError](err); ok {
+		return pgErr.Code == "23505" && pgErr.TableName == "guest_records"
+	}
+	// sqlite, used in tests, exposes the column but not a constraint name.
+	return strings.Contains(err.Error(), "UNIQUE constraint failed: guest_records.id")
 }
 
 // UpdatePatch merges a sparse online edit into the locked row and returns the
@@ -266,28 +299,48 @@ func (s *GuestService) Search(ctx context.Context, weddingID uuid.UUID, query st
 // lock. Every write path that sets a seat calls this, so all of them serialize
 // on the same table row and share the capacity/overlap rules.
 func checkSeatTx(ctx context.Context, tx *gorm.DB, weddingID, tableID uuid.UUID, guestID uuid.UUID, pax, seatNum int) error {
-	if err := lockTable(tx, weddingID, tableID); err != nil {
+	seats, err := loadTableSeats(ctx, tx, weddingID, tableID)
+	if err != nil {
 		return err
+	}
+	return seats.check(guestID, pax, seatNum)
+}
+
+// tableSeats is a table's capacity and seated guests, read under the table
+// row lock so it stays current for the rest of the transaction.
+type tableSeats struct {
+	capacity  int
+	occupants []models.GuestRecord
+}
+
+func loadTableSeats(ctx context.Context, tx *gorm.DB, weddingID, tableID uuid.UUID) (*tableSeats, error) {
+	if err := lockTable(tx, weddingID, tableID); err != nil {
+		return nil, err
 	}
 	table, err := repository.NewTableRepo(tx).FindByID(ctx, tableID, weddingID)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return ErrTableNotFound
+			return nil, ErrTableNotFound
 		}
-		return err
-	}
-	if pax < 1 {
-		return ErrInvalidGuestPax
-	}
-	if seatNum < 1 || seatNum+pax-1 > table.Capacity {
-		return ErrSeatRange
+		return nil, err
 	}
 	existing, err := repository.NewGuestRepo(tx).FindByTable(ctx, weddingID, tableID)
 	if err != nil {
-		return err
+		return nil, err
+	}
+	return &tableSeats{capacity: table.Capacity, occupants: existing}, nil
+}
+
+// check applies the capacity and overlap rules to one guest's seat range.
+func (t *tableSeats) check(guestID uuid.UUID, pax, seatNum int) error {
+	if pax < 1 {
+		return ErrInvalidGuestPax
+	}
+	if seatNum < 1 || seatNum+pax-1 > t.capacity {
+		return ErrSeatRange
 	}
 	guestEnd := seatNum + pax - 1
-	for _, e := range existing {
+	for _, e := range t.occupants {
 		if e.ID == guestID || e.SeatNum == nil {
 			continue
 		}
@@ -479,8 +532,11 @@ func (s *GuestService) BulkCreate(ctx context.Context, guests []models.GuestReco
 			return guestCapError(total, incoming)
 		}
 		// Cache table ownership checks for this batch. Seat rows are row-locked
-		// by checkSeatTx, so an import serializes on the same rows as AssignSeat.
+		// by loadTableSeats, so an import serializes on the same rows as
+		// AssignSeat; each table's occupancy is read once, then grows with
+		// the rows this batch inserts.
 		checked := make(map[uuid.UUID]bool)
+		seats := make(map[uuid.UUID]*tableSeats)
 		for i := range guests {
 			g := &guests[i]
 			if g.Pax < 1 {
@@ -514,13 +570,21 @@ func (s *GuestService) BulkCreate(ctx context.Context, guests []models.GuestReco
 				created++
 				continue
 			}
-			if err := checkSeatTx(ctx, tx, g.WeddingID, tid, uuid.Nil, g.Pax, *g.SeatNum); err != nil {
+			ts := seats[tid]
+			if ts == nil {
+				if ts, err = loadTableSeats(ctx, tx, g.WeddingID, tid); err != nil {
+					return err
+				}
+				seats[tid] = ts
+			}
+			if err := ts.check(uuid.Nil, g.Pax, *g.SeatNum); err != nil {
 				return err
 			}
 			checked[tid] = true
 			if err := txGuestRepo.Create(ctx, g); err != nil {
 				return err
 			}
+			ts.occupants = append(ts.occupants, *g)
 			events = append(events, pendingEvent{"create", g})
 			created++
 		}
@@ -812,7 +876,7 @@ func (s *GuestService) applySyncMutation(ctx context.Context, weddingID uuid.UUI
 
 	case SyncOpCheckIn:
 		var merged *models.GuestRecord
-		applied := false
+		applied, alreadyIn := false, false
 		err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 			if err := lockWedding(tx, weddingID); err != nil {
 				return weddingLockError(err)
@@ -822,10 +886,19 @@ func (s *GuestService) applySyncMutation(ctx context.Context, weddingID uuid.UUI
 			if err != nil {
 				return err
 			}
+			merged = locked
+			// Like online CheckIn: a guest already checked in keeps their arrival
+			// time and notes. A replay from a device whose clock runs ahead would
+			// otherwise look newer and append its note a second time. Angbao and
+			// gift still merge by LWW so a later offline entry is not lost.
+			alreadyIn = locked.CheckedInAt != nil
 			candidate := *locked
-			candidate.CheckedInAt = &opTime
-			candidate.RSVP = "confirmed"
-			carried := []string{groupCheckedInAt, groupRSVP}
+			var carried []string
+			if !alreadyIn {
+				candidate.CheckedInAt = &opTime
+				candidate.RSVP = "confirmed"
+				carried = []string{groupCheckedInAt, groupRSVP}
+			}
 			if m.Payload != nil {
 				if m.Payload.AngbaoAmt != nil {
 					candidate.AngbaoAmt = m.Payload.AngbaoAmt
@@ -839,7 +912,7 @@ func (s *GuestService) applySyncMutation(ctx context.Context, weddingID uuid.UUI
 				// notes, never replacing them, so a queued note never wipes
 				// existing notes. A replay carries the same time as the stored
 				// check-in, so it must not append the note again.
-				if notes := strings.TrimSpace(m.Payload.Notes); notes != "" && opTime.After(fieldTime(locked, groupCheckedInAt)) {
+				if notes := strings.TrimSpace(m.Payload.Notes); notes != "" && !alreadyIn && opTime.After(fieldTime(locked, groupCheckedInAt)) {
 					if err := checkLen("Check-in notes", notes, MaxCheckInNoteLen); err != nil {
 						return err
 					}
@@ -847,7 +920,6 @@ func (s *GuestService) applySyncMutation(ctx context.Context, weddingID uuid.UUI
 					carried = append(carried, groupNotes)
 				}
 			}
-			merged = locked
 			if won := mergeGuestWrite(locked, &candidate, opTime, carried); len(won) == 0 {
 				return nil
 			}
@@ -864,7 +936,11 @@ func (s *GuestService) applySyncMutation(ctx context.Context, weddingID uuid.UUI
 			return failedSync(ctx, m.GuestID, err)
 		}
 		if !applied {
-			return SyncResult{GuestID: m.GuestID, Status: "skipped", Reason: "older than server", ServerRecord: merged}
+			reason := "older than server"
+			if alreadyIn {
+				reason = "already checked in"
+			}
+			return SyncResult{GuestID: m.GuestID, Status: "skipped", Reason: reason, ServerRecord: merged}
 		}
 		s.sseHub.publishGuest("checkin", merged, weddingID)
 		return SyncResult{GuestID: m.GuestID, Status: "applied", ServerRecord: merged}

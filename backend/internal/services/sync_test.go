@@ -694,7 +694,7 @@ func TestBulkCreate_RollsBackOnError(t *testing.T) {
 
 func TestCreate_RejectsOversizedParty(t *testing.T) {
 	svc, _, wid := newGuestSyncService(t)
-	err := svc.Create(context.Background(), &models.GuestRecord{
+	_, err := svc.Create(context.Background(), &models.GuestRecord{
 		ID: uuid.New(), WeddingID: wid, Name: "Big", Pax: MaxGuestPartySize + 1,
 	})
 	if err == nil {
@@ -786,6 +786,59 @@ func TestSync_ArrivalAndUndoFollowTime(t *testing.T) {
 	}
 	if g.Notes != "keep" {
 		t.Fatalf("undo changed notes: %q", g.Notes)
+	}
+}
+
+// TestSync_CheckInReplayWhileCheckedInIsSkipped covers a replay whose device
+// clock runs ahead: it looks newer than the stored check-in, yet the guest is
+// already in, so it must not append the note again or move the arrival time.
+// A check-in after an undo still applies.
+func TestSync_CheckInReplayWhileCheckedInIsSkipped(t *testing.T) {
+	svc, db, wid := newGuestSyncService(t)
+	ctx := context.Background()
+	gid := uuid.New()
+	base := time.Now().Add(-10 * time.Minute)
+	testutil.NoErr(t, db.Create(&models.GuestRecord{ID: gid, WeddingID: wid, Name: "Ahead", Pax: 1, CreatedAt: base, UpdatedAt: base}).Error)
+	var note SyncPayload
+	testutil.NoErr(t, json.Unmarshal([]byte(`{"notes":"no gift"}`), &note))
+	checkIn := func(at time.Time) SyncResult {
+		res, err := svc.Sync(ctx, wid, []SyncMutation{{Op: SyncOpCheckIn, GuestID: gid.String(), ClientUpdatedAt: at, Payload: &note}})
+		testutil.NoErr(t, err)
+		return res[0]
+	}
+
+	arrive := base.Add(time.Minute)
+	if r := checkIn(arrive); r.Status != "applied" {
+		t.Fatalf("first check-in = %+v, want applied", r)
+	}
+	r := checkIn(base.Add(2 * time.Minute))
+	if r.Status != "skipped" || r.ServerRecord == nil {
+		t.Fatalf("replay = %+v, want skipped with serverRecord", r)
+	}
+	g, err := svc.Get(ctx, gid, wid)
+	testutil.NoErr(t, err)
+	if g.Notes != "no gift" || g.CheckedInAt == nil || !g.CheckedInAt.Equal(arrive) {
+		t.Fatalf("after replay notes %q checkedInAt %v, want one note and %v", g.Notes, g.CheckedInAt, arrive)
+	}
+
+	// A later check-in carrying angbao still merges it, without a second note.
+	var withAngbao SyncPayload
+	testutil.NoErr(t, json.Unmarshal([]byte(`{"notes":"no gift","angbaoAmt":88}`), &withAngbao))
+	res, err := svc.Sync(ctx, wid, []SyncMutation{{Op: SyncOpCheckIn, GuestID: gid.String(), ClientUpdatedAt: base.Add(150 * time.Second), Payload: &withAngbao}})
+	testutil.NoErr(t, err)
+	g, err = svc.Get(ctx, gid, wid)
+	testutil.NoErr(t, err)
+	if res[0].Status != "applied" || g.AngbaoAmt == nil || *g.AngbaoAmt != 88 || g.Notes != "no gift" || !g.CheckedInAt.Equal(arrive) {
+		t.Fatalf("angbao on checked-in guest = %+v, angbao %v notes %q checkedInAt %v", res[0], g.AngbaoAmt, g.Notes, g.CheckedInAt)
+	}
+
+	res, err = svc.Sync(ctx, wid, []SyncMutation{{Op: SyncOpCheckOut, GuestID: gid.String(), ClientUpdatedAt: base.Add(3 * time.Minute)}})
+	testutil.NoErr(t, err)
+	if res[0].Status != "applied" {
+		t.Fatalf("undo = %+v, want applied", res[0])
+	}
+	if r := checkIn(base.Add(4 * time.Minute)); r.Status != "applied" {
+		t.Fatalf("check-in after undo = %+v, want applied", r)
 	}
 }
 
@@ -966,7 +1019,8 @@ func TestCreate_StampsEveryFieldGroup(t *testing.T) {
 	svc, _, wid := newGuestSyncService(t)
 	ctx := context.Background()
 	g := &models.GuestRecord{ID: uuid.New(), WeddingID: wid, Name: "Alice", Pax: 1}
-	testutil.NoErr(t, svc.Create(ctx, g))
+	_, err := svc.Create(ctx, g)
+	testutil.NoErr(t, err)
 	stored, err := svc.Get(ctx, g.ID, wid)
 	testutil.NoErr(t, err)
 	if len(stored.FieldTimes) != len(guestGroups()) {

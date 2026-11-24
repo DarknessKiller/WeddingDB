@@ -70,7 +70,7 @@ func TestGuestCap_PostgresConcurrent(t *testing.T) {
 		go func(i int) {
 			defer wg.Done()
 			<-start
-			err := svc.Create(ctx, &models.GuestRecord{ID: uuid.New(), WeddingID: wid, Name: fmt.Sprintf("Race %d", i), Pax: 1})
+			_, err := svc.Create(ctx, &models.GuestRecord{ID: uuid.New(), WeddingID: wid, Name: fmt.Sprintf("Race %d", i), Pax: 1})
 			switch {
 			case err == nil:
 				ok.Add(1)

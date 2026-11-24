@@ -23,7 +23,7 @@ func testSSEHub(t *testing.T) *SSEHub {
 	mr := miniredis.RunT(t)
 	rdb := redis.NewClient(&redis.Options{Addr: mr.Addr()})
 	hub := NewSSEHub(rdb)
-	t.Cleanup(func() { hub.Shutdown(); testutil.NoErr(t, rdb.Close()) })
+	t.Cleanup(func() { hub.Shutdown(context.Background()); testutil.NoErr(t, rdb.Close()) })
 	return hub
 }
 
@@ -193,7 +193,7 @@ func TestSSEHub_PublishQueueFullResyncsOtherReplicas(t *testing.T) {
 		testutil.NoErr(t, rdb2.Close())
 	})
 	other := NewSSEHub(rdb2)
-	t.Cleanup(other.Shutdown)
+	t.Cleanup(func() { other.Shutdown(context.Background()) })
 
 	wid := uuid.New()
 	client := testSubscribe(t, other, wid)
@@ -231,6 +231,7 @@ func TestSSEHub_PublishFailureReconnectsClients(t *testing.T) {
 		cancel:  cancel,
 		publish: make(chan publishRequest, 1),
 		ready:   make(chan struct{}), // never closed: Publish fails
+		stopped: make(chan struct{}),
 	}
 	go hub.publishLoop()
 	hub.publish <- publishRequest{weddingID: wid, event: GuestEvent{Type: "create"}}
@@ -555,5 +556,45 @@ func TestSSEHub_BroadcastResyncSingleFlight(t *testing.T) {
 	hub.broadcastResync(context.Background(), wid)
 	if got := atomic.LoadInt32(&hook.n); got != 1 {
 		t.Fatalf("published %d resync markers after the in-flight one finished, want 1", got)
+	}
+}
+
+// Shutdown order: CloseStreams ends local streams but keeps publishing, and
+// Shutdown still publishes every event queued before it, so writes committed
+// during the HTTP drain reach other replicas.
+func TestSSEHub_ShutdownPublishesQueuedEvents(t *testing.T) {
+	mr := miniredis.RunT(t)
+	rdb := redis.NewClient(&redis.Options{Addr: mr.Addr()})
+	t.Cleanup(func() { testutil.NoErr(t, rdb.Close()) })
+	hub := NewSSEHub(rdb)
+	wid := uuid.New()
+	sub := rdb.Subscribe(t.Context(), "wedding:"+wid.String()+":guests")
+	t.Cleanup(func() { testutil.NoErr(t, sub.Close()) })
+	_, err := sub.Receive(t.Context())
+	testutil.NoErr(t, err)
+
+	client := testSubscribe(t, hub, wid)
+	hub.CloseStreams()
+	select {
+	case <-client.Done:
+	default:
+		t.Fatal("CloseStreams left the local stream open")
+	}
+
+	const events = 200
+	for range events {
+		hub.publishGuest("create", &models.GuestRecord{ID: uuid.New()}, wid)
+	}
+	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+	defer cancel()
+	hub.Shutdown(ctx)
+
+	ch := sub.Channel()
+	for i := range events {
+		select {
+		case <-ch:
+		case <-time.After(2 * time.Second):
+			t.Fatalf("received %d of %d events queued before shutdown", i, events)
+		}
 	}
 }

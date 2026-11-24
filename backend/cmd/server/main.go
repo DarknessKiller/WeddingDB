@@ -24,13 +24,18 @@ func main() {
 		quit := make(chan os.Signal, 1)
 		signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
 		<-quit
-		// Stop SSE first so its long-lived streams do not hold up the drain.
-		app.SSEHub.Shutdown()
+		// End SSE streams first so they do not hold up the drain, but keep the
+		// hub publishing until the server stops: writes committed during the
+		// drain must still reach other replicas.
+		app.SSEHub.CloseStreams()
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
 		if err := app.Server.Shutdown(ctx); err != nil {
 			log.Println("Warning: server shutdown:", err)
 		}
+		hubCtx, hubCancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer hubCancel()
+		app.SSEHub.Shutdown(hubCtx)
 		close(shutdownDone)
 	}()
 

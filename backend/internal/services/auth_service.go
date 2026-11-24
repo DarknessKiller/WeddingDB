@@ -25,6 +25,10 @@ type AccessClaims struct {
 	WeddingID    *uuid.UUID `json:"wid,omitempty"`
 	Role         string     `json:"role"`
 	TokenVersion int        `json:"tv"`
+	// ForcePasswordChange mirrors the admin flag at mint time, so the
+	// middleware needs no database read. Setting or clearing the flag revokes
+	// the user's sessions, so a stale value lives at most one access token.
+	ForcePasswordChange bool `json:"fpc,omitzero"`
 	jwt.RegisteredClaims
 }
 
@@ -388,9 +392,9 @@ func (s *AuthService) Logout(ctx context.Context, refreshToken string, accessTok
 			}
 		}
 	}
-	// Best-effort delete: logging out with an already-consumed token is not an error.
-	_, err := s.tokenRepo.DeleteByToken(ctx, refreshToken)
-	return err
+	// Logging out with an already-consumed token is not an error, but the
+	// successor it was rotated into must die with it.
+	return s.tokenRepo.DeleteChain(ctx, refreshToken)
 }
 
 // ValidateToken parses and validates a JWT, then checks blacklist and token version.
@@ -567,10 +571,11 @@ func (s *AuthService) signAccessToken(admin *models.AdminUser, weddingID *uuid.U
 	now := time.Now()
 	expiry := now.Add(15 * time.Minute)
 	claims := AccessClaims{
-		AdminID:      admin.ID,
-		WeddingID:    weddingID,
-		Role:         admin.Role,
-		TokenVersion: tv,
+		AdminID:             admin.ID,
+		WeddingID:           weddingID,
+		Role:                admin.Role,
+		TokenVersion:        tv,
+		ForcePasswordChange: admin.ForcePasswordChange,
 		RegisteredClaims: jwt.RegisteredClaims{
 			ID:        uuid.New().String(),
 			IssuedAt:  jwt.NewNumericDate(now),

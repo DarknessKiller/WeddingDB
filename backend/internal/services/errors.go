@@ -24,6 +24,10 @@ var (
 
 	// ErrGuestCapExceeded is returned when adding guests would cross the cap.
 	ErrGuestCapExceeded = errors.New("guest limit exceeded")
+
+	// ErrGuestIDTaken is returned when a client-chosen guest ID already
+	// belongs to another wedding.
+	ErrGuestIDTaken = errors.New("guest ID already in use")
 )
 
 // ErrTokenRejected wraps every reason a presented access or refresh token is

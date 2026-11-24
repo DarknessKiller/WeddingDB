@@ -62,7 +62,7 @@ func TestGuestWrite_MissingWeddingIsNotFoundOrApplied(t *testing.T) {
 	if err := svc.CheckOut(ctx, guestID, goneWedding); !errors.Is(err, ErrWeddingNotFound) {
 		t.Fatalf("check-out in a missing wedding err = %v, want ErrWeddingNotFound", err)
 	}
-	if err := svc.Create(ctx, &models.GuestRecord{ID: guestID, WeddingID: goneWedding, Name: "A", Pax: 1}); !errors.Is(err, ErrWeddingNotFound) {
+	if _, err := svc.Create(ctx, &models.GuestRecord{ID: guestID, WeddingID: goneWedding, Name: "A", Pax: 1}); !errors.Is(err, ErrWeddingNotFound) {
 		t.Fatalf("create in a missing wedding err = %v, want ErrWeddingNotFound", err)
 	}
 	if err := svc.AssignSeat(ctx, guestID, goneWedding, uuid.New(), 1); !errors.Is(err, ErrWeddingNotFound) {

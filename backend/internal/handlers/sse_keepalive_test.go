@@ -38,7 +38,7 @@ func newTestSSEServerWithLeaseClient(t *testing.T) (*httptest.Server, *services.
 		}
 	})
 	hub := services.NewSSEHub(leaseRedis)
-	t.Cleanup(hub.Shutdown)
+	t.Cleanup(func() { hub.Shutdown(context.Background()) })
 
 	// Mint admin JWT with the same secret the handler validates against.
 	secret := "test-secret"

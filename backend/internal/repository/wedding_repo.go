@@ -49,6 +49,9 @@ func (r *WeddingRepo) Update(ctx context.Context, id uuid.UUID, fields map[strin
 	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		q := tx.Model(&models.WeddingEvent{}).Where("id = ?", id)
 		if tx.Name() == "postgres" {
+			if err := setLockTimeout(tx); err != nil {
+				return err
+			}
 			q = q.Clauses(clause.Locking{Strength: "UPDATE"})
 		}
 		// Read the row under the lock. A count would be invalid here: Postgres
@@ -68,7 +71,7 @@ func (r *WeddingRepo) Delete(ctx context.Context, id uuid.UUID) error {
 	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		// Take the wedding row lock before the cascade: a guest write that holds
 		// it would otherwise insert rows after the sweep and leave orphans.
-		if err := lockWeddingRow(tx, id); err != nil {
+		if err := LockWedding(tx, id); err != nil {
 			return err
 		}
 		// Cascade: remove guests, tables, hall elements, and user associations

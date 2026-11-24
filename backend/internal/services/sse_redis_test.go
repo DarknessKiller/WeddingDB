@@ -19,7 +19,7 @@ func TestSSEHub_DistributedWeddingLimit(t *testing.T) {
 	testutil.NoErr(t, rdb.Ping(context.Background()).Err())
 	hubs := []*SSEHub{NewSSEHub(rdb), NewSSEHub(rdb)}
 	for _, hub := range hubs {
-		t.Cleanup(hub.Shutdown)
+		t.Cleanup(func() { hub.Shutdown(context.Background()) })
 	}
 	wid := uuid.New()
 	clients := make([]*SSEClient, 200)
@@ -70,7 +70,7 @@ func TestSSEHub_RenewalFailureClosesStream(t *testing.T) {
 	addr := testutil.RedisAddr(t)
 	rdb := redis.NewClient(&redis.Options{Addr: addr})
 	hub := NewSSEHub(rdb)
-	t.Cleanup(hub.Shutdown)
+	t.Cleanup(func() { hub.Shutdown(context.Background()) })
 	client, err := hub.Subscribe(context.Background(), uuid.New(), uuid.New())
 	testutil.NoErr(t, err)
 	testutil.NoErr(t, rdb.Close())

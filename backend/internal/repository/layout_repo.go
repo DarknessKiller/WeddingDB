@@ -41,6 +41,9 @@ func (r *LayoutRepo) SaveLayout(
 		var exists models.WeddingEvent
 		q := tx.Select("id").Where("id = ?", weddingID)
 		if tx.Name() == "postgres" {
+			if err := setLockTimeout(tx); err != nil {
+				return err
+			}
 			q = q.Clauses(clause.Locking{Strength: "UPDATE"})
 		}
 		if err := q.First(&exists).Error; err != nil {
@@ -105,12 +108,22 @@ func (r *LayoutRepo) SaveLayout(
 	})
 }
 
-// lockWeddingRow takes the wedding row lock the layout save shares with every
-// guest and table write. The row lock is Postgres-only; sqlite has one writer.
-func lockWeddingRow(tx *gorm.DB, weddingID uuid.UUID) error {
+// LockWedding takes the wedding row lock every guest, table and layout write
+// shares. The row lock is Postgres-only; sqlite has one writer.
+func LockWedding(tx *gorm.DB, weddingID uuid.UUID) error {
 	if tx.Name() != "postgres" {
 		return nil
 	}
+	if err := setLockTimeout(tx); err != nil {
+		return err
+	}
 	return tx.Clauses(clause.Locking{Strength: "UPDATE"}).
 		Select("id").Where("id = ?", weddingID).First(&models.WeddingEvent{}).Error
+}
+
+// setLockTimeout bounds every lock wait for the rest of tx, so a write queued
+// behind a slow one fails fast (SQLSTATE 55P03) instead of holding a pool
+// connection until the holder commits.
+func setLockTimeout(tx *gorm.DB) error {
+	return tx.Exec("SET LOCAL lock_timeout = '5s'").Error
 }

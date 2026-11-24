@@ -2,6 +2,7 @@ package services
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"testing"
 	"time"
@@ -11,6 +12,7 @@ import (
 	"weddingdb/internal/testutil"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgconn"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
@@ -247,5 +249,32 @@ func TestCheckIn_WaitsForWeddingLock(t *testing.T) {
 			}
 			c.want(t, gid)
 		})
+	}
+}
+
+// A write queued behind a held wedding row lock gives up after lock_timeout
+// with SQLSTATE 55P03, instead of holding a pool connection until the holder
+// commits. Requires TEST_DATABASE_URL pointing at a *_test database.
+func TestGuestWrite_WeddingLockTimesOut(t *testing.T) {
+	db := newPGTestDB(t)
+	svc := NewGuestService(repository.NewGuestRepo(db), nil, db)
+	wid, gid := uuid.New(), uuid.New()
+	testutil.NoErr(t, db.Create(&models.WeddingEvent{ID: wid, Name: "Busy"}).Error)
+	testutil.NoErr(t, db.Create(&models.GuestRecord{ID: gid, WeddingID: wid, Name: "Guest", Pax: 1}).Error)
+
+	lockTx := db.Begin()
+	testutil.NoErr(t, lockTx.Error)
+	t.Cleanup(func() { lockTx.Rollback() })
+	testutil.NoErr(t, lockTx.Clauses(clause.Locking{Strength: "UPDATE"}).
+		Select("id").Where("id = ?", wid).First(&models.WeddingEvent{}).Error)
+
+	start := time.Now()
+	err := svc.Delete(t.Context(), gid, wid)
+	pgErr, ok := errors.AsType[*pgconn.PgError](err)
+	if !ok || pgErr.Code != "55P03" {
+		t.Fatalf("err = %v, want lock_not_available (55P03)", err)
+	}
+	if waited := time.Since(start); waited > 8*time.Second {
+		t.Fatalf("waited %v, want about the 5s lock_timeout", waited)
 	}
 }
