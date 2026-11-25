@@ -350,7 +350,8 @@ import ArrowUpDown from 'lucide-svelte/icons/arrow-up-down';
           </div>
           <div class="form-field">
             <label for="guest-email" class="form-label">Email</label>
-            <input id="guest-email" bind:value={form.email} maxlength={LIMITS.email} class="form-input" />
+            <input id="guest-email" type="email" bind:value={form.email} maxlength={LIMITS.email} aria-invalid={!!errors.email} aria-describedby={errors.email ? 'guest-email-error' : undefined} class="form-input" />
+            {#if errors.email}<p id="guest-email-error" class="text-xs text-red-600 mt-1">{errors.email[0]}</p>{/if}
           </div>
           <div class="form-row-2">
             <div class="form-field">

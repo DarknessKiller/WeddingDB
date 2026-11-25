@@ -1,4 +1,5 @@
 import { LIMITS } from './limits.ts';
+import { guestEmailSchema } from './reservation.ts';
 
 // parseCsv reads RFC 4180 text: quotes protect commas, newlines and "" escapes.
 // Rows are returned verbatim so callers keep their own column mapping.
@@ -134,6 +135,7 @@ export function csvToGuests(rows: string[][]): { guests: CsvGuestRow[]; dropped:
 			!name ||
 			charLen(name) > LIMITS.name ||
 			charLen(email) > LIMITS.email ||
+			!guestEmailSchema.safeParse(email).success ||
 			charLen(notes) > LIMITS.guestNotes ||
 			dietary.length > LIMITS.dietaryItems ||
 			dietary.some((d) => charLen(d) > LIMITS.dietaryItem)

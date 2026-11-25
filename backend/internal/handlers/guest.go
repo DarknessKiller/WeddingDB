@@ -5,6 +5,7 @@ import (
 	"errors"
 	"log/slog"
 	"strconv"
+	"strings"
 	"weddingdb/internal/models"
 	"weddingdb/internal/repository"
 	"weddingdb/internal/services"
@@ -95,7 +96,7 @@ func (h *GuestHandler) Create(c fuego.ContextWithBody[GuestCreateRequest]) (any,
 	if err != nil {
 		return nil, fuego.BadRequestError{Title: "Invalid request"}
 	}
-	if body.Name == "" {
+	if strings.TrimSpace(body.Name) == "" {
 		return nil, fuego.BadRequestError{Title: "Name is required"}
 	}
 	if body.Pax < 1 {
@@ -106,6 +107,9 @@ func (h *GuestHandler) Create(c fuego.ContextWithBody[GuestCreateRequest]) (any,
 	}
 	if body.RSVP != "" && !services.ValidRSVP(body.RSVP) {
 		return nil, fuego.BadRequestError{Title: "Invalid RSVP status"}
+	}
+	if !services.ValidGuestEmail(body.Email) {
+		return nil, fuego.BadRequestError{Title: "Invalid email"}
 	}
 	wid, err := DecodeWID(c)
 	if err != nil {
@@ -347,11 +351,14 @@ func (h *GuestHandler) BulkImport(c fuego.ContextWithBody[BulkImportRequest]) (a
 	}
 	var guests []models.GuestRecord
 	for i, g := range body.Guests {
-		if g.Name == "" {
+		if strings.TrimSpace(g.Name) == "" {
 			continue
 		}
 		if g.RSVP != "" && !services.ValidRSVP(g.RSVP) {
 			g.RSVP = "no_response"
+		}
+		if !services.ValidGuestEmail(g.Email) {
+			return nil, fuego.BadRequestError{Title: "Invalid guests[" + strconv.Itoa(i) + "].email"}
 		}
 		gr := models.GuestRecord{
 			WeddingID: wid,

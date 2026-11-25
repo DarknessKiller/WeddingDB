@@ -237,6 +237,10 @@ Files: `frontend/src/lib/utils/limits.ts` (`LIMITS`),
   and angbao (integer, 0 or more) and shows the error next to the field.
 - HTML `maxlength` counts UTF-16 units and Go counts runes, so HTML is stricter
   for emoji, never looser.
+- Guest email is empty or one bare address: `services.ValidGuestEmail` on the
+  server, `guestEmailSchema` (zod) in the drawer and CSV import. Zod is
+  stricter (it refuses `a@b` and non-ASCII), never looser. The server checks
+  only a write that carries `email`, so a legacy row can still edit other fields.
 - Passwords are ASCII only, 8 to 72 characters. `validatePassword` rejects every
   byte outside `!` to `~`. That keeps bytes and characters equal, which keeps
   bcrypt's 72-byte limit from truncating. `services.HashPassword` pre-hashes
@@ -265,7 +269,9 @@ Design record: [ADR 001](docs/adr/001-offline-sync.md) and
 - Guest-only offline. Tables and layout edits need a connection.
 - Mutation ops: `create`, `update`, `delete`, `checkin`, `checkout`.
 - `localStorage` key `offline_queue_{wid}`: a FIFO of `QueuedMutation`, capped
-  at 500. A full queue drops the oldest mutation with a toast.
+  at 500. A full queue refuses the new edit: `enqueue` throws before the
+  optimistic patch and the UI shows the error. Dropping the oldest could lose
+  a create and every later edit to that guest.
 - `localStorage` key `offline_cache_{wid}`: the last complete staff guest list,
   stored as app-shaped `Guest` objects. Read it back with `reviveGuest`, never
   `toGuest`. The kiosk uses its own key, `kiosk_cache_{wid}`.
@@ -332,7 +338,9 @@ list does not cover is a question for the owner, not a bug to fix.
    `TestSyncCheckOut_PostgresLosesToCheckInCommittedWhileWaiting`,
    `TestSync_CheckInReplayWhileCheckedInIsSkipped`.
 4. **Delete is a row write.** A delete applies when newer than every write on the
-   row. An older delete fails and stays queued. Test: `TestSync_DeleteLosesLWW_Failed`.
+   row. An older delete is `skipped` with `serverRecord`: the client restores
+   the guest and drops the delete, since its time can never catch up.
+   Test: `TestSync_DeleteLosesLWW_Skipped`.
 5. **Replay is a no-op.** A mutation already applied reports `applied` and changes
    nothing, notes included. Tests: `TestSync_ReplayOfAppliedBatchIsApplied`,
    `TestSync_CheckInReplayDoesNotDuplicateNotes`, `TestSync_CheckOutReplayIsApplied`.

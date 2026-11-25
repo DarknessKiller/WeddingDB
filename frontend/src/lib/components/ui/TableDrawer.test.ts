@@ -11,7 +11,7 @@ describe('TableDrawer capacity', () => {
 		});
 
 		expect(body).toContain('min="8"');
-		expect(body).toContain('max="200"');
+		expect(body).toContain('max="100"');
 		expect(body).toContain('Capacity cannot be below the 8 guests already seated.');
 		// HTML min is only advisory: Save itself must refuse this state.
 		expect(body).toMatch(/<button[^>]*disabled[^>]*>[^<]*<svg[\s\S]*?Save/);
@@ -23,10 +23,10 @@ describe('TableDrawer capacity', () => {
 		const { body } = render(TableDrawer, {
 			props: { title: 'Edit Table', name: 'Table 1', capacity: 999, seatedFloor: 8, startEditing: true, onSave: () => {}, onClose: () => {} }
 		});
-		expect(body).toContain('max="200"');
-		expect(body).toContain('Capacity cannot exceed 200.');
+		expect(body).toContain('max="100"');
+		expect(body).toContain('Capacity cannot exceed 100.');
 		expect(body).toMatch(/<button[^>]*disabled[^>]*>[^<]*<svg[\s\S]*?Save/);
-		expect(clampTableCapacity(999, 8)).toBe(200);
+		expect(clampTableCapacity(999, 8)).toBe(100);
 		expect(clampTableCapacity(2, 8)).toBe(8);
 	});
 });

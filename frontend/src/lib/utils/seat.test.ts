@@ -38,7 +38,7 @@ describe('groupGuestsByTable', () => {
 
 describe('clampTableCapacity', () => {
 	it('clamps to the backend cap and the seated floor', () => {
-		expect(clampTableCapacity(999, 1)).toBe(200);
+		expect(clampTableCapacity(999, 1)).toBe(100);
 		expect(clampTableCapacity(2, 8)).toBe(8);
 		expect(clampTableCapacity(Number.NaN, 3)).toBe(3);
 		expect(clampTableCapacity(12.9, 1)).toBe(12);

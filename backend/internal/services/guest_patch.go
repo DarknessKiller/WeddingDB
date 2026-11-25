@@ -3,6 +3,8 @@ package services
 import (
 	"encoding/json"
 	"fmt"
+	"net/mail"
+	"strings"
 
 	"weddingdb/internal/models"
 	"weddingdb/internal/utils"
@@ -65,13 +67,16 @@ func (p *GuestPatch) carries(key string) bool {
 func (p *GuestPatch) applyTo(dst *models.GuestRecord) ([]string, error) {
 	carried := make([]string, 0, len(guestGroups()))
 	if p.carries("name") {
-		if p.Name == "" {
+		if strings.TrimSpace(p.Name) == "" {
 			return nil, fmt.Errorf("%w: name is required", ErrGuestPatchInvalid)
 		}
 		dst.Name = p.Name
 		carried = append(carried, groupName)
 	}
 	if p.carries("email") {
+		if !ValidGuestEmail(p.Email) {
+			return nil, fmt.Errorf("%w: invalid email", ErrGuestPatchInvalid)
+		}
 		dst.Email = p.Email
 		carried = append(carried, groupEmail)
 	}
@@ -131,6 +136,18 @@ func (p *GuestPatch) applyTo(dst *models.GuestRecord) ([]string, error) {
 		carried = append(carried, groupTableID)
 	}
 	return carried, nil
+}
+
+// ValidGuestEmail reports whether email is empty or one bare address. A display
+// name ("Tan <t@x.io>") or surrounding space is refused, so the stored value is
+// always sendable. Checked only when a write carries email: legacy rows keep
+// accepting edits to other fields.
+func ValidGuestEmail(email string) bool {
+	if email == "" {
+		return true
+	}
+	addr, err := mail.ParseAddress(email)
+	return err == nil && addr.Address == email
 }
 
 // ValidRSVP reports whether rsvp is one of the stored RSVP states.

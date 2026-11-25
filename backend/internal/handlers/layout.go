@@ -3,6 +3,7 @@ package handlers
 import (
 	"errors"
 	"log"
+	"strconv"
 	"weddingdb/internal/middleware"
 	"weddingdb/internal/models"
 	"weddingdb/internal/repository"
@@ -121,8 +122,8 @@ func (h *LayoutHandler) Save(c fuego.ContextWithBody[LayoutRequest]) (any, error
 		if t.X < 0 || t.X > 100 || t.Y < 0 || t.Y > 100 {
 			return nil, fuego.BadRequestError{Title: "Table X/Y must be 0–100"}
 		}
-		if t.Capacity < 1 || t.Capacity > 200 {
-			return nil, fuego.BadRequestError{Title: "Table capacity must be between 1 and 200"}
+		if t.Capacity < 1 || t.Capacity > services.MaxTableCapacity {
+			return nil, fuego.BadRequestError{Title: "Table capacity must be between 1 and " + strconv.Itoa(services.MaxTableCapacity)}
 		}
 		tables = append(tables, models.TableUpdate{
 			ID: id, X: t.X, Y: t.Y, Degree: t.Degree,

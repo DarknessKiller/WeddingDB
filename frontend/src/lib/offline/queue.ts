@@ -24,18 +24,21 @@ export function getQueue(wid: string): QueuedMutation[] {
 	try { return JSON.parse(localStorage.getItem(qkey(wid)) || '[]'); } catch { return []; }
 }
 function setQueue(wid: string, q: QueuedMutation[]) {
-	localStorage.setItem(qkey(wid), JSON.stringify(q.slice(-500)));
+	localStorage.setItem(qkey(wid), JSON.stringify(q));
 }
 
+const QUEUE_CAP = 500;
+
+// A full queue refuses the edit: dropping the oldest could lose a create and,
+// with it, every later edit to that guest. Throws before any optimistic patch.
 export function enqueue(wid: string, m: QueuedMutation): Promise<void> {
+	if (getQueue(wid).length >= QUEUE_CAP) {
+		throw new Error(`Offline queue full (${QUEUE_CAP} edits): reconnect to sync before making more changes`);
+	}
 	// The guest's updatedAt as this device last saw it, read before the optimistic patch. Null for a create.
 	m.baseUpdatedAt ??= get(guestMap).get(m.guestId)?.updatedAt?.toISOString() ?? null;
 	const write = () => {
 		const q = getQueue(wid);
-		if (q.length >= 500) {
-			q.shift();
-			addToast('Offline queue full: the oldest edit was dropped', 'error');
-		}
 		q.push(m);
 		setQueue(wid, q);
 		// Without Web Locks another tab can write between the read above and this
@@ -56,7 +59,6 @@ export function enqueue(wid: string, m: QueuedMutation): Promise<void> {
 		return navigator.locks.request(qkey(wid), () => {
 			const q = getQueue(wid);
 			if (q.some((x) => x.mutationId === m.mutationId)) return;
-			if (q.length >= 500) q.shift();
 			q.push(m);
 			setQueue(wid, q);
 			notifyChanged();

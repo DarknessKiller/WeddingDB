@@ -43,7 +43,9 @@ stored time. Online and offline writes use this same rule.
     another device's seat.
 - A create stamps every group with its operation time.
 - Delete stays row-level. A delete applies only when newer than every column
-  write on the row.
+  write on the row. An older delete is skipped and returns the row, so the
+  client restores the guest; kept queued, it could never win and would block
+  the queue counter forever.
 - Seat overlap and the guest cap are checked on the merged result, not per
   mutation.
 - Ties count as newer, matching current offline code.

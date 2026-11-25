@@ -51,4 +51,32 @@ func TestGuestCreate_NameBounds(t *testing.T) {
 	if rec := post(strings.Repeat("x", services.MaxNameLen)); rec.Code == http.StatusBadRequest {
 		t.Fatalf("255-char name rejected: %d, body %s", rec.Code, rec.Body.String())
 	}
+	// Blank-only names fail like the drawer's trimmed check; inner spaces are a real name.
+	if rec := post("   "); rec.Code != http.StatusBadRequest {
+		t.Fatalf("blank name status = %d, body %s", rec.Code, rec.Body.String())
+	}
+	if rec := post("Tan Ah Kow"); rec.Code == http.StatusBadRequest {
+		t.Fatalf("spaced name rejected: %d, body %s", rec.Code, rec.Body.String())
+	}
+	postEmail := func(email string) *httptest.ResponseRecorder {
+		t.Helper()
+		payload, err := json.Marshal(map[string]any{"name": "E", "pax": 1, "email": email})
+		testutil.NoErr(t, err)
+		req := httptest.NewRequest(http.MethodPost,
+			"/api/weddings/"+utils.EncodeUUID(wid)+"/guests", strings.NewReader(string(payload)))
+		req.Header.Set("Content-Type", "application/json")
+		rec := httptest.NewRecorder()
+		s.Mux.ServeHTTP(rec, req)
+		return rec
+	}
+	for _, bad := range []string{"not-an-email", "Tan <tan@x.io>", " tan@x.io"} {
+		if rec := postEmail(bad); rec.Code != http.StatusBadRequest {
+			t.Fatalf("email %q status = %d, body %s", bad, rec.Code, rec.Body.String())
+		}
+	}
+	for _, good := range []string{"", "tan.ah-kow+rsvp@mail.example.sg"} {
+		if rec := postEmail(good); rec.Code == http.StatusBadRequest {
+			t.Fatalf("email %q rejected: %d, body %s", good, rec.Code, rec.Body.String())
+		}
+	}
 }
