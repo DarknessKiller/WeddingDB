@@ -20,7 +20,7 @@ func main() {
 	// The runtime image is distroless (no curl), so the compose healthcheck runs the binary itself.
 	if len(os.Args) > 1 && os.Args[1] == "-health" {
 		c := http.Client{Timeout: 3 * time.Second}
-		resp, err := c.Get("http://127.0.0.1:" + cmp.Or(os.Getenv("PORT"), "8080") + "/healthz")
+		resp, err := c.Get("http://127.0.0.1:" + cmp.Or(os.Getenv("PORT"), "8080") + "/health")
 		if err != nil || resp.StatusCode != http.StatusNoContent {
 			os.Exit(1)
 		}

@@ -139,7 +139,7 @@ func Init(env config.Env, version string) *App {
 	server.Mux.HandleFunc("GET /api/weddings/{wid}/events", sseHandler.StreamHandler())
 
 	// Liveness for the compose healthcheck: a hung process or dead DB pool fails it.
-	server.Mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) {
+	server.Mux.HandleFunc("GET /health", func(w http.ResponseWriter, r *http.Request) {
 		ctx, cancel := context.WithTimeout(r.Context(), 2*time.Second)
 		defer cancel()
 		sqlDB, err := db.DB()
