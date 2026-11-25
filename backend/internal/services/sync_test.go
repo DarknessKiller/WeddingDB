@@ -1054,6 +1054,43 @@ func TestBulkCreate_StampsEveryFieldGroup(t *testing.T) {
 	}
 }
 
+// TestSync_CreateRetryOfExistingGuestMerges pins the create path's in-transaction
+// existence check: a retried offline create for a stored guest must merge, not
+// fail on the primary key.
+func TestSync_CreateRetryOfExistingGuestMerges(t *testing.T) {
+	svc, db, wid := newGuestSyncService(t)
+	ctx := context.Background()
+	base := time.Now().Add(-10 * time.Minute)
+	gid := uuid.New()
+	db.Create(&models.GuestRecord{ID: gid, WeddingID: wid, Name: "Old", Pax: 1, RSVP: "no_response", CreatedAt: base, UpdatedAt: base})
+
+	var patch SyncPayload
+	testutil.NoErr(t, json.Unmarshal([]byte(`{"name":"New"}`), &patch))
+	res, err := svc.Sync(ctx, wid, []SyncMutation{{
+		Op: SyncOpCreate, GuestID: gid.String(), ClientUpdatedAt: base.Add(time.Minute),
+		Payload: &patch,
+	}})
+	testutil.NoErr(t, err)
+	if res[0].Status != "applied" || res[0].ServerRecord == nil || res[0].ServerRecord.Name != "New" {
+		t.Fatalf("retried create = %+v, want applied with merged name", res[0])
+	}
+}
+
+// TestSyncErrorRetryable_TransientConflicts pins that a full guest cap or a taken
+// seat stays queued: both can clear while the edit waits offline.
+func TestSyncErrorRetryable_TransientConflicts(t *testing.T) {
+	for _, err := range []error{ErrGuestCapExceeded, ErrSeatOverlap} {
+		if !syncErrorRetryable(err) {
+			t.Fatalf("%v must be retryable", err)
+		}
+	}
+	for _, err := range []error{ErrGuestPatchInvalid, ErrInvalidGuestPax, ErrSeatRange, ErrGuestIDTaken, ErrTableNotFound} {
+		if syncErrorRetryable(err) {
+			t.Fatalf("%v must not be retryable", err)
+		}
+	}
+}
+
 // TestSync_CreateIDOwnedByOtherWeddingFailsWithoutRetry mirrors the online 409:
 // a create whose id another wedding owns can never succeed, so the client drops it.
 func TestSync_CreateIDOwnedByOtherWeddingFailsWithoutRetry(t *testing.T) {

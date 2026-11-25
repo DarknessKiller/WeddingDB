@@ -349,7 +349,9 @@ list does not cover is a question for the owner, not a bug to fix.
    `TestSync_ZeroClientTimeFails`.
 7. **Offline validates like online.** A field the online API refuses fails the
    mutation without retry. Test: `TestSync_UpdateValidatesLikeOnline`,
-   `TestSync_CheckInRejectsNegativeAngbao`.
+   `TestSync_CheckInRejectsNegativeAngbao`. A full guest cap or a taken seat stays
+   retryable: another guest may be deleted or move off the seat while the edit
+   waits. Test: `TestSyncErrorRetryable_TransientConflicts`.
 8. **One bad mutation fails alone.** A body item that cannot be decoded is
    answered `failed` with `retryable: false`. The rest of the batch applies.
    Test: `TestSync_MalformedMutationFailsAlone`. A `failed` mutation is dropped by
