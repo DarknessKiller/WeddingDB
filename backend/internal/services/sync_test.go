@@ -946,7 +946,7 @@ func TestSync_UpdateValidatesLikeOnline(t *testing.T) {
 		CreatedAt: base, UpdatedAt: base,
 	})
 
-	for _, body := range []string{`{"pax":0}`, `{"rsvp":"maybe"}`, `{"name":""}`, `{"name":"   "}`} {
+	for _, body := range []string{`{"pax":0}`, `{"rsvp":"maybe"}`, `{"name":""}`, `{"name":"   "}`, `{"email":"not-an-email"}`, `{"email":"Tan <tan@x.io>"}`} {
 		var patch SyncPayload
 		testutil.NoErr(t, json.Unmarshal([]byte(body), &patch))
 		if _, err := svc.UpdatePatch(ctx, gid, wid, &patch); !errors.Is(err, ErrGuestPatchInvalid) {
