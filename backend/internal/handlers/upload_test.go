@@ -99,6 +99,30 @@ func TestUpload_RegisteredRoutesRequireWedding(t *testing.T) {
 	}
 }
 
+// TestUpload_SVGAccepted covers the three legal SVG starts: a bare <svg root, a
+// UTF-8 BOM, and an XML prolog.
+func TestUpload_SVGAccepted(t *testing.T) {
+	for name, content := range map[string][]byte{
+		"bare":   []byte(`<svg xmlns="http://www.w3.org/2000/svg"></svg>`),
+		"bom":    append([]byte{0xef, 0xbb, 0xbf}, `<svg xmlns="http://www.w3.org/2000/svg"></svg>`...),
+		"prolog": []byte(`<?xml version="1.0"?><svg xmlns="http://www.w3.org/2000/svg"></svg>`),
+	} {
+		t.Run(name, func(t *testing.T) {
+			rec := runUpload(t, "logo.svg", content)
+			if rec.Code < 200 || rec.Code >= 300 {
+				t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
+			}
+		})
+	}
+}
+
+func TestUpload_SVGWithWrongContentRejected(t *testing.T) {
+	rec := runUpload(t, "logo.svg", []byte(`definitely not svg`))
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400, body = %s", rec.Code, rec.Body.String())
+	}
+}
+
 func TestUpload_TinyFileNotRejectedByEOFRead(t *testing.T) {
 	// 3 bytes == the full JPEG magic; pre-fix this died as "Failed to read file"
 	// because io.Read returns io.EOF on the final short read.
