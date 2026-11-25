@@ -237,6 +237,10 @@ Files: `frontend/src/lib/utils/limits.ts` (`LIMITS`),
   and angbao (integer, 0 or more) and shows the error next to the field.
 - HTML `maxlength` counts UTF-16 units and Go counts runes, so HTML is stricter
   for emoji, never looser.
+- Guest email is empty or one bare address: `services.ValidGuestEmail` on the
+  server, `guestEmailSchema` (zod) in the drawer and CSV import. Zod is
+  stricter (it refuses `a@b` and non-ASCII), never looser. The server checks
+  only a write that carries `email`, so a legacy row can still edit other fields.
 - Passwords are ASCII only, 8 to 72 characters. `validatePassword` rejects every
   byte outside `!` to `~`. That keeps bytes and characters equal, which keeps
   bcrypt's 72-byte limit from truncating. `services.HashPassword` pre-hashes
