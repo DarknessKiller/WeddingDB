@@ -3,6 +3,7 @@ package handlers
 import (
 	"errors"
 	"log/slog"
+	"strconv"
 	"strings"
 	"weddingdb/internal/models"
 	"weddingdb/internal/repository"
@@ -56,8 +57,8 @@ func (h *TableHandler) Create(c fuego.ContextWithBody[TableRequest]) (any, error
 	if err := services.ValidateTableName(body.Name); err != nil {
 		return nil, fuego.BadRequestError{Title: err.Error()}
 	}
-	if body.Capacity < 1 || body.Capacity > 200 {
-		return nil, fuego.BadRequestError{Title: "Capacity must be between 1 and 200"}
+	if body.Capacity < 1 || body.Capacity > services.MaxTableCapacity {
+		return nil, fuego.BadRequestError{Title: "Capacity must be between 1 and " + strconv.Itoa(services.MaxTableCapacity)}
 	}
 	table := &models.BanquetTable{
 		WeddingID: wid,
@@ -107,8 +108,8 @@ func (h *TableHandler) Update(c fuego.ContextWithBody[TableRequest]) (any, error
 	if err := services.ValidateTableName(body.Name); err != nil {
 		return nil, fuego.BadRequestError{Title: err.Error()}
 	}
-	if body.Capacity < 1 || body.Capacity > 200 {
-		return nil, fuego.BadRequestError{Title: "Capacity must be between 1 and 200"}
+	if body.Capacity < 1 || body.Capacity > services.MaxTableCapacity {
+		return nil, fuego.BadRequestError{Title: "Capacity must be between 1 and " + strconv.Itoa(services.MaxTableCapacity)}
 	}
 	table.Name = body.Name
 	table.Capacity = body.Capacity

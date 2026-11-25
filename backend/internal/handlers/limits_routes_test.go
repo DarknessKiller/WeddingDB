@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -23,7 +24,7 @@ import (
 // These tests exercise the real Fuego routes for caps enforced only in the
 // handler, where no service-level rejection exists to fall back on.
 
-func TestTableCreate_NameBounds(t *testing.T) {
+func TestTableCreate_NameAndCapacityBounds(t *testing.T) {
 	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
 	testutil.NoErr(t, err)
 	for _, stmt := range []string{
@@ -49,9 +50,13 @@ func TestTableCreate_NameBounds(t *testing.T) {
 	svc := services.NewTableService(repository.NewTableRepo(db), nil, db)
 	s := fuego.NewServer(fuego.WithoutStartupMessages())
 	fuego.Post(s, "/api/weddings/{wid}/tables", NewTableHandler(svc).Create)
+	var postCap func(string, int) *httptest.ResponseRecorder
 
 	post := func(name string) *httptest.ResponseRecorder {
-		body := `{"name":"` + name + `","capacity":8}`
+		return postCap(name, 8)
+	}
+	postCap = func(name string, capacity int) *httptest.ResponseRecorder {
+		body := `{"name":"` + name + `","capacity":` + strconv.Itoa(capacity) + `}`
 		req := httptest.NewRequest(http.MethodPost, "/api/weddings/"+utils.EncodeUUID(wid)+"/tables", strings.NewReader(body))
 		req.Header.Set("Content-Type", "application/json")
 		rec := httptest.NewRecorder()
@@ -64,6 +69,12 @@ func TestTableCreate_NameBounds(t *testing.T) {
 	}
 	if rec := post(strings.Repeat("a", services.MaxTableNameLen)); rec.Code != http.StatusCreated {
 		t.Fatalf("100-char table name status = %d, body %s", rec.Code, rec.Body.String())
+	}
+	if rec := postCap("Big", services.MaxTableCapacity+1); rec.Code != http.StatusBadRequest {
+		t.Fatalf("capacity %d status = %d, body %s", services.MaxTableCapacity+1, rec.Code, rec.Body.String())
+	}
+	if rec := postCap("Max", services.MaxTableCapacity); rec.Code != http.StatusCreated {
+		t.Fatalf("capacity %d status = %d, body %s", services.MaxTableCapacity, rec.Code, rec.Body.String())
 	}
 }
 

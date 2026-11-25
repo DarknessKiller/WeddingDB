@@ -51,4 +51,11 @@ func TestGuestCreate_NameBounds(t *testing.T) {
 	if rec := post(strings.Repeat("x", services.MaxNameLen)); rec.Code == http.StatusBadRequest {
 		t.Fatalf("255-char name rejected: %d, body %s", rec.Code, rec.Body.String())
 	}
+	// Blank-only names fail like the drawer's trimmed check; inner spaces are a real name.
+	if rec := post("   "); rec.Code != http.StatusBadRequest {
+		t.Fatalf("blank name status = %d, body %s", rec.Code, rec.Body.String())
+	}
+	if rec := post("Tan Ah Kow"); rec.Code == http.StatusBadRequest {
+		t.Fatalf("spaced name rejected: %d, body %s", rec.Code, rec.Body.String())
+	}
 }
