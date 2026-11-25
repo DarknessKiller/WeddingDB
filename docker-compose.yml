@@ -11,9 +11,10 @@ services:
       JWT_SECRET: "${JWT_SECRET:?JWT_SECRET must be set, e.g. openssl rand -hex 32}"
       ADMIN_BOOTSTRAP_PASSWORD: "${ADMIN_BOOTSTRAP_PASSWORD:-}"
       STATIC_DIR: "./static"
-      # The host reverse proxy reaches the app through the Docker bridge; trust its
-      # X-Forwarded-For so rate limits count real clients, not one shared bridge IP.
-      TRUSTED_PROXIES: "${TRUSTED_PROXIES:-172.16.0.0/12}"
+      # The host reverse proxy reaches the app from loopback (the port is bound to
+      # 127.0.0.1) or through the Docker bridge; trust both so rate limits count
+      # real clients, not one shared proxy IP.
+      TRUSTED_PROXIES: "${TRUSTED_PROXIES:-172.16.0.0/12,127.0.0.1/32}"
       # Opt-in tracing: uncomment + run `docker compose --profile tracing up` to enable.
       # OTEL_ENABLED: true
       # OTEL_EXPORTER_OTLP_ENDPOINT: http://jaeger:4318/v1/traces
