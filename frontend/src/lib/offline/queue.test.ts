@@ -192,6 +192,18 @@ describe('offline queue storage', () => {
 		expect(getQueue('w1').map((m) => m.mutationId)).toEqual(['m2']);
 	});
 
+	it('a losing delete restores the guest from serverRecord and leaves the queue', async () => {
+		const { applyGuestResponse } = await import('#lib/stores/guestEvents.ts');
+		const { enqueue, getQueue, syncQueue } = await import('./queue');
+		enqueue('w1', { ...mutation(1), op: 'delete' });
+		const row = { id: 'g1', name: 'Tan' };
+		apiFetch.mockResolvedValue(ok([{ status: 'skipped', reason: 'edited after the delete', serverRecord: row }]));
+
+		expect(await syncQueue('w1')).toEqual({ applied: 0, skipped: 1, dropped: 0 });
+		expect(applyGuestResponse).toHaveBeenCalledWith(row);
+		expect(getQueue('w1')).toEqual([]);
+	});
+
 	it('403 keeps the queue for the owner-change prompt instead of discarding it', async () => {
 		const { enqueue, getQueue, syncQueue } = await import('./queue');
 		enqueue('w1', mutation(1));
@@ -246,7 +258,7 @@ describe('offline queue storage', () => {
 		expect(getQueue('w1').map((m) => m.mutationId)).toEqual(['m99', 'm1']);
 	});
 
-	it('keeps the newest mutation when the cross-tab merge overflows the cap', async () => {
+	it('drops nothing when the cross-tab merge overflows the cap', async () => {
 		const map = new Map<string, string>();
 		let injected = false;
 		vi.stubGlobal('localStorage', {
@@ -269,7 +281,9 @@ describe('offline queue storage', () => {
 		enqueue('w1', mutation(1));
 
 		const ids = getQueue('w1').map((m) => m.mutationId);
-		expect(ids).toHaveLength(500);
+		// The race can pass the cap by one; losing either tab's edit would be worse.
+		expect(ids).toHaveLength(501);
+		expect(ids[0]).toBe('m1000');
 		expect(ids.at(-1)).toBe('m1');
 	});
 

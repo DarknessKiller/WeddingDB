@@ -130,6 +130,8 @@ export async function createGuest(weddingId: string, data: GuestCreateData): Pro
 	// One id for the POST and its queued fallback: if the POST landed but the
 	// response was lost, the replay merges into that guest instead of duplicating it.
 	const id = genId();
+	// Stamped before the attempt: a timed-out POST that landed must not replay as newer.
+	const clientUpdatedAt = nowIso();
 	try {
 		const res = await apiFetch(`/api/weddings/${weddingId}/guests`, { method: 'POST', body: JSON.stringify({ ...data, id }) });
 		if (!res.ok) throw new Error(await errorMessage(res, 'Failed to create guest'));
@@ -138,7 +140,7 @@ export async function createGuest(weddingId: string, data: GuestCreateData): Pro
 		return resp;
 	} catch (e) {
 		if (isNetworkError(e)) {
-			enqueue(weddingId, { mutationId: genId(), op: 'create', guestId: id, clientUpdatedAt: nowIso(), payload: data as unknown as Record<string, unknown> });
+			enqueue(weddingId, { mutationId: genId(), op: 'create', guestId: id, clientUpdatedAt, payload: data as unknown as Record<string, unknown> });
 			const now = nowIso();
 			const resp: GuestResponse = { id, weddingId, name: data.name, email: data.email || '', pax: data.pax, rsvp: data.rsvp, isVip: data.isVip, notes: data.notes, dietary: data.dietary, tableId: data.tableId ?? null, seatNum: data.seatNum ?? null, checkedInAt: null, angbaoAmt: data.angbaoAmt ?? null, giftItem: data.giftItem ?? null, createdAt: now, updatedAt: now };
 			// Local clock, not a server timestamp: insert without seeding the
@@ -166,7 +168,8 @@ function offlineGuestResponse(weddingId: string, guestId: string): GuestResponse
 }
 
 export async function updateGuest(weddingId: string, guestId: string, data: Partial<GuestCreateData>): Promise<GuestResponse | null> {
-	const doQueue = () => { enqueue(weddingId, { mutationId: genId(), op: 'update', guestId, clientUpdatedAt: nowIso(), payload: data as unknown as Record<string, unknown> }); optimisticPatch('update', guestId, data); };
+	const clientUpdatedAt = nowIso();
+	const doQueue = () => { enqueue(weddingId, { mutationId: genId(), op: 'update', guestId, clientUpdatedAt, payload: data as unknown as Record<string, unknown> }); optimisticPatch('update', guestId, data); };
 	if (isOffline()) { doQueue(); return offlineGuestResponse(weddingId, guestId); }
 	try {
 		const res = await apiFetch(`/api/weddings/${weddingId}/guests/${guestId}`, { method: 'PUT', body: JSON.stringify(data) });
@@ -181,7 +184,8 @@ export async function updateGuest(weddingId: string, guestId: string, data: Part
 }
 
 export async function deleteGuest(weddingId: string, guestId: string): Promise<void> {
-	const doQueue = () => { enqueue(weddingId, { mutationId: genId(), op: 'delete', guestId, clientUpdatedAt: nowIso() }); optimisticPatch('delete', guestId); };
+	const clientUpdatedAt = nowIso();
+	const doQueue = () => { enqueue(weddingId, { mutationId: genId(), op: 'delete', guestId, clientUpdatedAt }); optimisticPatch('delete', guestId); };
 	if (isOffline()) { doQueue(); return; }
 	try {
 		const res = await apiFetch(`/api/weddings/${weddingId}/guests/${guestId}`, { method: 'DELETE' });
@@ -218,7 +222,8 @@ export async function checkInGuest(weddingId: string, guestId: string, notes?: s
 }
 
 export async function checkOutGuest(weddingId: string, guestId: string): Promise<void> {
-	const doQueue = () => { enqueue(weddingId, { mutationId: genId(), op: 'checkout', guestId, clientUpdatedAt: nowIso() }); optimisticPatch('checkout', guestId); };
+	const clientUpdatedAt = nowIso();
+	const doQueue = () => { enqueue(weddingId, { mutationId: genId(), op: 'checkout', guestId, clientUpdatedAt }); optimisticPatch('checkout', guestId); };
 	if (isOffline()) { doQueue(); return; }
 	try {
 		const res = await apiFetch(`/api/weddings/${weddingId}/guests/${guestId}/checkout`, { method: 'POST' });
@@ -232,7 +237,8 @@ export async function checkOutGuest(weddingId: string, guestId: string): Promise
 
 export async function assignSeat(weddingId: string, guestId: string, tableId: string, seatNum: number): Promise<void> {
 	const payload = { tableId, seatNum };
-	const doQueue = () => { enqueue(weddingId, { mutationId: genId(), op: 'update', guestId, clientUpdatedAt: nowIso(), payload: payload as unknown as Record<string, unknown> }); optimisticPatch('update', guestId, payload); };
+	const clientUpdatedAt = nowIso();
+	const doQueue = () => { enqueue(weddingId, { mutationId: genId(), op: 'update', guestId, clientUpdatedAt, payload: payload as unknown as Record<string, unknown> }); optimisticPatch('update', guestId, payload); };
 	if (isOffline()) { doQueue(); return; }
 	try {
 		const res = await apiFetch(`/api/weddings/${weddingId}/guests/${guestId}/seat`, { method: 'POST', body: JSON.stringify(payload) });
@@ -247,7 +253,8 @@ export async function assignSeat(weddingId: string, guestId: string, tableId: st
 }
 
 export async function unassignSeat(weddingId: string, guestId: string): Promise<void> {
-	const doQueue = () => { enqueue(weddingId, { mutationId: genId(), op: 'update', guestId, clientUpdatedAt: nowIso(), payload: { tableId: null, seatNum: null } }); optimisticPatch('update', guestId, { tableId: null, seatNum: null }); };
+	const clientUpdatedAt = nowIso();
+	const doQueue = () => { enqueue(weddingId, { mutationId: genId(), op: 'update', guestId, clientUpdatedAt, payload: { tableId: null, seatNum: null } }); optimisticPatch('update', guestId, { tableId: null, seatNum: null }); };
 	if (isOffline()) { doQueue(); return; }
 	try {
 		const res = await apiFetch(`/api/weddings/${weddingId}/guests/${guestId}/seat`, { method: 'DELETE' });

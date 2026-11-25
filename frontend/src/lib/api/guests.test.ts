@@ -36,6 +36,20 @@ describe('offline optimistic patch', () => {
 		expect(JSON.parse(store.get('offline_queue_w1')!)).toHaveLength(2);
 	});
 
+	it('refuses an edit when the queue is full and keeps every queued one', async () => {
+		const { seedGuests, guestMap } = await import('#lib/stores/guestEvents.ts');
+		const { updateGuest } = await import('./guests');
+		const { toGuest } = await import('#lib/utils/guestTransform.ts');
+		seedGuests([toGuest({ id: 'g1', name: 'A', email: '', pax: 1, rsvp: 'pending', isVip: false, notes: '', dietary: [], tableId: null, seatNum: null, checkedInAt: null, angbaoAmt: null, giftItem: null })]);
+		const full = Array.from({ length: 500 }, (_, i) => ({ mutationId: `m${i}`, op: 'update', guestId: 'g0', clientUpdatedAt: '2030-01-01T00:00:00Z' }));
+		store.set('offline_queue_w1', JSON.stringify(full));
+
+		await expect(updateGuest('w1', 'g1', { name: 'B' })).rejects.toThrow(/queue full/);
+
+		expect(JSON.parse(store.get('offline_queue_w1')!)).toEqual(full);
+		expect(get(guestMap).get('g1')?.name).toBe('A');
+	});
+
 	it('does not seed the staleness watermark from an offline-create local clock', async () => {
 		const { createGuest } = await import('./guests');
 		const { applyGuestResponse, guestMap } = await import('#lib/stores/guestEvents.ts');
@@ -108,6 +122,29 @@ describe('lost response retry', () => {
 		});
 
 		await checkInGuest('w1', 'g1', 'late');
+
+		expect(JSON.parse(store.get('offline_queue_w1')!)[0].clientUpdatedAt).toBe('2030-01-01T00:00:00.000Z');
+	});
+
+	it.each([
+		['createGuest', (m: typeof import('./guests')) => m.createGuest('w1', { name: 'A', pax: 1, rsvp: 'pending', isVip: false, notes: '', dietary: [] })],
+		['updateGuest', (m: typeof import('./guests')) => m.updateGuest('w1', 'g1', { name: 'B' })],
+		['deleteGuest', (m: typeof import('./guests')) => m.deleteGuest('w1', 'g1')],
+		['checkOutGuest', (m: typeof import('./guests')) => m.checkOutGuest('w1', 'g1')],
+		['assignSeat', (m: typeof import('./guests')) => m.assignSeat('w1', 'g1', 't1', 1)],
+		['unassignSeat', (m: typeof import('./guests')) => m.unassignSeat('w1', 'g1')],
+	])('%s queues a timed-out attempt with the time stamped before it', async (_name, call) => {
+		vi.stubGlobal('navigator', { onLine: true });
+		vi.useFakeTimers({ now: new Date('2030-01-01T00:00:00Z') });
+		const mod = await import('./guests');
+		const { apiFetch } = await import('#lib/api/client.ts');
+		vi.mocked(apiFetch).mockImplementation(async () => {
+			// The request landed, then the 10s client timeout fired.
+			vi.setSystemTime(new Date('2030-01-01T00:00:10Z'));
+			throw new TypeError('Failed to fetch');
+		});
+
+		await call(mod);
 
 		expect(JSON.parse(store.get('offline_queue_w1')!)[0].clientUpdatedAt).toBe('2030-01-01T00:00:00.000Z');
 	});

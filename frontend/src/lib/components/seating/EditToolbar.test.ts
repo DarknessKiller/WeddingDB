@@ -25,7 +25,7 @@ describe('EditToolbar table capacity', () => {
 		});
 
 		expect(body).toContain('min="8"');
-		expect(body).toContain('max="200"');
+		expect(body).toContain('max="100"');
 	});
 });
 

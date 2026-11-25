@@ -13,7 +13,8 @@ export const LIMITS = {
 	dietaryItems: 20,
 	giftItem: 255,
 	tableName: 100,
-	tableCapacity: 200,
+	// Mirrors services.MaxTableCapacity.
+	tableCapacity: 100,
 	venueName: 255,
 	venueAddress: 500,
 	kioskDescription: 500,
