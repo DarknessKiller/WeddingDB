@@ -286,7 +286,20 @@ func (s *GuestService) Delete(ctx context.Context, id, weddingID uuid.UUID) erro
 }
 
 func (s *GuestService) Search(ctx context.Context, weddingID uuid.UUID, query string) ([]models.GuestRecord, error) {
-	return s.guestRepo.SearchByWedding(ctx, weddingID, query)
+	return s.guestRepo.SearchByWedding(ctx, weddingID, capSearchQuery(query))
+}
+
+// maxSearchQueryRunes bounds search input: the repo runs a pinyin lookup per
+// character plus a leading-wildcard ILIKE, so an unbounded query is pure load.
+const maxSearchQueryRunes = 100
+
+// capSearchQuery truncates by runes, not bytes, so a Chinese name is never cut
+// mid-character.
+func capSearchQuery(query string) string {
+	if r := []rune(query); len(r) > maxSearchQueryRunes {
+		return string(r[:maxSearchQueryRunes])
+	}
+	return query
 }
 
 // checkSeatTx validates a seat assignment inside tx and returns the table row
