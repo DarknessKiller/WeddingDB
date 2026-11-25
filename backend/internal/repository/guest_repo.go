@@ -2,7 +2,6 @@ package repository
 
 import (
 	"context"
-	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"strings"
@@ -22,29 +21,19 @@ func NewGuestRepo(db *gorm.DB) *GuestRepo {
 	return &GuestRepo{db: db}
 }
 
-func parseCursorID(s string) (uuid.UUID, error) {
-	if id, err := uuid.Parse(s); err == nil {
-		return id, nil
-	}
-	decoded, err := base64.RawURLEncoding.DecodeString(s)
-	if err != nil {
-		decoded, err = base64.URLEncoding.DecodeString(s)
-		if err != nil {
-			return uuid.Nil, err
-		}
-	}
-	return uuid.FromBytes(decoded)
-}
-
-func (r *GuestRepo) ListByWedding(ctx context.Context, weddingID uuid.UUID, cursor string, limit int) ([]models.GuestRecord, int64, error) {
+// ListByWedding returns up to limit+1 guests after cursor; the extra row tells
+// the caller a next page exists. The total is counted only when withTotal is set.
+func (r *GuestRepo) ListByWedding(ctx context.Context, weddingID uuid.UUID, cursor string, limit int, withTotal bool) ([]models.GuestRecord, int64, error) {
 	guests := make([]models.GuestRecord, 0)
 	var total int64
-	if err := r.db.WithContext(ctx).Model(&models.GuestRecord{}).Where("wedding_id = ?", weddingID).Count(&total).Error; err != nil {
-		return nil, 0, fmt.Errorf("count guests: %w", err)
+	if withTotal {
+		if err := r.db.WithContext(ctx).Model(&models.GuestRecord{}).Where("wedding_id = ?", weddingID).Count(&total).Error; err != nil {
+			return nil, 0, fmt.Errorf("count guests: %w", err)
+		}
 	}
 	q := r.db.WithContext(ctx).Where("wedding_id = ?", weddingID).Order("id ASC").Limit(limit + 1)
 	if cursor != "" {
-		cid, err := parseCursorID(cursor)
+		cid, err := utils.DecodeUUID(cursor)
 		if err != nil {
 			return nil, 0, fmt.Errorf("%w: %v", ErrInvalidCursor, err)
 		}

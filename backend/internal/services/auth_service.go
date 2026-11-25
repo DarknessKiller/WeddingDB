@@ -87,18 +87,30 @@ func (s *AuthService) Login(ctx context.Context, email, password string) (*Login
 	if err != nil {
 		return nil, fmt.Errorf("find admin for login: %w", err)
 	}
+	// Read the version before the hash we verify: a reset that lands mid-login
+	// writes the hash before its bump, so tokens minted here are already stale.
+	tv, err := s.GetTokenVersion(ctx, admin.ID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read token version: %w", err)
+	}
+	if admin, err = s.adminRepo.FindByID(ctx, admin.ID); err != nil {
+		return nil, fmt.Errorf("reload admin for login: %w", err)
+	}
 	if err := compareHash([]byte(admin.Password), []byte(password)); err != nil {
 		return nil, ErrInvalidCredentials
 	}
-	accessToken, err := s.generateAccessToken(ctx, admin, nil)
+	accessToken, err := s.signAccessToken(admin, nil, tv)
 	if err != nil {
 		return nil, err
 	}
-	refreshToken, err := s.generateRefreshToken(ctx, admin.ID, nil)
+	refresh, err := s.buildRefreshToken(admin.ID, nil, tv)
 	if err != nil {
 		return nil, err
 	}
-	return s.sessionResult(ctx, admin, accessToken, refreshToken)
+	if err := s.tokenRepo.Save(ctx, refresh); err != nil {
+		return nil, err
+	}
+	return s.sessionResult(ctx, admin, accessToken, refresh.Token)
 }
 
 // sessionResult assembles the token payload shared by Login and Refresh.
@@ -130,6 +142,12 @@ func (s *AuthService) sessionResult(ctx context.Context, admin *models.AdminUser
 
 // SelectWedding generates a new access token with the selected wedding embedded.
 func (s *AuthService) SelectWedding(ctx context.Context, adminID uuid.UUID, refreshToken string, weddingID uuid.UUID) (string, error) {
+	// Version first: an unassign or role change that lands after these reads
+	// bumps past tv, so the token minted below is already stale.
+	tv, err := s.GetTokenVersion(ctx, adminID)
+	if err != nil {
+		return "", fmt.Errorf("failed to read token version: %w", err)
+	}
 	admin, err := s.adminRepo.FindByID(ctx, adminID)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -159,7 +177,7 @@ func (s *AuthService) SelectWedding(ctx context.Context, adminID uuid.UUID, refr
 			return "", fmt.Errorf("failed to persist wedding scope: %w", err)
 		}
 	}
-	return s.generateAccessToken(ctx, admin, &weddingID)
+	return s.signAccessToken(admin, &weddingID, tv)
 }
 
 // refreshGraceWindow is how long after a rotation a retry of the consumed token
@@ -200,7 +218,7 @@ func (s *AuthService) Refresh(ctx context.Context, refreshTokenStr string, oldAc
 	if err != nil {
 		return nil, err
 	}
-	if token.TokenVersion != tv {
+	if token.TokenVersion < tv {
 		if _, err := s.tokenRepo.DeleteByToken(ctx, refreshTokenStr); err != nil {
 			return nil, fmt.Errorf("failed to delete revoked refresh token: %w", err)
 		}
@@ -260,13 +278,13 @@ func (s *AuthService) resumeRotation(ctx context.Context, consumed *models.Refre
 		return nil, lookupErr("find admin", err)
 	}
 
-	// The successor must still match the live version; otherwise it was minted
+	// The successor must not be older than the live version; otherwise it was minted
 	// before a revoke bump and the session is already over.
 	current, err := s.GetTokenVersion(ctx, admin.ID)
 	if err != nil {
 		return nil, err
 	}
-	if replacement.TokenVersion != current {
+	if replacement.TokenVersion < current {
 		if _, err := s.tokenRepo.DeleteByToken(ctx, replacement.Token); err != nil {
 			return nil, fmt.Errorf("failed to delete revoked successor: %w", err)
 		}
@@ -521,7 +539,7 @@ func (s *AuthService) discardIfRevoked(ctx context.Context, userID uuid.UUID, re
 	if err != nil {
 		return fmt.Errorf("failed to read token version: %w", err)
 	}
-	if mintedVersion == current {
+	if mintedVersion >= current {
 		return nil
 	}
 	if _, err := s.tokenRepo.DeleteByToken(ctx, refreshToken); err != nil {
@@ -555,14 +573,6 @@ func (s *AuthService) parseTokenClaims(tokenStr string) (*AccessClaims, error) {
 		return nil, errors.New("invalid token")
 	}
 	return claims, nil
-}
-
-func (s *AuthService) generateAccessToken(ctx context.Context, admin *models.AdminUser, weddingID *uuid.UUID) (string, error) {
-	tv, err := s.GetTokenVersion(ctx, admin.ID)
-	if err != nil {
-		return "", fmt.Errorf("failed to read token version: %w", err)
-	}
-	return s.signAccessToken(admin, weddingID, tv)
 }
 
 // signAccessToken mints a JWT for an already-resolved token version, so callers
@@ -601,19 +611,4 @@ func (s *AuthService) buildRefreshToken(adminID uuid.UUID, weddingID *uuid.UUID,
 		Token:        hex.EncodeToString(b),
 		ExpiresAt:    time.Now().Add(7 * 24 * time.Hour),
 	}, nil
-}
-
-func (s *AuthService) generateRefreshToken(ctx context.Context, adminID uuid.UUID, weddingID *uuid.UUID) (string, error) {
-	tv, err := s.GetTokenVersion(ctx, adminID)
-	if err != nil {
-		return "", fmt.Errorf("failed to read token version: %w", err)
-	}
-	token, err := s.buildRefreshToken(adminID, weddingID, tv)
-	if err != nil {
-		return "", err
-	}
-	if err := s.tokenRepo.Save(ctx, token); err != nil {
-		return "", err
-	}
-	return token.Token, nil
 }

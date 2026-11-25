@@ -47,7 +47,7 @@ func (h *PublicGuestHandler) List(c fuego.ContextNoBody) (any, error) {
 	if limit > 200 {
 		limit = 200
 	}
-	guests, _, err := h.guestService.List(ctx, wid, cursor, limit+1)
+	guests, _, err := h.guestService.List(ctx, wid, cursor, limit, false)
 	if err != nil {
 		if errors.Is(err, repository.ErrInvalidCursor) {
 			return nil, fuego.BadRequestError{Title: "Invalid cursor"}

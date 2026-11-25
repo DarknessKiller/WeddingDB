@@ -70,6 +70,7 @@ export function normalizeRsvp(value: string | undefined): string {
 }
 
 export interface CsvGuestRow {
+	id?: string;
 	name: string;
 	email?: string;
 	pax: number;

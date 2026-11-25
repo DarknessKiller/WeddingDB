@@ -56,15 +56,11 @@ func TestMigrate_PostgresPinyinBackfill(t *testing.T) {
 	}
 }
 
-// Two concurrent migrate jobs both succeed, and the default hall elements are
-// seeded exactly once (the advisory lock serializes the check-and-create).
+// Two concurrent migrate jobs both succeed (the advisory lock serializes them).
 func TestMigrate_PostgresConcurrentRuns(t *testing.T) {
 	db := openMigrateTestDB(t)
 	ctx := context.Background()
 	testutil.NoErr(t, Migrate(ctx, db))
-
-	wid := uuid.New()
-	testutil.NoErr(t, db.Create(&models.WeddingEvent{ID: wid, Name: "Concurrent"}).Error)
 
 	errs := make([]error, 2)
 	var wg sync.WaitGroup
@@ -79,10 +75,4 @@ func TestMigrate_PostgresConcurrentRuns(t *testing.T) {
 	}
 	// A leaked advisory lock would block this run forever.
 	testutil.NoErr(t, Migrate(ctx, db))
-
-	var count int64
-	testutil.NoErr(t, db.Model(&models.HallElement{}).Where("wedding_id = ?", wid).Count(&count).Error)
-	if want := int64(len(models.DefaultElements(wid))); count != want {
-		t.Fatalf("seeded %d hall elements, want %d", count, want)
-	}
 }

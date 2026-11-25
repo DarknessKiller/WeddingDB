@@ -37,6 +37,11 @@ func (h *SSEHandler) StreamHandler() http.HandlerFunc {
 			middleware.WriteAuthError(w, err)
 			return
 		}
+		// Raw mux route skips AuthMiddleware, so enforce its forced-change gate here.
+		if claims.ForcePasswordChange {
+			http.Error(w, `{"error":"Password change required"}`, http.StatusForbidden)
+			return
+		}
 
 		// Extract wedding ID from path: /api/weddings/{wid}/events
 		widStr := r.PathValue("wid")

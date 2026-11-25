@@ -526,3 +526,51 @@ func TestDiscardIfRevoked_KeepsCurrentSession(t *testing.T) {
 		t.Fatalf("current-version session should survive, got %v", err)
 	}
 }
+
+// A revoke (password reset) that lands while Login is checking the password
+// must leave the tokens Login then mints already stale.
+func TestLogin_RevokeDuringPasswordCheckLeavesTokensStale(t *testing.T) {
+	svc, _, db := newIntegrationAuthService(t, "test-secret")
+	adminID := uuid.New()
+	seedAdmin(t, db, adminID, "user")
+
+	orig := compareHash
+	t.Cleanup(func() { compareHash = orig })
+	compareHash = func([]byte, []byte) error {
+		if err := svc.RevokeUserTokens(context.Background(), adminID); err != nil {
+			t.Fatalf("revoke: %v", err)
+		}
+		return nil
+	}
+
+	res, err := svc.Login(t.Context(), adminID.String()+"@test.com", "pw")
+	if err != nil {
+		t.Fatalf("Login: %v", err)
+	}
+	if _, err := svc.ValidateToken(t.Context(), res.AccessToken); err == nil {
+		t.Error("access token minted across a revoke was accepted")
+	}
+	if _, err := svc.Refresh(t.Context(), res.RefreshToken, ""); err == nil {
+		t.Error("refresh token minted across a revoke was accepted")
+	}
+}
+
+// Redis losing user:{id}:tv must not log out sessions minted at a higher
+// version; a row older than the live version is still rejected.
+func TestRefresh_TokenVersionAheadOfRedisAccepted(t *testing.T) {
+	svc, mr, db := newIntegrationAuthService(t, "test-secret")
+	adminID := uuid.New()
+	seedAdmin(t, db, adminID, "admin")
+	seedRefreshToken(t, db, adminID, nil, "tv-ahead")
+	seedRefreshToken(t, db, adminID, nil, "tv-behind")
+	testutil.NoErr(t, db.Model(&models.RefreshToken{}).Where("admin_id = ?", adminID).Update("token_version", 3).Error)
+
+	if _, err := svc.Refresh(t.Context(), "tv-ahead", ""); err != nil {
+		t.Fatalf("row ahead of a reset Redis version was rejected: %v", err)
+	}
+
+	testutil.NoErr(t, mr.Set("user:"+adminID.String()+":tv", "4"))
+	if _, err := svc.Refresh(t.Context(), "tv-behind", ""); err == nil {
+		t.Fatal("row behind the live version was accepted")
+	}
+}

@@ -23,7 +23,7 @@ func TestListByWedding_CountErrorPropagates(t *testing.T) {
 			tx.AddError(boom) //nolint:errcheck // AddError echoes the error just added
 		}
 	}))
-	if _, _, err := NewGuestRepo(db).ListByWedding(context.Background(), uuid.New(), "", 10); !errors.Is(err, boom) {
+	if _, _, err := NewGuestRepo(db).ListByWedding(context.Background(), uuid.New(), "", 10, true); !errors.Is(err, boom) {
 		t.Fatalf("got %v, want count error", err)
 	}
 }

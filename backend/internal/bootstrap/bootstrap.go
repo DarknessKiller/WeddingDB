@@ -138,6 +138,21 @@ func Init(env config.Env, version string) *App {
 	sseHandler := handlers.NewSSEHandler(sseHub, authService)
 	server.Mux.HandleFunc("GET /api/weddings/{wid}/events", sseHandler.StreamHandler())
 
+	// Liveness for the compose healthcheck: a hung process or dead DB pool fails it.
+	server.Mux.HandleFunc("GET /health", func(w http.ResponseWriter, r *http.Request) {
+		ctx, cancel := context.WithTimeout(r.Context(), 2*time.Second)
+		defer cancel()
+		sqlDB, err := db.DB()
+		if err == nil {
+			err = sqlDB.PingContext(ctx)
+		}
+		if err != nil {
+			http.Error(w, "unhealthy", http.StatusServiceUnavailable)
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
+	})
+
 	// Serve static frontend (SPA fallback to index.html)
 	staticDir := getEnv("STATIC_DIR", "./static")
 	server.Mux.HandleFunc("GET /{path...}", spaHandler(staticDir))
@@ -316,20 +331,6 @@ func Migrate(ctx context.Context, db *gorm.DB) error {
 	if db.Migrator().HasColumn(&models.HallElement{}, "label") {
 		if err := db.Migrator().DropColumn(&models.HallElement{}, "label"); err != nil {
 			return fmt.Errorf("drop legacy hall_elements.label: %w", err)
-		}
-	}
-	// Seed default elements for weddings that have none — one query, not one
-	// COUNT per wedding. The advisory lock above serializes the check-and-create,
-	// so concurrent migrate runs cannot seed the same wedding twice.
-	var missingHall []uuid.UUID
-	if err := db.Model(&models.WeddingEvent{}).
-		Where("NOT EXISTS (SELECT 1 FROM hall_elements WHERE hall_elements.wedding_id = wedding_events.id)").
-		Pluck("id", &missingHall).Error; err != nil {
-		return fmt.Errorf("find weddings missing hall elements: %w", err)
-	}
-	for _, wid := range missingHall {
-		if err := db.Create(models.DefaultElements(wid)).Error; err != nil {
-			return fmt.Errorf("seed default elements for wedding %s: %w", wid, err)
 		}
 	}
 	return nil

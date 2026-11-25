@@ -65,14 +65,14 @@ const sseLeaseDuration = 30 * time.Second
 // that includes an event this deployment could not deliver.
 const sseResyncType = "resync"
 
-// KEYS[1] holds the wedding's leases (cap 100), KEYS[2] the user's (cap 5).
+// KEYS[1] holds the wedding's leases (cap 100), KEYS[2] the user's (cap 20).
 // Returns 1 on success, 0 when the wedding is full, -1 when the user is.
 var sseAcquire = redis.NewScript(`
 local now = redis.call('TIME')
 local ms = now[1] * 1000 + math.floor(now[2] / 1000)
 for _, k in ipairs(KEYS) do redis.call('ZREMRANGEBYSCORE', k, '-inf', ms) end
 if redis.call('ZCARD', KEYS[1]) >= 100 then return 0 end
-if redis.call('ZCARD', KEYS[2]) >= 5 then return -1 end
+if redis.call('ZCARD', KEYS[2]) >= 20 then return -1 end
 for _, k in ipairs(KEYS) do
   redis.call('ZADD', k, ms + ARGV[2], ARGV[1])
   redis.call('PEXPIRE', k, ARGV[2])
@@ -322,7 +322,17 @@ func (h *SSEHub) Publish(ctx context.Context, weddingID uuid.UUID, event GuestEv
 	if err != nil {
 		return fmt.Errorf("marshal guest event: %w", err)
 	}
-	return h.redis.Publish(ctx, fmt.Sprintf("wedding:%s:guests", weddingID.String()), data).Err()
+	receivers, err := h.redis.Publish(ctx, fmt.Sprintf("wedding:%s:guests", weddingID.String()), data).Result()
+	if err != nil {
+		return err
+	}
+	// Our own pattern subscriber counts as a receiver. Zero means it is down or
+	// reconnecting, and go-redis drops what was published in the gap, so local
+	// clients reconnect and refetch instead of missing events silently.
+	if receivers == 0 {
+		h.reconnectWedding(weddingID)
+	}
+	return nil
 }
 
 // CloseStreams ends every local SSE stream so the HTTP server can drain. The

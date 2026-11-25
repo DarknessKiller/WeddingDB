@@ -26,7 +26,7 @@ func TestRefresh_MintFailureKeepsTokenUsable(t *testing.T) {
 	seedRefreshToken(t, db, adminID, nil, refreshStr)
 
 	addr := mr.Addr()
-	mr.Close() // generateAccessToken -> GetTokenVersion now fails
+	mr.Close() // GetTokenVersion now fails
 
 	if _, err := svc.Refresh(context.Background(), refreshStr, ""); err == nil {
 		t.Fatal("expected Refresh to fail while Redis is down")

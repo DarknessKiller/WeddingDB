@@ -156,7 +156,7 @@ Store backups off-host and rehearse restores before relying on them.
 docker compose pull migrate app && docker compose up -d
 ```
 
-New releases are tagged `v*`, and `latest` tracks the newest tag. To pin a version for reproducibility, use `ghcr.io/darknesskiller/weddingdb:v0.1.0`.
+New releases are tagged `v*`, and `latest` tracks the newest tag. Images are published without the `v` (tag `v0.14.6` publishes `:0.14.6`). To pin a version, use `ghcr.io/darknesskiller/weddingdb:0.14.6`. Do not upgrade on an event day.
 
 ## Local development
 

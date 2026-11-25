@@ -193,6 +193,32 @@ func TestSSERejectsQueryToken(t *testing.T) {
 	}
 }
 
+// The stream is mounted outside AuthMiddleware, so it must apply the
+// forced-password-change gate itself.
+func TestSSERejectsForcePasswordChange(t *testing.T) {
+	ts, _, _, wid := newTestSSEServer(t)
+	token, err := jwt.NewWithClaims(jwt.SigningMethodHS256, services.AccessClaims{
+		AdminID:             uuid.New(),
+		Role:                "admin",
+		ForcePasswordChange: true,
+		RegisteredClaims: jwt.RegisteredClaims{
+			ID:        "fpc-jti",
+			ExpiresAt: jwt.NewNumericDate(time.Now().Add(time.Hour)),
+		},
+	}).SignedString([]byte("test-secret"))
+	testutil.NoErr(t, err)
+
+	req, err := http.NewRequestWithContext(t.Context(), http.MethodGet, ts.URL+"/api/weddings/"+utils.EncodeUUID(wid)+"/events", nil)
+	testutil.NoErr(t, err)
+	req.Header.Set("Authorization", "Bearer "+token)
+	resp, err := http.DefaultClient.Do(req)
+	testutil.NoErr(t, err)
+	defer func() { testutil.NoErr(t, resp.Body.Close()) }()
+	if resp.StatusCode != http.StatusForbidden {
+		t.Fatalf("status = %d, want 403", resp.StatusCode)
+	}
+}
+
 func TestSSEWeddingStreamLimit(t *testing.T) {
 	ts, hub, token, wid := newTestSSEServer(t)
 	clients := make([]*services.SSEClient, 99)

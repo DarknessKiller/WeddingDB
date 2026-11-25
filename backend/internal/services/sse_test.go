@@ -243,6 +243,25 @@ func TestSSEHub_PublishFailureReconnectsClients(t *testing.T) {
 	}
 }
 
+// A publish no subscriber received means this replica's subscriber is down or
+// reconnecting; local clients must reconnect instead of missing the event.
+func TestSSEHub_PublishWithNoReceiverReconnectsClients(t *testing.T) {
+	wid := uuid.New()
+	client := &SSEClient{ID: uuid.New().String(), WeddingID: wid, Done: make(chan struct{})}
+	rdb := redis.NewClient(&redis.Options{Addr: miniredis.RunT(t).Addr()})
+	t.Cleanup(func() { testutil.NoErr(t, rdb.Close()) })
+	ready := make(chan struct{})
+	close(ready)
+	hub := &SSEHub{clients: map[uuid.UUID]map[string]*SSEClient{wid: {client.ID: client}}, redis: rdb, ready: ready}
+
+	testutil.NoErr(t, hub.Publish(t.Context(), wid, GuestEvent{Type: "create"}))
+	select {
+	case <-client.Done:
+	default:
+		t.Fatal("client was not asked to reconnect after a publish with no receiver")
+	}
+}
+
 func TestSSEHub_PublishBeforeReady(t *testing.T) {
 	hub := &SSEHub{
 		clients: make(map[uuid.UUID]map[string]*SSEClient),
@@ -461,14 +480,14 @@ type mockGuestRecord struct {
 func TestSSEHub_PerUserLimit(t *testing.T) {
 	hub := testSSEHub(t)
 	user := uuid.New()
-	clients := make([]*SSEClient, 0, 5)
-	for range 5 {
+	clients := make([]*SSEClient, 0, 20)
+	for range 20 {
 		c, err := hub.Subscribe(context.Background(), uuid.New(), user)
 		testutil.NoErr(t, err)
 		clients = append(clients, c)
 	}
 	if _, err := hub.Subscribe(context.Background(), uuid.New(), user); !errors.Is(err, ErrSSEUserCapacity) {
-		t.Fatalf("sixth stream err = %v, want ErrSSEUserCapacity", err)
+		t.Fatalf("21st stream err = %v, want ErrSSEUserCapacity", err)
 	}
 	other, err := hub.Subscribe(context.Background(), clients[0].WeddingID, uuid.New())
 	testutil.NoErr(t, err)
