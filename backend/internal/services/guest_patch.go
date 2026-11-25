@@ -3,6 +3,7 @@ package services
 import (
 	"encoding/json"
 	"fmt"
+	"strings"
 
 	"weddingdb/internal/models"
 	"weddingdb/internal/utils"
@@ -65,7 +66,7 @@ func (p *GuestPatch) carries(key string) bool {
 func (p *GuestPatch) applyTo(dst *models.GuestRecord) ([]string, error) {
 	carried := make([]string, 0, len(guestGroups()))
 	if p.carries("name") {
-		if p.Name == "" {
+		if strings.TrimSpace(p.Name) == "" {
 			return nil, fmt.Errorf("%w: name is required", ErrGuestPatchInvalid)
 		}
 		dst.Name = p.Name

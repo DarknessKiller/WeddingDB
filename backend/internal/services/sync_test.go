@@ -482,22 +482,23 @@ func TestUpdatePatch_PreservesAbsentFields(t *testing.T) {
 	}
 }
 
-// report "failed" (not "skipped") so the client keeps the delete queued
-// instead of dequeuing it and losing the intent.
-func TestSync_DeleteLosesLWW_Failed(t *testing.T) {
+// TestSync_DeleteLosesLWW_Skipped covers invariant 4: a delete older than a
+// column write is skipped with the server row, so the client restores the guest
+// and drops the delete instead of retrying a write that can never win.
+func TestSync_DeleteLosesLWW_Skipped(t *testing.T) {
 	svc, db, wid := newGuestSyncService(t)
 	ctx := context.Background()
 	gid := uuid.New()
 	base := time.Now().Add(-10 * time.Minute)
 	db.Create(&models.GuestRecord{ID: gid, WeddingID: wid, Name: "Doomed", Pax: 1, CreatedAt: base, UpdatedAt: base})
 
-	// Older delete loses LWW -> failed, row must survive
+	// Older delete loses LWW -> skipped with the surviving row
 	res, err := svc.Sync(ctx, wid, []SyncMutation{{
 		Op: SyncOpDelete, GuestID: gid.String(), ClientUpdatedAt: base.Add(-time.Minute),
 	}})
 	testutil.NoErr(t, err)
-	if res[0].Status != "failed" {
-		t.Fatalf("losing delete should be failed, got %v", res[0])
+	if res[0].Status != "skipped" || res[0].ServerRecord == nil || res[0].ServerRecord.ID != gid {
+		t.Fatalf("losing delete should be skipped with serverRecord, got %+v", res[0])
 	}
 	if _, err := svc.Get(ctx, gid, wid); err != nil {
 		t.Fatalf("guest should still exist after losing delete: %v", err)
@@ -945,7 +946,7 @@ func TestSync_UpdateValidatesLikeOnline(t *testing.T) {
 		CreatedAt: base, UpdatedAt: base,
 	})
 
-	for _, body := range []string{`{"pax":0}`, `{"rsvp":"maybe"}`, `{"name":""}`} {
+	for _, body := range []string{`{"pax":0}`, `{"rsvp":"maybe"}`, `{"name":""}`, `{"name":"   "}`} {
 		var patch SyncPayload
 		testutil.NoErr(t, json.Unmarshal([]byte(body), &patch))
 		if _, err := svc.UpdatePatch(ctx, gid, wid, &patch); !errors.Is(err, ErrGuestPatchInvalid) {
@@ -1050,5 +1051,31 @@ func TestBulkCreate_StampsEveryFieldGroup(t *testing.T) {
 		if stored.FieldTimes[key].IsZero() {
 			t.Fatalf("field_times[%s] is zero, want the create time", key)
 		}
+	}
+}
+
+// TestSync_CreateIDOwnedByOtherWeddingFailsWithoutRetry mirrors the online 409:
+// a create whose id another wedding owns can never succeed, so the client drops it.
+func TestSync_CreateIDOwnedByOtherWeddingFailsWithoutRetry(t *testing.T) {
+	svc, db, wid := newGuestSyncService(t)
+	ctx := context.Background()
+	gid := uuid.New()
+	other := uuid.New()
+	base := time.Now().Add(-10 * time.Minute)
+	db.Create(&models.GuestRecord{ID: gid, WeddingID: other, Name: "Theirs", Pax: 1, CreatedAt: base, UpdatedAt: base})
+
+	var patch SyncPayload
+	testutil.NoErr(t, json.Unmarshal([]byte(`{"name":"Mine","pax":1}`), &patch))
+	res, err := svc.Sync(ctx, wid, []SyncMutation{{
+		Op: SyncOpCreate, GuestID: gid.String(), ClientUpdatedAt: base.Add(time.Minute), Payload: &patch,
+	}})
+	testutil.NoErr(t, err)
+	if res[0].Status != "failed" || res[0].Retryable == nil || *res[0].Retryable {
+		t.Fatalf("taken id = %+v, want failed without retry", res[0])
+	}
+	g, err := svc.Get(ctx, gid, other)
+	testutil.NoErr(t, err)
+	if g.Name != "Theirs" {
+		t.Fatalf("other wedding's guest changed: %+v", g)
 	}
 }

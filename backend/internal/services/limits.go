@@ -26,6 +26,7 @@ const (
 	MaxURLLen              = 500
 	MaxColorLen            = 20
 	MaxGuestPartySize      = 50
+	MaxTableCapacity       = 100
 	// MaxLayoutElements bounds one hall layout, so a save cannot write an
 	// unbounded element set in a single request.
 	MaxLayoutElements = 200

@@ -730,7 +730,7 @@ func syncErrorRetryable(err error) bool {
 	if errors.As(err, &fieldErr) {
 		return false
 	}
-	if errors.Is(err, ErrGuestPatchInvalid) || errors.Is(err, ErrGuestCapExceeded) || errors.Is(err, ErrSeatOverlap) || errors.Is(err, ErrTableNotFound) || errors.Is(err, ErrInvalidGuestPax) || errors.Is(err, ErrSeatRange) || errors.Is(err, repository.ErrCapacityBelowSeated) {
+	if errors.Is(err, ErrGuestPatchInvalid) || errors.Is(err, ErrGuestCapExceeded) || errors.Is(err, ErrSeatOverlap) || errors.Is(err, ErrTableNotFound) || errors.Is(err, ErrInvalidGuestPax) || errors.Is(err, ErrSeatRange) || errors.Is(err, repository.ErrCapacityBelowSeated) || errors.Is(err, ErrGuestIDTaken) {
 		return false
 	}
 	return true
@@ -778,7 +778,7 @@ func (s *GuestService) applySyncMutation(ctx context.Context, weddingID uuid.UUI
 		} else if !errors.Is(err, gorm.ErrRecordNotFound) {
 			return failedSync(ctx, m.GuestID, err)
 		}
-		if m.Payload == nil || m.Payload.Name == "" {
+		if m.Payload == nil || strings.TrimSpace(m.Payload.Name) == "" {
 			return SyncResult{GuestID: m.GuestID, Status: "failed", Reason: "name is required", Retryable: new(false)}
 		}
 		patch := m.Payload
@@ -817,6 +817,10 @@ func (s *GuestService) applySyncMutation(ctx context.Context, weddingID uuid.UUI
 			if errors.Is(err, ErrWeddingNotFound) {
 				return SyncResult{GuestID: m.GuestID, Status: "failed", Reason: "wedding not found", Retryable: new(false)}
 			}
+			// Another wedding owns the id: the online create answers 409 for this.
+			if isGuestIDViolation(err) {
+				err = ErrGuestIDTaken
+			}
 			return failedSync(ctx, m.GuestID, err)
 		}
 		s.sseHub.publishGuest("create", g, weddingID)
@@ -851,8 +855,8 @@ func (s *GuestService) applySyncMutation(ctx context.Context, weddingID uuid.UUI
 				return err
 			}
 			if !guestDeleteWins(locked, opTime) {
-				// Report "failed", not "skipped": the client keeps failed items
-				// queued instead of dequeuing and losing the delete intent.
+				// The delete's time never moves and the row's only grow, so a
+				// retry can never win: skip it and let the client restore the row.
 				losing = locked
 				return nil
 			}
@@ -871,7 +875,7 @@ func (s *GuestService) applySyncMutation(ctx context.Context, weddingID uuid.UUI
 			return failedSync(ctx, m.GuestID, err)
 		}
 		if losing != nil {
-			return SyncResult{GuestID: m.GuestID, Status: "failed", Reason: "older than server", ServerRecord: losing}
+			return SyncResult{GuestID: m.GuestID, Status: "skipped", Reason: "edited after the delete", ServerRecord: losing}
 		}
 		if deleted != nil {
 			s.sseHub.publishGuest("delete", deleted, weddingID)
