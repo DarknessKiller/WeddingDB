@@ -11,6 +11,9 @@ services:
       JWT_SECRET: "${JWT_SECRET:?JWT_SECRET must be set, e.g. openssl rand -hex 32}"
       ADMIN_BOOTSTRAP_PASSWORD: "${ADMIN_BOOTSTRAP_PASSWORD:-}"
       STATIC_DIR: "./static"
+      # The host reverse proxy reaches the app through the Docker bridge; trust its
+      # X-Forwarded-For so rate limits count real clients, not one shared bridge IP.
+      TRUSTED_PROXIES: "${TRUSTED_PROXIES:-172.16.0.0/12}"
       # Opt-in tracing: uncomment + run `docker compose --profile tracing up` to enable.
       # OTEL_ENABLED: true
       # OTEL_EXPORTER_OTLP_ENDPOINT: http://jaeger:4318/v1/traces
@@ -27,6 +30,11 @@ services:
         condition: service_healthy
       redis:
         condition: service_started
+    healthcheck:
+      test: ["CMD", "./server", "-health"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
     restart: unless-stopped
 
   # One-shot schema/data migration; the app no longer runs DDL at boot.
@@ -57,7 +65,7 @@ services:
       retries: 5
 
   redis:
-    image: docker.dragonflydb.io/dragonflydb/dragonfly:latest
+    image: docker.dragonflydb.io/dragonflydb/dragonfly:v2.1.0
     # Required auth; generate with openssl rand -hex 32.
     command: ["--requirepass=${REDIS_PASSWORD:?REDIS_PASSWORD must be set}"]
     ulimits:
