@@ -13,6 +13,10 @@ export interface GuestEvent {
 type EventHandler = (event: GuestEvent) => void;
 type StatusHandler = (status: 'connected' | 'reconnecting', reconnect: boolean) => void;
 
+// The server pings every 20s. Silence past this means a half-open stream
+// (roamed access point, no FIN), so drop it and reconnect.
+const STALL_MS = 45_000;
+
 class SSEClient {
 	private controller: AbortController | null = null;
 	private handlers: Set<EventHandler> = new Set();
@@ -39,6 +43,12 @@ class SSEClient {
 	}
 
 	private async stream(weddingId: string, accessToken: string, controller: AbortController) {
+		let stalled = false;
+		let watchdog: ReturnType<typeof setTimeout> | undefined;
+		const arm = () => {
+			clearTimeout(watchdog);
+			watchdog = setTimeout(() => { stalled = true; controller.abort(); }, STALL_MS);
+		};
 		try {
 			const response = await fetch(`/api/weddings/${weddingId}/events`, {
 				headers: { Authorization: `Bearer ${accessToken}` },
@@ -65,6 +75,7 @@ class SSEClient {
 			const decoder = new TextDecoder();
 			let buffer = '';
 			while (true) {
+				arm();
 				const { value, done } = await reader.read();
 				buffer += decoder.decode(value, { stream: !done });
 				const messages = buffer.split(/\r?\n\r?\n/);
@@ -82,9 +93,10 @@ class SSEClient {
 				if (done) break;
 			}
 		} catch {
-			if (controller.signal.aborted) return;
+			if (controller.signal.aborted && !stalled) return;
 			this.statusHandlers.forEach((handler) => handler('reconnecting', false));
 		} finally {
+			clearTimeout(watchdog);
 			if (this.controller === controller) {
 				this.controller = null;
 				this.scheduleReconnect();

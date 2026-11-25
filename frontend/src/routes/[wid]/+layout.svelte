@@ -36,13 +36,15 @@
 
   // Bound to the wedding the layout opened: a slow response for wedding A
   // must not land under wedding B, and its cache key must match A.
-  const loadGuests = async (forWid: string) => {
+  // Cache only on the first load: a resync that fell back to it would replace
+  // the live list with the last seed and undo check-ins made since.
+  const loadGuests = async (forWid: string, allowCache = false) => {
     try {
       return (await fetchAllGuests(forWid)).map(toGuest);
     } catch (e) {
       // Only a network failure may fall back to cache. A 403 or other 4xx is
       // not offline, and showing another session's cached guests would leak them.
-      if (!isNetworkError(e)) throw e;
+      if (!allowCache || !isNetworkError(e)) throw e;
       const cached = readCachedGuests(forWid);
       if (cached) return cached;
       throw e;
@@ -78,8 +80,8 @@
     let localCleanupSSE: (() => void) | undefined;
     let localCleanupListeners: (() => void) | undefined;
     // Drop a load that finishes after this wedding closed, before it is seeded.
-    const loadThis = async () => {
-      const list = await loadGuests(forWid);
+    const loadThis = async (allowCache = false) => {
+      const list = await loadGuests(forWid, allowCache);
       if (cancelled) throw new Error('wedding closed');
       return list;
     };
@@ -173,7 +175,7 @@
       try {
         // refreshGuests keeps the syncing window open across fetch+seed even if
         // initializeSSE early-returned, so mid-fetch SSE events can't be clobbered.
-        await refreshGuests(loadThis, forWid);
+        await refreshGuests(() => loadThis(true), forWid);
         if (cancelled) return;
         loadError = false;
       } catch {

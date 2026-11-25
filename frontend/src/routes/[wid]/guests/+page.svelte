@@ -7,7 +7,7 @@
   import { weddingId } from '#lib/stores/weddingId.ts';
   import { guestList, guestMap, refreshGuests } from '#lib/stores/guestEvents.ts';
   import { goto } from '$app/navigation';
-  import { deleteGuest as apiDeleteGuest, assignSeat, unassignSeat, bulkImportGuests, fetchAllGuests } from '#lib/api/guests.ts';
+  import { deleteGuest as apiDeleteGuest, assignSeat, unassignSeat, bulkImportGuests, fetchAllGuests, genId } from '#lib/api/guests.ts';
   import { syncQueue } from '#lib/offline/queue.ts';
   import type { GuestImportData } from '#lib/api/guests.ts';
   import { rankGuests } from '#lib/utils/guestSearch.ts';
@@ -359,7 +359,9 @@ import Users from 'lucide-svelte/icons/users';
           return;
         }
         importError = dropped > 0 ? `${dropped} row(s) skipped: missing name or a value over the field limit.` : '';
-        importPreview = guests;
+        // IDs are minted once per file, so pressing Import again after a lost
+        // response skips the rows the server already wrote.
+        importPreview = guests.map(g => ({ ...g, id: genId() }));
       } catch {
         importError = 'Failed to parse CSV file.';
       }
@@ -383,6 +385,7 @@ import Users from 'lucide-svelte/icons/users';
         addToast(`${unresolved} row(s) kept unseated: table name missing or not found`, 'error');
       }
       const result = await bulkImportGuests(resolved.map(g => ({
+        id: g.id,
         name: g.name,
         email: g.email,
         pax: g.pax,

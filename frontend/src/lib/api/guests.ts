@@ -8,7 +8,7 @@ import { applyGuestPatch, toGuest, type GuestFields } from '#lib/utils/guestTran
 function isOffline() {
 	return typeof navigator !== 'undefined' && !navigator.onLine;
 }
-function genId(): string {
+export function genId(): string {
 	if (typeof crypto.randomUUID === 'function') return crypto.randomUUID();
 	// randomUUID needs a secure context (plain-HTTP LAN); the backend still wants an RFC 4122 v4 UUID.
 	const b = crypto.getRandomValues(new Uint8Array(16));
@@ -41,6 +41,8 @@ export class ConflictError extends Error {
 }
 
 export interface GuestImportData {
+  // Client-minted so a retried import skips rows the first attempt wrote.
+  id?: string;
   name: string;
   email?: string;
   pax?: number;
@@ -261,6 +263,8 @@ export async function bulkImportGuests(guests: GuestImportData[]): Promise<{ imp
   const res = await apiFetch(`/api/weddings/${get(weddingId)}/guests/import`, {
     method: 'POST',
     body: JSON.stringify({ guests }),
+    // A 1,000-row import can outlast the default 10s timeout; rows carry ids, so a retry is safe.
+    signal: AbortSignal.timeout(60_000),
   });
   if (!res.ok) {
     const err = await res.json().catch(() => ({ title: 'Import failed' }));

@@ -57,14 +57,15 @@ describe('apiFetch refresh recovery', () => {
 		expect(location.href).toBe('');
 	});
 
-	it('keeps the session when the refresh request cannot reach the server', async () => {
+	it('keeps the session and throws a network error when the refresh cannot reach the server', async () => {
 		fetchMock.mockResolvedValueOnce(res({}, 401)).mockRejectedValueOnce(new TypeError('Failed to fetch'));
 
-		const { apiFetch } = await import('./client');
+		const { apiFetch, isNetworkError } = await import('./client');
 		const { getAuth } = await import('#lib/stores/index.ts');
-		const result = await apiFetch('/api/guests');
+		// A network error, not the stale 401, so guest callers queue the edit.
+		const err = await apiFetch('/api/guests').catch((e) => e);
 
-		expect(result.status).toBe(401);
+		expect(isNetworkError(err)).toBe(true);
 		expect(location.href).toBe('');
 		expect(getAuth()).toMatchObject({ accessToken: 'old-access', refreshToken: 'refresh-1' });
 		expect(localStorage.getItem('weddingdb_refresh_token')).toBeNull();
@@ -87,6 +88,24 @@ describe('apiFetch refresh recovery', () => {
 		expect(isNetworkError(new TypeError('Load failed'))).toBe(true);
 		expect(isNetworkError(new Error('Failed to list guests: 403'))).toBe(false);
 		expect(isNetworkError(new Error('Failed to list guests: 500'))).toBe(false);
+		// A stalled request cut by the timeout must queue like a dropped one.
+		expect(isNetworkError(new DOMException('timed out', 'TimeoutError'))).toBe(true);
+	});
+
+	it('passes a timeout signal so a stalled request rejects', async () => {
+		fetchMock.mockResolvedValueOnce(res({ data: [] }));
+
+		const { apiFetch } = await import('./client');
+		await apiFetch('/api/guests');
+
+		expect(fetchMock.mock.calls[0][1].signal).toBeInstanceOf(AbortSignal);
+	});
+
+	it('refreshIfNeeded still resolves false on a network failure', async () => {
+		fetchMock.mockRejectedValueOnce(new TypeError('Failed to fetch'));
+
+		const { refreshIfNeeded } = await import('./client');
+		await expect(refreshIfNeeded()).resolves.toBe(false);
 	});
 
 	it('clears the session when the server rejects the refresh token', async () => {

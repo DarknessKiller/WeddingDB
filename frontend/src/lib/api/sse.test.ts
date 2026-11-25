@@ -88,4 +88,35 @@ describe('SSEClient', () => {
 		await vi.waitFor(() => expect(fetchMock.mock.calls.length).toBeGreaterThanOrEqual(2), { timeout: 500 });
 		client.disconnect();
 	});
+
+	it('drops a silent stream after the stall window and reconnects with resync', async () => {
+		vi.useFakeTimers();
+		try {
+			// Like real fetch: aborting the signal errors the body stream.
+			fetchMock.mockImplementation(async (_url: string, init: RequestInit) => ({
+				ok: true,
+				status: 200,
+				body: new ReadableStream({
+					start(c) { init.signal?.addEventListener('abort', () => c.error(new Error('aborted'))); }
+				})
+			}));
+			const { getSSIClient } = await import('./sse');
+			const client = getSSIClient();
+			const status = vi.fn();
+			client.onStatus(status);
+			client.connect('wedding-123');
+			await vi.advanceTimersByTimeAsync(0);
+			expect(status).toHaveBeenCalledWith('connected', false);
+
+			await vi.advanceTimersByTimeAsync(45_000);
+			expect(status).toHaveBeenCalledWith('reconnecting', false);
+
+			await vi.advanceTimersByTimeAsync(1_000);
+			expect(fetchMock).toHaveBeenCalledTimes(2);
+			expect(status).toHaveBeenLastCalledWith('connected', true);
+			client.disconnect();
+		} finally {
+			vi.useRealTimers();
+		}
+	});
 });
