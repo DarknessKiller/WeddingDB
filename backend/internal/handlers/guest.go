@@ -53,7 +53,7 @@ func (h *GuestHandler) List(c fuego.ContextNoBody) (any, error) {
 	if limit > 500 {
 		limit = 500
 	}
-	guests, total, err := h.guestService.List(ctx, wid, cursor, limit)
+	guests, total, err := h.guestService.List(ctx, wid, cursor, limit, true)
 	if err != nil {
 		if errors.Is(err, repository.ErrInvalidCursor) {
 			return nil, fuego.BadRequestError{Title: "Invalid cursor"}
@@ -104,8 +104,7 @@ func (h *GuestHandler) Create(c fuego.ContextWithBody[GuestCreateRequest]) (any,
 	if body.Pax > services.MaxGuestPartySize {
 		return nil, fuego.BadRequestError{Title: "Pax must be at most " + strconv.Itoa(services.MaxGuestPartySize)}
 	}
-	validRSVP := map[string]bool{"confirmed": true, "pending": true, "declined": true, "no_response": true}
-	if body.RSVP != "" && !validRSVP[body.RSVP] {
+	if body.RSVP != "" && !services.ValidRSVP(body.RSVP) {
 		return nil, fuego.BadRequestError{Title: "Invalid RSVP status"}
 	}
 	wid, err := DecodeWID(c)
@@ -351,11 +350,7 @@ func (h *GuestHandler) BulkImport(c fuego.ContextWithBody[BulkImportRequest]) (a
 		if g.Name == "" {
 			continue
 		}
-		if g.Pax < 1 {
-			g.Pax = 1
-		}
-		validRSVP := map[string]bool{"confirmed": true, "pending": true, "declined": true, "no_response": true}
-		if g.RSVP != "" && !validRSVP[g.RSVP] {
+		if g.RSVP != "" && !services.ValidRSVP(g.RSVP) {
 			g.RSVP = "no_response"
 		}
 		gr := models.GuestRecord{
@@ -369,6 +364,12 @@ func (h *GuestHandler) BulkImport(c fuego.ContextWithBody[BulkImportRequest]) (a
 			Dietary:   g.Dietary,
 			AngbaoAmt: g.AngbaoAmt,
 			GiftItem:  g.GiftItem,
+		}
+		if g.ID != nil {
+			// A client-minted ID makes a retried import skip rows it already wrote.
+			if gr.ID, err = DecodeID(*g.ID); err != nil || gr.ID == uuid.Nil {
+				return nil, fuego.BadRequestError{Title: "Invalid guests[" + strconv.Itoa(i) + "].id"}
+			}
 		}
 		if g.SeatNum != nil && g.TableID == nil {
 			return nil, fuego.BadRequestError{Title: "Invalid guests[" + strconv.Itoa(i) + "].seatNum: tableId is required"}
@@ -387,6 +388,9 @@ func (h *GuestHandler) BulkImport(c fuego.ContextWithBody[BulkImportRequest]) (a
 	}
 	count, err := h.guestService.BulkCreate(ctx, guests)
 	if err != nil {
+		if errors.Is(err, services.ErrGuestIDTaken) {
+			return nil, fuego.ConflictError{Title: "Guest ID already in use"}
+		}
 		var lenErr services.FieldLenError
 		if errors.As(err, &lenErr) {
 			return nil, fuego.BadRequestError{Title: err.Error()}
