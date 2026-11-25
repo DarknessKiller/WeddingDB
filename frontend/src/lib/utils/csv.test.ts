@@ -57,6 +57,12 @@ describe('csvToGuests dietary and table resolution', () => {
 		expect(dropped).toBe(1);
 	});
 
+	it('drops a row with an email the API would reject', () => {
+		const { guests, dropped } = csvToGuests(parseCsv('name,email\nAlice,not-an-email\nBob,bob@x.io\nCara,'));
+		expect(guests.map((g) => g.name)).toEqual(['Bob', 'Cara']);
+		expect(dropped).toBe(1);
+	});
+
 	it('counts caps in code points, not UTF-16 units', () => {
 		const { guests, dropped } = csvToGuests(parseCsv('name,dietary\n' + '😀'.repeat(60) + ',' + '😀'.repeat(60)));
 		expect(guests).toHaveLength(1);

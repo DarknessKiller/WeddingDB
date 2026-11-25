@@ -77,4 +77,14 @@ describe('guestFormErrors', () => {
 		expect(guestFormErrors({ name: 'A', pax: null, angbaoAmt: 1.5 })).toMatchObject({ pax: ['Pax must be a whole number'], angbaoAmt: ['Angbao must be a whole number, 0 or more'] });
 		expect(guestFormErrors({ name: 'A', pax: LIMITS.guestPax + 1, angbaoAmt: '' }).pax?.[0]).toBe(`Max ${LIMITS.guestPax} guests`);
 	});
+
+	it('accepts an empty or bare email and rejects what services.ValidGuestEmail refuses', async () => {
+		const { guestFormErrors } = await import('./reservation.ts');
+		for (const email of ['', 'tan.ah-kow+rsvp@mail.example.sg']) {
+			expect(guestFormErrors({ name: 'A', pax: 1, angbaoAmt: '', email })).toEqual({});
+		}
+		for (const email of ['not-an-email', 'Tan <tan@x.io>', ' tan@x.io']) {
+			expect(guestFormErrors({ name: 'A', pax: 1, angbaoAmt: '', email }).email?.[0]).toBe('Invalid email');
+		}
+	});
 });
