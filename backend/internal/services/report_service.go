@@ -2,11 +2,12 @@ package services
 
 import (
 	"bytes"
+	"cmp"
 	"context"
 	"encoding/csv"
 	"errors"
 	"fmt"
-	"sort"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -48,12 +49,21 @@ type angpaoRow struct {
 	CheckedIn string
 }
 
+// angpaoSummary counts people, not entries: a guest with pax 2 adds 2 to
+// TotalGuests, matching the wedding guest cap.
 type angpaoSummary struct {
 	TotalAngbao     int
-	TotalByTable    map[string]int
+	TotalByTable    []tableTotal // sorted by name, "Unassigned" last
 	TotalGuests     int
 	CheckedInGuests int
 	GiftItems       []string
+}
+
+// tableTotal is one table's angpao. Totals are grouped by table ID, since
+// table names are not unique within a wedding.
+type tableTotal struct {
+	Name   string
+	Amount int
 }
 
 func (s *ReportService) GenerateCSV(ctx context.Context, weddingID uuid.UUID) ([]byte, string, error) {
@@ -105,9 +115,8 @@ func (s *ReportService) GenerateCSV(ctx context.Context, weddingID uuid.UUID) ([
 
 	// Per-table totals
 	w.Write([]string{"TABLE TOTALS", "Angbao (RM)", "", "", "", ""})
-	sortedTableNames := s.sortedTableKeys(summary.TotalByTable)
-	for _, tName := range sortedTableNames {
-		w.Write([]string{csvSafe(tName), fmt.Sprintf("RM %d", summary.TotalByTable[tName]), "", "", "", ""})
+	for _, tt := range summary.TotalByTable {
+		w.Write([]string{csvSafe(tt.Name), fmt.Sprintf("RM %d", tt.Amount), "", "", "", ""})
 	}
 
 	// Gift items
@@ -263,11 +272,10 @@ func (s *ReportService) GenerateXLSX(ctx context.Context, weddingID uuid.UUID) (
 	f.SetCellValue(summarySheet, "B7", "Angbao (RM)")
 	f.SetCellStyle(summarySheet, "A7", "B7", summaryHeader)
 
-	sortedTableNames := s.sortedTableKeys(summary.TotalByTable)
 	rowNum := 8
-	for _, tName := range sortedTableNames {
-		f.SetCellValue(summarySheet, cellName(1, rowNum), tName)
-		f.SetCellValue(summarySheet, cellName(2, rowNum), summary.TotalByTable[tName])
+	for _, tt := range summary.TotalByTable {
+		f.SetCellValue(summarySheet, cellName(1, rowNum), tt.Name)
+		f.SetCellValue(summarySheet, cellName(2, rowNum), tt.Amount)
 		f.SetCellStyle(summarySheet, cellName(2, rowNum), cellName(2, rowNum), currencyStyle)
 		rowNum++
 	}
@@ -301,14 +309,14 @@ func (s *ReportService) GenerateXLSX(ctx context.Context, weddingID uuid.UUID) (
 
 func (s *ReportService) buildRows(guests []models.GuestRecord, tableMap map[uuid.UUID]string) ([]angpaoRow, angpaoSummary) {
 	rows := make([]angpaoRow, 0, len(guests))
-	summary := angpaoSummary{
-		TotalByTable: make(map[string]int),
-	}
+	var summary angpaoSummary
+	byTable := make(map[uuid.UUID]int) // uuid.Nil holds unseated guests
 
 	for _, g := range guests {
-		tableName := ""
+		summary.TotalGuests += g.Pax
+		tableName, tableKey := "", uuid.Nil
 		if g.TableID != nil {
-			tableName = tableMap[*g.TableID]
+			tableName, tableKey = tableMap[*g.TableID], *g.TableID
 		}
 
 		seatNum := 0
@@ -324,7 +332,7 @@ func (s *ReportService) buildRows(guests []models.GuestRecord, tableMap map[uuid
 			angbaoAmt = *g.AngbaoAmt
 			angbaoStr = strconv.Itoa(*g.AngbaoAmt)
 			summary.TotalAngbao += *g.AngbaoAmt
-			summary.TotalByTable[tableName] += *g.AngbaoAmt
+			byTable[tableKey] += *g.AngbaoAmt
 		}
 
 		giftStr := "-"
@@ -336,7 +344,7 @@ func (s *ReportService) buildRows(guests []models.GuestRecord, tableMap map[uuid
 		checkedInStr := "No"
 		if g.CheckedInAt != nil {
 			checkedInStr = "Yes (" + g.CheckedInAt.Local().Format("2006-01-02 15:04") + ")"
-			summary.CheckedInGuests++
+			summary.CheckedInGuests += g.Pax
 		}
 
 		rows = append(rows, angpaoRow{
@@ -351,17 +359,16 @@ func (s *ReportService) buildRows(guests []models.GuestRecord, tableMap map[uuid
 		})
 	}
 
-	summary.TotalGuests = len(guests)
-	return rows, summary
-}
-
-func (s *ReportService) sortedTableKeys(m map[string]int) []string {
-	keys := make([]string, 0, len(m))
-	for k := range m {
-		keys = append(keys, k)
+	for id, amount := range byTable {
+		if id != uuid.Nil {
+			summary.TotalByTable = append(summary.TotalByTable, tableTotal{tableMap[id], amount})
+		}
 	}
-	sort.Strings(keys)
-	return keys
+	slices.SortFunc(summary.TotalByTable, func(a, b tableTotal) int { return cmp.Compare(a.Name, b.Name) })
+	if amount, ok := byTable[uuid.Nil]; ok {
+		summary.TotalByTable = append(summary.TotalByTable, tableTotal{"Unassigned", amount})
+	}
+	return rows, summary
 }
 
 // sanitizeFilename keeps the filename safe to display; mime.FormatMediaType

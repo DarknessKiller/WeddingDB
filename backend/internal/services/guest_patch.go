@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"weddingdb/internal/models"
+	"weddingdb/internal/utils"
 )
 
 // GuestPatch is one guest write. Only the fields present in the JSON body are
@@ -85,7 +86,7 @@ func (p *GuestPatch) applyTo(dst *models.GuestRecord) ([]string, error) {
 		carried = append(carried, groupPax)
 	}
 	if p.carries("rsvp") {
-		if !validRSVP(p.RSVP) {
+		if !ValidRSVP(p.RSVP) {
 			return nil, fmt.Errorf("%w: invalid RSVP status %q", ErrGuestPatchInvalid, p.RSVP)
 		}
 		dst.RSVP = p.RSVP
@@ -120,7 +121,7 @@ func (p *GuestPatch) applyTo(dst *models.GuestRecord) ([]string, error) {
 			dst.TableID = nil
 			dst.SeatNum = nil
 		default:
-			tid, err := parseSyncID(*p.TableID)
+			tid, err := utils.DecodeUUID(*p.TableID)
 			if err != nil {
 				return nil, fmt.Errorf("%w: invalid tableId %q", ErrGuestPatchInvalid, *p.TableID)
 			}
@@ -132,7 +133,8 @@ func (p *GuestPatch) applyTo(dst *models.GuestRecord) ([]string, error) {
 	return carried, nil
 }
 
-func validRSVP(rsvp string) bool {
+// ValidRSVP reports whether rsvp is one of the stored RSVP states.
+func ValidRSVP(rsvp string) bool {
 	switch rsvp {
 	case "confirmed", "pending", "declined", "no_response":
 		return true

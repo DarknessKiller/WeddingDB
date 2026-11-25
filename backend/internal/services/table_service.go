@@ -34,11 +34,11 @@ func (s *TableService) Create(ctx context.Context, t *models.BanquetTable) error
 	// There is no foreign key on wedding_id, so verify the wedding exists (under
 	// the same lock guest writes take) before inserting an orphan table.
 	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		if err := lockWedding(tx, t.WeddingID); err != nil {
+		if err := repository.LockWedding(tx, t.WeddingID); err != nil {
 			return err
 		}
 		// sqlite skips the row lock, so it needs the existence read; Postgres
-		// learns the same fact from lockWedding.
+		// learns the same fact from repository.LockWedding.
 		if tx.Name() != "postgres" {
 			var wedding models.WeddingEvent
 			if err := tx.Select("id").Where("id = ?", t.WeddingID).First(&wedding).Error; err != nil {
@@ -51,7 +51,7 @@ func (s *TableService) Create(ctx context.Context, t *models.BanquetTable) error
 
 func (s *TableService) Update(ctx context.Context, t *models.BanquetTable) error {
 	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		if err := lockWedding(tx, t.WeddingID); err != nil {
+		if err := repository.LockWedding(tx, t.WeddingID); err != nil {
 			return err
 		}
 		if err := lockTable(tx, t.WeddingID, t.ID); err != nil {
@@ -70,7 +70,7 @@ func (s *TableService) Delete(ctx context.Context, id, weddingID uuid.UUID) erro
 	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		// Wedding lock, then table lock: the order every guest write uses, so a
 		// concurrent seat move either lands before the unassign or sees no table.
-		if err := lockWedding(tx, weddingID); err != nil {
+		if err := repository.LockWedding(tx, weddingID); err != nil {
 			return err
 		}
 		if err := lockTable(tx, weddingID, id); err != nil {

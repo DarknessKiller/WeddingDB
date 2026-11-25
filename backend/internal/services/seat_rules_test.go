@@ -3,6 +3,7 @@ package services
 import (
 	"context"
 	"errors"
+	"slices"
 	"testing"
 	"time"
 
@@ -94,7 +95,8 @@ func TestBulkCreate_RejectsSeatOverlap(t *testing.T) {
 }
 
 // An import reads each table's occupants once, not once per seated row, and
-// still sees the rows it inserted earlier in the batch.
+// still sees the rows it inserted earlier in the batch. The other guest read is
+// the one lookup of already-imported IDs.
 func TestBulkCreate_ReadsTableOccupancyOnce(t *testing.T) {
 	svc, _, wid := newGuestSyncService(t)
 	tid := seedTable(t, svc, wid, "T1", 10)
@@ -111,8 +113,8 @@ func TestBulkCreate_ReadsTableOccupancyOnce(t *testing.T) {
 	}
 	created, err := svc.BulkCreate(context.Background(), batch)
 	testutil.NoErr(t, err)
-	if created != 5 || guestReads != 1 {
-		t.Fatalf("created = %d, guest reads = %d, want 5 and 1", created, guestReads)
+	if created != 5 || guestReads != 2 {
+		t.Fatalf("created = %d, guest reads = %d, want 5 and 2", created, guestReads)
 	}
 }
 
@@ -224,5 +226,70 @@ func TestAssignSeat_RejectsIncomingRunOverlap(t *testing.T) {
 		set: map[string]bool{"tableId": true, "seatNum": true},
 	}); !errors.Is(err, ErrSeatOverlap) {
 		t.Fatalf("party at 3-5 err = %v, want ErrSeatOverlap", err)
+	}
+}
+
+// Guests given a table but no seat still count toward its capacity.
+func TestBulkCreate_RejectsUnseatedOverCapacity(t *testing.T) {
+	svc, _, wid := newGuestSyncService(t)
+	tid := seedTable(t, svc, wid, "T1", 10)
+	batch := make([]models.GuestRecord, 0, 6)
+	for range 6 {
+		batch = append(batch, models.GuestRecord{WeddingID: wid, Name: "G", Pax: 2, TableID: &tid})
+	}
+	if _, err := svc.BulkCreate(t.Context(), batch); !errors.Is(err, ErrSeatRange) {
+		t.Fatalf("12 people on a 10-seat table: err = %v, want ErrSeatRange", err)
+	}
+	if _, err := svc.BulkCreate(t.Context(), batch[:5]); err != nil {
+		t.Fatalf("10 people on a 10-seat table: %v", err)
+	}
+	g := seedGuest(t, svc, wid, "Late")
+	if _, err := svc.UpdatePatch(t.Context(), g.ID, wid, &GuestPatch{
+		TableID: tableIDPtr(tid), set: map[string]bool{"tableId": true},
+	}); !errors.Is(err, ErrSeatRange) {
+		t.Fatalf("11th person without a seat: err = %v, want ErrSeatRange", err)
+	}
+}
+
+// Re-sending an import whose response was lost skips the rows already written.
+func TestBulkCreate_RetryIsIdempotent(t *testing.T) {
+	svc, _, wid := newGuestSyncService(t)
+	batch := []models.GuestRecord{
+		{ID: uuid.New(), WeddingID: wid, Name: "A", Pax: 1},
+		{ID: uuid.New(), WeddingID: wid, Name: "B", Pax: 2},
+	}
+	retry := slices.Clone(batch)
+	created, err := svc.BulkCreate(t.Context(), batch)
+	testutil.NoErr(t, err)
+	again, err := svc.BulkCreate(t.Context(), retry)
+	testutil.NoErr(t, err)
+	var count int64
+	testutil.NoErr(t, svc.db.Model(&models.GuestRecord{}).Where("wedding_id = ?", wid).Count(&count).Error)
+	if created != 2 || again != 0 || count != 2 {
+		t.Fatalf("created %d then %d, stored %d; want 2, 0, 2", created, again, count)
+	}
+}
+
+// A large import sends one resync instead of one event per row, which would
+// overflow each client's 64-event buffer.
+func TestBulkCreate_LargeBatchResyncs(t *testing.T) {
+	svc, _, wid := newGuestSyncService(t)
+	svc.sseHub = testSSEHub(t)
+	client := testSubscribe(t, svc.sseHub, wid)
+	t.Cleanup(func() { svc.sseHub.Unsubscribe(client) })
+
+	batch := make([]models.GuestRecord, bulkResyncThreshold+1)
+	for i := range batch {
+		batch[i] = models.GuestRecord{WeddingID: wid, Name: "G", Pax: 1}
+	}
+	_, err := svc.BulkCreate(t.Context(), batch)
+	testutil.NoErr(t, err)
+	select {
+	case <-client.Done:
+	case <-time.After(time.Second):
+		t.Fatal("client was not asked to resync after a large import")
+	}
+	if n := len(client.Chan); n != 0 {
+		t.Fatalf("client received %d per-row events, want 0", n)
 	}
 }

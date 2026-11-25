@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/csv"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -75,9 +76,9 @@ func TestBuildRows_FullData(t *testing.T) {
 
 	now := time.Now()
 	guests := []models.GuestRecord{
-		{Name: "Alice", TableID: &t1, SeatNum: intPtr(1), AngbaoAmt: intPtr(200), GiftItem: strPtr("Red Packet"), CheckedInAt: &now},
-		{Name: "Bob", TableID: &t2, SeatNum: intPtr(3), AngbaoAmt: intPtr(100), CheckedInAt: nil},
-		{Name: "Charlie", TableID: nil, SeatNum: nil, AngbaoAmt: nil, GiftItem: nil, CheckedInAt: nil},
+		{Name: "Alice", Pax: 2, TableID: &t1, SeatNum: intPtr(1), AngbaoAmt: intPtr(200), GiftItem: strPtr("Red Packet"), CheckedInAt: &now},
+		{Name: "Bob", Pax: 1, TableID: &t2, SeatNum: intPtr(3), AngbaoAmt: intPtr(100), CheckedInAt: nil},
+		{Name: "Charlie", Pax: 1, TableID: nil, SeatNum: nil, AngbaoAmt: nil, GiftItem: nil, CheckedInAt: nil},
 	}
 
 	rows, summary := svc.buildRows(guests, tableMap)
@@ -123,17 +124,16 @@ func TestBuildRows_FullData(t *testing.T) {
 	if summary.TotalAngbao != 300 {
 		t.Errorf("total angpao: got %d, want 300", summary.TotalAngbao)
 	}
-	if summary.TotalGuests != 3 {
-		t.Errorf("total guests: got %d, want 3", summary.TotalGuests)
+	// Headcounts are people: Alice brings pax 2.
+	if summary.TotalGuests != 4 {
+		t.Errorf("total guests: got %d, want 4", summary.TotalGuests)
 	}
-	if summary.CheckedInGuests != 1 {
-		t.Errorf("checked in: got %d, want 1", summary.CheckedInGuests)
+	if summary.CheckedInGuests != 2 {
+		t.Errorf("checked in: got %d, want 2", summary.CheckedInGuests)
 	}
-	if summary.TotalByTable["Table A"] != 200 {
-		t.Errorf("Table A total: got %d", summary.TotalByTable["Table A"])
-	}
-	if summary.TotalByTable["Table B"] != 100 {
-		t.Errorf("Table B total: got %d", summary.TotalByTable["Table B"])
+	want := []tableTotal{{"Table A", 200}, {"Table B", 100}}
+	if !slices.Equal(summary.TotalByTable, want) {
+		t.Errorf("table totals: got %v, want %v", summary.TotalByTable, want)
 	}
 	if len(summary.GiftItems) != 1 || summary.GiftItems[0] != "Alice: Red Packet" {
 		t.Errorf("gift items: got %v", summary.GiftItems)
@@ -173,18 +173,21 @@ func TestSanitizeFilename(t *testing.T) {
 	}
 }
 
-func TestSortedTableKeys(t *testing.T) {
+// Two tables sharing a name keep separate totals, and unseated money is
+// labelled rather than filed under a blank name.
+func TestBuildRows_TableTotalsByID(t *testing.T) {
 	svc := &ReportService{}
-	m := map[string]int{"Banana": 2, "Apple": 1, "Cherry": 3}
-	keys := svc.sortedTableKeys(m)
-	expected := []string{"Apple", "Banana", "Cherry"}
-	if len(keys) != len(expected) {
-		t.Fatalf("got %v, want %v", keys, expected)
+	t1, t2 := uuid.New(), uuid.New()
+	tableMap := map[uuid.UUID]string{t1: "Table 1", t2: "Table 1"}
+	guests := []models.GuestRecord{
+		{Name: "A", Pax: 1, TableID: &t1, AngbaoAmt: intPtr(100)},
+		{Name: "B", Pax: 1, TableID: &t2, AngbaoAmt: intPtr(100)},
+		{Name: "C", Pax: 1, AngbaoAmt: intPtr(50)},
 	}
-	for i, k := range keys {
-		if k != expected[i] {
-			t.Errorf("keys[%d] = %q, want %q", i, k, expected[i])
-		}
+	_, summary := svc.buildRows(guests, tableMap)
+	want := []tableTotal{{"Table 1", 100}, {"Table 1", 100}, {"Unassigned", 50}}
+	if !slices.Equal(summary.TotalByTable, want) {
+		t.Fatalf("table totals: got %v, want %v", summary.TotalByTable, want)
 	}
 }
 
@@ -195,8 +198,8 @@ func TestCSVOutputStructure(t *testing.T) {
 	tableMap := map[uuid.UUID]string{t1: "VIP Table"}
 	now := time.Now()
 	guests := []models.GuestRecord{
-		{Name: "Alice", TableID: &t1, SeatNum: intPtr(1), AngbaoAmt: intPtr(500), GiftItem: strPtr("Gold"), CheckedInAt: &now},
-		{Name: "Bob", TableID: &t1, SeatNum: intPtr(2), AngbaoAmt: intPtr(200), CheckedInAt: nil},
+		{Name: "Alice", Pax: 1, TableID: &t1, SeatNum: intPtr(1), AngbaoAmt: intPtr(500), GiftItem: strPtr("Gold"), CheckedInAt: &now},
+		{Name: "Bob", Pax: 1, TableID: &t1, SeatNum: intPtr(2), AngbaoAmt: intPtr(200), CheckedInAt: nil},
 	}
 
 	rows, _ := svc.buildRows(guests, tableMap)
@@ -245,8 +248,8 @@ func TestXLSXOutputStructure(t *testing.T) {
 	tableMap := map[uuid.UUID]string{t1: "Table 1"}
 	now := time.Now()
 	guests := []models.GuestRecord{
-		{Name: "Alice", TableID: &t1, SeatNum: intPtr(1), AngbaoAmt: intPtr(300), GiftItem: strPtr("Bangle"), CheckedInAt: &now},
-		{Name: "Bob", TableID: &t1, SeatNum: intPtr(5), AngbaoAmt: intPtr(150), CheckedInAt: nil},
+		{Name: "Alice", Pax: 1, TableID: &t1, SeatNum: intPtr(1), AngbaoAmt: intPtr(300), GiftItem: strPtr("Bangle"), CheckedInAt: &now},
+		{Name: "Bob", Pax: 1, TableID: &t1, SeatNum: intPtr(5), AngbaoAmt: intPtr(150), CheckedInAt: nil},
 	}
 
 	rows, summary := svc.buildRows(guests, tableMap)
@@ -309,10 +312,9 @@ func TestXLSXOutputStructure(t *testing.T) {
 	f.SetCellValue(summarySheet, "A7", "Table")
 	f.SetCellValue(summarySheet, "B7", "Angbao (RM)")
 	rowNum := 8
-	sortedTableNames := svc.sortedTableKeys(summary.TotalByTable)
-	for _, tName := range sortedTableNames {
-		f.SetCellValue(summarySheet, cellName(1, rowNum), tName)
-		f.SetCellValue(summarySheet, cellName(2, rowNum), summary.TotalByTable[tName])
+	for _, tt := range summary.TotalByTable {
+		f.SetCellValue(summarySheet, cellName(1, rowNum), tt.Name)
+		f.SetCellValue(summarySheet, cellName(2, rowNum), tt.Amount)
 		rowNum++
 	}
 

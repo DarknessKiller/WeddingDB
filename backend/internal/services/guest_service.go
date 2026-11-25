@@ -2,7 +2,6 @@ package services
 
 import (
 	"context"
-	"encoding/base64"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -39,11 +38,6 @@ func guestCapError(current, delta int) error {
 		ErrGuestCapExceeded, current, current+delta, MaxGuestsPerWedding)
 }
 
-// lockWedding takes the wedding row lock every guest write takes first.
-func lockWedding(tx *gorm.DB, weddingID uuid.UUID) error {
-	return repository.LockWedding(tx, weddingID)
-}
-
 // weddingLockError names a deleted wedding instead of reporting the guest that
 // could not exist under it.
 func weddingLockError(err error) error {
@@ -70,7 +64,7 @@ func lockTable(tx *gorm.DB, weddingID, tableID uuid.UUID) error {
 // guestCountLocked serializes guest additions for one wedding and returns the
 // current count.
 func (s *GuestService) guestCountLocked(tx *gorm.DB, weddingID uuid.UUID) (int, error) {
-	if err := lockWedding(tx, weddingID); err != nil {
+	if err := repository.LockWedding(tx, weddingID); err != nil {
 		return 0, weddingLockError(err)
 	}
 	var total int
@@ -183,8 +177,8 @@ func guestPatchForWrite(p *GuestPatch) *GuestPatch {
 	return &c
 }
 
-func (s *GuestService) List(ctx context.Context, weddingID uuid.UUID, cursor string, limit int) ([]models.GuestRecord, int64, error) {
-	return s.guestRepo.ListByWedding(ctx, weddingID, cursor, limit)
+func (s *GuestService) List(ctx context.Context, weddingID uuid.UUID, cursor string, limit int, withTotal bool) ([]models.GuestRecord, int64, error) {
+	return s.guestRepo.ListByWedding(ctx, weddingID, cursor, limit, withTotal)
 }
 
 func (s *GuestService) Get(ctx context.Context, id, weddingID uuid.UUID) (*models.GuestRecord, error) {
@@ -201,7 +195,7 @@ func (s *GuestService) Create(ctx context.Context, g *models.GuestRecord) (bool,
 		if g.ID != uuid.Nil {
 			// Read under the wedding lock, so a concurrent retry of the same
 			// create sees the row the first one inserted.
-			if err := lockWedding(tx, g.WeddingID); err != nil {
+			if err := repository.LockWedding(tx, g.WeddingID); err != nil {
 				return weddingLockError(err)
 			}
 			found, err := repository.NewGuestRepo(tx).FindByID(ctx, g.ID, g.WeddingID)
@@ -264,7 +258,7 @@ func (s *GuestService) UpdatePatch(ctx context.Context, id, weddingID uuid.UUID,
 func (s *GuestService) Delete(ctx context.Context, id, weddingID uuid.UUID) error {
 	var guest *models.GuestRecord
 	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		if err := lockWedding(tx, weddingID); err != nil {
+		if err := repository.LockWedding(tx, weddingID); err != nil {
 			return weddingLockError(err)
 		}
 		repo := repository.NewGuestRepo(tx)
@@ -298,7 +292,7 @@ func (s *GuestService) Search(ctx context.Context, weddingID uuid.UUID, query st
 // checkSeatTx validates a seat assignment inside tx and returns the table row
 // lock. Every write path that sets a seat calls this, so all of them serialize
 // on the same table row and share the capacity/overlap rules.
-func checkSeatTx(ctx context.Context, tx *gorm.DB, weddingID, tableID uuid.UUID, guestID uuid.UUID, pax, seatNum int) error {
+func checkSeatTx(ctx context.Context, tx *gorm.DB, weddingID, tableID uuid.UUID, guestID uuid.UUID, pax int, seatNum *int) error {
 	seats, err := loadTableSeats(ctx, tx, weddingID, tableID)
 	if err != nil {
 		return err
@@ -331,46 +325,49 @@ func loadTableSeats(ctx context.Context, tx *gorm.DB, weddingID, tableID uuid.UU
 	return &tableSeats{capacity: table.Capacity, occupants: existing}, nil
 }
 
-// check applies the capacity and overlap rules to one guest's seat range.
-func (t *tableSeats) check(guestID uuid.UUID, pax, seatNum int) error {
+// check applies the capacity and overlap rules to one guest's seat range. A nil
+// seatNum is a table without a seat: only the headcount must fit, counting
+// every guest on the table, seated or not.
+func (t *tableSeats) check(guestID uuid.UUID, pax int, seatNum *int) error {
 	if pax < 1 {
 		return ErrInvalidGuestPax
 	}
-	if seatNum < 1 || seatNum+pax-1 > t.capacity {
+	total := pax
+	for _, e := range t.occupants {
+		if e.ID != guestID {
+			total += e.Pax
+		}
+	}
+	if total > t.capacity {
+		return fmt.Errorf("%w: the table holds %d, its guests would total %d", ErrSeatRange, t.capacity, total)
+	}
+	if seatNum == nil {
+		return nil
+	}
+	if *seatNum < 1 || *seatNum+pax-1 > t.capacity {
 		return ErrSeatRange
 	}
-	guestEnd := seatNum + pax - 1
+	start, guestEnd := *seatNum, *seatNum+pax-1
 	for _, e := range t.occupants {
 		if e.ID == guestID || e.SeatNum == nil {
 			continue
 		}
 		eEnd := *e.SeatNum + e.Pax - 1
-		if seatNum <= eEnd && *e.SeatNum <= guestEnd {
+		if start <= eEnd && *e.SeatNum <= guestEnd {
 			return fmt.Errorf("%w: \"%s\" (seats %d-%d)", ErrSeatOverlap, e.Name, *e.SeatNum, eEnd)
 		}
 	}
 	return nil
 }
 
-// checkSeatNotTaken enforces the seat rules for a whole guest row: a table
-// without a seat is a plain table assignment and needs no lock, while a
-// table+seat pair goes through the same locked check as AssignSeat.
+// checkSeatNotTaken enforces the seat rules for a whole guest row. A table
+// with or without a seat goes through the same locked check as AssignSeat, so
+// headcount and cross-wedding table ids are checked either way.
 func checkSeatNotTaken(ctx context.Context, tx *gorm.DB, g *models.GuestRecord) error {
 	if g.TableID == nil {
 		return nil
 	}
-	if g.SeatNum == nil {
-		// Table without a seat: only the wedding-scoped ownership check applies,
-		// but a cross-wedding table id must still be rejected.
-		if _, err := repository.NewTableRepo(tx).FindByID(ctx, *g.TableID, g.WeddingID); err != nil {
-			if errors.Is(err, gorm.ErrRecordNotFound) {
-				return ErrTableNotFound
-			}
-			return err
-		}
-		return nil
-	}
-	return checkSeatTx(ctx, tx, g.WeddingID, *g.TableID, g.ID, g.Pax, *g.SeatNum)
+	return checkSeatTx(ctx, tx, g.WeddingID, *g.TableID, g.ID, g.Pax, g.SeatNum)
 }
 
 func (s *GuestService) AssignSeat(ctx context.Context, guestID, weddingID, tableID uuid.UUID, seatNum int) error {
@@ -409,7 +406,7 @@ func (s *GuestService) CheckIn(ctx context.Context, id, weddingID uuid.UUID, not
 	var merged *models.GuestRecord
 	applied := false
 	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		if err := lockWedding(tx, weddingID); err != nil {
+		if err := repository.LockWedding(tx, weddingID); err != nil {
 			return weddingLockError(err)
 		}
 		repo := repository.NewGuestRepo(tx)
@@ -458,7 +455,7 @@ func (s *GuestService) CheckOut(ctx context.Context, id, weddingID uuid.UUID) er
 	var merged *models.GuestRecord
 	applied := false
 	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		if err := lockWedding(tx, weddingID); err != nil {
+		if err := repository.LockWedding(tx, weddingID); err != nil {
 			return weddingLockError(err)
 		}
 		repo := repository.NewGuestRepo(tx)
@@ -491,13 +488,21 @@ func (s *GuestService) CheckOut(ctx context.Context, id, weddingID uuid.UUID) er
 	return nil
 }
 
+// bulkResyncThreshold is the import size above which one resync replaces
+// per-row events; each client buffers 64 events before it is disconnected.
+const bulkResyncThreshold = 50
+
+// BulkCreate imports guests in one transaction. A row whose client-minted ID
+// already names a guest in this wedding is skipped, so re-uploading after a lost
+// response does not duplicate the list. An ID another wedding owns is
+// ErrGuestIDTaken.
 func (s *GuestService) BulkCreate(ctx context.Context, guests []models.GuestRecord) (int, error) {
 	created := 0
 	if len(guests) == 0 {
 		return 0, nil
 	}
 	weddingID := guests[0].WeddingID
-	incoming := 0
+	ids := make([]uuid.UUID, len(guests))
 	for i := range guests {
 		if guests[i].Pax < 1 {
 			guests[i].Pax = 1
@@ -508,94 +513,93 @@ func (s *GuestService) BulkCreate(ctx context.Context, guests []models.GuestReco
 		if err := ValidateGuestText(&guests[i]); err != nil {
 			return 0, err
 		}
+		// Minted here, not by the database, so the batch's own rows count
+		// toward a table's headcount as distinct guests.
+		if guests[i].ID == uuid.Nil {
+			guests[i].ID = uuid.New()
+		}
+		ids[i] = guests[i].ID
 		stampCreateFieldTimes(&guests[i])
-		incoming += guests[i].Pax
 	}
 	// Buffer SSE events and publish them only after the transaction commits,
 	// so a rolled-back batch never broadcasts phantom rows.
-	type pendingEvent struct {
-		eventType string
-		guest     *models.GuestRecord
-	}
-	events := make([]pendingEvent, 0, len(guests))
+	events := make([]*models.GuestRecord, 0, len(guests))
 
 	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		txGuestRepo := repository.NewGuestRepo(tx)
-		txTableRepo := repository.NewTableRepo(tx)
 		created = 0
 		events = events[:0]
 		total, err := s.guestCountLocked(tx, weddingID)
 		if err != nil {
 			return err
 		}
+		// Read under the wedding lock, so a concurrent retry of the same
+		// import sees the rows the first one inserted.
+		var found []uuid.UUID
+		if err := tx.Model(&models.GuestRecord{}).Where("wedding_id = ? AND id IN ?", weddingID, ids).
+			Pluck("id", &found).Error; err != nil {
+			return err
+		}
+		existing := make(map[uuid.UUID]bool, len(found))
+		for _, id := range found {
+			existing[id] = true
+		}
+		incoming := 0
+		for i := range guests {
+			if !existing[guests[i].ID] {
+				incoming += guests[i].Pax
+			}
+		}
 		if total+incoming > MaxGuestsPerWedding {
 			return guestCapError(total, incoming)
 		}
-		// Cache table ownership checks for this batch. Seat rows are row-locked
-		// by loadTableSeats, so an import serializes on the same rows as
-		// AssignSeat; each table's occupancy is read once, then grows with
-		// the rows this batch inserts.
-		checked := make(map[uuid.UUID]bool)
+		// Each table's occupancy is read once under its row lock, so an import
+		// serializes on the same rows as AssignSeat, then grows with the rows
+		// this batch inserts. Rows with or without a seat share the headcount.
 		seats := make(map[uuid.UUID]*tableSeats)
 		for i := range guests {
 			g := &guests[i]
-			if g.Pax < 1 {
-				g.Pax = 1
-			}
-			if g.TableID == nil {
-				if err := txGuestRepo.Create(ctx, g); err != nil {
-					return err
-				}
-				events = append(events, pendingEvent{"create", g})
-				created++
+			if existing[g.ID] {
 				continue
 			}
-			tid := *g.TableID
-			// A table without a seat is a plain table assignment; still verify
-			// ownership so an import cannot attach another wedding's table.
-			if g.SeatNum == nil {
-				if !checked[tid] {
-					if _, err := txTableRepo.FindByID(ctx, tid, g.WeddingID); err != nil {
-						if errors.Is(err, gorm.ErrRecordNotFound) {
-							return fmt.Errorf("%w: %s", ErrTableNotFound, tid.String())
-						}
+			if g.TableID != nil {
+				tid := *g.TableID
+				ts := seats[tid]
+				if ts == nil {
+					if ts, err = loadTableSeats(ctx, tx, g.WeddingID, tid); err != nil {
 						return err
 					}
-					checked[tid] = true
+					seats[tid] = ts
 				}
-				if err := txGuestRepo.Create(ctx, g); err != nil {
+				if err := ts.check(g.ID, g.Pax, g.SeatNum); err != nil {
 					return err
 				}
-				events = append(events, pendingEvent{"create", g})
-				created++
-				continue
+				ts.occupants = append(ts.occupants, *g)
 			}
-			ts := seats[tid]
-			if ts == nil {
-				if ts, err = loadTableSeats(ctx, tx, g.WeddingID, tid); err != nil {
-					return err
-				}
-				seats[tid] = ts
-			}
-			if err := ts.check(uuid.Nil, g.Pax, *g.SeatNum); err != nil {
-				return err
-			}
-			checked[tid] = true
 			if err := txGuestRepo.Create(ctx, g); err != nil {
 				return err
 			}
-			ts.occupants = append(ts.occupants, *g)
-			events = append(events, pendingEvent{"create", g})
+			events = append(events, g)
 			created++
 		}
 		return nil
 	})
 	if err != nil {
+		if isGuestIDViolation(err) {
+			return 0, ErrGuestIDTaken
+		}
 		// Transaction rolled back: nothing committed, nothing to broadcast.
 		return 0, err
 	}
-	for _, e := range events {
-		s.sseHub.publishGuest(e.eventType, e.guest, e.guest.WeddingID)
+	if len(events) > bulkResyncThreshold && s.sseHub != nil {
+		// One resync instead of a burst that would overflow every client's
+		// event buffer and force the same reconnect anyway.
+		s.sseHub.reconnectWedding(weddingID)
+		s.sseHub.broadcastResync(context.Background(), weddingID)
+		return created, nil
+	}
+	for _, g := range events {
+		s.sseHub.publishGuest("create", g, weddingID)
 	}
 	return created, nil
 }
@@ -743,7 +747,7 @@ func failedSync(ctx context.Context, guestID string, err error) SyncResult {
 }
 
 func (s *GuestService) applySyncMutation(ctx context.Context, weddingID uuid.UUID, m SyncMutation) SyncResult {
-	gid, err := parseSyncID(m.GuestID)
+	gid, err := utils.DecodeUUID(m.GuestID)
 	if err != nil {
 		return SyncResult{GuestID: m.GuestID, Status: "skipped", Reason: "invalid guestId"}
 	}
@@ -835,7 +839,7 @@ func (s *GuestService) applySyncMutation(ctx context.Context, weddingID uuid.UUI
 	case SyncOpDelete:
 		var losing, deleted *models.GuestRecord
 		err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-			if err := lockWedding(tx, weddingID); err != nil {
+			if err := repository.LockWedding(tx, weddingID); err != nil {
 				return err
 			}
 			repo := repository.NewGuestRepo(tx)
@@ -878,7 +882,7 @@ func (s *GuestService) applySyncMutation(ctx context.Context, weddingID uuid.UUI
 		var merged *models.GuestRecord
 		applied, alreadyIn := false, false
 		err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-			if err := lockWedding(tx, weddingID); err != nil {
+			if err := repository.LockWedding(tx, weddingID); err != nil {
 				return weddingLockError(err)
 			}
 			repo := repository.NewGuestRepo(tx)
@@ -949,7 +953,7 @@ func (s *GuestService) applySyncMutation(ctx context.Context, weddingID uuid.UUI
 		var merged *models.GuestRecord
 		applied := false
 		err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-			if err := lockWedding(tx, weddingID); err != nil {
+			if err := repository.LockWedding(tx, weddingID); err != nil {
 				return err
 			}
 			repo := repository.NewGuestRepo(tx)
@@ -1004,25 +1008,6 @@ func appendNote(existing, notes string) string {
 		return notes
 	}
 	return existing + "\n" + notes
-}
-
-func parseSyncID(s string) (uuid.UUID, error) {
-	if id, err := uuid.Parse(s); err == nil {
-		return id, nil
-	}
-	// try base64 url
-	return parseBase64ID(s)
-}
-
-func parseBase64ID(s string) (uuid.UUID, error) {
-	decoded, err := base64.RawURLEncoding.DecodeString(s)
-	if err != nil {
-		decoded, err = base64.URLEncoding.DecodeString(s)
-		if err != nil {
-			return uuid.Nil, err
-		}
-	}
-	return uuid.FromBytes(decoded)
 }
 
 func guestToEventData(g *models.GuestRecord) *GuestEventData {
