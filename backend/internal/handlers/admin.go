@@ -1,8 +1,10 @@
 package handlers
 
 import (
+	"context"
 	"errors"
 	"log/slog"
+	"net/http"
 	"net/mail"
 	"weddingdb/internal/models"
 	"weddingdb/internal/repository"
@@ -21,6 +23,16 @@ type AdminHandler struct {
 
 func NewAdminHandler(adminRepo *repository.AdminRepo, authService *services.AuthService) *AdminHandler {
 	return &AdminHandler{adminRepo: adminRepo, authService: authService}
+}
+
+// revokeUserTokens ends the target's live sessions or fails the request. An
+// admin action must not report success while the old session still works.
+func (h *AdminHandler) revokeUserTokens(ctx context.Context, id uuid.UUID) error {
+	if err := h.authService.RevokeUserTokens(ctx, id); err != nil {
+		slog.ErrorContext(ctx, "revoke tokens failed", "user", id, "err", err)
+		return fuego.HTTPError{Status: http.StatusServiceUnavailable, Title: "Failed to revoke user sessions; retry"}
+	}
+	return nil
 }
 
 type AdminRequest struct {
@@ -114,17 +126,17 @@ func (h *AdminHandler) Delete(c fuego.ContextWithBody[any]) (any, error) {
 		slog.ErrorContext(ctx, "load user failed", "user", id, "err", err)
 		return nil, fuego.InternalServerError{Title: "Failed to load user"}
 	}
+	// Revoke before deleting: once the row is gone, a failed revocation cannot be
+	// retried through this endpoint. A failed delete after the revoke only leaves
+	// the user logged out, and the admin can retry.
+	if err := h.revokeUserTokens(ctx, id); err != nil {
+		return nil, err
+	}
 	if err := h.adminRepo.Delete(ctx, id); err != nil {
 		if errors.Is(err, repository.ErrLastAdmin) {
 			return nil, fuego.BadRequestError{Title: "Cannot delete the last admin"}
 		}
 		return nil, err
-	}
-
-	// Deleting the account must end its live session and wedding access now,
-	// not when the access token expires.
-	if err := h.authService.RevokeUserTokens(ctx, id); err != nil {
-		slog.Warn("revoke tokens after delete failed", "user", id, "err", err)
 	}
 	c.SetStatus(204)
 	return nil, nil
@@ -181,10 +193,10 @@ func (h *AdminHandler) AssignWeddings(c fuego.ContextWithBody[AssignWeddingsRequ
 	}
 	for _, w := range oldWeddings {
 		if !kept[w.ID] {
-			// Refresh also re-checks access, so a Redis failure only leaves
-			// the old scoped token valid until its next refresh — log, don't fail.
-			if err := h.authService.RevokeUserTokens(ctx, admin.ID); err != nil {
-				slog.Warn("revoke tokens after wedding unassign failed", "user", admin.ID, "err", err)
+			// Refresh re-checks access, so the scoped token would die at its next
+			// refresh; until then it still works. Report a revoke failure.
+			if err := h.revokeUserTokens(ctx, admin.ID); err != nil {
+				return nil, err
 			}
 			break
 		}
@@ -258,11 +270,10 @@ func (h *AdminHandler) ResetPassword(c fuego.ContextWithBody[ResetPasswordReques
 		}
 		return nil, fuego.InternalServerError{Title: "Failed to update password"}
 	}
-	// Kill sessions minted under the old password. Password is already
-	// updated — a Redis failure must not fail the request; Refresh
-	// re-validates access anyway.
-	if err := h.authService.RevokeUserTokens(ctx, id); err != nil {
-		slog.Warn("revoke tokens after admin password reset failed", "user", id, "err", err)
+	// Kill sessions minted under the old password. Report a revoke failure so the
+	// admin retries; a reset that reports success while old sessions live is unsafe.
+	if err := h.revokeUserTokens(ctx, id); err != nil {
+		return nil, err
 	}
 	return map[string]any{"message": "Password updated"}, nil
 }
@@ -311,10 +322,10 @@ func (h *AdminHandler) UpdateRole(c fuego.ContextWithBody[UpdateRoleRequest]) (a
 		return nil, fuego.InternalServerError{Title: "Failed to update role"}
 	}
 	admin.Role = body.Role
-	// Force re-login so role claims in live tokens update. Role is already
-	// updated — log a revoke failure, don't fail the request.
-	if err := h.authService.RevokeUserTokens(ctx, id); err != nil {
-		slog.Warn("revoke tokens after role change failed", "user", id, "err", err)
+	// Force re-login so role claims in live tokens update. Report a revoke
+	// failure so the admin retries; the role is already stored.
+	if err := h.revokeUserTokens(ctx, id); err != nil {
+		return nil, err
 	}
 	return admin, nil
 }

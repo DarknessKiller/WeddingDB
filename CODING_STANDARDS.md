@@ -454,9 +454,12 @@ Files: `backend/internal/services/auth_service.go`, `backend/internal/middleware
 - Revoke returns 500 on a Redis error. The admin retries.
 - Self-revoke is rejected with a bad request.
 - Blacklisting an expired token is a no-op.
-- Deleting a user removes their `user_weddings` grants in the same transaction as
-  the account row, then revokes their sessions. The revoke is best-effort and runs
-  after the row is gone.
+- Deleting a user revokes their sessions first, then removes the account row and
+  their `user_weddings` grants in one transaction. Revoking first keeps the action
+  retryable: once the row is gone, a failed revoke cannot be retried here.
+- Admin actions that end a session (account delete, wedding unassign, role change,
+  password reset) return 503 when revocation fails, instead of reporting success
+  while the old session still works. Logout stays best-effort.
 - An admin password reset sets `ForcePasswordChange`. The next change-password call
   skips the current-password proof once, clears the flag, and revokes sessions.
 - Access tokens carry the flag as the `fpc` claim, set at mint. While it is set,

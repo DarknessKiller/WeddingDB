@@ -20,9 +20,10 @@ import (
 	"gorm.io/gorm"
 )
 
-// TestAdminResetPassword_ForcesChange pins that an admin-chosen password is
-// only usable until the target picks their own.
-func TestAdminResetPassword_ForcesChange(t *testing.T) {
+// newResetPasswordHarness builds the admin handler and its Redis-backed auth
+// service over sqlite, and returns the server and the two user ids.
+func newResetPasswordHarness(t *testing.T) (*AdminHandler, *fuego.Server, *gorm.DB, uuid.UUID, uuid.UUID, *miniredis.Miniredis) {
+	t.Helper()
 	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
 	testutil.NoErr(t, err)
 	sqlDB, err := db.DB()
@@ -44,8 +45,11 @@ func TestAdminResetPassword_ForcesChange(t *testing.T) {
 	callerID, targetID := uuid.New(), uuid.New()
 	testutil.NoErr(t, db.Create(&models.AdminUser{ID: callerID, Email: callerID.String() + "@x.test", Password: "x", Role: "admin"}).Error)
 	testutil.NoErr(t, db.Create(&models.AdminUser{ID: targetID, Email: targetID.String() + "@x.test", Password: "x", Role: "user"}).Error)
+	return h, fuego.NewServer(fuego.WithoutStartupMessages()), db, callerID, targetID, mr
+}
 
-	s := fuego.NewServer(fuego.WithoutStartupMessages())
+func serveResetPassword(t *testing.T, s *fuego.Server, h *AdminHandler, callerID, targetID uuid.UUID) *httptest.ResponseRecorder {
+	t.Helper()
 	req := httptest.NewRequest(http.MethodPost, "/admin/users/"+targetID.String()+"/reset-password",
 		strings.NewReader(`{"password":"NewPassw0rd!"}`))
 	req.Header.Set("Content-Type", "application/json")
@@ -56,13 +60,29 @@ func TestAdminResetPassword_ForcesChange(t *testing.T) {
 	rec := httptest.NewRecorder()
 	fuego.HTTPHandler[any, ResetPasswordRequest, any](s, h.ResetPassword,
 		fuego.BaseRoute{Path: "/admin/users/{id}/reset-password", Method: http.MethodPost})(rec, req)
+	return rec
+}
 
-	if rec.Code != http.StatusOK {
+// TestAdminResetPassword_ForcesChange pins that an admin-chosen password is
+// only usable until the target picks their own.
+func TestAdminResetPassword_ForcesChange(t *testing.T) {
+	h, s, db, callerID, targetID, _ := newResetPasswordHarness(t)
+	if rec := serveResetPassword(t, s, h, callerID, targetID); rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200: %s", rec.Code, rec.Body.String())
 	}
 	var forced bool
 	testutil.NoErr(t, db.Raw(`SELECT force_password_change FROM admin_users WHERE id = ?`, targetID).Scan(&forced).Error)
 	if !forced {
 		t.Fatal("force_password_change = false after admin reset, want true")
+	}
+}
+
+// TestAdminResetPassword_RevokeFailureReturns503 pins that a reset that cannot
+// end the old sessions is reported as a failure, not as success.
+func TestAdminResetPassword_RevokeFailureReturns503(t *testing.T) {
+	h, s, _, callerID, targetID, mr := newResetPasswordHarness(t)
+	mr.Close()
+	if rec := serveResetPassword(t, s, h, callerID, targetID); rec.Code != http.StatusServiceUnavailable {
+		t.Fatalf("status = %d, want 503: %s", rec.Code, rec.Body.String())
 	}
 }
