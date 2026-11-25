@@ -28,17 +28,19 @@ func (r *WeddingRepo) List(ctx context.Context) ([]models.WeddingEvent, error) {
 	return weddings, err
 }
 
-// CreateWithOwner inserts the wedding and the creator's grant in one
-// transaction, so a grant failure leaves no ownerless wedding behind.
+// CreateWithOwner inserts the wedding, the creator's grant and the default hall
+// in one transaction, so a grant failure leaves no ownerless wedding behind.
 func (r *WeddingRepo) CreateWithOwner(ctx context.Context, w *models.WeddingEvent, ownerID uuid.UUID) error {
 	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if err := tx.Create(w).Error; err != nil {
 			return err
 		}
-		if ownerID == uuid.Nil {
-			return nil
+		if ownerID != uuid.Nil {
+			if err := tx.Create(&models.UserWedding{ID: uuid.New(), UserID: ownerID, WeddingID: w.ID}).Error; err != nil {
+				return err
+			}
 		}
-		return tx.Create(&models.UserWedding{ID: uuid.New(), UserID: ownerID, WeddingID: w.ID}).Error
+		return tx.Create(models.DefaultElements(w.ID)).Error
 	})
 }
 
