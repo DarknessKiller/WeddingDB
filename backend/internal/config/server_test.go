@@ -1,7 +1,6 @@
 package config
 
 import (
-	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -180,21 +179,6 @@ func TestOpenAPI_SpecJSON(t *testing.T) {
 	if len(spec.Servers) == 0 || spec.Servers[0].URL != "https://wedding.example.com" {
 		t.Errorf("Server URL = %v", spec.Servers)
 	}
-
-	// Write spec to evidence directory
-	evidenceDir := "/tmp/no-mistakes-evidence/01KYWB93P3SW3JGSQQA2NPGTFZ"
-	if err := os.MkdirAll(evidenceDir, 0o755); err != nil {
-		t.Fatalf("Failed to create evidence dir: %v", err)
-	}
-
-	data, err := json.MarshalIndent(spec, "", "  ")
-	if err != nil {
-		t.Fatalf("Failed to marshal OpenAPI spec: %v", err)
-	}
-	if err := os.WriteFile(evidenceDir+"/openapi-spec.json", data, 0o644); err != nil {
-		t.Fatalf("Failed to write evidence: %v", err)
-	}
-	t.Logf("OpenAPI spec written to %s/openapi-spec.json", evidenceDir)
 }
 
 func TestNewFuegoServer_TimeoutsForLongTransfers(t *testing.T) {

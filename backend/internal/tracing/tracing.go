@@ -5,6 +5,7 @@ package tracing
 
 import (
 	"bytes"
+	"cmp"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -45,7 +46,7 @@ func Setup(version string) (func(context.Context) error, bool) {
 	// Default endpoint is localhost:4318/v1/traces; overridable via the
 	// standard OTEL_EXPORTER_OTLP_ENDPOINT env var (path optional).
 	exporter, err := otlptracehttp.New(ctx,
-		otlptracehttp.WithEndpointURL(getEnv("OTEL_EXPORTER_OTLP_ENDPOINT", "http://localhost:4318/v1/traces")),
+		otlptracehttp.WithEndpointURL(cmp.Or(os.Getenv("OTEL_EXPORTER_OTLP_ENDPOINT"), "http://localhost:4318/v1/traces")),
 		otlptracehttp.WithRetry(otlptracehttp.RetryConfig{Enabled: false}),
 	)
 	if err != nil {
@@ -284,11 +285,4 @@ func (p *GormPlugin) after(db *gorm.DB) {
 	} else {
 		span.SetStatus(codes.Ok, "")
 	}
-}
-
-func getEnv(key, fallback string) string {
-	if v := os.Getenv(key); v != "" {
-		return v
-	}
-	return fallback
 }

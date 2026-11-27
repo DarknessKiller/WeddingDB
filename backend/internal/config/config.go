@@ -1,6 +1,7 @@
 package config
 
 import (
+	"cmp"
 	"log"
 	"os"
 	"unicode/utf8"
@@ -30,20 +31,13 @@ func LoadEnv() Env {
 	if utf8.RuneCountInString(secret) < 32 {
 		log.Fatal("JWT_SECRET must contain at least 32 characters")
 	}
-	port := getEnv("PORT", "8080")
-	publicURL := getEnv("PUBLIC_URL", "http://localhost:"+port)
+	port := cmp.Or(os.Getenv("PORT"), "8080")
+	publicURL := cmp.Or(os.Getenv("PUBLIC_URL"), "http://localhost:"+port)
 	return Env{
 		DatabaseURL: os.Getenv("DATABASE_URL"),
-		RedisURL:    getEnv("REDIS_URL", "redis://localhost:6379"),
+		RedisURL:    cmp.Or(os.Getenv("REDIS_URL"), "redis://localhost:6379"),
 		JWTSecret:   secret,
 		Port:        port,
 		PublicURL:   publicURL,
 	}
-}
-
-func getEnv(key, fallback string) string {
-	if v := os.Getenv(key); v != "" {
-		return v
-	}
-	return fallback
 }
