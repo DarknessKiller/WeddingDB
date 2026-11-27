@@ -3,6 +3,7 @@ package services
 import (
 	"context"
 	"errors"
+	"math"
 	"slices"
 	"testing"
 	"time"
@@ -291,5 +292,18 @@ func TestBulkCreate_LargeBatchResyncs(t *testing.T) {
 	}
 	if n := len(client.Chan); n != 0 {
 		t.Fatalf("client received %d per-row events, want 0", n)
+	}
+}
+
+// A huge seatNum must not overflow seatNum+pax-1 past the capacity check.
+func TestAssignSeat_RejectsOverflowingSeatNum(t *testing.T) {
+	svc, _, wid := newGuestSyncService(t)
+	tid := seedTable(t, svc, wid, "T1", 10)
+	g := seedGuest(t, svc, wid, "Guest")
+	if err := svc.db.Model(g).Update("pax", 2).Error; err != nil {
+		t.Fatalf("set pax: %v", err)
+	}
+	if err := svc.AssignSeat(context.Background(), g.ID, wid, tid, math.MaxInt); !errors.Is(err, ErrSeatRange) {
+		t.Fatalf("seat MaxInt err = %v, want ErrSeatRange", err)
 	}
 }

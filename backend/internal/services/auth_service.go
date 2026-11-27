@@ -337,13 +337,23 @@ func loginFailKey(email, ip string) string {
 	return "login:acct:" + strings.ToLower(strings.TrimSpace(email)) + ":" + ip
 }
 
-// CheckCredentialIPRate caps login/register attempts at 10 per minute per IP.
+// CheckCredentialIPRate caps register attempts at 10 per minute per IP; every
+// attempt counts.
 func (s *AuthService) CheckCredentialIPRate(ctx context.Context, ip string) error {
 	return s.rateLimit(ctx, "cred:ip:"+ip, 10, time.Minute)
 }
 
+// CheckLoginIPRate blocks an IP after 10 failed credential attempts per minute.
+// Successful logins do not count, so staff sharing venue Wi-Fi can all sign in.
+func (s *AuthService) CheckLoginIPRate(ctx context.Context, ip string) error {
+	return s.checkRateLimit(ctx, "cred:ip:"+ip, 10, time.Minute)
+}
+
+// RecordLoginFailure counts a wrong password against the account+IP lockout
+// and the per-IP credential cap.
 func (s *AuthService) RecordLoginFailure(ctx context.Context, email, ip string) {
 	s.recordFailure(ctx, loginFailKey(email, ip), 15*time.Minute)
+	s.recordFailure(ctx, "cred:ip:"+ip, time.Minute)
 }
 
 // CheckPublicRate caps public kiosk endpoints at 25 req/s per client IP.
