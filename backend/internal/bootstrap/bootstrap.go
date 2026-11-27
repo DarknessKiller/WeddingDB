@@ -1,6 +1,7 @@
 package bootstrap
 
 import (
+	"cmp"
 	"context"
 	"fmt"
 	"log"
@@ -34,20 +35,17 @@ func DatabaseURL(env config.Env) string {
 	if dbURL := os.Getenv("DATABASE_URL"); dbURL != "" {
 		return dbURL
 	}
-	host := getEnv("DB_HOST", "localhost")
-	port := getEnv("DB_PORT", "5432")
-	user := getEnv("DB_USER", "postgres")
-	pass := getEnv("DB_PASSWORD", "")
-	name := getEnv("DB_NAME", "weddingdb")
-	sslmode := getEnv("DB_SSLMODE", "disable")
+	host := cmp.Or(os.Getenv("DB_HOST"), "localhost")
+	port := cmp.Or(os.Getenv("DB_PORT"), "5432")
+	user := cmp.Or(os.Getenv("DB_USER"), "postgres")
+	pass := cmp.Or(os.Getenv("DB_PASSWORD"), "")
+	name := cmp.Or(os.Getenv("DB_NAME"), "weddingdb")
+	sslmode := cmp.Or(os.Getenv("DB_SSLMODE"), "disable")
 	return "postgresql://" + user + ":" + url.QueryEscape(pass) + "@" + host + ":" + port + "/" + name + "?sslmode=" + sslmode
 }
 
 type App struct {
 	Server          *fuego.Server
-	DB              *gorm.DB
-	Redis           *redis.Client
-	AuthService     *services.AuthService
 	SSEHub          *services.SSEHub
 	ShutdownTracing func(context.Context) error
 }
@@ -154,7 +152,7 @@ func Init(env config.Env, version string) *App {
 	})
 
 	// Serve static frontend (SPA fallback to index.html)
-	staticDir := getEnv("STATIC_DIR", "./static")
+	staticDir := cmp.Or(os.Getenv("STATIC_DIR"), "./static")
 	server.Mux.HandleFunc("GET /{path...}", spaHandler(staticDir))
 
 	// Seed default admin if none exists
@@ -189,9 +187,6 @@ func Init(env config.Env, version string) *App {
 
 	return &App{
 		Server:          server,
-		DB:              db,
-		Redis:           rdb,
-		AuthService:     authService,
 		SSEHub:          sseHub,
 		ShutdownTracing: traceShutdown,
 	}
@@ -334,13 +329,6 @@ func Migrate(ctx context.Context, db *gorm.DB) error {
 		}
 	}
 	return nil
-}
-
-func getEnv(key, fallback string) string {
-	if v := os.Getenv(key); v != "" {
-		return v
-	}
-	return fallback
 }
 
 // spaHandler serves the built frontend and falls back to index.html for client

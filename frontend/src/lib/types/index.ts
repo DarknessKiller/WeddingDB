@@ -30,14 +30,6 @@ export interface BanquetTable {
   isVip: boolean;
 }
 
-export interface Seat {
-  tableId: string;
-  seatNumber: number;
-  guest: Guest | null;
-  isSelected: boolean;
-  isHighlighted: boolean;
-}
-
 export interface TableOccupancy {
   tableId: string;
   tableName: string;
@@ -56,21 +48,6 @@ export interface ActivityItem {
   guestName?: string;
   timestamp: Date;
   icon: string;
-}
-
-export interface ReservationFormData {
-  guestName: string;
-  email?: string;
-  numberOfGuests: number;
-  attendance: 'attending' | 'not_attending';
-  specialRequests: string;
-  dietaryRequirements: string[];
-}
-
-export interface SearchResult {
-  guest: Guest;
-  matchScore: number;
-  matchType: 'name' | 'email';
 }
 
 export type ElementType = 'stage' | 'dj_counter' | 'entrance' | 'tv' | 'walkway' | 'box';
@@ -97,5 +74,3 @@ export interface HallLayoutData {
   tables: BanquetTable[];
   elements: HallElement[];
 }
-
-export type ViewMode = 'seating' | 'reception' | 'kiosk';

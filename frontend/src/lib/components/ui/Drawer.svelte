@@ -35,7 +35,7 @@ import ArrowUpDown from 'lucide-svelte/icons/arrow-up-down';
     return { duration: drawerSlideOut(node, { dir: 'y', duration: 300 }) };
   }
 
-  let { guest, tables = [], onClose, startEditing = false, createMode = false, readonly = false, showSeatNumbers = false }: { guest?: Guest; tables?: BanquetTable[]; onClose: () => void; startEditing?: boolean; createMode?: boolean; readonly?: boolean; showSeatNumbers?: boolean } = $props();
+  let { guest, tables = [], onClose, startEditing = false, createMode = false, showSeatNumbers = false }: { guest?: Guest; tables?: BanquetTable[]; onClose: () => void; startEditing?: boolean; createMode?: boolean; showSeatNumbers?: boolean } = $props();
 
   onMount(() => registerEscape(onClose));
 
@@ -325,18 +325,12 @@ import ArrowUpDown from 'lucide-svelte/icons/arrow-up-down';
     <div class="drawer-header">
       <h2 id="drawer-title" class="drawer-title">{createMode ? 'New Guest' : editing ? 'Edit Guest' : 'Guest Details'}</h2>
       <div class="drawer-actions">
-        {#if !readonly}
-          <button onclick={() => editing = true} class="drawer-icon-btn flex" aria-label="Edit">
-            <Pencil class="w-5 h-5" />
-          </button>
-          <button onclick={onClose} class="drawer-icon-btn hidden sm:flex" aria-label="Close">
-            <X class="w-5 h-5" />
-          </button>
-        {:else}
-          <button onclick={onClose} class="drawer-icon-btn flex" aria-label="Close">
-            <X class="w-5 h-5" />
-          </button>
-        {/if}
+        <button onclick={() => editing = true} class="drawer-icon-btn flex" aria-label="Edit">
+          <Pencil class="w-5 h-5" />
+        </button>
+        <button onclick={onClose} class="drawer-icon-btn hidden sm:flex" aria-label="Close">
+          <X class="w-5 h-5" />
+        </button>
       </div>
     </div>
 
@@ -501,24 +495,22 @@ import ArrowUpDown from 'lucide-svelte/icons/arrow-up-down';
           </div>
         {/if}
 
-        {#if !readonly}
-          <div class="pt-1 pb-3 sm:pb-4">
-            {#if localGuest.checkedIn}
-              <button onclick={handleCheckOut} class="w-full py-2.5 sm:py-3 bg-emerald-50 text-emerald-700 rounded-xl text-sm font-semibold border border-emerald-200 hover:bg-emerald-100 transition-colors flex items-center justify-center gap-2">
-                <CheckCircle2 class="w-4 h-4" /> Checked In — Tap to Check Out
-              </button>
-            {:else}
-              <button onclick={() => showCheckInModal = true} class="w-full py-2.5 sm:py-3 bg-red text-white rounded-xl text-sm font-semibold hover:bg-red-light transition-colors flex items-center justify-center gap-2">
-                <UserCheck class="w-4 h-4" /> Check In
-              </button>
-            {/if}
-            {#if localGuest.tableId}
-              <button onclick={handleUnassign} class="w-full py-2.5 sm:py-3 bg-white text-gray-600 rounded-xl text-sm font-semibold border border-gray-200 hover:bg-gray-50 transition-colors flex items-center justify-center gap-2 mt-2">
-                <ArrowUpDown class="w-4 h-4" /> Unassign Table
-              </button>
-            {/if}
-          </div>
-        {/if}
+        <div class="pt-1 pb-3 sm:pb-4">
+          {#if localGuest.checkedIn}
+            <button onclick={handleCheckOut} class="w-full py-2.5 sm:py-3 bg-emerald-50 text-emerald-700 rounded-xl text-sm font-semibold border border-emerald-200 hover:bg-emerald-100 transition-colors flex items-center justify-center gap-2">
+              <CheckCircle2 class="w-4 h-4" /> Checked In — Tap to Check Out
+            </button>
+          {:else}
+            <button onclick={() => showCheckInModal = true} class="w-full py-2.5 sm:py-3 bg-red text-white rounded-xl text-sm font-semibold hover:bg-red-light transition-colors flex items-center justify-center gap-2">
+              <UserCheck class="w-4 h-4" /> Check In
+            </button>
+          {/if}
+          {#if localGuest.tableId}
+            <button onclick={handleUnassign} class="w-full py-2.5 sm:py-3 bg-white text-gray-600 rounded-xl text-sm font-semibold border border-gray-200 hover:bg-gray-50 transition-colors flex items-center justify-center gap-2 mt-2">
+              <ArrowUpDown class="w-4 h-4" /> Unassign Table
+            </button>
+          {/if}
+        </div>
       {/if}
     </div>
 

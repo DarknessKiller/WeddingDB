@@ -5,10 +5,8 @@
 import Users from 'lucide-svelte/icons/users';
 import MapPin from 'lucide-svelte/icons/map-pin';
 import Search from 'lucide-svelte/icons/search';
-import Monitor from 'lucide-svelte/icons/monitor';
 import Calendar from 'lucide-svelte/icons/calendar';
 import Settings from 'lucide-svelte/icons/settings';
-import BarChart3 from 'lucide-svelte/icons/bar-chart-3';
 import Utensils from 'lucide-svelte/icons/utensils';
 import Shield from 'lucide-svelte/icons/shield';
 import FileDown from 'lucide-svelte/icons/file-down';
@@ -16,11 +14,7 @@ import FileDown from 'lucide-svelte/icons/file-down';
   let { currentPath, guestCount = 0, wid = '' }: { currentPath: string; guestCount?: number; wid?: string } = $props();
 
   const auth = $derived(getAuth());
-  const displayName = $derived(auth.name || 'Admin');
   const isAdmin = $derived(auth.role === 'admin');
-  const initials = $derived(
-    displayName.split(' ').map((w: string) => w[0]).join('').toUpperCase().slice(0, 2)
-  );
 
   const navSections = $derived([
     {
@@ -227,62 +221,4 @@ import FileDown from 'lucide-svelte/icons/file-down';
     border-radius: 9999px;
   }
 
-  /* Footer */
-  .sidebar-footer {
-    border-top: 1px solid rgba(0, 0, 0, 0.04);
-    padding: 1rem;
-    padding-bottom: calc(1rem + env(safe-area-inset-bottom));
-  }
-
-  .sidebar-collapsed .sidebar-footer {
-    padding: 0.5rem;
-  }
-
-  .user-card {
-    display: flex;
-    align-items: center;
-    gap: 0.75rem;
-    padding: 0.5rem;
-    border-radius: 0.5rem;
-    cursor: pointer;
-    transition: background 150ms ease;
-  }
-
-  .user-card:hover {
-    background: rgba(0, 0, 0, 0.03);
-  }
-
-  .user-card-collapsed {
-    justify-content: center;
-  }
-
-  .user-avatar {
-    width: 2.25rem;
-    height: 2.25rem;
-    border-radius: 9999px;
-    background: #D4AF37;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font-weight: 700;
-    font-size: 0.8125rem;
-    color: white;
-    flex-shrink: 0;
-  }
-
-  .user-info {
-    flex: 1;
-    min-width: 0;
-  }
-
-  .user-name {
-    font-size: 0.8125rem;
-    font-weight: 600;
-    color: #1f2937;
-  }
-
-  .user-role {
-    font-size: 0.6875rem;
-    color: #6b7280;
-  }
 </style>
