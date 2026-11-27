@@ -286,7 +286,20 @@ func (s *GuestService) Delete(ctx context.Context, id, weddingID uuid.UUID) erro
 }
 
 func (s *GuestService) Search(ctx context.Context, weddingID uuid.UUID, query string) ([]models.GuestRecord, error) {
-	return s.guestRepo.SearchByWedding(ctx, weddingID, query)
+	return s.guestRepo.SearchByWedding(ctx, weddingID, capSearchQuery(query))
+}
+
+// maxSearchQueryRunes bounds search input: the repo runs a pinyin lookup per
+// character plus a leading-wildcard ILIKE, so an unbounded query is pure load.
+const maxSearchQueryRunes = 100
+
+// capSearchQuery truncates by runes, not bytes, so a Chinese name is never cut
+// mid-character.
+func capSearchQuery(query string) string {
+	if r := []rune(query); len(r) > maxSearchQueryRunes {
+		return string(r[:maxSearchQueryRunes])
+	}
+	return query
 }
 
 // checkSeatTx validates a seat assignment inside tx and returns the table row
@@ -714,8 +727,18 @@ func (s *GuestService) Sync(ctx context.Context, weddingID uuid.UUID, mutations 
 	return results, nil
 }
 
+// syncErrorKnown reports a validation or business error the client can act on
+// and may see verbatim. Anything else is an outage and stays generic.
+func syncErrorKnown(err error) bool {
+	var fieldErr FieldLenError
+	if errors.As(err, &fieldErr) {
+		return true
+	}
+	return errors.Is(err, ErrGuestPatchInvalid) || errors.Is(err, ErrGuestCapExceeded) || errors.Is(err, ErrSeatOverlap) || errors.Is(err, ErrTableNotFound) || errors.Is(err, ErrInvalidGuestPax) || errors.Is(err, ErrSeatRange) || errors.Is(err, repository.ErrCapacityBelowSeated) || errors.Is(err, ErrGuestIDTaken)
+}
+
 func syncErrorReason(ctx context.Context, err error) string {
-	if !syncErrorRetryable(err) {
+	if syncErrorKnown(err) {
 		return err.Error()
 	}
 	slog.ErrorContext(ctx, "sync mutation failed", "error", err)
@@ -723,17 +746,14 @@ func syncErrorReason(ctx context.Context, err error) string {
 }
 
 // syncErrorRetryable reports whether re-sending a failed mutation could ever
-// succeed. Validation and business rules reject the same input every time, so
-// the client drops those instead of retrying them forever.
+// succeed. Validation rejects the same input every time, so the client drops
+// those instead of retrying them forever. Guest-cap and seat-overlap conflicts
+// are retryable: another guest may be deleted or move off the seat meanwhile.
 func syncErrorRetryable(err error) bool {
-	var fieldErr FieldLenError
-	if errors.As(err, &fieldErr) {
-		return false
+	if !syncErrorKnown(err) {
+		return true
 	}
-	if errors.Is(err, ErrGuestPatchInvalid) || errors.Is(err, ErrGuestCapExceeded) || errors.Is(err, ErrSeatOverlap) || errors.Is(err, ErrTableNotFound) || errors.Is(err, ErrInvalidGuestPax) || errors.Is(err, ErrSeatRange) || errors.Is(err, repository.ErrCapacityBelowSeated) || errors.Is(err, ErrGuestIDTaken) {
-		return false
-	}
-	return true
+	return errors.Is(err, ErrGuestCapExceeded) || errors.Is(err, ErrSeatOverlap)
 }
 
 // failedSync builds a failed result, marking the mutation non-retryable when
@@ -745,6 +765,10 @@ func failedSync(ctx context.Context, guestID string, err error) SyncResult {
 	}
 	return res
 }
+
+// errSyncCreateNameRequired fails a malformed create inside the transaction,
+// after the existence check, so a retried create for a stored guest still merges.
+var errSyncCreateNameRequired = errors.New("name is required")
 
 func (s *GuestService) applySyncMutation(ctx context.Context, weddingID uuid.UUID, m SyncMutation) SyncResult {
 	gid, err := utils.DecodeUUID(m.GuestID)
@@ -764,54 +788,63 @@ func (s *GuestService) applySyncMutation(ctx context.Context, weddingID uuid.UUI
 
 	switch m.Op {
 	case SyncOpCreate:
-		if _, err := s.guestRepo.FindByID(ctx, gid, weddingID); err == nil {
-			// The guest already exists: treat the create as an update.
-			merged, applied, err := s.syncMerge(ctx, weddingID, gid, m.Payload, opTime)
-			if err != nil {
-				return failedSync(ctx, m.GuestID, err)
+		// A client ID is final, so a retried create can arrive after the first
+		// attempt inserted. Check for the stored row under the same wedding lock
+		// the insert takes; a check outside the transaction can miss it, and the
+		// insert then fails on the primary key and looks permanent to the client.
+		var (
+			g        *models.GuestRecord
+			existing bool
+		)
+		err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+			if err := repository.LockWedding(tx, weddingID); err != nil {
+				return weddingLockError(err)
 			}
-			if !applied {
-				return SyncResult{GuestID: m.GuestID, Status: "skipped", Reason: "older than server", ServerRecord: merged}
+			_, err := repository.NewGuestRepo(tx).FindByID(ctx, gid, weddingID)
+			if err == nil {
+				existing = true
+				return nil
 			}
-			s.sseHub.publishGuest("update", merged, weddingID)
-			return SyncResult{GuestID: m.GuestID, Status: "applied", ServerRecord: merged}
-		} else if !errors.Is(err, gorm.ErrRecordNotFound) {
-			return failedSync(ctx, m.GuestID, err)
-		}
-		if m.Payload == nil || strings.TrimSpace(m.Payload.Name) == "" {
+			if !errors.Is(err, gorm.ErrRecordNotFound) {
+				return err
+			}
+			if m.Payload == nil || strings.TrimSpace(m.Payload.Name) == "" {
+				return errSyncCreateNameRequired
+			}
+			patch := m.Payload
+			if patch.set == nil {
+				// Go-built full payloads predate presence tracking: keep the old
+				// defaults instead of failing on a zero pax/rsvp.
+				c := *patch
+				if c.Pax < 1 {
+					c.Pax = 1
+				}
+				if c.RSVP == "" {
+					c.RSVP = "no_response"
+				}
+				patch = &c
+			}
+			g = &models.GuestRecord{
+				ID:         gid,
+				WeddingID:  weddingID,
+				Pax:        1,
+				RSVP:       "no_response",
+				CreatedAt:  opTime,
+				UpdatedAt:  opTime,
+				FieldTimes: make(models.FieldTimes, len(guestGroups())),
+			}
+			for _, key := range guestGroups() {
+				g.FieldTimes[key] = opTime
+			}
+			if _, err := patch.applyTo(g); err != nil {
+				return err
+			}
+			return s.createGuestTx(ctx, tx, g)
+		})
+		if errors.Is(err, errSyncCreateNameRequired) {
 			return SyncResult{GuestID: m.GuestID, Status: "failed", Reason: "name is required", Retryable: new(false)}
 		}
-		patch := m.Payload
-		if patch.set == nil {
-			// Go-built full payloads predate presence tracking: keep the old
-			// defaults instead of failing on a zero pax/rsvp.
-			c := *patch
-			if c.Pax < 1 {
-				c.Pax = 1
-			}
-			if c.RSVP == "" {
-				c.RSVP = "no_response"
-			}
-			patch = &c
-		}
-		g := &models.GuestRecord{
-			ID:         gid,
-			WeddingID:  weddingID,
-			Pax:        1,
-			RSVP:       "no_response",
-			CreatedAt:  opTime,
-			UpdatedAt:  opTime,
-			FieldTimes: make(models.FieldTimes, len(guestGroups())),
-		}
-		for _, key := range guestGroups() {
-			g.FieldTimes[key] = opTime
-		}
-		if _, err := patch.applyTo(g); err != nil {
-			return failedSync(ctx, m.GuestID, err)
-		}
-		if err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-			return s.createGuestTx(ctx, tx, g)
-		}); err != nil {
+		if err != nil {
 			// A deleted wedding can never make this create succeed: drop it
 			// instead of blocking the offline queue forever.
 			if errors.Is(err, ErrWeddingNotFound) {
@@ -822,6 +855,18 @@ func (s *GuestService) applySyncMutation(ctx context.Context, weddingID uuid.UUI
 				err = ErrGuestIDTaken
 			}
 			return failedSync(ctx, m.GuestID, err)
+		}
+		if existing {
+			// The guest already exists: treat the create as an update.
+			merged, applied, err := s.syncMerge(ctx, weddingID, gid, m.Payload, opTime)
+			if err != nil {
+				return failedSync(ctx, m.GuestID, err)
+			}
+			if !applied {
+				return SyncResult{GuestID: m.GuestID, Status: "skipped", Reason: "older than server", ServerRecord: merged}
+			}
+			s.sseHub.publishGuest("update", merged, weddingID)
+			return SyncResult{GuestID: m.GuestID, Status: "applied", ServerRecord: merged}
 		}
 		s.sseHub.publishGuest("create", g, weddingID)
 		return SyncResult{GuestID: m.GuestID, Status: "applied", ServerRecord: g}

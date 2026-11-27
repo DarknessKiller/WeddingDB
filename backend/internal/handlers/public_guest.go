@@ -134,9 +134,6 @@ func (h *PublicGuestHandler) Search(c fuego.ContextNoBody) (any, error) {
 		return nil, fuego.BadRequestError{Title: "Invalid wedding ID"}
 	}
 	query := c.QueryParam("q")
-	if r := []rune(query); len(r) > 100 {
-		query = string(r[:100])
-	}
 	guests, err := h.guestService.Search(ctx, wid, query)
 	if err != nil {
 		return nil, err
