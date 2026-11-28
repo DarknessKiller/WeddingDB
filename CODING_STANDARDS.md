@@ -154,7 +154,7 @@ Files: `backend/internal/config/{config,server}.go`,
 - Upload rejects non-admin callers without wedding scope before parsing or
   writing files. Wedding authorization follows the existing JWT scope;
   admins retain cross-wedding access. SSE admits at most 100 concurrent streams
-  per wedding and 5 per user across the deployment using atomic Redis leases;
+  per wedding and 20 per user across the deployment using atomic Redis leases;
   overflow returns
   HTTP 429 and Redis admission errors return HTTP 503 before stream headers.
   Disconnect releases its lease, crashed servers' leases expire, and active
