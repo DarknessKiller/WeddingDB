@@ -173,3 +173,29 @@ func TestGuestPatch_RejectsInvalidFields(t *testing.T) {
 		})
 	}
 }
+
+// An older offline edit that wins its own group must still move updated_at
+// forward, or a stale response with the same updated_at passes the client's
+// staleness check. A delete newer than every column write still wins after it.
+func TestMergeGuestWrite_OlderWinnerAdvancesUpdatedAt(t *testing.T) {
+	base := time.Now().Add(-time.Hour)
+	notesAt := base.Add(6 * time.Minute)
+	existing := &models.GuestRecord{UpdatedAt: notesAt, FieldTimes: models.FieldTimes{}}
+	for _, key := range guestGroups() {
+		existing.FieldTimes[key] = base
+	}
+	existing.FieldTimes[groupNotes] = notesAt
+	next := *existing
+	amt := 88
+	next.AngbaoAmt = &amt
+
+	if won := mergeGuestWrite(existing, &next, base.Add(time.Minute), []string{groupAngbaoAmt}); len(won) != 1 {
+		t.Fatalf("won = %v, want [angbaoAmt]", won)
+	}
+	if !existing.UpdatedAt.After(notesAt) {
+		t.Fatalf("updatedAt = %v, want after %v", existing.UpdatedAt, notesAt)
+	}
+	if !guestDeleteWins(existing, notesAt.Add(time.Minute)) {
+		t.Fatal("delete newer than every column write must win despite the bumped updatedAt")
+	}
+}

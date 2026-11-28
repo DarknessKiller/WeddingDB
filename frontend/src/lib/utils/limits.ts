@@ -15,6 +15,8 @@ export const LIMITS = {
 	tableName: 100,
 	// Mirrors services.MaxTableCapacity.
 	tableCapacity: 100,
+	// Mirrors services.MaxAngbaoAmt (not a text length: the largest amount).
+	angbaoAmt: 10_000_000,
 	venueName: 255,
 	venueAddress: 500,
 	kioskDescription: 500,

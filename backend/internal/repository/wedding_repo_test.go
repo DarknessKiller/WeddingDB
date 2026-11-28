@@ -76,6 +76,7 @@ func newWeddingRepoDB(t *testing.T) *gorm.DB {
 		hall_width INTEGER, hall_height INTEGER, created_at DATETIME, updated_at DATETIME)`).Error)
 	for _, ddl := range []string{
 		`CREATE TABLE guest_records (id TEXT PRIMARY KEY, wedding_id TEXT)`,
+		`CREATE TABLE guest_tombstones (guest_id TEXT PRIMARY KEY, wedding_id TEXT)`,
 		`CREATE TABLE banquet_tables (id TEXT PRIMARY KEY, wedding_id TEXT)`,
 		`CREATE TABLE hall_elements (id TEXT PRIMARY KEY, wedding_id TEXT)`,
 		`CREATE TABLE user_weddings (id TEXT PRIMARY KEY, wedding_id TEXT)`,

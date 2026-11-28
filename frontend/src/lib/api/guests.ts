@@ -1,23 +1,28 @@
 import { apiFetch, isNetworkError } from './client';
 import { get } from 'svelte/store';
-import { weddingId } from '#lib/stores/weddingId.ts';
+import { weddingId as currentWeddingId } from '#lib/stores/weddingId.ts';
 import { applyGuestResponse, guestMap, removeGuest, upsertGuest } from '#lib/stores/guestEvents.ts';
 import { enqueue, type SyncOp } from '#lib/offline/queue.ts';
 import { applyGuestPatch, toGuest, type GuestFields } from '#lib/utils/guestTransform.ts';
+import { LIMITS } from '#lib/utils/limits.ts';
 
 function isOffline() {
 	return typeof navigator !== 'undefined' && !navigator.onLine;
 }
 export function genId(): string {
-	if (typeof crypto.randomUUID === 'function') return crypto.randomUUID();
-	// randomUUID needs a secure context (plain-HTTP LAN); the backend still wants an RFC 4122 v4 UUID.
+	// Built by hand: randomUUID needs a secure context (plain-HTTP LAN). RFC 4122 v4 bits.
 	const b = crypto.getRandomValues(new Uint8Array(16));
 	b[6] = (b[6] & 0x0f) | 0x40;
 	b[8] = (b[8] & 0x3f) | 0x80;
-	const h = Array.from(b, (x) => x.toString(16).padStart(2, '0')).join('');
-	return `${h.slice(0, 8)}-${h.slice(8, 12)}-${h.slice(12, 16)}-${h.slice(16, 20)}-${h.slice(20)}`;
+	// Unpadded base64url, the form the server echoes ids in: a hyphenated id would
+	// key the local row apart from the server's copy of the same guest.
+	return btoa(String.fromCharCode(...b)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
 }
 function nowIso() { return new Date().toISOString(); }
+// A slow response for a wedding the user has left must not land in the current one.
+function applyIfCurrent(wid: string, resp: GuestResponse) {
+	if (wid === get(currentWeddingId)) applyGuestResponse(resp);
+}
 function optimisticPatch(op: SyncOp, guestId: string, data: GuestFields = {}) {
 	if (op === 'delete') return removeGuest(guestId);
 	const g = get(guestMap).get(guestId);
@@ -136,7 +141,7 @@ export async function createGuest(weddingId: string, data: GuestCreateData): Pro
 		const res = await apiFetch(`/api/weddings/${weddingId}/guests`, { method: 'POST', body: JSON.stringify({ ...data, id }) });
 		if (!res.ok) throw new Error(await errorMessage(res, 'Failed to create guest'));
 		const resp: GuestResponse = await res.json();
-		applyGuestResponse(resp);
+		applyIfCurrent(weddingId, resp);
 		return resp;
 	} catch (e) {
 		if (isNetworkError(e)) {
@@ -175,7 +180,7 @@ export async function updateGuest(weddingId: string, guestId: string, data: Part
 		const res = await apiFetch(`/api/weddings/${weddingId}/guests/${guestId}`, { method: 'PUT', body: JSON.stringify(data) });
 		if (!res.ok) throw new Error(await errorMessage(res, 'Failed to update guest'));
 		const resp: GuestResponse = await res.json();
-		applyGuestResponse(resp);
+		applyIfCurrent(weddingId, resp);
 		return resp;
 	} catch (e) {
 		if (isNetworkError(e)) { doQueue(); return offlineGuestResponse(weddingId, guestId); }
@@ -202,6 +207,12 @@ export async function deleteGuest(weddingId: string, guestId: string): Promise<v
 // notes server-side, atomically with the check-in.
 export async function checkInGuest(weddingId: string, guestId: string, notes?: string): Promise<void> {
 	const trimmed = (notes ?? '').trim();
+	// The server appends the note with a newline and rejects the guest if the
+	// result passes the notes cap; a queued check-in would then be dropped.
+	const existing = get(guestMap).get(guestId)?.notes ?? '';
+	if (trimmed && existing && [...existing].length + 1 + [...trimmed].length > LIMITS.guestNotes) {
+		throw new Error(`Note too long: this guest's notes can take ${Math.max(0, LIMITS.guestNotes - [...existing].length - 1)} more characters`);
+	}
 	const payload = trimmed ? { notes: trimmed } : undefined;
 	// Stamped before the online attempt: if that POST landed and only the response
 	// was lost, the replay is not newer than the server's check-in, so the server
@@ -267,7 +278,7 @@ export async function unassignSeat(weddingId: string, guestId: string): Promise<
 }
 export async function bulkImportGuests(guests: GuestImportData[]): Promise<{ imported: number }> {
   if (isOffline()) throw new Error('Bulk import needs connection');
-  const res = await apiFetch(`/api/weddings/${get(weddingId)}/guests/import`, {
+  const res = await apiFetch(`/api/weddings/${get(currentWeddingId)}/guests/import`, {
     method: 'POST',
     body: JSON.stringify({ guests }),
     // A 1,000-row import can outlast the default 10s timeout; rows carry ids, so a retry is safe.

@@ -37,7 +37,9 @@ import LogOut from 'lucide-svelte/icons/log-out';
             'Content-Type': 'application/json',
             ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {})
           },
-          body: JSON.stringify({ refreshToken })
+          body: JSON.stringify({ refreshToken }),
+          // A stalled network must not keep the tokens on a shared phone.
+          signal: AbortSignal.timeout(5000)
         });
       } catch { /* ignore */ }
     }

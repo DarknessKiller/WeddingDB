@@ -4,6 +4,8 @@ import { guestEmailSchema } from './reservation.ts';
 // parseCsv reads RFC 4180 text: quotes protect commas, newlines and "" escapes.
 // Rows are returned verbatim so callers keep their own column mapping.
 export function parseCsv(text: string): string[][] {
+	// Excel's UTF-8 BOM would otherwise make a quoted first header a literal string.
+	text = text.replace(/^\uFEFF/, '');
 	const rows: string[][] = [];
 	let row: string[] = [];
 	let field = '';

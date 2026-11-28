@@ -2,6 +2,7 @@
   import HallMap from '#lib/components/seating/HallMap.svelte';
   import { publicListGuests } from '#lib/api/public.ts';
   import { getPublicLayout } from '#lib/api/layout.ts';
+  import { withTimeout } from '#lib/api/client.ts';
   import { cacheGuests, loadCachedGuests } from '#lib/offline/queue.ts';
   import { rankGuests } from '#lib/utils/guestSearch.ts';
   import { cn, getInitials } from '#lib/utils/index.ts';
@@ -104,7 +105,7 @@ import X from 'lucide-svelte/icons/x';
   // without a reload.
   async function loadKioskConfig() {
     const wid = page.params.wid ?? '';
-    const data = await fetch(`/api/public/weddings/${wid}/kiosk`, { signal: pageAbort.signal })
+    const data = await fetch(`/api/public/weddings/${wid}/kiosk`, { signal: withTimeout(15_000, pageAbort.signal) })
       .then(r => r.ok ? r.json() : null)
       .catch(() => null);
     if (!data) return;

@@ -42,28 +42,50 @@ func guestGroups() []string {
 // mergeGuestWrite merges the carried groups of src into dst and returns the
 // groups that won. dst must be the locked row; src supplies values for carried
 // groups only. A write wins a group when its time is not older than the stored
-// time, so ties count as newer. A row that predates field_times seeds every
-// group with its updated_at before the first merge.
+// time, so ties count as newer. A group with no stored time (a row that
+// predates field_times) is seeded with updated_at before the merge.
 func mergeGuestWrite(dst, src *models.GuestRecord, at time.Time, carried []string) []string {
 	if dst.FieldTimes == nil {
 		dst.FieldTimes = make(models.FieldTimes, len(guestGroups()))
-		for _, key := range guestGroups() {
+	}
+	// Seed every missing group, not only on a nil map: the updated_at bump
+	// below must never become a group's fallback time.
+	for _, key := range guestGroups() {
+		if _, ok := dst.FieldTimes[key]; !ok {
 			dst.FieldTimes[key] = dst.UpdatedAt
 		}
 	}
 	won := make([]string, 0, len(carried))
+	advanced := false
 	for _, key := range carried {
-		if at.Before(fieldTime(dst, key)) {
+		stored := fieldTime(dst, key)
+		if at.Before(stored) {
 			continue
 		}
+		// A tie is a replay of the stored write (invariant 5): it must not bump updated_at.
+		advanced = advanced || stored.Before(at)
 		copyGuestGroup(dst, src, key)
 		dst.FieldTimes[key] = at
 		won = append(won, key)
 	}
-	if at.After(dst.UpdatedAt) {
-		dst.UpdatedAt = at
+	// updated_at is the client's staleness watermark, so it must move forward on
+	// every applied write: an older offline edit winning one group would
+	// otherwise leave it unchanged and let a stale response tie with this one.
+	// LWW reads only field_times once they exist, so the bump never decides a merge.
+	if advanced {
+		dst.UpdatedAt = latest(dst.UpdatedAt, at, time.Now())
 	}
 	return won
+}
+
+func latest(ts ...time.Time) time.Time {
+	var out time.Time
+	for _, t := range ts {
+		if t.After(out) {
+			out = t
+		}
+	}
+	return out
 }
 
 // fieldTime returns the stored write time of a group, falling back to the row
@@ -108,12 +130,14 @@ func copyGuestGroup(dst, src *models.GuestRecord, group string) {
 }
 
 // guestDeleteWins reports whether a row-level delete at at is newer than every
-// column write on the row. Ties count as newer.
+// column write on the row. Ties count as newer. Once field_times exist they are
+// the write times; updated_at is then server time and would beat any offline delete.
 func guestDeleteWins(g *models.GuestRecord, at time.Time) bool {
 	newest := g.UpdatedAt
-	for _, t := range g.FieldTimes {
-		if t.After(newest) {
-			newest = t
+	if len(g.FieldTimes) > 0 {
+		newest = time.Time{}
+		for _, t := range g.FieldTimes {
+			newest = latest(newest, t)
 		}
 	}
 	return !at.Before(newest)

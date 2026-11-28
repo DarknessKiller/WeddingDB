@@ -27,6 +27,9 @@ const (
 	MaxColorLen            = 20
 	MaxGuestPartySize      = 50
 	MaxTableCapacity       = 100
+	// MaxAngbaoAmt keeps report totals far from int overflow and amounts
+	// exact in the browser (below 2^53).
+	MaxAngbaoAmt = 10_000_000
 	// MaxLayoutElements bounds one hall layout, so a save cannot write an
 	// unbounded element set in a single request.
 	MaxLayoutElements = 200
@@ -82,10 +85,17 @@ func ValidateGuestText(g *models.GuestRecord) error {
 	return nil
 }
 
-// validateAngbaoAmt rejects a negative angbao amount on every write path.
+// validateAngbaoAmt rejects a negative or oversized angbao amount on every
+// write path.
 func validateAngbaoAmt(v *int) error {
-	if v != nil && *v < 0 {
+	if v == nil {
+		return nil
+	}
+	if *v < 0 {
 		return fmt.Errorf("%w: angbaoAmt must not be negative", ErrGuestPatchInvalid)
+	}
+	if *v > MaxAngbaoAmt {
+		return fmt.Errorf("%w: angbaoAmt must be at most %d", ErrGuestPatchInvalid, MaxAngbaoAmt)
 	}
 	return nil
 }

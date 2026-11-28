@@ -1,4 +1,4 @@
-import { apiFetch } from './client';
+import { apiFetch, withTimeout } from './client';
 import type { HallLayoutData, HallElement } from '#lib/types/index.ts';
 
 export async function getLayout(wid: string): Promise<HallLayoutData> {
@@ -8,7 +8,8 @@ export async function getLayout(wid: string): Promise<HallLayoutData> {
 }
 
 export async function getPublicLayout(wid: string, opts: { signal?: AbortSignal } = {}): Promise<HallLayoutData> {
-	const res = await fetch(`/api/public/weddings/${wid}/layout`, { signal: opts.signal });
+	// A hung request would pile up a new one every kiosk poll; cap it.
+	const res = await fetch(`/api/public/weddings/${wid}/layout`, { signal: withTimeout(15_000, opts.signal) });
 	if (!res.ok) throw new Error('Failed to load layout');
 	return res.json();
 }

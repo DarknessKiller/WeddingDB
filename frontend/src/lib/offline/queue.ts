@@ -3,6 +3,7 @@ import { addToast } from '#lib/stores/index.ts';
 import { get } from 'svelte/store';
 import { applyGuestResponse, clearGuestCaches, guestMap } from '#lib/stores/guestEvents.ts';
 import type { GuestResponse } from '#lib/api/guests.ts';
+import { weddingId as currentWeddingId } from '#lib/stores/weddingId.ts';
 
 export type SyncOp = 'create' | 'update' | 'delete' | 'checkin' | 'checkout';
 
@@ -116,6 +117,7 @@ export function syncQueue(wid: string): Promise<SyncSummary> {
 async function drainQueue(wid: string): Promise<SyncSummary> {
 	const q = getQueue(wid);
 	let applied = 0, skipped = 0, dropped = 0;
+	let retryReason = '';
 	for (let start = 0; start < q.length; start += SYNC_CHUNK) {
 		const chunk = q.slice(start, start + SYNC_CHUNK);
 		const res = await apiFetch(`/api/weddings/${wid}/guests/sync`, {
@@ -144,12 +146,15 @@ async function drainQueue(wid: string): Promise<SyncSummary> {
 			else if (r.status === 'skipped') {
 				// No column won: show the server's row instead of the optimistic one.
 				skipped++; doneIds.push(chunk[i].mutationId);
-				if (r.serverRecord) applyGuestResponse(r.serverRecord);
+				// The user may have switched wedding mid-drain; its rows must not land in the new one.
+				if (r.serverRecord && wid === get(currentWeddingId)) applyGuestResponse(r.serverRecord);
 			} else if (r.status === 'failed' && r.retryable === false) {
 				// Validation or business rejection: re-sending it can never succeed,
 				// so it must leave the queue for the rest to drain.
 				dropped++; doneIds.push(chunk[i].mutationId);
 				if (r.reason) droppedReasons.push(r.reason);
+			} else if (r.status === 'failed') {
+				retryReason ||= r.reason || 'the server refused it for now';
 			}
 		}
 		await dequeueByIds(wid, doneIds);
@@ -158,6 +163,8 @@ async function drainQueue(wid: string): Promise<SyncSummary> {
 		}
 	}
 	if (skipped) addToast(`${skipped} offline edit${skipped === 1 ? '' : 's'} reverted: newer changes won`, 'info');
+	// A retryable failure stays queued; say why, or the edit looks lost.
+	if (retryReason) addToast(`Offline edits still queued: ${retryReason}`, 'error');
 	return { applied, skipped, dropped };
 }
 

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+	"time"
 	"unicode/utf8"
 
 	"weddingdb/internal/models"
@@ -137,8 +138,23 @@ func (r *GuestRepo) Update(ctx context.Context, g *models.GuestRecord) error {
 	}).Error
 }
 
-func (r *GuestRepo) Delete(ctx context.Context, id, weddingID uuid.UUID) error {
-	return r.db.WithContext(ctx).Where("id = ? AND wedding_id = ?", id, weddingID).Delete(&models.GuestRecord{}).Error
+// Delete removes the guest and records a tombstone at at. Call it inside the
+// delete transaction so the row and its tombstone commit together.
+func (r *GuestRepo) Delete(ctx context.Context, id, weddingID uuid.UUID, at time.Time) error {
+	db := r.db.WithContext(ctx)
+	if err := db.Where("id = ? AND wedding_id = ?", id, weddingID).Delete(&models.GuestRecord{}).Error; err != nil {
+		return err
+	}
+	return db.Clauses(clause.OnConflict{UpdateAll: true}).
+		Create(&models.GuestTombstone{GuestID: id, WeddingID: weddingID, DeletedAt: at}).Error
+}
+
+// DeletedAt returns when the guest was deleted, or gorm.ErrRecordNotFound when
+// it never was.
+func (r *GuestRepo) DeletedAt(ctx context.Context, id, weddingID uuid.UUID) (time.Time, error) {
+	var t models.GuestTombstone
+	err := r.db.WithContext(ctx).Where("guest_id = ? AND wedding_id = ?", id, weddingID).Take(&t).Error
+	return t.DeletedAt, err
 }
 
 func (r *GuestRepo) ListAllByWedding(ctx context.Context, weddingID uuid.UUID) ([]models.GuestRecord, error) {

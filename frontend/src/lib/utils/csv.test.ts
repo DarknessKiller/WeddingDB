@@ -16,6 +16,10 @@ describe('parseCsv', () => {
 		]);
 	});
 
+	it('strips an Excel BOM so a quoted first header still parses', () => {
+		expect(parseCsv('\uFEFF"Name","Pax"\n"Tan",2')[0]).toEqual(['Name', 'Pax']);
+	});
+
 	it('reads a newline inside a quoted field', () => {
 		expect(parseCsv('a\n"line1\nline2"')[1][0]).toBe('line1\nline2');
 	});

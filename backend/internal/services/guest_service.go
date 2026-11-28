@@ -269,7 +269,7 @@ func (s *GuestService) Delete(ctx context.Context, id, weddingID uuid.UUID) erro
 		if err != nil {
 			return err
 		}
-		if err := repo.Delete(ctx, id, weddingID); err != nil {
+		if err := repo.Delete(ctx, id, weddingID, time.Now()); err != nil {
 			return err
 		}
 		guest = locked
@@ -771,6 +771,9 @@ func failedSync(ctx context.Context, guestID string, err error) SyncResult {
 // after the existence check, so a retried create for a stored guest still merges.
 var errSyncCreateNameRequired = errors.New("name is required")
 
+// errSyncCreateDeleted marks a create older than the guest's delete.
+var errSyncCreateDeleted = errors.New("guest was deleted")
+
 func (s *GuestService) applySyncMutation(ctx context.Context, weddingID uuid.UUID, m SyncMutation) SyncResult {
 	gid, err := utils.DecodeUUID(m.GuestID)
 	if err != nil {
@@ -801,12 +804,22 @@ func (s *GuestService) applySyncMutation(ctx context.Context, weddingID uuid.UUI
 			if err := repository.LockWedding(tx, weddingID); err != nil {
 				return weddingLockError(err)
 			}
-			_, err := repository.NewGuestRepo(tx).FindByID(ctx, gid, weddingID)
+			repo := repository.NewGuestRepo(tx)
+			_, err := repo.FindByID(ctx, gid, weddingID)
 			if err == nil {
 				existing = true
 				return nil
 			}
 			if !errors.Is(err, gorm.ErrRecordNotFound) {
+				return err
+			}
+			// A replayed create must not bring back a guest deleted after it.
+			// Ties go to the delete, as in guestDeleteWins.
+			deletedAt, err := repo.DeletedAt(ctx, gid, weddingID)
+			if err == nil && !deletedAt.Before(opTime) {
+				return errSyncCreateDeleted
+			}
+			if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
 				return err
 			}
 			if m.Payload == nil || strings.TrimSpace(m.Payload.Name) == "" {
@@ -844,6 +857,9 @@ func (s *GuestService) applySyncMutation(ctx context.Context, weddingID uuid.UUI
 		})
 		if errors.Is(err, errSyncCreateNameRequired) {
 			return SyncResult{GuestID: m.GuestID, Status: "failed", Reason: "name is required", Retryable: new(false)}
+		}
+		if errors.Is(err, errSyncCreateDeleted) {
+			return SyncResult{GuestID: m.GuestID, Status: "skipped", Reason: "deleted"}
 		}
 		if err != nil {
 			// A deleted wedding can never make this create succeed: drop it
@@ -906,7 +922,7 @@ func (s *GuestService) applySyncMutation(ctx context.Context, weddingID uuid.UUI
 				losing = locked
 				return nil
 			}
-			if err := repo.Delete(ctx, gid, weddingID); err != nil {
+			if err := repo.Delete(ctx, gid, weddingID, opTime); err != nil {
 				return err
 			}
 			deleted = locked

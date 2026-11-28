@@ -27,7 +27,7 @@ func TestGenerateCSV_FormulaInjection(t *testing.T) {
 	if !strings.HasSuffix(dbName, "_test") {
 		t.Fatalf("refusing to use database %q", dbName)
 	}
-	testutil.NoErr(t, db.AutoMigrate(&models.WeddingEvent{}, &models.BanquetTable{}, &models.GuestRecord{}))
+	testutil.NoErr(t, db.AutoMigrate(&models.WeddingEvent{}, &models.BanquetTable{}, &models.GuestRecord{}, &models.GuestTombstone{}))
 	wid := uuid.New()
 	tableID := uuid.New()
 	testutil.NoErr(t, db.Create(&models.WeddingEvent{ID: wid, Name: "CSV"}).Error)
