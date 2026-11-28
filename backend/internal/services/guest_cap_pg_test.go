@@ -38,11 +38,11 @@ func TestGuestCap_PostgresConcurrent(t *testing.T) {
 		t.Fatalf("refusing to drop tables in %q; point TEST_DATABASE_URL at a *_test database", dbName)
 	}
 	drop := func() {
-		db.Exec("DROP TABLE IF EXISTS guest_records, wedding_events CASCADE")
+		db.Exec("DROP TABLE IF EXISTS guest_records, guest_tombstones, wedding_events CASCADE")
 	}
 	drop()
 	t.Cleanup(drop)
-	if err := db.AutoMigrate(&models.WeddingEvent{}, &models.GuestRecord{}); err != nil {
+	if err := db.AutoMigrate(&models.WeddingEvent{}, &models.GuestRecord{}, &models.GuestTombstone{}); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}
 

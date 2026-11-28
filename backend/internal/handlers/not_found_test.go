@@ -63,6 +63,7 @@ func TestWeddingGet_MissingIs404(t *testing.T) {
 func TestWeddingDelete_MissingIs404(t *testing.T) {
 	db := newSQLite(t, weddingEventsDDL,
 		`CREATE TABLE guest_records (id TEXT PRIMARY KEY, wedding_id TEXT)`,
+		`CREATE TABLE guest_tombstones (guest_id TEXT PRIMARY KEY, wedding_id TEXT)`,
 		`CREATE TABLE banquet_tables (id TEXT PRIMARY KEY, wedding_id TEXT)`,
 		`CREATE TABLE hall_elements (id TEXT PRIMARY KEY, wedding_id TEXT)`,
 		`CREATE TABLE user_weddings (id TEXT PRIMARY KEY, wedding_id TEXT)`,

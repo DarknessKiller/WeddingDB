@@ -34,10 +34,12 @@ func TestGuestCreate_MissingWeddingIs404(t *testing.T) {
 	if !strings.HasSuffix(dbName, "_test") {
 		t.Fatalf("refusing to drop tables in %q; point TEST_DATABASE_URL at a *_test database", dbName)
 	}
-	drop := func() { db.Exec("DROP TABLE IF EXISTS guest_records, banquet_tables, wedding_events CASCADE") }
+	drop := func() {
+		db.Exec("DROP TABLE IF EXISTS guest_records, guest_tombstones, banquet_tables, wedding_events CASCADE")
+	}
 	drop()
 	t.Cleanup(drop)
-	if err := db.AutoMigrate(&models.WeddingEvent{}, &models.BanquetTable{}, &models.GuestRecord{}); err != nil {
+	if err := db.AutoMigrate(&models.WeddingEvent{}, &models.BanquetTable{}, &models.GuestRecord{}, &models.GuestTombstone{}); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}
 

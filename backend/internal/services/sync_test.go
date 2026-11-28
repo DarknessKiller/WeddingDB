@@ -43,6 +43,11 @@ func newGuestSyncService(t *testing.T) (*GuestService, *gorm.DB, uuid.UUID) {
 		created_at DATETIME,
 		updated_at DATETIME
 	)`)
+	db.Exec(`CREATE TABLE guest_tombstones (
+		guest_id TEXT PRIMARY KEY,
+		wedding_id TEXT NOT NULL,
+		deleted_at DATETIME NOT NULL
+	)`)
 	db.Exec(`CREATE TABLE banquet_tables (
 		id TEXT PRIMARY KEY,
 		wedding_id TEXT NOT NULL,
@@ -1114,5 +1119,34 @@ func TestSync_CreateIDOwnedByOtherWeddingFailsWithoutRetry(t *testing.T) {
 	testutil.NoErr(t, err)
 	if g.Name != "Theirs" {
 		t.Fatalf("other wedding's guest changed: %+v", g)
+	}
+}
+
+// A create whose response was lost replays after another device deleted the
+// guest. The newer delete must win (invariants 4 and 5): no resurrection.
+func TestSync_ReplayedCreateAfterDeleteIsSkipped(t *testing.T) {
+	svc, _, wid := newGuestSyncService(t)
+	ctx := context.Background()
+	gid := uuid.New()
+	create := SyncMutation{
+		Op:              SyncOpCreate,
+		GuestID:         gid.String(),
+		ClientUpdatedAt: time.Now().Add(-time.Minute),
+		Payload:         &SyncPayload{Name: "Ghost", Pax: 1},
+	}
+	res, err := svc.Sync(ctx, wid, []SyncMutation{create})
+	testutil.NoErr(t, err)
+	if res[0].Status != "applied" {
+		t.Fatalf("first create = %+v, want applied", res[0])
+	}
+	testutil.NoErr(t, svc.Delete(ctx, gid, wid))
+
+	res, err = svc.Sync(ctx, wid, []SyncMutation{create})
+	testutil.NoErr(t, err)
+	if res[0].Status != "skipped" || res[0].Reason != "deleted" {
+		t.Fatalf("replayed create = %+v, want skipped/deleted", res[0])
+	}
+	if _, err := svc.Get(ctx, gid, wid); err == nil {
+		t.Fatal("replayed create brought the deleted guest back")
 	}
 }

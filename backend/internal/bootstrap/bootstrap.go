@@ -253,6 +253,7 @@ func Migrate(ctx context.Context, db *gorm.DB) error {
 		&models.AdminUser{},
 		&models.BanquetTable{},
 		&models.GuestRecord{},
+		&models.GuestTombstone{},
 		&models.RefreshToken{},
 		&models.UserWedding{},
 		&models.HallElement{},
