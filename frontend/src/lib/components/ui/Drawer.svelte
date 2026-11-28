@@ -385,7 +385,7 @@ import ArrowUpDown from 'lucide-svelte/icons/arrow-up-down';
           </div>
           <div class="form-field">
             <label for="guest-angbao" class="form-label">Angbao Amount (RM)</label>
-            <input id="guest-angbao" type="number" min="0" step="1" bind:value={form.angbaoAmt} placeholder="0" aria-invalid={!!errors.angbaoAmt} aria-describedby={errors.angbaoAmt ? 'guest-angbao-error' : undefined} class="form-input" />
+            <input id="guest-angbao" type="number" min="0" max={LIMITS.angbaoAmt} step="1" bind:value={form.angbaoAmt} placeholder="0" aria-invalid={!!errors.angbaoAmt} aria-describedby={errors.angbaoAmt ? 'guest-angbao-error' : undefined} class="form-input" />
             {#if errors.angbaoAmt}<p id="guest-angbao-error" class="text-xs text-red-600 mt-1">{errors.angbaoAmt[0]}</p>{/if}
           </div>
           <div class="form-field">

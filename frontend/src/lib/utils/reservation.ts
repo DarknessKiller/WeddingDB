@@ -16,7 +16,7 @@ export const reservationSchema = z.object({
 
 export type ReservationForm = z.infer<typeof reservationSchema>;
 
-const ANGBAO_ERROR = 'Angbao must be a whole number, 0 or more';
+const ANGBAO_ERROR = `Angbao must be a whole number from 0 to ${LIMITS.angbaoAmt.toLocaleString('en')}`;
 
 /** Empty, or one bare address. Stricter than services.ValidGuestEmail, never looser. */
 export const guestEmailSchema = z.union([z.literal(''), z.email('Invalid email').max(LIMITS.email)]).optional();
@@ -28,7 +28,7 @@ export const guestFormSchema = z.object({
 	pax: z.number({ error: 'Pax must be a whole number' }).int('Pax must be a whole number')
 		.min(1, 'At least 1 guest').max(LIMITS.guestPax, `Max ${LIMITS.guestPax} guests`),
 	// A number input reads '' or null when empty: both mean no angbao.
-	angbaoAmt: z.union([z.literal(''), z.null(), z.undefined(), z.number().int(ANGBAO_ERROR).min(0, ANGBAO_ERROR)], { error: ANGBAO_ERROR }),
+	angbaoAmt: z.union([z.literal(''), z.null(), z.undefined(), z.number().int(ANGBAO_ERROR).min(0, ANGBAO_ERROR).max(LIMITS.angbaoAmt, ANGBAO_ERROR)], { error: ANGBAO_ERROR }),
 });
 
 /** Per-field messages for the guest drawer form, empty when it may be saved. */

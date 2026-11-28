@@ -73,8 +73,9 @@ describe('guestFormErrors', () => {
 		const bad = guestFormErrors({ name: '   ', pax: 1.5, angbaoAmt: -1 });
 		expect(bad.name?.[0]).toBe('Name is required');
 		expect(bad.pax?.[0]).toBe('Pax must be a whole number');
-		expect(bad.angbaoAmt?.[0]).toBe('Angbao must be a whole number, 0 or more');
-		expect(guestFormErrors({ name: 'A', pax: null, angbaoAmt: 1.5 })).toMatchObject({ pax: ['Pax must be a whole number'], angbaoAmt: ['Angbao must be a whole number, 0 or more'] });
+		expect(bad.angbaoAmt?.[0]).toBe('Angbao must be a whole number from 0 to 10,000,000');
+		expect(guestFormErrors({ name: 'A', pax: null, angbaoAmt: 1.5 })).toMatchObject({ pax: ['Pax must be a whole number'], angbaoAmt: ['Angbao must be a whole number from 0 to 10,000,000'] });
+		expect(guestFormErrors({ name: 'A', pax: 1, angbaoAmt: 10_000_001 }).angbaoAmt?.[0]).toBe('Angbao must be a whole number from 0 to 10,000,000');
 		expect(guestFormErrors({ name: 'A', pax: LIMITS.guestPax + 1, angbaoAmt: '' }).pax?.[0]).toBe(`Max ${LIMITS.guestPax} guests`);
 	});
 

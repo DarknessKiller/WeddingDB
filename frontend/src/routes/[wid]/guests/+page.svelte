@@ -177,7 +177,8 @@ import Users from 'lucide-svelte/icons/users';
       ].map(csvField);
     });
     const csv = [headers.map(csvField), ...rows].map(r => r.join(',')).join('\n');
-    const blob = new Blob([csv], { type: 'text/csv' });
+    // BOM so Excel reads the file as UTF-8 and shows Chinese names; parseCsv strips it.
+    const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
