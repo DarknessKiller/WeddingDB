@@ -95,7 +95,7 @@ describe('server rejection reason', () => {
 describe('lost response retry', () => {
 	it('sends one client UUID with the create and reuses it for the queued fallback', async () => {
 		vi.stubGlobal('navigator', { onLine: true });
-		// No randomUUID (plain-HTTP origin): the fallback must still be a v4 UUID.
+		// No randomUUID (plain-HTTP origin): still a v4 UUID, in the server's base64url form.
 		const real = globalThis.crypto;
 		vi.stubGlobal('crypto', { getRandomValues: (a: Uint8Array<ArrayBuffer>) => real.getRandomValues(a) });
 		const { createGuest } = await import('./guests');
@@ -105,7 +105,10 @@ describe('lost response retry', () => {
 		const created = await createGuest('w1', { name: 'A', pax: 1, rsvp: 'pending', isVip: false, notes: '', dietary: [] });
 
 		const sent = JSON.parse(vi.mocked(apiFetch).mock.calls.at(-1)![1]!.body as string);
-		expect(sent.id).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
+		expect(sent.id).toMatch(/^[A-Za-z0-9_-]{22}$/);
+		const bytes = Uint8Array.from(atob(sent.id.replace(/-/g, '+').replace(/_/g, '/')), (c) => c.charCodeAt(0));
+		expect(bytes[6] >> 4).toBe(4);
+		expect(bytes[8] >> 6).toBe(2);
 		expect(created.id).toBe(sent.id);
 		expect(JSON.parse(store.get('offline_queue_w1')!)[0].guestId).toBe(sent.id);
 	});
@@ -147,5 +150,39 @@ describe('lost response retry', () => {
 		await call(mod);
 
 		expect(JSON.parse(store.get('offline_queue_w1')!)[0].clientUpdatedAt).toBe('2030-01-01T00:00:00.000Z');
+	});
+});
+
+describe('check-in note length', () => {
+	it('refuses a note that would push the notes past the cap, without queueing', async () => {
+		const { seedGuests, guestMap } = await import('#lib/stores/guestEvents.ts');
+		const { checkInGuest } = await import('./guests');
+		const { toGuest } = await import('#lib/utils/guestTransform.ts');
+		seedGuests([toGuest({ id: 'g1', name: 'A', email: '', pax: 1, rsvp: 'pending', isVip: false, notes: 'x'.repeat(1800), dietary: [], tableId: null, seatNum: null, checkedInAt: null, angbaoAmt: null, giftItem: null })]);
+
+		await expect(checkInGuest('w1', 'g1', 'y'.repeat(300))).rejects.toThrow(/Note too long/);
+		expect(store.get('offline_queue_w1')).toBeUndefined();
+		expect(get(guestMap).get('g1')?.checkedIn).toBe(false);
+
+		// 1800 + newline + 199 = 2000 fits exactly.
+		await checkInGuest('w1', 'g1', 'y'.repeat(199));
+		expect(JSON.parse(store.get('offline_queue_w1')!)).toHaveLength(1);
+	});
+});
+
+describe('wedding switch', () => {
+	it('drops an update response for a wedding that is no longer current', async () => {
+		vi.stubGlobal('navigator', { onLine: true });
+		const { setWeddingId } = await import('#lib/stores/weddingId.ts');
+		const { seedGuests, guestMap } = await import('#lib/stores/guestEvents.ts');
+		const { updateGuest } = await import('./guests');
+		const { apiFetch } = await import('#lib/api/client.ts');
+		setWeddingId('wB');
+		seedGuests([], 'wB');
+		const row = { id: 'gA', weddingId: 'wA', name: 'From A', email: '', pax: 1, rsvp: 'pending', isVip: false, notes: '', dietary: [], tableId: null, seatNum: null, checkedInAt: null, angbaoAmt: null, giftItem: null, createdAt: '2026-01-01T00:00:00Z', updatedAt: '2026-01-01T00:00:00Z' };
+		vi.mocked(apiFetch).mockResolvedValue({ ok: true, status: 200, json: async () => row } as Response);
+
+		await updateGuest('wA', 'gA', { name: 'From A' });
+		expect(get(guestMap).has('gA')).toBe(false);
 	});
 });

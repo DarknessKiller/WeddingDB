@@ -12,6 +12,13 @@ let refreshPromise: Promise<boolean> | null = null;
 // the edit falls back to the offline queue instead of spinning for minutes.
 const REQUEST_TIMEOUT_MS = 10_000;
 
+// withTimeout caps a request at ms, still honouring the caller's abort signal.
+// shortcut: without AbortSignal.any (Safari < 17.4) the caller's signal wins and the cap is dropped; fine until old kiosk tablets are retired.
+export function withTimeout(ms: number, signal?: AbortSignal): AbortSignal {
+	if (!signal) return AbortSignal.timeout(ms);
+	return typeof AbortSignal.any === 'function' ? AbortSignal.any([signal, AbortSignal.timeout(ms)]) : signal;
+}
+
 // Chrome/Firefox say "Failed to fetch"/"NetworkError"; Safari says "Load failed".
 // A failed request is a fallback-to-cache case; a 4xx is not.
 export function isNetworkError(e: unknown): boolean {

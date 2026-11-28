@@ -58,6 +58,8 @@ class SSEClient {
 			// now, not after the backoff the 401 left behind.
 			if (response.status === 401) {
 				const refreshed = await refreshIfNeeded();
+				// disconnect() during the refresh: reconnecting would orphan a stream for the old wedding.
+				if (controller.signal.aborted) return;
 				if (refreshed) {
 					this.tokenGap = true;
 					this.reconnectDelay = 1000;

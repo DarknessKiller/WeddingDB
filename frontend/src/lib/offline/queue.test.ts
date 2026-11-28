@@ -195,6 +195,7 @@ describe('offline queue storage', () => {
 	it('a losing delete restores the guest from serverRecord and leaves the queue', async () => {
 		const { applyGuestResponse } = await import('#lib/stores/guestEvents.ts');
 		const { enqueue, getQueue, syncQueue } = await import('./queue');
+		(await import('#lib/stores/weddingId.ts')).setWeddingId('w1');
 		enqueue('w1', { ...mutation(1), op: 'delete' });
 		const row = { id: 'g1', name: 'Tan' };
 		apiFetch.mockResolvedValue(ok([{ status: 'skipped', reason: 'edited after the delete', serverRecord: row }]));
@@ -202,6 +203,29 @@ describe('offline queue storage', () => {
 		expect(await syncQueue('w1')).toEqual({ applied: 0, skipped: 1, dropped: 0 });
 		expect(applyGuestResponse).toHaveBeenCalledWith(row);
 		expect(getQueue('w1')).toEqual([]);
+	});
+
+	it('does not apply a serverRecord once the user has switched to another wedding', async () => {
+		const { applyGuestResponse } = await import('#lib/stores/guestEvents.ts');
+		vi.mocked(applyGuestResponse).mockClear();
+		const { enqueue, syncQueue } = await import('./queue');
+		(await import('#lib/stores/weddingId.ts')).setWeddingId('w2');
+		enqueue('w1', { ...mutation(1), op: 'delete' });
+		apiFetch.mockResolvedValue(ok([{ status: 'skipped', serverRecord: { id: 'g1', name: 'Tan' } }]));
+
+		await syncQueue('w1');
+		expect(applyGuestResponse).not.toHaveBeenCalled();
+	});
+
+	it('tells the user why a retryable edit stayed queued', async () => {
+		const { addToast } = await import('#lib/stores/index.ts');
+		const { enqueue, getQueue, syncQueue } = await import('./queue');
+		enqueue('w1', mutation(1));
+		apiFetch.mockResolvedValue(ok([{ status: 'failed', reason: 'seat 3 is taken', retryable: true }]));
+
+		await syncQueue('w1');
+		expect(getQueue('w1')).toHaveLength(1);
+		expect(addToast).toHaveBeenCalledWith('Offline edits still queued: seat 3 is taken', 'error');
 	});
 
 	it('403 keeps the queue for the owner-change prompt instead of discarding it', async () => {

@@ -30,7 +30,9 @@ export async function validateToken(): Promise<boolean> {
   let res: Response;
   try {
     res = await fetch('/api/weddings', {
-      headers: { Authorization: `Bearer ${accessToken}` }
+      headers: { Authorization: `Bearer ${accessToken}` },
+      // Wifi with no upstream never rejects; time out so offline pages still load.
+      signal: AbortSignal.timeout(10_000)
     });
   } catch {
     return true;

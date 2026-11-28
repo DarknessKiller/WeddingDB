@@ -9,7 +9,7 @@
   import { weddingTitle } from '#lib/stores/weddingTitle.ts';
   import { validateToken } from '#lib/utils/auth.ts';
   import { fetchAllGuests } from '#lib/api/guests.ts';
-  import { syncQueue } from '#lib/offline/queue.ts';
+  import { getQueue, syncQueue } from '#lib/offline/queue.ts';
   import { getWedding } from '#lib/api/weddings.ts';
   import { listTables } from '#lib/api/tables.ts';
   import { guestList, initializeSSE, readCachedGuests, refreshGuests } from '#lib/stores/guestEvents.ts';
@@ -97,6 +97,8 @@
         syncError = true;
         throw e;
       }
+      // Retryable edits are still queued: a reseed would hide their optimistic values.
+      if (getQueue(forWid).length) throw new Error('edits still queued');
       return loadThis();
     };
 
@@ -118,7 +120,8 @@
         }
         // Reseeding after a failed drain would overwrite the optimistic editing
         // that is still queued; the next drain retries and reseeds.
-        if (!drained) return;
+        // Same when retryable edits stayed queued: keep the optimistic list.
+        if (!drained || getQueue(forWid).length) return;
         try {
           // Refresh inside the syncing window so SSE events arriving mid-fetch
           // are queued and replayed after the seed instead of being clobbered.

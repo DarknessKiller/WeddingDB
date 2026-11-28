@@ -55,10 +55,13 @@ import ChevronRight from 'lucide-svelte/icons/chevron-right';
     selecting = w.id;
     let targetUrl = '';
     try {
-      const res = await apiFetch('/api/auth/select-wedding', {
+      const send = () => apiFetch('/api/auth/select-wedding', {
         method: 'POST',
         body: JSON.stringify({ weddingId: w.id, refreshToken: getAuth().refreshToken })
       });
+      let res = await send();
+      // apiFetch's refresh rotated the token this body carried; resend with the new one.
+      if (res.status === 401) res = await send();
       if (!res.ok) {
         const err = await res.json().catch(() => ({ title: 'Failed to select wedding' }));
         addToast(err.title || 'Failed to select wedding', 'error');
