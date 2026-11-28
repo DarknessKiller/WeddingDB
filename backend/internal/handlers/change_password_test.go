@@ -68,4 +68,15 @@ func TestChangePassword_RequiresCurrentPassword(t *testing.T) {
 	if got := do(forced, `{"password":"NewPassw0rd!x"}`); got != http.StatusOK {
 		t.Fatalf("forced change without currentPassword: got %d, want 200", got)
 	}
+
+	// Wrong guesses share the login lockout: after 25, even the right password is refused.
+	guessed := seed(false)
+	for i := range 25 {
+		if got := do(guessed, `{"currentPassword":"wrong","password":"NewPassw0rd!x"}`); got != http.StatusUnauthorized {
+			t.Fatalf("guess %d: got %d, want 401", i+1, got)
+		}
+	}
+	if got := do(guessed, `{"currentPassword":"OldPassw0rd!","password":"NewPassw0rd!x"}`); got != http.StatusTooManyRequests {
+		t.Fatalf("after 25 wrong guesses: got %d, want 429", got)
+	}
 }

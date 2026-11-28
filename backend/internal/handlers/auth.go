@@ -117,7 +117,7 @@ func (h *AuthHandler) Login(c fuego.ContextWithBody[LoginRequest]) (TokenRespons
 	if err := h.authService.CheckAuthRate(c.Context(), ip); err != nil {
 		return TokenResponse{}, fuego.HTTPError{Status: http.StatusTooManyRequests, Title: err.Error()}
 	}
-	if err := h.authService.CheckCredentialIPRate(c.Context(), ip); err != nil {
+	if err := h.authService.CheckLoginIPRate(c.Context(), ip); err != nil {
 		return TokenResponse{}, fuego.HTTPError{Status: http.StatusTooManyRequests, Title: err.Error()}
 	}
 	// Bound the address before it becomes a Redis key: an unbounded body would
@@ -236,8 +236,15 @@ func (h *AuthHandler) ChangePassword(c fuego.ContextWithBody[ChangePasswordReque
 		return nil, fuego.InternalServerError{Title: "Failed to load user"}
 	}
 	// A forced change follows an admin reset, so the old password is not known.
+	// The current-password proof shares the login lockout, so a held session
+	// cannot brute-force it.
 	if !admin.ForcePasswordChange {
+		ip := clientIP(c.Request())
+		if err := h.authService.CheckLoginAccountRate(ctx, admin.Email, ip); err != nil {
+			return nil, fuego.HTTPError{Status: http.StatusTooManyRequests, Title: err.Error()}
+		}
 		if err := bcrypt.CompareHashAndPassword([]byte(admin.Password), []byte(body.CurrentPassword)); err != nil {
+			h.authService.RecordLoginFailure(ctx, admin.Email, ip)
 			return nil, fuego.UnauthorizedError{Title: "Current password is incorrect"}
 		}
 	}

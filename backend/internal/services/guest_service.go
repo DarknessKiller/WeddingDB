@@ -357,7 +357,8 @@ func (t *tableSeats) check(guestID uuid.UUID, pax int, seatNum *int) error {
 	if seatNum == nil {
 		return nil
 	}
-	if *seatNum < 1 || *seatNum+pax-1 > t.capacity {
+	// Bound seatNum before adding pax: a huge value would overflow past the check.
+	if *seatNum < 1 || *seatNum > t.capacity || *seatNum+pax-1 > t.capacity {
 		return ErrSeatRange
 	}
 	start, guestEnd := *seatNum, *seatNum+pax-1

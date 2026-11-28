@@ -131,3 +131,21 @@ func TestCredentialIPRate_TenPerMinute(t *testing.T) {
 		t.Fatalf("expected reset after window: %v", err)
 	}
 }
+
+// Successful logins must not use up the per-IP cap: staff phones share one
+// venue IP. Only recorded failures count.
+func TestLoginIPRate_CountsFailuresOnly(t *testing.T) {
+	svc, _ := newTestAuthService(t, "test-secret")
+	ctx := context.Background()
+	for i := range 20 {
+		if err := svc.CheckLoginIPRate(ctx, "8.8.8.8"); err != nil {
+			t.Fatalf("check %d without failures limited: %v", i+1, err)
+		}
+	}
+	for range 10 {
+		svc.RecordLoginFailure(ctx, "a@b.c", "8.8.8.8")
+	}
+	if err := svc.CheckLoginIPRate(ctx, "8.8.8.8"); err == nil {
+		t.Fatal("IP must be limited after 10 failures in a minute")
+	}
+}
