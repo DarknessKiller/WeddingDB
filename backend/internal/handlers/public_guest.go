@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"context"
 	"errors"
 	"log/slog"
 	"strconv"
@@ -10,6 +11,7 @@ import (
 	"weddingdb/internal/utils"
 
 	"github.com/go-fuego/fuego"
+	"github.com/google/uuid"
 	"gorm.io/gorm"
 )
 
@@ -24,11 +26,26 @@ type publicGuest struct {
 }
 
 type PublicGuestHandler struct {
-	guestService *services.GuestService
+	guestService   *services.GuestService
+	weddingService *services.WeddingService
 }
 
-func NewPublicGuestHandler(guestService *services.GuestService) *PublicGuestHandler {
-	return &PublicGuestHandler{guestService: guestService}
+func NewPublicGuestHandler(guestService *services.GuestService, weddingService *services.WeddingService) *PublicGuestHandler {
+	return &PublicGuestHandler{guestService: guestService, weddingService: weddingService}
+}
+
+// showSeats reports the wedding's showSeatNumbers setting, so the public API
+// enforces it instead of leaving it to the kiosk page.
+func (h *PublicGuestHandler) showSeats(ctx context.Context, wid uuid.UUID) (bool, error) {
+	w, err := h.weddingService.Get(ctx, wid)
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return false, fuego.NotFoundError{Title: "Wedding not found"}
+	}
+	if err != nil {
+		slog.ErrorContext(ctx, "load wedding failed", "wedding", wid, "err", err)
+		return false, fuego.InternalServerError{Title: "Failed to load wedding"}
+	}
+	return w.ShowSeatNumbers, nil
 }
 
 func (h *PublicGuestHandler) List(c fuego.ContextNoBody) (any, error) {
@@ -60,11 +77,16 @@ func (h *PublicGuestHandler) List(c fuego.ContextNoBody) (any, error) {
 		nextCursor = utils.EncodeUUID(guests[limit-1].ID)
 		guests = guests[:limit]
 	}
-	return map[string]any{"guests": toPublicGuests(guests), "nextCursor": nextCursor}, nil
+	show, err := h.showSeats(ctx, wid)
+	if err != nil {
+		return nil, err
+	}
+	return map[string]any{"guests": toPublicGuests(guests, show), "nextCursor": nextCursor}, nil
 }
 
 // toPublicGuests is the one model-to-response mapping for public guest lists.
-func toPublicGuests(guests []models.GuestRecord) []publicGuest {
+// Seat numbers are dropped unless the wedding shows them.
+func toPublicGuests(guests []models.GuestRecord, showSeats bool) []publicGuest {
 	out := make([]publicGuest, 0, len(guests))
 	for _, g := range guests {
 		var tid *string
@@ -72,11 +94,15 @@ func toPublicGuests(guests []models.GuestRecord) []publicGuest {
 			s := utils.EncodeUUID(*g.TableID)
 			tid = &s
 		}
+		seat := g.SeatNum
+		if !showSeats {
+			seat = nil
+		}
 		out = append(out, publicGuest{
 			ID:      utils.EncodeUUID(g.ID),
 			Name:    g.Name,
 			TableID: tid,
-			SeatNum: g.SeatNum,
+			SeatNum: seat,
 			Pax:     g.Pax,
 			IsVip:   g.IsVip,
 			Pinyin:  g.NamePinyin,
@@ -141,5 +167,9 @@ func (h *PublicGuestHandler) Search(c fuego.ContextNoBody) (any, error) {
 	if len(guests) > 50 {
 		guests = guests[:50]
 	}
-	return toPublicGuests(guests), nil
+	show, err := h.showSeats(ctx, wid)
+	if err != nil {
+		return nil, err
+	}
+	return toPublicGuests(guests, show), nil
 }

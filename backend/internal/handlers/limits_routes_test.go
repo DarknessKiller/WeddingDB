@@ -76,6 +76,15 @@ func TestTableCreate_NameAndCapacityBounds(t *testing.T) {
 	if rec := postCap("Max", services.MaxTableCapacity); rec.Code != http.StatusCreated {
 		t.Fatalf("capacity %d status = %d, body %s", services.MaxTableCapacity, rec.Code, rec.Body.String())
 	}
+	// Layout save requires X/Y in 0-100; a table stored outside it blocks every save.
+	req := httptest.NewRequest(http.MethodPost, "/api/weddings/"+utils.EncodeUUID(wid)+"/tables",
+		strings.NewReader(`{"name":"Far","capacity":8,"x":150,"y":10}`))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	s.Mux.ServeHTTP(rec, req)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("x=150 status = %d, body %s", rec.Code, rec.Body.String())
+	}
 }
 
 func TestKioskSettings_VenueNameBounds(t *testing.T) {

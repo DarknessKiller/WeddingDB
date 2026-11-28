@@ -70,6 +70,8 @@ type LoginResult struct {
 var compareHash = bcrypt.CompareHashAndPassword
 
 // dummyHash lets unknown-email logins spend the same bcrypt time as real ones.
+// It only removes the login timing signal: register still answers 409 for a
+// taken email, so account existence is not secret. Register is rate limited.
 var dummyHash = sync.OnceValue(func() []byte {
 	h, err := bcrypt.GenerateFromPassword([]byte("dummy-password"), bcrypt.DefaultCost)
 	if err != nil {

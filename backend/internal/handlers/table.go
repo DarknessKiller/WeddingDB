@@ -60,6 +60,10 @@ func (h *TableHandler) Create(c fuego.ContextWithBody[TableRequest]) (any, error
 	if body.Capacity < 1 || body.Capacity > services.MaxTableCapacity {
 		return nil, fuego.BadRequestError{Title: "Capacity must be between 1 and " + strconv.Itoa(services.MaxTableCapacity)}
 	}
+	// Same bounds as layout save, or one stored table blocks every later save.
+	if body.X < 0 || body.X > 100 || body.Y < 0 || body.Y > 100 {
+		return nil, fuego.BadRequestError{Title: "Table X/Y must be 0–100"}
+	}
 	table := &models.BanquetTable{
 		WeddingID: wid,
 		Name:      body.Name,
@@ -110,6 +114,10 @@ func (h *TableHandler) Update(c fuego.ContextWithBody[TableRequest]) (any, error
 	}
 	if body.Capacity < 1 || body.Capacity > services.MaxTableCapacity {
 		return nil, fuego.BadRequestError{Title: "Capacity must be between 1 and " + strconv.Itoa(services.MaxTableCapacity)}
+	}
+	// Same bounds as layout save, or one stored table blocks every later save.
+	if body.X < 0 || body.X > 100 || body.Y < 0 || body.Y > 100 {
+		return nil, fuego.BadRequestError{Title: "Table X/Y must be 0–100"}
 	}
 	table.Name = body.Name
 	table.Capacity = body.Capacity
